@@ -151,9 +151,12 @@ def test_status_derivation() -> None:
                 assert bp.status == "needs_smoke_test"
 
 
-def test_volta_is_only_verified_platform() -> None:
-    """Per the plan, V100/Volta is the reference verified platform."""
+def test_verified_platforms_match_real_hardware() -> None:
+    """Only the real-tested V100 and RTX 4090 families are verified."""
+
     for backend in BACKENDS.values():
         for arch_name, bp in backend.arch_profiles.items():
             if bp.mlipx_verified:
-                assert arch_name == "volta"
+                assert arch_name in {"volta", "ada"}
+        assert backend.arch_profiles["volta"].mlipx_verified
+        assert backend.arch_profiles["ada"].mlipx_verified

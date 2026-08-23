@@ -61,11 +61,15 @@ class TorchRecommendation:
     pyproject_snippet: str = ""
 
 
-def recommend_torch(cc_major: int, cc_minor: int) -> TorchRecommendation:
+def recommend_torch(
+    cc_major: int, cc_minor: int, *, engine: str = "uma"
+) -> TorchRecommendation:
     """Legacy: recommend a PyTorch build for the given compute capability.
 
-    Kept for backward compatibility with ``mlipx doctor``.  The UMA backend
-    profile drives the default recommendation.
+    Kept for backward compatibility with ``mlipx doctor``. ``engine`` defaults
+    to UMA for callers of the historical two-argument API, while doctor passes
+    the explicitly selected engine so DPA/MACE advice preserves their own
+    framework ABI pins.
     """
     arch = classify_gpu(cc_major, cc_minor)
     sm = f"sm_{cc_major}{cc_minor}"
@@ -83,20 +87,30 @@ def recommend_torch(cc_major: int, cc_minor: int) -> TorchRecommendation:
             ),
         )
 
-    bp = get_backend_arch_profile("uma", arch.name)
+    backend = BACKENDS.get(engine)
+    if backend is None or backend.framework != "torch":
+        return TorchRecommendation(
+            version="",
+            index_url="",
+            cu_tag="",
+            supported=False,
+            rationale=f"No PyTorch compatibility profile for engine {engine!r}.",
+        )
+
+    bp = get_backend_arch_profile(engine, arch.name)
     if bp is None:
         return TorchRecommendation(
             version="",
             index_url="",
             cu_tag="",
             supported=False,
-            rationale=f"No UMA profile for {arch_name} ({sm}).",
+            rationale=f"No {backend.label} profile for {arch_name} ({sm}).",
         )
 
     # Derive the CUDA channel via the matrix.
-    from mlipx.install.compatibility import effective_cuda_channel, BACKENDS
+    from mlipx.install.compatibility import effective_cuda_channel
 
-    cuda_tag = effective_cuda_channel(BACKENDS["uma"], arch, bp)
+    cuda_tag = effective_cuda_channel(backend, arch, bp)
     from mlipx.install.compatibility import CUDA_CHANNELS
 
     channel = CUDA_CHANNELS.get(cuda_tag)
@@ -104,18 +118,19 @@ def recommend_torch(cc_major: int, cc_minor: int) -> TorchRecommendation:
 
     if arch.experimental:
         rationale = (
-            f"{arch_name} ({sm}): EXPERIMENTAL. torch {bp.framework_version}"
+            f"{backend.label} on {arch_name} ({sm}): EXPERIMENTAL. "
+            f"torch {bp.framework_version}"
             f"+{cuda_tag} via legacy CUDA channel. Upstream does not test this GPU."
         )
     elif bp.mlipx_verified:
         rationale = (
-            f"{arch_name} ({sm}): mlipx-verified with torch "
+            f"{backend.label} on {arch_name} ({sm}): mlipx-verified with torch "
             f"{bp.framework_version}+{cuda_tag}."
         )
     else:
         rationale = (
-            f"{arch_name} ({sm}): torch {bp.framework_version}+{cuda_tag} "
-            f"(needs smoke test)."
+            f"{backend.label} on {arch_name} ({sm}): torch "
+            f"{bp.framework_version}+{cuda_tag} (needs smoke test)."
         )
 
     return TorchRecommendation(
@@ -126,7 +141,8 @@ def recommend_torch(cc_major: int, cc_minor: int) -> TorchRecommendation:
         rationale=rationale,
         install_commands=[
             "# Recommended PyTorch build (see compatibility matrix):",
-            f"uv pip install torch=={bp.framework_version} --index-url {url}",
+            f"uv pip install torch=={bp.framework_version}+{cuda_tag} "
+            f"--index-url {url}",
         ],
         pyproject_snippet="",
     )

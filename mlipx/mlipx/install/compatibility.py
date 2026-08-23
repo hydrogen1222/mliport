@@ -347,8 +347,8 @@ BACKENDS: dict[str, BackendSpec] = {
             "ada": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
-                notes="Modern CUDA (cu128) for Ada (sm_89 via sm_86 compat).",
+                mlipx_verified=True,
+                notes="Verified on RTX 4090. Modern CUDA (cu128) for Ada.",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.8.0",
@@ -410,8 +410,8 @@ BACKENDS: dict[str, BackendSpec] = {
             "ada": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
-                notes="Modern CUDA (cu128).",
+                mlipx_verified=True,
+                notes="Verified on RTX 4090 with modern CUDA (cu128).",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.8.0",
@@ -447,8 +447,10 @@ BACKENDS: dict[str, BackendSpec] = {
                 framework_version="2.10.0",
                 upstream_supported=True,
                 mlipx_verified=False,
-                notes="torch 2.10.0+cu126 includes sm60 kernel. "
-                "deepmd-kit 3.1.3 pins torch==2.10.0 exactly.",
+                notes="P40 installation exposed a CUDA-wheel selection bug; "
+                "torch 2.10.0+cu126 includes sm60 for sm61 compatibility and "
+                "must be pinned including the +cu126 local version. Runtime "
+                "model smoke retest is still required.",
             ),
             "volta": BackendArchProfile(
                 framework_version="2.10.0",
@@ -472,8 +474,8 @@ BACKENDS: dict[str, BackendSpec] = {
             "ada": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=False,
-                notes="Modern CUDA (cu128).",
+                mlipx_verified=True,
+                notes="Verified on RTX 4090 with modern CUDA (cu128).",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.10.0",
@@ -544,9 +546,10 @@ BACKENDS: dict[str, BackendSpec] = {
             "ada": BackendArchProfile(
                 framework_version="2.20.0",
                 upstream_supported=True,
-                mlipx_verified=False,
+                mlipx_verified=True,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
-                notes="TF 2.20.0 + CUDA 12.5 + cuDNN 9.3. " "sm89 explicitly compiled.",
+                notes="Verified on RTX 4090. TF 2.20.0 + CUDA 12.5 + "
+                "cuDNN 9.3; sm89 explicitly compiled.",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.20.0",

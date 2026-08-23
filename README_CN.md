@@ -61,7 +61,7 @@ GPU 环境体积很大：安装全部四个隔离环境需要预留数十 GiB。
 # UMA（默认）——和其他引擎一样显式安装
 uv venv --python 3.12 .venv
 uv pip install --no-config --python .venv/bin/python \
-  "torch==2.8.0" --index-url https://download.pytorch.org/whl/cu126
+  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
 uv pip install --no-config --python .venv/bin/python \
   -e ./mlipx "fairchem-core==2.21.0"
 .venv/bin/mlipx doctor --engine uma --device auto
@@ -69,7 +69,7 @@ uv pip install --no-config --python .venv/bin/python \
 # MACE
 uv venv --python 3.12 .venv-mace
 uv pip install --no-config --python .venv-mace/bin/python \
-  "torch==2.8.0" --index-url https://download.pytorch.org/whl/cu126
+  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
 uv pip install --no-config --python .venv-mace/bin/python \
   -e ./mlipx "e3nn==0.4.4" "mace-torch==0.3.16"
 .venv-mace/bin/mlipx doctor --engine mace --device auto
@@ -77,7 +77,7 @@ uv pip install --no-config --python .venv-mace/bin/python \
 # DPA / DeepMD
 uv venv --python 3.12 .venv-dpa
 uv pip install --no-config --python .venv-dpa/bin/python \
-  "torch==2.10.0" --index-url https://download.pytorch.org/whl/cu126
+  "torch==2.10.0+cu126" --index-url https://download.pytorch.org/whl/cu126
 uv pip install --no-config --python .venv-dpa/bin/python \
   -e ./mlipx "deepmd-kit==3.1.3"
 .venv-dpa/bin/mlipx doctor --engine dpa --device auto
@@ -107,7 +107,7 @@ uv pip install --no-config --python .venv-grace/bin/python \
 | GPU 系列 | 代表显卡 | 计算能力 | CUDA 路线 |
 |---|---|---|---|
 | Maxwell | GTX 960、TITAN X | sm_50/52 | cu126 Legacy（⚠️ 实验性） |
-| Pascal | **GTX 1080 Ti**、P100 | sm_60/61 | cu126 Legacy |
+| Pascal | **Tesla P40**、GTX 1080 Ti、P100 | sm_60/61 | cu126 Legacy |
 | Volta | **V100** | sm_70 | cu126 Legacy |
 | Turing | RTX 20xx | sm_75 | cu128+ Modern |
 | Ampere | **RTX 3080 Ti**、30xx | sm_80/86 | cu128+ Modern |
@@ -118,14 +118,14 @@ uv pip install --no-config --python .venv-grace/bin/python \
 
 > **为什么有两条 CUDA 路线？** Maxwell/Pascal/Volta 必须使用 **cu126 Legacy** 通道：PyTorch 2.8+ 从 cu128 构建中移除了 Maxwell/Pascal，PyTorch 2.11+ 从 cu128+ 中移除了 Volta。Turing+ 使用**现代**通道（torch 2.8–2.10 用 cu128，torch 2.12+ 用 cu130）。Maxwell 标记为实验性，因为 TensorFlow 2.20 官方 wheel 从 sm_60 开始构建。
 
-**各引擎验证状态**（来自 `mlipx/install/compatibility.py`；目前仅 Volta/V100 经过 mlipx 实测，其余为上游支持但待真机 smoke test）：
+**各引擎验证状态**（来自 `mlipx/install/compatibility.py`；V100 和 RTX 4090 已经过真机测试。P40 使用修正后的精确 `+cu126` wheel pin，但仍需在修复后重新做模型 smoke test）：
 
-| 引擎 | Maxwell | Pascal | Volta | Turing+ |
-|---|---|---|---|---|
-| UMA | experimental | needs smoke test | **verified** | needs smoke test |
-| MACE | experimental | needs smoke test | **verified** | needs smoke test |
-| DPA | experimental | needs smoke test | **verified** | needs smoke test |
-| GRACE | experimental | needs smoke test | **verified** | needs smoke test |
+| 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | 其他 Turing+ |
+|---|---|---|---|---|---|
+| UMA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| MACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| DPA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| GRACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
 
 ### 下载源
 

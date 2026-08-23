@@ -63,7 +63,7 @@ If you prefer to install by hand, create one venv per engine:
 # UMA (default) — installed explicitly like every other engine
 uv venv --python 3.12 .venv
 uv pip install --no-config --python .venv/bin/python \
-  "torch==2.8.0" --index-url https://download.pytorch.org/whl/cu126
+  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
 uv pip install --no-config --python .venv/bin/python \
   -e ./mlipx "fairchem-core==2.21.0"
 .venv/bin/mlipx doctor --engine uma --device auto
@@ -71,7 +71,7 @@ uv pip install --no-config --python .venv/bin/python \
 # MACE
 uv venv --python 3.12 .venv-mace
 uv pip install --no-config --python .venv-mace/bin/python \
-  "torch==2.8.0" --index-url https://download.pytorch.org/whl/cu126
+  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
 uv pip install --no-config --python .venv-mace/bin/python \
   -e ./mlipx "e3nn==0.4.4" "mace-torch==0.3.16"
 .venv-mace/bin/mlipx doctor --engine mace --device auto
@@ -79,7 +79,7 @@ uv pip install --no-config --python .venv-mace/bin/python \
 # DPA / DeepMD
 uv venv --python 3.12 .venv-dpa
 uv pip install --no-config --python .venv-dpa/bin/python \
-  "torch==2.10.0" --index-url https://download.pytorch.org/whl/cu126
+  "torch==2.10.0+cu126" --index-url https://download.pytorch.org/whl/cu126
 uv pip install --no-config --python .venv-dpa/bin/python \
   -e ./mlipx "deepmd-kit==3.1.3"
 .venv-dpa/bin/mlipx doctor --engine dpa --device auto
@@ -109,7 +109,7 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 | GPU family | Examples | Compute capability | CUDA route |
 |---|---|---|---|
 | Maxwell | GTX 960, TITAN X | sm_50/52 | cu126 Legacy (⚠️ experimental) |
-| Pascal | **GTX 1080 Ti**, P100 | sm_60/61 | cu126 Legacy |
+| Pascal | **Tesla P40**, GTX 1080 Ti, P100 | sm_60/61 | cu126 Legacy |
 | Volta | **V100** | sm_70 | cu126 Legacy |
 | Turing | RTX 20xx | sm_75 | cu128+ Modern |
 | Ampere | **RTX 3080 Ti**, 30xx | sm_80/86 | cu128+ Modern |
@@ -120,14 +120,14 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 
 > **Why two CUDA routes?** Maxwell/Pascal/Volta must use the **cu126 Legacy** channel: PyTorch 2.8+ removed Maxwell/Pascal from cu128 builds, and PyTorch 2.11+ removed Volta from cu128+. Turing+ use the **modern** channel (cu128 for torch 2.8–2.10, cu130 for torch 2.12+). Maxwell is Experimental because TensorFlow 2.20 official wheels start at sm_60.
 
-**Per-engine verification status** (from `mlipx/install/compatibility.py`; only Volta/V100 is mlipx-verified so far — the rest are upstream-supported but need a smoke test on real hardware):
+**Per-engine verification status** (from `mlipx/install/compatibility.py`; V100 and RTX 4090 have been tested on real hardware. P40 uses the corrected exact `+cu126` wheel pin but still needs a post-fix model smoke retest):
 
-| Engine | Maxwell | Pascal | Volta | Turing+ |
-|---|---|---|---|---|
-| UMA | experimental | needs smoke test | **verified** | needs smoke test |
-| MACE | experimental | needs smoke test | **verified** | needs smoke test |
-| DPA | experimental | needs smoke test | **verified** | needs smoke test |
-| GRACE | experimental | needs smoke test | **verified** | needs smoke test |
+| Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ |
+|---|---|---|---|---|---|
+| UMA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| MACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| DPA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| GRACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
 
 ### Download sources
 

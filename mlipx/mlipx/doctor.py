@@ -454,15 +454,11 @@ def _recommendation_detail(
 
     lines.append("")
     if installed_torch is not None and installed_torch != rec.version:
-        # Normalize for comparison (drop local-version suffix on installed).
-        installed_base = installed_torch.split("+")[0]
-        rec_base = rec.version.split("+")[0]
-        if installed_base != rec_base:
-            lines.append(
-                f"  Installed torch ({installed_torch}) does NOT match the "
-                f"recommended ({rec.version}) for this GPU."
-            )
-            lines.append("  Switch to the recommended build:")
+        lines.append(
+            f"  Installed torch ({installed_torch}) does NOT match the "
+            f"recommended ({rec.version}) for this GPU and engine."
+        )
+        lines.append("  Switch to the recommended build:")
     else:
         lines.append("  Install / pin the recommended build:")
     for cmd in rec.install_commands:
@@ -930,7 +926,7 @@ def run_diagnostics(
                 f"{gpu['name']} ({vram_label}, CC {major}.{minor}, "
                 f"{cc_arch_name(major, minor)})"
             )
-            rec = recommend_torch(major, minor)
+            rec = recommend_torch(major, minor, engine=target_engine)
             if arch_supports_device(gpu_cc, arch_list):
                 if rec.supported and _should_warn_torch_mismatch(
                     uma_installed=target_engine == "uma",

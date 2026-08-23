@@ -324,6 +324,51 @@ def test_doctor_reports_missing_4090_kernel_without_crashing(monkeypatch):
     assert failures == 1
 
 
+def test_doctor_p40_dpa_recommends_exact_deepmd_cu126_build(monkeypatch):
+    """A wrong cu128 DPA wheel must not receive UMA's torch 2.8 advice."""
+
+    from mlipx.gpu_setup import GpuInfo
+
+    _controlled_environment(
+        monkeypatch,
+        **{"deepmd-kit": "3.1.3", "torch": "2.10.0+cu128"},
+    )
+    monkeypatch.setattr(
+        "mlipx.doctor.detect_gpus",
+        lambda: [GpuInfo("Tesla P40", 6, 1, "580.95.05", 22912)],
+    )
+    monkeypatch.setattr(
+        "mlipx.doctor._runtime_probe",
+        lambda engine, device, framework=None: {
+            "ok": True,
+            "framework": "torch",
+            "torch_version": "2.10.0+cu128",
+            "cuda_runtime": "12.8",
+            "cuda_available": True,
+            "device_count": 1,
+            "arch_list": ["sm_70", "sm_75", "sm_80", "sm_86", "sm_90"],
+            "gpus": [
+                {
+                    "name": "Tesla P40",
+                    "major": 6,
+                    "minor": 1,
+                    "total_memory": 22912 * 1024**2,
+                }
+            ],
+        },
+    )
+
+    checks, failures = run_diagnostics(engine="dpa", device="cuda")
+    runtime_gpu = next(check for check in checks if check["name"] == "Runtime GPU 0")
+
+    assert runtime_gpu["status"] == "fail"
+    assert "2.10.0+cu126" in runtime_gpu["detail"]
+    assert "torch==2.10.0+cu126" in runtime_gpu["detail"]
+    assert "2.8.0" not in runtime_gpu["detail"]
+    assert "does NOT match" in runtime_gpu["detail"]
+    assert failures == 1
+
+
 def test_doctor_falls_back_to_nvidia_smi_when_container_reports_zero_vram(
     monkeypatch,
 ):

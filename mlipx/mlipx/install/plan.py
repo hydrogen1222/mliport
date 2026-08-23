@@ -201,7 +201,11 @@ def _torch_steps(
     else:
         assert cuda_tag is not None
         source_args = build_torch_source_args(profile, cuda_tag)
-        torch_argv = _uv_pip(profile, python, f"torch=={torch_ver}")
+        # Pin the PEP 440 local version as well as the public version. Without
+        # ``+cu126``/``+cu128``, a flat mirror or custom source can select a
+        # different CUDA build with the same public version (for example,
+        # torch 2.10.0+cu128 on a Pascal GPU that requires cu126).
+        torch_argv = _uv_pip(profile, python, f"torch=={torch_ver}+{cuda_tag}")
         torch_argv += source_args
         steps.append(
             InstallStep(

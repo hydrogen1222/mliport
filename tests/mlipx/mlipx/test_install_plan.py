@@ -87,14 +87,34 @@ def test_v100_plan_all_engines() -> None:
     assert "tensorflow[and-cuda]==2.20.0" in argv
 
 
+def test_p40_dpa_plan_pins_exact_legacy_torch_build() -> None:
+    """P40 must never resolve the same-version cu128 wheel from another index."""
+
+    plan = generate_plan(
+        [_gpu("Tesla P40", 6, 1)],
+        ["dpa"],
+        source="china",
+        verify=False,
+    )
+    torch_step = next(
+        step
+        for step in plan.steps
+        if any(arg.startswith("torch==") for arg in step.argv)
+    )
+    assert "torch==2.10.0+cu126" in torch_step.argv
+    assert "--find-links" in torch_step.argv
+    assert "cu126" in " ".join(torch_step.argv)
+    assert "torch==2.10.0" not in torch_step.argv
+
+
 def test_4090_plan_modern() -> None:
     """Ada (sm_89) → torch engines use cu128 (modern)."""
     plan = generate_plan([_gpu("RTX 4090", 8, 9)], ["uma", "mace", "dpa"], verify=False)
     argv = _all_argv(plan)
     assert "cu128" in argv
     assert "cu126" not in argv
-    # Status is needs_smoke_test, so a warning is emitted.
-    assert any("needs smoke test" in w for w in plan.warnings)
+    assert "torch==2.10.0+cu128" in argv
+    assert not any("DPA" in w and "needs smoke test" in w for w in plan.warnings)
 
 
 def test_mixed_gpu_uses_oldest() -> None:

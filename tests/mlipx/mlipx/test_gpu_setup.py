@@ -97,6 +97,13 @@ def test_recommend_torch_pascal_uses_cu126() -> None:
     assert "cu126" in rec.version
 
 
+def test_recommend_torch_pascal_dpa_preserves_deepmd_abi_pin() -> None:
+    rec = recommend_torch(6, 1, engine="dpa")
+    assert rec.supported is True
+    assert rec.version == "2.10.0+cu126"
+    assert "torch==2.10.0+cu126" in "\n".join(rec.install_commands)
+
+
 def test_recommend_torch_blackwell_uses_modern() -> None:
     """Blackwell (sm_100) → torch 2.8.0+cu128 via modern channel."""
     rec = recommend_torch(10, 0)
@@ -128,7 +135,7 @@ def test_engine_install_commands_pascal_dpa_uses_cu126() -> None:
     """Pascal DPA → torch 2.10.0+cu126."""
     cmds = engine_install_commands([_gpu(6, 1)], "dpa")
     joined = "\n".join(cmds)
-    assert "torch==2.10.0" in joined
+    assert "torch==2.10.0+cu126" in joined
     assert "cu126" in joined
 
 
