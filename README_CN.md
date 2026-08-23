@@ -42,7 +42,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```bash
 ./scripts/install_mlipx.sh --device cpu        # 纯 CPU 机器
 ./scripts/install_mlipx.sh --engines uma,mace  # 只装 UMA + MACE
-./scripts/install_mlipx.sh --source china      # 使用国内镜像
+./scripts/install_mlipx.sh --source china      # 交互选择国内镜像（编号 1–5）
+./scripts/install_mlipx.sh --source china-ustc --non-interactive  # 固定源/脚本用法
 ./scripts/install_mlipx.sh --clean             # 全部重建
 ./scripts/install_mlipx.sh --dry-run           # 预览不安装
 ```
@@ -129,13 +130,24 @@ uv pip install --no-config --python .venv-grace/bin/python \
 
 ### 下载源
 
-PyPI 包和 PyTorch CUDA wheel 分开处理。安装器**不会修改**你的全局 `~/.config/uv/uv.toml`，而是使用 `UV_NO_CONFIG=1` 和进程级环境变量。
+PyPI 包和 PyTorch wheel 分开处理。安装器**不会修改**你的全局
+`~/.config/uv/uv.toml`，而是使用 `UV_NO_CONFIG=1` 和进程级环境变量。
+在真实终端中使用 `--source china` 会显示编号菜单：清华 TUNA、阿里云、
+中科大 USTC、腾讯云或官方源。国内选项的 PyTorch wheel 均使用阿里云镜像；
+直接回车默认选择清华 TUNA。在 CI、管道等非终端环境中不会弹出提示，默认仍为
+清华 TUNA；也可显式加 `--non-interactive`。
+`offline` 模式还要求本机已有 `uv` 可找到的目标 Python；安装器不会为了创建
+环境而偷偷下载解释器。
 
-| `--source` | PyPI | PyTorch CUDA wheel | 适用场景 |
+| `--source` | PyPI | PyTorch wheel | 适用场景 |
 |---|---|---|---|
 | `auto` → `official` | pypi.org | download.pytorch.org | 默认 |
-| `china` | tuna.tsinghua.edu.cn | mirrors.aliyun.com（`--find-links`） | 中国大陆 |
-| `offline` | 仅本地缓存 | 仅本地缓存 | 离线机器 |
+| `official` | pypi.org | download.pytorch.org | 显式使用官方源 |
+| `china` | 交互选择；默认清华 TUNA | mirrors.aliyun.com（`--find-links`） | 中国大陆交互安装 |
+| `china-aliyun` | mirrors.aliyun.com | mirrors.aliyun.com | 固定使用阿里云 |
+| `china-ustc` | mirrors.ustc.edu.cn | mirrors.aliyun.com | 固定使用中科大 |
+| `china-tencent` | mirrors.cloud.tencent.com | mirrors.aliyun.com | 固定使用腾讯云 |
+| `offline` | 仅本地缓存 | 仅本地缓存 | 已有目标 Python 的离线机器 |
 | `custom` | 你的环境变量 | 你的环境变量 | 高级用户 |
 
 ---

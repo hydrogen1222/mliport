@@ -69,7 +69,7 @@ def test_uma_explicit_install_cpu() -> None:
     plan = generate_plan(None, ["uma"], device="cpu", verify=False)
     argv = _all_argv(plan)
     assert "uv sync" not in argv
-    assert "torch==2.8.0" in argv
+    assert "torch==2.8.0+cpu" in argv
     assert "https://download.pytorch.org/whl/cpu" in argv
     assert "fairchem-core==2.21.0" in argv
 
@@ -170,6 +170,16 @@ def test_invalid_python_raises(bad: str) -> None:
         generate_plan(None, ["uma"], python_version=bad, device="cpu")
 
 
+def test_invalid_device_fails_closed() -> None:
+    with pytest.raises(InstallPlanError, match="Unknown device"):
+        generate_plan(None, ["uma"], device="gpu")
+
+
+def test_invalid_source_uses_public_plan_error() -> None:
+    with pytest.raises(InstallPlanError, match="Unknown source profile"):
+        generate_plan(None, ["uma"], source="nope", device="cpu")
+
+
 # ---------------------------------------------------------------------------
 # clean / verify
 # ---------------------------------------------------------------------------
@@ -211,6 +221,22 @@ def test_offline_plan_has_no_urls() -> None:
         assert "--offline" in step.argv
 
 
+def test_offline_cpu_plan_has_no_urls() -> None:
+    plan = generate_plan(
+        None,
+        ["uma", "mace", "dpa", "grace"],
+        source="offline",
+        device="cpu",
+        verify=False,
+    )
+    for step in plan.steps:
+        joined = " ".join(step.argv)
+        assert "http://" not in joined
+        assert "https://" not in joined
+    for step in _pip_cmds(plan):
+        assert "--offline" in step.argv
+
+
 def test_custom_source_no_overrides() -> None:
     plan = generate_plan(
         [_gpu("V100", 7, 0)], ["uma", "mace"], source="custom", verify=False
@@ -219,6 +245,14 @@ def test_custom_source_no_overrides() -> None:
         joined = " ".join(step.argv)
         assert "--index-url" not in joined
         assert "--find-links" not in joined
+
+
+def test_custom_cpu_source_no_overrides() -> None:
+    plan = generate_plan(None, ["dpa"], source="custom", device="cpu", verify=False)
+    argv = _all_argv(plan)
+    assert "torch==2.10.0+cpu" in argv
+    assert "--index-url" not in argv
+    assert "--find-links" not in argv
 
 
 # ---------------------------------------------------------------------------
@@ -238,13 +272,29 @@ def test_china_source_all_packages_use_mirror() -> None:
         # A standalone torch install step has a bare "torch==X" token.
         is_torch = any(a.startswith("torch==") for a in step.argv)
         if is_torch:
-            # standalone torch install step → Aliyun mirror
+            # torch wheel → Aliyun; transitive packages → selected PyPI mirror
             assert "aliyun" in joined
+            assert "tuna.tsinghua" in joined
         elif step.stage == "pip":
             # non-torch pip steps (mace-torch, deepmd-kit, tf, fairchem)
             # must use the tuna PyPI mirror
             assert "tuna.tsinghua" in joined
             assert "pypi.org" not in joined
+
+
+def test_china_cpu_source_uses_selected_mirrors() -> None:
+    plan = generate_plan(
+        None,
+        ["dpa"],
+        source="china-ustc",
+        device="cpu",
+        verify=False,
+    )
+    torch_step, backend_step = _pip_cmds(plan)
+    assert "torch==2.10.0+cpu" in torch_step.argv
+    assert "mirrors.aliyun.com/pytorch-wheels/cpu" in " ".join(torch_step.argv)
+    assert "mirrors.ustc.edu.cn/pypi/simple" in " ".join(torch_step.argv)
+    assert "mirrors.ustc.edu.cn/pypi/simple" in " ".join(backend_step.argv)
 
 
 # ---------------------------------------------------------------------------

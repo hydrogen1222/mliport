@@ -20,6 +20,7 @@ import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from mlipx.install.hardware import detect_gpus
@@ -28,7 +29,11 @@ from mlipx.install.plan import (
     generate_plan,
     render_plan_shell,
 )
-from mlipx.install.sources import resolve_source
+from mlipx.install.sources import (
+    CHINA_SOURCE_CHOICES,
+    SOURCE_PROFILES,
+    resolve_source,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -50,8 +55,19 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--source",
         default="auto",
-        choices=["auto", "official", "china", "offline", "custom"],
-        help="Package source profile (default: auto -> official).",
+        choices=list(SOURCE_PROFILES),
+        help=(
+            "Package source profile. In a terminal, 'china' opens a numbered "
+            "mirror menu (default: auto -> official)."
+        ),
+    )
+    p.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=(
+            "Never prompt for source selection; 'china' uses TUNA PyPI + "
+            "Aliyun PyTorch. Non-terminal input is always non-interactive."
+        ),
     )
     p.add_argument(
         "--python",
@@ -74,6 +90,63 @@ def _parser() -> argparse.ArgumentParser:
         help="Print the plan without executing anything.",
     )
     return p
+
+
+def _can_prompt_for_source() -> bool:
+    """Return whether stdin is an interactive terminal.
+
+    Checking only stdin is intentional: users may redirect the dry-run output
+    to a file while still selecting a source from their terminal. Pipelines,
+    CI jobs, and closed stdin must never block waiting for an answer.
+    """
+    try:
+        return bool(sys.stdin.isatty())
+    except (AttributeError, OSError):
+        return False
+
+
+def _prompt_china_source(
+    input_fn: Callable[[str], str] | None = None,
+) -> str:
+    """Prompt for one of the numbered China mirror profiles.
+
+    An empty response selects the historical TUNA + Aliyun combination.
+    EOF and Ctrl-C abort instead of silently choosing a different source.
+    """
+    if input_fn is None:
+        input_fn = input
+
+    print("[mlipx] Select download source / 请选择下载源:", file=sys.stderr)
+    for index, name in enumerate(CHINA_SOURCE_CHOICES, start=1):
+        profile = resolve_source(name)
+        default = " [default / 默认]" if index == 1 else ""
+        print(f"  {index}) {profile.label}{default}", file=sys.stderr)
+    print(
+        "[mlipx] Choices 1-4 use Aliyun for PyTorch wheels and select the "
+        "PyPI mirror; choice 5 uses the official PyTorch index.",
+        file=sys.stderr,
+    )
+
+    while True:
+        try:
+            print(
+                "[mlipx] Choice / 选择 [1-5] (default 1): ",
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
+            answer = input_fn("").strip()
+        except (EOFError, KeyboardInterrupt) as exc:
+            raise InstallPlanError("Source selection cancelled.") from exc
+        if answer == "":
+            return CHINA_SOURCE_CHOICES[0]
+        try:
+            index = int(answer)
+        except ValueError:
+            index = 0
+        if 1 <= index <= len(CHINA_SOURCE_CHOICES):
+            return CHINA_SOURCE_CHOICES[index - 1]
+        print(f"[mlipx] Invalid choice {answer!r}; enter 1-5.", file=sys.stderr)
 
 
 def _existing_venv_python_mismatch(venv: str, requested: str) -> bool:
@@ -114,11 +187,20 @@ def main(argv: list[str] | None = None) -> int:
         print("[mlipx] No NVIDIA GPU detected (nvidia-smi unavailable).")
 
     try:
-        src = resolve_source(args.source)
+        source_name = args.source
+        if (
+            source_name == "china"
+            and not args.non_interactive
+            and _can_prompt_for_source()
+        ):
+            source_name = _prompt_china_source()
+            print(f"[mlipx] Selected source: {resolve_source(source_name).label}")
+
+        src = resolve_source(source_name)
         plan = generate_plan(
             gpus=gpus,
             engines=args.engines.split(","),
-            source=args.source,
+            source=source_name,
             python_version=args.python,
             device=args.device,
             clean=args.clean,

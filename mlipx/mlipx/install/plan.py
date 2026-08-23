@@ -189,12 +189,15 @@ def _torch_steps(
     python = f"{backend.venv_name}/bin/python"
 
     if cpu:
-        torch_argv = _uv_pip(profile, python, f"torch=={torch_ver}")
-        torch_argv += ["--index-url", "https://download.pytorch.org/whl/cpu"]
+        # CPU wheels also carry a PEP 440 local tag. Route them through the
+        # selected source profile so china/custom/offline keep their promised
+        # source semantics instead of silently contacting pytorch.org.
+        torch_argv = _uv_pip(profile, python, f"torch=={torch_ver}+cpu")
+        torch_argv += build_torch_source_args(profile, "cpu")
         steps.append(
             InstallStep(
                 stage="pip",
-                description=f"Install torch {torch_ver} (CPU) for {backend.label}",
+                description=f"Install torch {torch_ver}+cpu for {backend.label}",
                 argv=torch_argv,
             )
         )
@@ -287,8 +290,9 @@ def generate_plan(
         gpus: Detected GPUs (``None`` or empty = CPU-only).
         engines: Backend engines to install (``"uma"``, ``"mace"``,
             ``"dpa"``, ``"grace"``).
-        source: Source profile name (``"auto"``, ``"official"``,
-            ``"china"``, ``"offline"``, ``"custom"``).
+        source: Source profile name (``"auto"``, ``"official"``, one of the
+            ``"china"`` / explicit ``"china-*"`` profiles, ``"offline"``,
+            or ``"custom"``).
         python_version: Python version for the isolated venvs (3.10–3.12).
         device: ``"auto"``, ``"cuda"``, or ``"cpu"``.
         clean: If ``True``, remove each target venv before recreating it.
@@ -303,7 +307,14 @@ def generate_plan(
             supported GPU, unknown source).
     """
     py_ver = validate_python_version(python_version)
-    src = resolve_source(source)
+    if device not in {"auto", "cuda", "cpu"}:
+        raise InstallPlanError(
+            f"Unknown device '{device}'. Choose from: auto, cuda, cpu"
+        )
+    try:
+        src = resolve_source(source)
+    except ValueError as exc:
+        raise InstallPlanError(str(exc)) from exc
     engine_list = normalize_engines(engines)
 
     # ---- Resolve device / architecture (fail closed for cuda) ----

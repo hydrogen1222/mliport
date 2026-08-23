@@ -42,7 +42,8 @@ Common variants:
 ```bash
 ./scripts/install_mlipx.sh --device cpu        # CPU-only machine
 ./scripts/install_mlipx.sh --engines uma,mace  # only UMA + MACE
-./scripts/install_mlipx.sh --source china      # use China mirrors
+./scripts/install_mlipx.sh --source china      # numbered China-mirror menu
+./scripts/install_mlipx.sh --source china-ustc --non-interactive  # fixed source
 ./scripts/install_mlipx.sh --clean             # rebuild every venv
 ./scripts/install_mlipx.sh --dry-run           # preview without installing
 ```
@@ -131,13 +132,25 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 
 ### Download sources
 
-PyPI packages and PyTorch CUDA wheels are handled separately. The installer never modifies your global `~/.config/uv/uv.toml`; it uses `UV_NO_CONFIG=1` and per-process variables.
+PyPI packages and PyTorch wheels are handled separately. The installer never
+modifies your global `~/.config/uv/uv.toml`; it uses `UV_NO_CONFIG=1` and
+per-process variables. In a real terminal, `--source china` presents a numbered
+choice of TUNA, Aliyun, USTC, Tencent Cloud, or the official source. China
+profiles all use the Aliyun PyTorch-wheel mirror, and Enter defaults to TUNA.
+CI and piped input never prompt and retain TUNA as the deterministic default;
+`--non-interactive` makes that behavior explicit.
+Offline mode also requires the requested Python to be already discoverable by
+`uv`; the bootstrap will not silently download an interpreter.
 
-| `--source` | PyPI | PyTorch CUDA wheels | Use when |
+| `--source` | PyPI | PyTorch wheels | Use when |
 |---|---|---|---|
 | `auto` → `official` | pypi.org | download.pytorch.org | Default |
-| `china` | tuna.tsinghua.edu.cn | mirrors.aliyun.com (`--find-links`) | Mainland China |
-| `offline` | cached only | cached only | Air-gapped machines |
+| `official` | pypi.org | download.pytorch.org | Explicit official source |
+| `china` | Interactive; TUNA by default | mirrors.aliyun.com (`--find-links`) | Interactive use in China |
+| `china-aliyun` | mirrors.aliyun.com | mirrors.aliyun.com | Fixed Aliyun source |
+| `china-ustc` | mirrors.ustc.edu.cn | mirrors.aliyun.com | Fixed USTC source |
+| `china-tencent` | mirrors.cloud.tencent.com | mirrors.aliyun.com | Fixed Tencent source |
+| `offline` | cached only | cached only | Air-gapped machine with Python present |
 | `custom` | your env vars | your env vars | Advanced |
 
 ---
