@@ -19,7 +19,9 @@ from mlipx.runners.md import MDRunner
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", required=True, choices=["uma", "mace", "dpa", "grace"])
+    parser.add_argument(
+        "--backend", required=True, choices=["uma", "mace", "dpa", "grace"]
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--task", default=None)
     parser.add_argument("--device", default="cpu")
