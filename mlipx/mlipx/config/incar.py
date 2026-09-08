@@ -274,6 +274,7 @@ class IncarConfig(dict):
             "NHC_TDAMP": "Molecular Dynamics",
             "NHC_TCHAIN": "Molecular Dynamics",
             "NHC_TLOOP": "Molecular Dynamics",
+            "COM_POLICY": "Molecular Dynamics",
         }
 
         current_category = None

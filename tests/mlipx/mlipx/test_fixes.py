@@ -268,8 +268,8 @@ def test_temperature_dof_accounts_for_fixatoms():
     assert temp == pytest.approx(atoms.get_temperature())
 
 
-def test_temperature_fallback_for_fixsymmetry():
-    """A3: FixSymmetry raises NotImplementedError; fall back to 3N-3, no crash."""
+def test_temperature_fails_closed_for_constraint_without_dof_contract():
+    """FixSymmetry cannot report DOF, so MD must not invent an approximation."""
     from ase.constraints import FixSymmetry
     from ase.md.velocitydistribution import (
         MaxwellBoltzmannDistribution,
@@ -285,18 +285,13 @@ def test_temperature_fallback_for_fixsymmetry():
     MaxwellBoltzmannDistribution(atoms, temperature_K=300, force_temp=True)
     Stationary(atoms, preserve_temperature=True)
     atoms.set_constraint(FixSymmetry(atoms))
-    ke = atoms.get_kinetic_energy()
-
     runner = MDRunner(
         _CalcStub(), ensemble="NVT", output_dir=Path("./_tmp_md_test"), pre_relax=False
     )
-    # ASE's get_temperature() itself crashes on FixSymmetry; the runner must
-    # fall back to 3N-3 instead of propagating the error.
     with pytest.raises(NotImplementedError):
         atoms.get_temperature()
-    temp = runner._calculate_temperature(atoms)
-    expected_dof = max(3 * len(atoms) - 3, 1)  # COM removed fallback
-    assert temp == pytest.approx(2 * ke / (expected_dof * units.kB))
+    with pytest.raises(ValueError, match="does not report removed degrees of freedom"):
+        runner._calculate_temperature(atoms)
 
 
 # ---------------------------------------------------------------------------

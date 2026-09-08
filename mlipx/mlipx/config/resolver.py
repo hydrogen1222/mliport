@@ -587,6 +587,55 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
             "currently implemented."
         )
 
+    if resolved.calc_type == "md":
+        options = resolved.run_options
+        ensemble = str(options.get("ensemble", "NVT")).lower()
+        thermostat = str(options.get("thermostat", "LANGEVIN")).lower()
+        com_policy = str(options.get("com_policy", "auto")).lower()
+        temperature = float(options.get("temperature", 300.0))
+        always_positive = {
+            "timestep": float(options.get("timestep", 1.0)),
+            "pre_relax_fmax": float(options.get("pre_relax_fmax", 0.1)),
+            "fmax_abort": float(
+                options.get(
+                    "fmax_abort",
+                    resolved.settings.get(
+                        "fmax_abort", BUILTIN_DEFAULTS["safety"]["fmax_abort"]
+                    ),
+                )
+            ),
+        }
+        for name, value in always_positive.items():
+            if value <= 0.0:
+                raise ValueError(f"{name} must be > 0 for MD")
+        if com_policy == "initialize_only" and (
+            ensemble == "nve" or thermostat in {"bussi", "nhc"}
+        ):
+            integrator = "NVE" if ensemble == "nve" else thermostat.upper()
+            raise ValueError(
+                f"{integrator} does not support com_policy='initialize_only'"
+            )
+        if ensemble == "nvt" and thermostat == "nhc" and com_policy != "none":
+            raise ValueError(
+                "NHC requires explicit com_policy='none'; constrained NHC and "
+                "automatic COM removal are unsupported"
+            )
+        if ensemble == "nvt" and thermostat in {"bussi", "nhc"} and temperature <= 0.0:
+            raise ValueError(
+                f"temperature must be > 0 K for NVT {thermostat.upper()} dynamics"
+            )
+        active_coupling = {
+            "langevin": ("friction", float(options.get("friction", 0.001))),
+            "bussi": ("bussi_tau", float(options.get("bussi_tau", 1000.0))),
+            "nhc": ("nhc_tdamp", float(options.get("nhc_tdamp", 100.0))),
+        }
+        if ensemble == "nvt":
+            coupling_name, coupling_value = active_coupling[thermostat]
+            if coupling_value <= 0.0:
+                raise ValueError(
+                    f"{coupling_name} must be > 0 for NVT {thermostat.upper()} dynamics"
+                )
+
     all_opts: dict[str, Any] = {}
     all_opts.update(resolved.calculator_options)
     all_opts.update(resolved.run_options)

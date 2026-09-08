@@ -108,7 +108,13 @@ class JsonWriter:
 
         # Write to file
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, cls=NumpyEncoder, indent=self.indent)
+            json.dump(
+                data,
+                f,
+                cls=NumpyEncoder,
+                indent=self.indent,
+                allow_nan=False,
+            )
 
     def _build_data(
         self,
@@ -163,6 +169,10 @@ class JsonWriter:
         output_results = {k: v for k, v in output_results.items() if v is not None}
 
         if mode == "md":
+            for key in ("forces_raw_eV_A", "forces_applied_eV_A"):
+                value = results.get(key)
+                if value is not None:
+                    output_results[key] = np.asarray(value, dtype=float).tolist()
             for key in ("configurational_stress", "total_stress"):
                 value = results.get(key)
                 if value is not None:
@@ -184,6 +194,19 @@ class JsonWriter:
                 "fmean": float(np.mean(force_mags)),
                 "frms": float(np.sqrt(np.mean(force_mags**2))),
             }
+        if mode == "md":
+            for field, label in (
+                ("forces_raw_eV_A", "force_statistics_raw"),
+                ("forces_applied_eV_A", "force_statistics_applied"),
+            ):
+                if results.get(field) is None:
+                    continue
+                magnitudes = np.linalg.norm(np.asarray(results[field]), axis=1)
+                output_results[label] = {
+                    "fmax": float(np.max(magnitudes)),
+                    "fmean": float(np.mean(magnitudes)),
+                    "frms": float(np.sqrt(np.mean(magnitudes**2))),
+                }
 
         # Pressure from stress
         if mode != "md" and results.get("stress") is not None:
@@ -219,6 +242,7 @@ class JsonWriter:
                 "fmax_threshold": results.get("fmax"),
             }
         elif mode == "md":
+            provenance = results.get("md_provenance") or {}
             md_data = {
                 "steps": results.get("md_steps"),
                 "timestep_fs": results.get("timestep_fs"),
@@ -229,6 +253,10 @@ class JsonWriter:
                 "thermostat": results.get("thermostat"),
                 "seed": results.get("seed"),
                 "velocity_policy": results.get("velocity_policy"),
+                "com_policy": provenance.get("com_policy"),
+                "com_policy_effective": provenance.get("com_policy_effective"),
+                "constraints": provenance.get("constraints"),
+                "degrees_of_freedom": provenance.get("degrees_of_freedom"),
                 "trajectory_path": results.get("trajectory_path"),
                 "thermodynamics_path": results.get("md_csv_path"),
                 "stress_pressure_contract": {
@@ -237,8 +265,8 @@ class JsonWriter:
                     "total_pressure_gpa": "-trace(total_stress)/3 for 3D PBC only",
                     "non_3d_pbc": "unavailable",
                 },
+                "force_contract": provenance.get("force_contract"),
             }
-            provenance = results.get("md_provenance") or {}
             for key in (
                 "friction_fs^-1",
                 "approx_velocity_damping_time_ps",
@@ -279,4 +307,10 @@ class JsonWriter:
             data["metadata"] = metadata
 
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, cls=NumpyEncoder, indent=self.indent)
+            json.dump(
+                data,
+                f,
+                cls=NumpyEncoder,
+                indent=self.indent,
+                allow_nan=False,
+            )

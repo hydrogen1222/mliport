@@ -36,6 +36,8 @@ MD_CSV_HEADER = [
     "total_energy_eV",
     "temperature_K",
     "volume_A3",
+    "max_force_raw_eV_A",
+    "max_force_applied_eV_A",
     "configurational_stress_xx_eV_A3",
     "configurational_stress_yy_eV_A3",
     "configurational_stress_zz_eV_A3",
@@ -69,6 +71,8 @@ def _csv_row(frame: dict[str, Any]) -> list[Any]:
         frame["total_energy"],
         frame["temperature"],
         frame["volume"],
+        frame["max_force_raw_eV_A"],
+        frame["max_force_applied_eV_A"],
         *_stress_values(frame["configurational_stress"]),
         *_stress_values(frame["total_stress"]),
         frame["configurational_pressure_gpa"]
@@ -328,6 +332,12 @@ class MDTrajectorySummary(Sequence[dict[str, Any]]):
             "total_energy": float(row["total_energy_eV"]),
             "temperature": float(row["temperature_K"]),
             "volume": float(row["volume_A3"]),
+            "max_force_raw_eV_A": cls._optional_float(
+                row.get("max_force_raw_eV_A", "")
+            ),
+            "max_force_applied_eV_A": cls._optional_float(
+                row.get("max_force_applied_eV_A", "")
+            ),
             "configurational_stress": cls._optional_stress(row, cls._CONFIG_STRESS),
             "total_stress": cls._optional_stress(row, cls._TOTAL_STRESS),
             "configurational_pressure_gpa": cls._optional_float(

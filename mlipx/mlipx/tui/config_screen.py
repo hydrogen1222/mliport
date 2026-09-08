@@ -462,6 +462,18 @@ class ConfigScreen(Screen):
                 id="velocity-policy-select",
             )
 
+            yield Label("Center-of-mass Policy:")
+            yield Select(
+                options=[
+                    ("Auto (fail closed when ambiguous)", "auto"),
+                    ("None", "none"),
+                    ("Initialization only (Langevin only)", "initialize_only"),
+                    ("Explicit FixCom constraint", "constraint"),
+                ],
+                value=self.app.get_config("com_policy", "auto"),
+                id="com-policy-select",
+            )
+
             yield Label("Force-safety Abort Threshold (eV/Å):")
             yield Input(
                 value=str(self.app.get_config("fmax_abort", 20.0)),
@@ -946,6 +958,17 @@ class ConfigScreen(Screen):
             thermostat = str(thermostat_select.value).upper()
             self.app.update_config("thermostat", thermostat)
 
+            if (
+                self.app.get_config("ensemble") == "NVT"
+                and thermostat in {"BUSSI", "NHC"}
+                and temp <= 0
+            ):
+                self.notify(
+                    f"{thermostat} requires a temperature greater than 0 K",
+                    severity="error",
+                )
+                return
+
             if self.app.get_config("ensemble") == "NVT" and thermostat == "LANGEVIN":
                 try:
                     friction = float(self.query_one("#friction-input", Input).value)
@@ -1039,9 +1062,9 @@ class ConfigScreen(Screen):
                     severity="error",
                 )
                 return
-            if not math.isfinite(pre_relax_fmax) or pre_relax_fmax < 0:
+            if not math.isfinite(pre_relax_fmax) or pre_relax_fmax <= 0:
                 self.notify(
-                    "Pre-relaxation force threshold must be a finite value >= 0",
+                    "Pre-relaxation force threshold must be a finite value > 0",
                     severity="error",
                 )
                 return
@@ -1069,6 +1092,26 @@ class ConfigScreen(Screen):
 
             velocity_select = self.query_one("#velocity-policy-select", Select)
             self.app.update_config("velocity_policy", str(velocity_select.value))
+
+            com_select = self.query_one("#com-policy-select", Select)
+            com_policy = str(com_select.value)
+            ensemble = str(self.app.get_config("ensemble", "NVT")).upper()
+            if thermostat == "NHC" and ensemble == "NVT" and com_policy != "none":
+                self.notify(
+                    "NHC requires COM policy 'none' and an unconstrained structure",
+                    severity="error",
+                )
+                return
+            if com_policy == "initialize_only" and (
+                ensemble == "NVE" or thermostat in {"BUSSI", "NHC"}
+            ):
+                self.notify(
+                    "Initialization-only COM removal is supported only by "
+                    "NVT Langevin",
+                    severity="error",
+                )
+                return
+            self.app.update_config("com_policy", com_policy)
 
             try:
                 fmax_abort = float(self.query_one("#fmax-abort-input", Input).value)

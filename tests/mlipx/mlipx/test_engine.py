@@ -210,6 +210,7 @@ class TestCalculationEngineSetup:
                 "nhc_tdamp": 120.0,
                 "nhc_tchain": 4,
                 "nhc_tloop": 2,
+                "com_policy": "none",
                 "pre_relax": False,
             },
         )
@@ -221,6 +222,7 @@ class TestCalculationEngineSetup:
         assert runner.nhc_tdamp > 0
         assert runner.nhc_tchain == 4
         assert runner.nhc_tloop == 2
+        assert runner.com_policy == "none"
 
     @pytest.mark.parametrize("model_type", ["uma", "mace", "dpa", "grace"])
     def test_legacy_md_defaults_remain_nvt_langevin_for_every_backend(self, model_type):
@@ -333,6 +335,7 @@ def test_python_api_forwards_all_thermostat_options(monkeypatch):
         nhc_tdamp=120.0,
         nhc_tchain=4,
         nhc_tloop=2,
+        com_policy="none",
         verbose=False,
     )
 
@@ -346,6 +349,7 @@ def test_python_api_forwards_all_thermostat_options(monkeypatch):
             "nhc_tdamp": 120.0,
             "nhc_tchain": 4,
             "nhc_tloop": 2,
+            "com_policy": "none",
         }.items()
     )
 

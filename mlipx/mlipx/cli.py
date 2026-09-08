@@ -517,6 +517,12 @@ Examples:
         help="Velocity initialization policy (default: auto).",
     )
     md_parser.add_argument(
+        "--com-policy",
+        choices=["auto", "none", "initialize_only", "constraint"],
+        default=None,
+        help="Center-of-mass policy (default: auto; NHC requires explicit none).",
+    )
+    md_parser.add_argument(
         "--fmax-abort",
         type=float,
         default=None,
@@ -1211,6 +1217,7 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             "pre_relax_fmax",
             "seed",
             "velocity_policy",
+            "com_policy",
             "fmax_abort",
         ):
             value = getattr(args, key, None)

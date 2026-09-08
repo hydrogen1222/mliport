@@ -217,6 +217,7 @@ class MlipxApp(App):
             "pre_relax_fmax": 0.1,
             "seed": None,
             "velocity_policy": "auto",
+            "com_policy": "auto",
             "fmax_abort": 20.0,
             # Batch options
             "pattern": "*.cif",

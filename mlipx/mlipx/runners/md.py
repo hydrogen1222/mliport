@@ -17,16 +17,18 @@ Outputs trajectories in multiple formats.
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from importlib.metadata import PackageNotFoundError, version
+from numbers import Integral, Real
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 from ase import units
 from ase.calculators.singlepoint import SinglePointCalculator
-from ase.constraints import FixCom
+from ase.constraints import FixAtoms, FixCartesian, FixCom
 from ase.md.bussi import Bussi
 from ase.md.langevin import Langevin
 from ase.md.nose_hoover_chain import NoseHooverChainNVT
@@ -67,9 +69,32 @@ class ForceSafetyAbort(RuntimeError):
         self.threshold = threshold
         super().__init__(
             f"Force safety abort at MD step {step}: atom {atom_index} has "
-            f"|F|={max_force:.6g} eV/Angstrom, exceeding "
+            f"raw model force |F|={max_force:.6g} eV/Angstrom, exceeding "
             f"fmax_abort={threshold:.6g} eV/Angstrom"
         )
+
+
+def _finite_float(value: object, *, name: str) -> float:
+    """Return a finite real scalar without accepting booleans."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        raise TypeError(f"{name} must be a finite real number, got {value!r}")
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise ValueError(f"{name} must be finite, got {value!r}")
+    return numeric
+
+
+def _strict_integer(value: object, *, name: str) -> int:
+    """Return an integer while rejecting bool and fractional real values."""
+    if isinstance(value, (bool, np.bool_)):
+        raise TypeError(f"{name} must be an integer, got {value!r}")
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
+        numeric = float(value)
+        if math.isfinite(numeric) and numeric.is_integer():
+            return int(numeric)
+    raise TypeError(f"{name} must be an integer, got {value!r}")
 
 
 class MDRunner(BaseRunner):
@@ -94,6 +119,23 @@ class MDRunner(BaseRunner):
 
     VALID_ENSEMBLES = {"nvt", "nve"}
     VALID_THERMOSTATS = {"langevin", "bussi", "nhc"}
+    VALID_COM_POLICIES = {"none", "initialize_only", "constraint", "auto"}
+    # This matrix is deliberately conservative. These combinations are backed
+    # by ASE's public constraint-aware paths and local known-answer tests. An
+    # unknown or compound constraint must be validated independently before it
+    # can be added here.
+    CONSTRAINT_CAPABILITIES = {
+        "nve": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
+        "langevin": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
+        "bussi": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
+        "nhc": frozenset(),
+    }
+    COM_POLICY_CAPABILITIES = {
+        "nve": frozenset({"none", "constraint"}),
+        "langevin": frozenset({"none", "initialize_only", "constraint"}),
+        "bussi": frozenset({"none", "constraint"}),
+        "nhc": frozenset({"none"}),
+    }
     # Every MD step is retained in run.log independently of trajectory saving.
     # LiveRunLogger coalesces the actual filesystem flushes and suppresses these
     # high-frequency records from UI callbacks.
@@ -131,6 +173,7 @@ class MDRunner(BaseRunner):
         # Reproducibility / velocity policy (plan section 5.2 / 5.3).
         seed: int | None = None,
         velocity_policy: str = "auto",
+        com_policy: str = "auto",
         pre_relax_mode: str = "none",
         # Explosion-guard threshold for finite (but unsafe) forces.
         fmax_abort: float = BUILTIN_DEFAULTS["safety"]["fmax_abort"],
@@ -168,9 +211,106 @@ class MDRunner(BaseRunner):
             pre_relax: Whether to perform pre-relaxation before MD
             pre_relax_steps: Maximum steps for pre-relaxation
             pre_relax_fmax: Force threshold for pre-relaxation
+            seed: Optional random seed used for velocity initialization
+            velocity_policy: Existing-velocity handling policy
+            com_policy: Center-of-mass handling policy
+            pre_relax_mode: Explicit pre-relaxation mode selector
+            fmax_abort: Raw model-force abort threshold in eV/Angstrom
             log_fn: Optional callback function for custom log output
             progress_callback: Optional callback for progress events
         """
+        # Validate every physical scalar before BaseRunner creates the output
+        # directory. Direct Python callers receive the same fail-closed
+        # behaviour as schema-mediated CLI/INCAR/queue calls.
+        ensemble_value = str(ensemble).lower()
+        thermostat_value = str(thermostat).lower()
+        velocity_policy_value = str(velocity_policy).lower()
+        com_policy_value = str(com_policy).lower()
+        pre_relax_mode_value = str(pre_relax_mode).lower()
+
+        if ensemble_value not in self.VALID_ENSEMBLES:
+            raise ValueError(
+                f"Unknown ensemble: {ensemble}. "
+                f"Use one of: {', '.join(sorted(self.VALID_ENSEMBLES))}"
+            )
+        if velocity_policy_value not in {"auto", "initialize", "preserve"}:
+            raise ValueError(
+                f"Unknown velocity_policy {velocity_policy!r}. "
+                "Use one of: auto, initialize, preserve."
+            )
+        if com_policy_value not in self.VALID_COM_POLICIES:
+            raise ValueError(
+                f"Unknown com_policy {com_policy!r}. Use one of: "
+                "auto, none, initialize_only, constraint."
+            )
+
+        temperature_value = _finite_float(temperature, name="temperature")
+        timestep_fs = _finite_float(timestep, name="timestep")
+        friction_fs = _finite_float(friction, name="friction")
+        bussi_tau_fs = _finite_float(bussi_tau, name="bussi_tau")
+        nhc_tdamp_fs = _finite_float(nhc_tdamp, name="nhc_tdamp")
+        pre_relax_fmax_value = _finite_float(pre_relax_fmax, name="pre_relax_fmax")
+        fmax_abort_value = _finite_float(fmax_abort, name="fmax_abort")
+        steps_value = _strict_integer(steps, name="steps")
+        equilibration_steps_value = _strict_integer(
+            equilibration_steps, name="equilibration_steps"
+        )
+        nhc_tchain_value = _strict_integer(nhc_tchain, name="nhc_tchain")
+        nhc_tloop_value = _strict_integer(nhc_tloop, name="nhc_tloop")
+        save_interval_value = _strict_integer(save_interval, name="save_interval")
+        pre_relax_steps_value = _strict_integer(pre_relax_steps, name="pre_relax_steps")
+        seed_value = None if seed is None else _strict_integer(seed, name="seed")
+
+        if temperature_value < 0:
+            raise ValueError("temperature must be >= 0 K")
+        if timestep_fs <= 0:
+            raise ValueError("timestep must be > 0 fs")
+        if steps_value < 0:
+            raise ValueError("steps must be >= 0")
+        if equilibration_steps_value < 0:
+            raise ValueError("equilibration_steps must be >= 0")
+        if save_interval_value <= 0:
+            raise ValueError("save_interval must be > 0")
+        if pre_relax_steps_value < 0:
+            raise ValueError("pre_relax_steps must be >= 0")
+        if pre_relax_fmax_value <= 0:
+            raise ValueError("pre_relax_fmax must be > 0 eV/Angstrom")
+        if fmax_abort_value <= 0:
+            raise ValueError("fmax_abort must be > 0 eV/Angstrom")
+        if seed_value is not None and seed_value < 0:
+            raise ValueError("seed must be >= 0")
+
+        if ensemble_value == "nvt":
+            if thermostat_value not in self.VALID_THERMOSTATS:
+                raise ValueError(
+                    f"Unknown thermostat: {thermostat}. Use one of: "
+                    f"{', '.join(sorted(self.VALID_THERMOSTATS))}"
+                )
+            if thermostat_value == "langevin" and friction_fs <= 0:
+                raise ValueError("friction must be > 0 fs^-1 for NVT Langevin dynamics")
+            if thermostat_value == "bussi":
+                if bussi_tau_fs <= 0:
+                    raise ValueError("bussi_tau must be > 0 fs for NVT Bussi dynamics")
+                if temperature_value <= 0:
+                    raise ValueError("temperature must be > 0 K for NVT Bussi dynamics")
+            if thermostat_value == "nhc":
+                if nhc_tdamp_fs <= 0:
+                    raise ValueError("nhc_tdamp must be > 0 fs for NVT NHC dynamics")
+                if nhc_tchain_value < 1:
+                    raise ValueError("nhc_tchain must be >= 1 for NVT NHC dynamics")
+                if nhc_tloop_value < 1:
+                    raise ValueError("nhc_tloop must be >= 1 for NVT NHC dynamics")
+                if temperature_value <= 0:
+                    raise ValueError("temperature must be > 0 K for NVT NHC dynamics")
+
+        # pre_relax_mode is future vocabulary and must not be silently ignored.
+        if pre_relax_mode_value != "none":
+            raise NotImplementedError(
+                f"pre_relax_mode={pre_relax_mode_value!r} is not yet implemented "
+                "(Phase 3). Use the legacy pre_relax=True/False (positions-only) "
+                "for now."
+            )
+
         super().__init__(
             calculator,
             output_dir,
@@ -182,19 +322,19 @@ class MDRunner(BaseRunner):
             charge=charge,
             spin=spin,
         )
-        self.ensemble = ensemble.lower()
-        self.temperature = temperature
-        self.timestep = timestep * units.fs  # Convert to ASE units
-        self.steps = int(steps)
-        self.equilibration_steps = int(equilibration_steps)
+        self.ensemble = ensemble_value
+        self.temperature = temperature_value
+        self.timestep = timestep_fs * units.fs  # Convert to ASE units
+        self.steps = steps_value
+        self.equilibration_steps = equilibration_steps_value
         self.total_steps = self.equilibration_steps + self.steps
-        self.thermostat = str(thermostat).lower()
-        self.friction = friction / units.fs  # Convert to ASE units
-        self.bussi_tau = bussi_tau * units.fs
-        self.nhc_tdamp = nhc_tdamp * units.fs
-        self.nhc_tchain = int(nhc_tchain)
-        self.nhc_tloop = int(nhc_tloop)
-        self.save_interval = save_interval
+        self.thermostat = thermostat_value
+        self.friction = friction_fs / units.fs  # Convert to ASE units
+        self.bussi_tau = bussi_tau_fs * units.fs
+        self.nhc_tdamp = nhc_tdamp_fs * units.fs
+        self.nhc_tchain = nhc_tchain_value
+        self.nhc_tloop = nhc_tloop_value
+        self.save_interval = save_interval_value
         self.write_outcar = write_outcar
         self.write_forces = write_forces
         self.write_stress = write_stress
@@ -206,71 +346,25 @@ class MDRunner(BaseRunner):
         # and ``vasp`` is a syntax-compatible interoperability view.
         self.raw_dir = self.output_dir / "raw"
         self.vasp_dir = self.output_dir / "vasp"
-        for directory in (self.raw_dir, self.vasp_dir):
-            directory.mkdir(parents=True, exist_ok=True)
 
         # NEW: Pre-relaxation settings
         self.pre_relax = pre_relax
-        self.pre_relax_steps = pre_relax_steps
-        self.pre_relax_fmax = pre_relax_fmax
+        self.pre_relax_steps = pre_relax_steps_value
+        self.pre_relax_fmax = pre_relax_fmax_value
 
         # Reproducibility / velocity policy (plan section 5.2 / 5.3).
-        self.seed = seed
+        self.seed = seed_value
         # One generator drives *both* the initial Maxwell-Boltzmann draw and
         # every stochastic Langevin kick.  Seeding only the initial velocities
         # does not make an NVT trajectory reproducible.
-        self.rng = np.random.default_rng(seed)
-        self.velocity_policy = str(velocity_policy).lower()
-        self.pre_relax_mode = str(pre_relax_mode).lower()
-        self.fmax_abort = float(fmax_abort)
-
-        if self.velocity_policy not in {"auto", "initialize", "preserve"}:
-            raise ValueError(
-                f"Unknown velocity_policy {velocity_policy!r}. "
-                "Use one of: auto, initialize, preserve."
-            )
-        if self.temperature < 0:
-            raise ValueError("temperature must be >= 0 K")
-        if self.timestep <= 0:
-            raise ValueError("timestep must be > 0 fs")
-        if self.steps < 0:
-            raise ValueError("steps must be >= 0")
-        if self.equilibration_steps < 0:
-            raise ValueError("equilibration_steps must be >= 0")
-        if self.save_interval <= 0:
-            raise ValueError("save_interval must be > 0")
-        if self.fmax_abort <= 0:
-            raise ValueError("fmax_abort must be > 0 eV/Angstrom")
-        if self.ensemble == "nvt":
-            if self.thermostat not in self.VALID_THERMOSTATS:
-                raise ValueError(
-                    f"Unknown thermostat: {thermostat}. Use one of: "
-                    f"{', '.join(sorted(self.VALID_THERMOSTATS))}"
-                )
-            if self.thermostat == "langevin" and self.friction <= 0:
-                raise ValueError("friction must be > 0 fs^-1 for NVT Langevin dynamics")
-            if self.thermostat == "bussi" and self.bussi_tau <= 0:
-                raise ValueError("bussi_tau must be > 0 fs for NVT Bussi dynamics")
-            if self.thermostat == "nhc":
-                if self.nhc_tdamp <= 0:
-                    raise ValueError("nhc_tdamp must be > 0 fs for NVT NHC dynamics")
-                if self.nhc_tchain < 1:
-                    raise ValueError("nhc_tchain must be >= 1 for NVT NHC dynamics")
-                if self.nhc_tloop < 1:
-                    raise ValueError("nhc_tloop must be >= 1 for NVT NHC dynamics")
-        # pre_relax_mode is future vocabulary and must not be silently ignored.
-        if self.pre_relax_mode != "none":
-            raise NotImplementedError(
-                f"pre_relax_mode={self.pre_relax_mode!r} is not yet implemented "
-                "(Phase 3). Use the legacy pre_relax=True/False (positions-only) "
-                "for now."
-            )
-        # Validate ensemble
-        if self.ensemble not in self.VALID_ENSEMBLES:
-            raise ValueError(
-                f"Unknown ensemble: {ensemble}. "
-                f"Use one of: {', '.join(self.VALID_ENSEMBLES)}"
-            )
+        self.rng = np.random.default_rng(seed_value)
+        self.velocity_policy = velocity_policy_value
+        self.com_policy = com_policy_value
+        self.com_policy_effective: str | None = None
+        self.constraint_types: tuple[str, ...] = ()
+        self.md_degrees_of_freedom: int | None = None
+        self.pre_relax_mode = pre_relax_mode_value
+        self.fmax_abort = fmax_abort_value
 
         # turbo-mode recommendation only applies to engines that support it
         # (currently only UMA). Other engines return 'default' and ignore it.
@@ -281,6 +375,189 @@ class MDRunner(BaseRunner):
                 "Consider using inference_mode='turbo' for better MD performance",
                 level="warning",
             )
+
+    def _integrator_key(self) -> str:
+        return "nve" if self.ensemble == "nve" else self.thermostat
+
+    @staticmethod
+    def _constraint_kind(constraint: object) -> str | None:
+        if isinstance(constraint, FixCom):
+            return "fixcom"
+        if isinstance(constraint, FixAtoms):
+            return "fixatoms"
+        if isinstance(constraint, FixCartesian):
+            return "fixcartesian"
+        return None
+
+    def _validate_atomic_state(self, atoms: Atoms, *, context: str) -> None:
+        """Validate the complete atomic state before it reaches an integrator."""
+        if len(atoms) == 0:
+            raise ValueError(f"{context}: atoms must contain at least one atom")
+
+        positions = np.asarray(atoms.positions, dtype=float)
+        if positions.shape != (len(atoms), 3) or not np.all(np.isfinite(positions)):
+            raise ValueError(
+                f"{context}: positions must have shape ({len(atoms)}, 3) and "
+                "contain only finite values"
+            )
+
+        cell = np.asarray(atoms.cell, dtype=float)
+        if cell.shape != (3, 3) or not np.all(np.isfinite(cell)):
+            raise ValueError(
+                f"{context}: cell must have shape (3, 3) and contain only "
+                "finite values"
+            )
+        pbc = np.asarray(atoms.pbc, dtype=bool)
+        periodic_dimensions = int(np.count_nonzero(pbc))
+        if (
+            periodic_dimensions
+            and np.linalg.matrix_rank(cell[pbc]) < periodic_dimensions
+        ):
+            raise ValueError(
+                f"{context}: periodic cell vectors must be non-zero and linearly "
+                "independent"
+            )
+
+        masses = np.asarray(atoms.get_masses(), dtype=float)
+        if masses.shape != (len(atoms),) or not np.all(np.isfinite(masses)):
+            raise ValueError(
+                f"{context}: masses must have shape ({len(atoms)},) and contain "
+                "only finite values"
+            )
+        if np.any(masses <= 0.0):
+            raise ValueError(f"{context}: every atomic mass must be > 0")
+
+        if atoms.has("momenta"):
+            momenta = np.asarray(atoms.get_momenta(), dtype=float)
+            if momenta.shape != (len(atoms), 3) or not np.all(np.isfinite(momenta)):
+                raise ValueError(
+                    f"{context}: momenta must have shape ({len(atoms)}, 3) and "
+                    "contain only finite values"
+                )
+            velocities = momenta / masses[:, None]
+            if not np.all(np.isfinite(velocities)):
+                raise ValueError(
+                    f"{context}: velocities must contain only finite values"
+                )
+
+    def _degrees_of_freedom(self, atoms: Atoms) -> int:
+        try:
+            ndof = int(atoms.get_number_of_degrees_of_freedom())
+        except NotImplementedError as exc:
+            raise ValueError(
+                "MD constraint does not report removed degrees of freedom; "
+                "this combination is unsupported"
+            ) from exc
+        if ndof <= 0:
+            raise ValueError(
+                f"MD has zero or negative degrees of freedom ({ndof} DOF); "
+                "thermal initialization and integration are undefined"
+            )
+        return ndof
+
+    def _validate_constraint_capability(self, atoms: Atoms) -> None:
+        constraints = list(atoms.constraints)
+        integrator = self._integrator_key()
+        effective = self.com_policy_effective
+        if effective is None:
+            raise RuntimeError(
+                "Internal error: COM policy must be resolved before validating "
+                "the MD constraint capability"
+            )
+
+        if effective not in self.COM_POLICY_CAPABILITIES[integrator]:
+            raise ValueError(
+                f"{integrator.upper()} does not support "
+                f"com_policy={self.com_policy!r}; supported effective policies: "
+                f"{', '.join(sorted(self.COM_POLICY_CAPABILITIES[integrator]))}"
+            )
+        if len(constraints) > 1:
+            names = ", ".join(type(item).__name__ for item in constraints)
+            raise ValueError(
+                f"The compound MD constraint combination [{names}] has not been "
+                "independently validated; refusing to integrate"
+            )
+        if not constraints:
+            return
+
+        constraint = constraints[0]
+        kind = self._constraint_kind(constraint)
+        if integrator == "nhc":
+            raise ValueError(
+                f"NHC with constraint {type(constraint).__name__} is unsupported: "
+                "ASE NHC targets 3N and maintains private thermostat state. "
+                "Use an unconstrained structure with com_policy='none'."
+            )
+        if kind is None or kind not in self.CONSTRAINT_CAPABILITIES[integrator]:
+            raise ValueError(
+                f"{integrator.upper()} with constraint "
+                f"{type(constraint).__name__} has not been independently validated"
+            )
+
+    def _configure_com_policy(self, atoms: Atoms) -> None:
+        """Apply the requested COM policy without rewriting user constraints."""
+        constraints = list(atoms.constraints)
+        fixcom_count = sum(isinstance(item, FixCom) for item in constraints)
+        if fixcom_count > 1:
+            raise ValueError("Repeated FixCom constraints are unsupported")
+
+        if self.com_policy == "none":
+            if fixcom_count:
+                raise ValueError(
+                    "com_policy='none' conflicts with an existing FixCom constraint"
+                )
+            effective = "none"
+        elif self.com_policy == "initialize_only":
+            if constraints:
+                raise ValueError(
+                    "com_policy='initialize_only' is only validated for structures "
+                    "without constraints"
+                )
+            if len(atoms) <= 1:
+                raise ValueError(
+                    "A single atom has no internal motion after COM initialization; "
+                    "use com_policy='none' to retain translational degrees of freedom"
+                )
+            effective = "initialize_only"
+        elif self.com_policy == "constraint":
+            if any(not isinstance(item, FixCom) for item in constraints):
+                raise ValueError(
+                    "com_policy='constraint' cannot append FixCom to existing "
+                    "non-COM constraints; this combination is unsupported"
+                )
+            if len(atoms) <= 1:
+                raise ValueError(
+                    "A FixCom constraint leaves a single atom with 0 DOF; use "
+                    "com_policy='none' to retain translational degrees of freedom"
+                )
+            if not fixcom_count:
+                atoms.set_constraint(FixCom())
+            effective = "constraint"
+        else:  # auto
+            if self._integrator_key() == "nhc" and not constraints:
+                raise ValueError(
+                    "NHC cannot use automatic COM removal. Select "
+                    "com_policy='none' explicitly for unconstrained 3N dynamics."
+                )
+            if not constraints:
+                if len(atoms) <= 1:
+                    raise ValueError(
+                        "Automatic COM removal is undefined for a single atom; "
+                        "select com_policy='none' explicitly"
+                    )
+                atoms.set_constraint(FixCom())
+                effective = "constraint"
+            elif fixcom_count:
+                effective = "constraint"
+            else:
+                # A positional constraint usually already breaks translation.
+                # Preserve it exactly and do not append a second projector.
+                effective = "none"
+
+        self.com_policy_effective = effective
+        self._validate_constraint_capability(atoms)
+        self.md_degrees_of_freedom = self._degrees_of_freedom(atoms)
+        self.constraint_types = tuple(type(item).__name__ for item in atoms.constraints)
 
     def _stress_observables(self, atoms: Atoms) -> dict[str, Any]:
         """Return explicitly named 3D-bulk stress and pressure observables.
@@ -309,8 +586,17 @@ class MDRunner(BaseRunner):
         total = np.asarray(
             atoms.get_stress(voigt=True, include_ideal_gas=True), dtype=float
         )
+        for name, stress in (
+            ("configurational stress", configurational),
+            ("total stress", total),
+        ):
+            if stress.shape != (6,) or not np.all(np.isfinite(stress)):
+                raise RuntimeError(
+                    f"Non-finite or malformed {name} during MD; aborting before "
+                    "invalid values are written to outputs"
+                )
         factor = MDOutcarWriter.EV_A3_TO_GPA
-        return {
+        observables = {
             "configurational_stress": configurational,
             "total_stress": total,
             "configurational_pressure_gpa": (
@@ -318,6 +604,83 @@ class MDRunner(BaseRunner):
             ),
             "total_pressure_gpa": -float(np.sum(total[:3])) / 3.0 * factor,
         }
+        if not all(
+            math.isfinite(observables[key])
+            for key in ("configurational_pressure_gpa", "total_pressure_gpa")
+        ):
+            raise RuntimeError(
+                "Non-finite pressure derived from stress during MD; aborting "
+                "before invalid values are written to outputs"
+            )
+        return observables
+
+    def _force_views(
+        self,
+        atoms: Atoms,
+        energy: float,
+        *,
+        context: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return finite raw and constraint-applied force arrays."""
+        raw = np.asarray(atoms.get_forces(apply_constraint=False), dtype=float)
+        expected_shape = (len(atoms), 3)
+        if raw.shape != expected_shape:
+            raise RuntimeError(
+                f"Malformed raw forces during {context}: expected "
+                f"{expected_shape}, got {raw.shape}"
+            )
+        # Validate the calculator result before asking a constraint projector
+        # to transform it. Projecting Inf/NaN can emit warnings and obscure
+        # which layer first violated the finite-state contract.
+        self._check_finite(atoms, energy, raw, context=f"{context} (raw forces)")
+
+        applied = np.asarray(atoms.get_forces(apply_constraint=True), dtype=float)
+        if applied.shape != expected_shape:
+            raise RuntimeError(
+                f"Malformed constraint-applied forces during {context}: expected "
+                f"{expected_shape}, got {applied.shape}"
+            )
+        self._check_finite(
+            atoms,
+            energy,
+            applied,
+            context=f"{context} (constraint-applied forces)",
+        )
+        return raw, applied
+
+    def _validate_md_safe_point(
+        self,
+        atoms: Atoms,
+        *,
+        energy: float,
+        forces_raw: np.ndarray,
+        forces_applied: np.ndarray,
+        context: str,
+    ) -> tuple[float, float, float]:
+        """Validate positions, momenta and scalar observables at an MD safe point."""
+        self._validate_atomic_state(atoms, context=context)
+        self._check_finite(atoms, energy, forces_raw, context=context)
+        self._check_finite(atoms, energy, forces_applied, context=context)
+        kinetic_energy = float(atoms.get_kinetic_energy())
+        temperature = self._calculate_temperature(atoms)
+        total_energy = float(energy) + kinetic_energy
+        volume = float(atoms.get_volume())
+        for name, value in (
+            ("kinetic energy", kinetic_energy),
+            ("total energy", total_energy),
+            ("temperature", temperature),
+            ("volume", volume),
+        ):
+            if not math.isfinite(value):
+                raise RuntimeError(
+                    f"Non-finite {name} ({value!r}) during {context}; aborting"
+                )
+        # A zero cell volume is valid for isolated molecules and can also be
+        # valid for lower-dimensional PBC. Only a 3D-periodic system requires
+        # a non-zero bulk volume.
+        if bool(np.asarray(atoms.pbc, dtype=bool).all()) and volume <= 0.0:
+            raise RuntimeError(f"Non-positive volume ({volume!r}) during {context}")
+        return kinetic_energy, temperature, total_energy
 
     def _write_artifacts_manifest(
         self,
@@ -370,7 +733,7 @@ class MDRunner(BaseRunner):
                 dependency_versions[distribution] = "unknown"
 
         manifest = {
-            "schema": "mlipx.md-artifacts/2",
+            "schema": "mlipx.md-artifacts/3",
             "status": status,
             "producer": {"name": "mlipx", "version": mlipx_version},
             "runtime": {"packages": dependency_versions},
@@ -399,6 +762,10 @@ class MDRunner(BaseRunner):
                 "total_steps": self.total_steps,
                 "production_start_step": self.equilibration_steps,
                 "production_start_frame": frame_stats.production_start_frame,
+                "com_policy": self.com_policy,
+                "com_policy_effective": self.com_policy_effective,
+                "constraints": list(self.constraint_types),
+                "degrees_of_freedom": self.md_degrees_of_freedom,
             },
             "units": {
                 "time": "fs",
@@ -409,6 +776,10 @@ class MDRunner(BaseRunner):
                 "temperature": "K",
             },
             "observables": {
+                "forces": "constraint-applied compatibility alias",
+                "forces_raw_eV_A": "unprojected calculator forces",
+                "forces_applied_eV_A": "ASE constraint-applied forces",
+                "fmax_abort": "evaluated from forces_raw_eV_A",
                 "configurational_stress": "ASE calculator stress; kinetic term excluded",
                 "total_stress": "configurational stress plus ASE ideal-gas kinetic term",
                 "configurational_pressure_gpa": "-trace(configurational_stress)/3",
@@ -420,29 +791,16 @@ class MDRunner(BaseRunner):
         if error is not None:
             manifest["error"] = error
         (self.output_dir / "artifacts.json").write_text(
-            json.dumps(manifest, indent=2, default=str) + "\n",
+            json.dumps(manifest, indent=2, default=str, allow_nan=False) + "\n",
             encoding="utf-8",
         )
 
     def _calculate_temperature(self, atoms: Atoms) -> float:
         """Instantaneous temperature for logging / trajectory.
 
-        Delegates to ASE's canonical ``atoms.get_temperature()``, which uses
-        ``get_number_of_degrees_of_freedom() = 3N - sum(constraint removed_dof)``.
-        This is the *same* convention that ``MaxwellBoltzmannDistribution`` /
-        ``force_temperature`` (used in ``_initialize_velocities``) and the NVT
-        thermostat operate on, so the reported value matches the requested
-        target temperature instead of being offset by an extra centre-of-mass
-        correction. It also correctly accounts for every constraint that
-        reports its removed DOF (FixAtoms, FixCom, FixBondLengths, ...) without
-        double-counting the COM translation.
-
-        A few constraints -- notably ``FixSymmetry`` -- do not report a
-        removed-DOF count and raise ``NotImplementedError``. For those we fall
-        back to the standard MD estimate ``3N - 3`` (the COM translation that
-        ``Stationary`` zeroes at init) and warn; the previous code hard-coded
-        an arbitrary ``ndof -= 3`` for FixSymmetry, which is wrong because the
-        real count depends on the space group / number of atoms.
+        Delegates to ASE's canonical constraint-aware kinetic energy and DOF
+        definitions. Constraints that cannot report their removed DOF are
+        rejected by the capability gate; there is no approximate fallback.
 
         Args:
             atoms: ASE Atoms object
@@ -450,21 +808,42 @@ class MDRunner(BaseRunner):
         Returns:
             Temperature in Kelvin
         """
-        try:
-            # ASE's own temperature: 2*KE / (ndof*kB) with
-            # ndof = 3N - sum(constraint.get_removed_dof()). Self-consistent
-            # with velocity initialisation and the thermostat.
-            return atoms.get_temperature()
-        except NotImplementedError:
-            # A constraint (e.g. FixSymmetry) cannot report its removed DOF.
-            self.log(
-                "Temperature DOF is approximate: a constraint does not "
-                "report removed DOF; falling back to 3N-3 (COM removed).",
-                level="warning",
+        ndof = self._degrees_of_freedom(atoms)
+        kinetic_energy = float(atoms.get_kinetic_energy())
+        if not math.isfinite(kinetic_energy) or kinetic_energy < 0.0:
+            raise RuntimeError(
+                f"Non-finite or negative kinetic energy ({kinetic_energy!r}) "
+                "during MD"
             )
-            ke = atoms.get_kinetic_energy()
-            ndof = max(3 * len(atoms) - 3, 1)  # COM translation removed
-            return 2 * ke / (ndof * units.kB)
+        temperature = 2.0 * kinetic_energy / (ndof * units.kB)
+        if not math.isfinite(temperature):
+            raise RuntimeError(f"Non-finite temperature ({temperature!r}) during MD")
+        return temperature
+
+    def _validate_preserved_momenta(self, atoms: Atoms) -> None:
+        """Reject preserved momenta that conflict with requested policies."""
+        momenta = np.asarray(atoms.get_momenta(), dtype=float)
+        adjusted = momenta.copy()
+        for constraint in atoms.constraints:
+            constraint.adjust_momenta(atoms, adjusted)
+        if not np.allclose(adjusted, momenta, rtol=1.0e-12, atol=1.0e-12):
+            raise ValueError(
+                "Existing momenta violate the active MD constraint. Refusing to "
+                "silently project a continued state; provide constraint-consistent "
+                "momenta or use velocity_policy='initialize'."
+            )
+        if self.com_policy_effective == "initialize_only":
+            masses = np.asarray(atoms.get_masses(), dtype=float)
+            stationary = momenta - masses[:, None] * (
+                np.sum(momenta, axis=0) / np.sum(masses)
+            )
+            if not np.allclose(stationary, momenta, rtol=1.0e-12, atol=1.0e-12):
+                raise ValueError(
+                    "com_policy='initialize_only' would alter the supplied "
+                    "momenta, which conflicts with preserving a continued state. "
+                    "Provide zero-COM momenta or use "
+                    "velocity_policy='initialize'."
+                )
 
     def _initialize_velocities(self, atoms: Atoms) -> None:
         """Initialize velocities at the requested MD temperature.
@@ -480,7 +859,11 @@ class MDRunner(BaseRunner):
         to ASE's ``MaxwellBoltzmannDistribution`` so the run is reproducible when
         a seed is recorded (the resolver auto-generates one for MD).
         """
-        # Presence, not magnitude, defines a restart.  An explicitly stored
+        if self.com_policy_effective is None:
+            self._configure_com_policy(atoms)
+        self._validate_atomic_state(atoms, context="MD velocity initialization")
+
+        # Presence, not magnitude, defines a continued state. An explicitly stored
         # all-zero momenta array is still a deliberate initial condition.
         has_momenta = atoms.has("momenta")
         policy = self.velocity_policy
@@ -491,9 +874,11 @@ class MDRunner(BaseRunner):
                     "the structure has none. Use velocity_policy='initialize' or "
                     "'auto'."
                 )
+            self._validate_preserved_momenta(atoms)
             self.log("\nPreserving existing velocities (velocity_policy=preserve)")
             return
         if policy == "auto" and has_momenta:
+            self._validate_preserved_momenta(atoms)
             self.log("\nPreserving existing velocities (velocity_policy=auto)")
             return
         # policy == "initialize", or auto with no velocities.
@@ -508,23 +893,22 @@ class MDRunner(BaseRunner):
             force_temp=True,
             rng=self.rng,
         )
-        Stationary(atoms, preserve_temperature=True)
+        if self.com_policy_effective == "initialize_only":
+            Stationary(atoms, preserve_temperature=True)
+        self._validate_atomic_state(atoms, context="initialized MD state")
+        self._calculate_temperature(atoms)
 
-    @staticmethod
-    def _ensure_com_constraint(atoms: Atoms) -> None:
-        """Remove centre-of-mass translation with an explicit ASE constraint.
-
-        ASE's legacy ``Langevin(fixcm=True)`` does not strictly sample the
-        canonical distribution.  An explicit ``FixCom`` constraint together
-        with ``fixcm=False`` is the recommended formulation and also makes the
-        removed three degrees of freedom visible to ``Atoms.get_temperature``.
-        """
-        if len(atoms) <= 1 or any(isinstance(c, FixCom) for c in atoms.constraints):
-            return
-        atoms.set_constraint([*atoms.constraints, FixCom()])
+    def _ensure_com_constraint(self, atoms: Atoms) -> None:
+        """Compatibility wrapper for the explicit COM/capability gate."""
+        self._configure_com_policy(atoms)
 
     def _build_dynamics(self, atoms: Atoms):
         """Build the ASE integrator without coupling it to calculator options."""
+        if self.com_policy_effective is None:
+            self._configure_com_policy(atoms)
+        else:
+            self._validate_constraint_capability(atoms)
+            self._degrees_of_freedom(atoms)
         if self.ensemble == "nve":
             self.log("Setting up NVE (Velocity Verlet)")
             return VelocityVerlet(atoms, timestep=self.timestep)
@@ -596,6 +980,16 @@ class MDRunner(BaseRunner):
             "total_steps": self.total_steps,
             "seed": self.seed,
             "velocity_policy": self.velocity_policy,
+            "com_policy": self.com_policy,
+            "com_policy_effective": self.com_policy_effective,
+            "constraints": list(self.constraint_types),
+            "degrees_of_freedom": self.md_degrees_of_freedom,
+            "force_contract": {
+                "forces": "constraint-applied compatibility alias",
+                "forces_raw_eV_A": "unprojected calculator forces",
+                "forces_applied_eV_A": "ASE constraint-applied forces",
+                "fmax_abort": "maximum per-atom norm of forces_raw_eV_A",
+            },
         }
         if self.ensemble == "nvt" and self.thermostat == "langevin":
             friction_fs = float(self.friction * units.fs)
@@ -679,8 +1073,8 @@ class MDRunner(BaseRunner):
         self.log(f"Target fmax: {self.pre_relax_fmax} eV/Å")
         self.log(f"Max steps: {self.pre_relax_steps}")
 
-        # Setup calculator
-        atoms.calc = self._get_calculator()
+        if atoms.calc is None:
+            raise RuntimeError("Pre-relaxation requires the validated MD calculator")
 
         # Use FIRE optimizer for robust relaxation
         optimizer = FIRE(atoms, logfile=None)
@@ -693,8 +1087,17 @@ class MDRunner(BaseRunner):
 
         optimizer.attach(_check_cancel, interval=1)
 
+        def _check_pre_relax_state() -> None:
+            context = f"MD pre-relaxation step {optimizer.nsteps}"
+            self._validate_atomic_state(atoms, context=context)
+            energy = float(atoms.get_potential_energy())
+            self._force_views(atoms, energy, context=context)
+
+        optimizer.attach(_check_pre_relax_state, interval=1)
+
         # Track initial energy
-        e_init = atoms.get_potential_energy()
+        e_init = float(atoms.get_potential_energy())
+        self._force_views(atoms, e_init, context="MD pre-relaxation initial state")
         self.log(f"Initial energy: {e_init:.6f} eV")
 
         # Run optimization.  A backend/neighbor-list failure here is not a
@@ -704,7 +1107,10 @@ class MDRunner(BaseRunner):
         try:
             optimizer.run(fmax=self.pre_relax_fmax, steps=self.pre_relax_steps)
 
-            e_final = atoms.get_potential_energy()
+            e_final = float(atoms.get_potential_energy())
+            _, forces_applied = self._force_views(
+                atoms, e_final, context="MD pre-relaxation final state"
+            )
             delta_e = e_final - e_init
 
             self.log(f"Final energy: {e_final:.6f} eV")
@@ -715,8 +1121,7 @@ class MDRunner(BaseRunner):
             if optimizer.converged():
                 self.log("✓ Pre-relaxation converged")
             else:
-                forces = atoms.get_forces()
-                final_fmax = float(np.max(np.linalg.norm(forces, axis=1)))
+                final_fmax = float(np.max(np.linalg.norm(forces_applied, axis=1)))
                 raise RuntimeError(
                     "Pre-relaxation did not converge after "
                     f"{optimizer.nsteps} steps (final fmax={final_fmax:.6g} "
@@ -764,10 +1169,27 @@ class MDRunner(BaseRunner):
             raise ValueError(
                 "Pre-relaxation changes positions and is incompatible with "
                 f"velocity_policy={self.velocity_policy!r} on a structure that "
-                "already contains momenta. For an exact phase-space restart use "
-                "pre_relax=False; to start a new trajectory use "
+                "already contains momenta. Continuing from coordinates/momenta is "
+                "not a strict trajectory restart. Use pre_relax=False to retain "
+                "that supplied state, or start a new trajectory with "
                 "velocity_policy='initialize'."
             )
+
+        # Copy and validate before model loading or creation of raw/vasp output
+        # trees. The capability preflight uses a second copy because auto COM
+        # policy may add FixCom; pre-relaxation must see exactly the user's
+        # original positional constraints.
+        atoms = atoms.copy()
+        self._validate_atomic_state(atoms, context="MD input atoms")
+        atoms = self._prepare_atoms(atoms)
+        self._validate_atomic_state(atoms, context="prepared MD atoms")
+        contract_atoms = atoms.copy()
+        self._configure_com_policy(contract_atoms)
+        if contract_atoms.has("momenta") and self.velocity_policy in {
+            "auto",
+            "preserve",
+        }:
+            self._validate_preserved_momenta(contract_atoms)
 
         self.print_header("MOLECULAR DYNAMICS")
         self._emit_progress("loading_model", "Loading model and preparing structure...")
@@ -784,22 +1206,13 @@ class MDRunner(BaseRunner):
         self.log(f"Production:       {self.steps} steps")
         self.log(f"Total MD steps:   {self.total_steps}")
         self.log(f"Save interval:    {self.save_interval} steps (trajectory frames)")
+        self.log(f"COM policy:       {self.com_policy}")
         log_step_unit = "step" if self.LOG_INTERVAL_STEPS == 1 else "steps"
         self.log(
             f"Thermodynamic log interval: {self.LOG_INTERVAL_STEPS} "
             f"{log_step_unit} (buffered disk flush)"
         )
         self.log(f"Pre-relaxation:   {'Yes' if self.pre_relax else 'No'}")
-
-        # Copy atoms to prevent mutating the caller's object. Pre-relaxation
-        # (FIRE) modifies positions and velocity initialisation modifies
-        # momenta on this same object. (_prepare_atoms now copies internally
-        # as well, but this top-level copy is still required to shield the
-        # pre-relax / velocity phases that run afterwards.)
-        atoms = atoms.copy()
-
-        # Prepare atoms
-        atoms = self._prepare_atoms(atoms)
 
         # Setup calculator
         calc = self._get_calculator()
@@ -809,12 +1222,31 @@ class MDRunner(BaseRunner):
         if self.pre_relax:
             atoms = self._pre_relax_structure(atoms)
 
-        # Make COM removal explicit so temperature DOF and the Langevin
-        # invariant distribution use the same constraint-aware convention.
-        self._ensure_com_constraint(atoms)
+        self._validate_atomic_state(atoms, context="MD state after pre-relaxation")
+        self._configure_com_policy(atoms)
+        self.log(
+            f"Effective COM:     {self.com_policy_effective} "
+            f"({self.md_degrees_of_freedom} DOF)"
+        )
 
         # Initialize a thermal velocity distribution for both NVT and NVE.
         self._initialize_velocities(atoms)
+
+        # Validate the first model-evaluated state before an ASE integrator can
+        # project forces internally and before any formal MD artifact is
+        # created. Subsequent states are checked by the step observer.
+        initial_energy = float(atoms.get_potential_energy())
+        initial_forces_raw, initial_forces_applied = self._force_views(
+            atoms, initial_energy, context="MD initial state"
+        )
+        self._validate_md_safe_point(
+            atoms,
+            energy=initial_energy,
+            forces_raw=initial_forces_raw,
+            forces_applied=initial_forces_applied,
+            context="MD initial state",
+        )
+        self._stress_observables(atoms)
 
         # Setup integrator. Thermostat settings stay in MDRunner and are never
         # forwarded to the backend calculator.
@@ -824,6 +1256,9 @@ class MDRunner(BaseRunner):
                 "(the thermostat exchanges heat); monitor T instead."
             )
         dyn = self._build_dynamics(atoms)
+
+        for directory in (self.raw_dir, self.vasp_dir):
+            directory.mkdir(parents=True, exist_ok=True)
 
         # The live calculator and mutable Atoms object stay on the MD thread.
         # Saved frames are detached into CPU-only snapshots and submitted to a
@@ -871,26 +1306,26 @@ class MDRunner(BaseRunner):
             step = dyn.nsteps
             phase = "equilibration" if step < self.equilibration_steps else "production"
 
-            # Calculate temperature with proper DOF handling
-            temp = self._calculate_temperature(atoms)
+            pe = float(atoms.get_potential_energy())
+            forces_raw, forces_applied = self._force_views(
+                atoms, pe, context=f"MD step {step}"
+            )
+            ke, temp, total_e = self._validate_md_safe_point(
+                atoms,
+                energy=pe,
+                forces_raw=forces_raw,
+                forces_applied=forces_applied,
+                context=f"MD step {step}",
+            )
 
-            # Calculate energies
-            pe = atoms.get_potential_energy()
-            ke = atoms.get_kinetic_energy()
-            total_e = pe + ke
-
-            # Abort on NaN/inf energy so it never propagates or is written as
-            # a "successful" result.
-            self._check_finite(atoms, pe, context=f"MD step {step}")
-
-            # Check forces for NaN/inf EVERY step. NaN forces corrupt positions
-            # and velocities via the integrator and must be caught immediately.
-            forces_chk = atoms.get_forces()
-            self._check_finite(atoms, pe, forces=forces_chk, context=f"MD step {step}")
-
-            force_magnitudes = np.linalg.norm(forces_chk, axis=1)
-            atom_index = int(np.argmax(force_magnitudes))
-            max_force = float(force_magnitudes[atom_index])
+            # The safety threshold is deliberately based on unprojected model
+            # forces. A frozen atom can carry a large physical reaction force;
+            # constraint projection must never hide it from the safety gate.
+            raw_force_magnitudes = np.linalg.norm(forces_raw, axis=1)
+            applied_force_magnitudes = np.linalg.norm(forces_applied, axis=1)
+            atom_index = int(np.argmax(raw_force_magnitudes))
+            max_force = float(raw_force_magnitudes[atom_index])
+            max_force_applied = float(np.max(applied_force_magnitudes))
             force_abort = max_force > self.fmax_abort
 
             # Save regular trajectory frames and always checkpoint the unsafe
@@ -910,6 +1345,8 @@ class MDRunner(BaseRunner):
                     "total_energy": float(total_e),
                     "temperature": float(temp),
                     "volume": volume,
+                    "max_force_raw_eV_A": max_force,
+                    "max_force_applied_eV_A": max_force_applied,
                     "configurational_stress": (
                         np.array(configurational_stress, dtype=float, copy=True)
                         if configurational_stress is not None
@@ -929,9 +1366,15 @@ class MDRunner(BaseRunner):
                 snapshot.info["mlipx_step"] = int(step)
                 snapshot.info["mlipx_time_fs"] = time_fs
                 snapshot.info["mlipx_phase"] = phase
+                snapshot.info["forces_raw_eV_A"] = forces_raw.tolist()
+                snapshot.info["forces_applied_eV_A"] = forces_applied.tolist()
+                snapshot.info["forces_alias"] = "constraint-applied"
                 single_point_results: dict[str, Any] = {
                     "energy": float(pe),
-                    "forces": np.array(forces_chk, dtype=float, copy=True),
+                    # Preserve the historical ASE ``get_forces()`` behaviour:
+                    # the compatibility alias is constraint-applied. The two
+                    # explicit force views above are authoritative.
+                    "forces": np.array(forces_applied, dtype=float, copy=True),
                 }
                 if configurational_stress is not None:
                     single_point_results["stress"] = np.array(
@@ -943,7 +1386,7 @@ class MDRunner(BaseRunner):
                         atoms=snapshot,
                         summary=frame_data,
                         outcar_forces=(
-                            np.array(forces_chk, dtype=float, copy=True)
+                            np.array(forces_applied, dtype=float, copy=True)
                             if self.write_forces
                             else None
                         ),
@@ -1019,7 +1462,7 @@ class MDRunner(BaseRunner):
                 atoms,
                 self.vasp_dir / "CONTCAR",
                 energy=float(atoms.get_potential_energy()),
-                forces=atoms.get_forces(),
+                forces=atoms.get_forces(apply_constraint=True),
             )
             if md_outcar_writer is not None:
                 md_outcar_writer.finalize(status="aborted")
@@ -1031,6 +1474,9 @@ class MDRunner(BaseRunner):
                     "message": str(exc),
                     "step": exc.step,
                     "atom_index": exc.atom_index,
+                    "max_force_raw_eV_A": exc.max_force,
+                    # Compatibility alias retained for artifact readers from
+                    # schema v2; its meaning is now explicitly raw.
                     "max_force_eV_A": exc.max_force,
                     "fmax_abort_eV_A": exc.threshold,
                 },
@@ -1058,16 +1504,18 @@ class MDRunner(BaseRunner):
         close_output_stream()
         md_time = time.time() - start_time
 
-        # Final temperature with proper calculation
-        final_temp = self._calculate_temperature(atoms)
-
-        # Final energy
-        final_energy = atoms.get_potential_energy()
-        final_forces = atoms.get_forces()
-        final_stress_data = self._stress_observables(atoms)
-        self._check_finite(
-            atoms, final_energy, final_forces, context="MD final structure"
+        final_energy = float(atoms.get_potential_energy())
+        final_forces_raw, final_forces_applied = self._force_views(
+            atoms, final_energy, context="MD final structure"
         )
+        _, final_temp, _ = self._validate_md_safe_point(
+            atoms,
+            energy=final_energy,
+            forces_raw=final_forces_raw,
+            forces_applied=final_forces_applied,
+            context="MD final structure",
+        )
+        final_stress_data = self._stress_observables(atoms)
 
         self.log(f"\nMD simulation completed in {md_time:.2f} s")
         self.log(f"Final temperature: {final_temp:.1f} K")
@@ -1076,7 +1524,10 @@ class MDRunner(BaseRunner):
         # Build results
         results = {
             "energy": final_energy,
-            "forces": final_forces,
+            # ``forces`` remains the historical constraint-applied alias.
+            "forces": final_forces_applied,
+            "forces_raw_eV_A": final_forces_raw,
+            "forces_applied_eV_A": final_forces_applied,
             **final_stress_data,
             "temperature": final_temp,
             "md_steps": self.total_steps,

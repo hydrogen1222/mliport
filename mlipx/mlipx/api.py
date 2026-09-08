@@ -357,6 +357,7 @@ def run_md(
     head: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
+    com_policy: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Run molecular dynamics simulation.
@@ -395,6 +396,7 @@ def run_md(
         head: MACE head or DeepMD/DPA multi-task branch name.
         profile: Reusable profile from settings.ini.
         strict_config: Override strict-config behaviour.
+        com_policy: Center-of-mass policy (auto, none, initialize_only, constraint).
         **kwargs: Additional options forwarded to the resolver.
 
     Returns:
@@ -431,6 +433,7 @@ def run_md(
         ("nhc_tchain", nhc_tchain),
         ("nhc_tloop", nhc_tloop),
         ("save_interval", save_interval),
+        ("com_policy", com_policy),
         ("pre_relax", pre_relax),
     ):
         if value is not None:

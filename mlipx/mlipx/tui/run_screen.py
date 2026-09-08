@@ -177,6 +177,7 @@ class RunScreen(Screen):
                 "pre_relax_steps",
                 "pre_relax_fmax",
                 "velocity_policy",
+                "com_policy",
                 "fmax_abort",
                 "seed",
             ):

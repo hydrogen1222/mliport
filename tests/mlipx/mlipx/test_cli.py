@@ -272,6 +272,8 @@ def test_md_parser_accepts_ensemble_flags() -> None:
             "42",
             "--velocity-policy",
             "initialize",
+            "--com-policy",
+            "none",
             "--fmax-abort",
             "15",
             "--pre-relax",
@@ -291,6 +293,7 @@ def test_md_parser_accepts_ensemble_flags() -> None:
     assert args.save_interval == 25
     assert args.seed == 42
     assert args.velocity_policy == "initialize"
+    assert args.com_policy == "none"
     assert args.fmax_abort == 15.0
 
 
@@ -303,6 +306,7 @@ def test_md_thermostat_flags_default_to_resolver() -> None:
     assert args.nhc_tdamp is None
     assert args.nhc_tchain is None
     assert args.nhc_tloop is None
+    assert args.com_policy is None
 
 
 def test_grace_memory_and_md_output_flags_parse() -> None:

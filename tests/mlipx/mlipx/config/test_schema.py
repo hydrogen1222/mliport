@@ -128,6 +128,12 @@ def test_schema_directed_zero_and_one_coercion(schema: Schema) -> None:
     assert enabled is not None and enabled.coerce("0") is False
 
 
+def test_com_policy_is_typed_and_case_normalized(schema: Schema) -> None:
+    policy = schema.resolve("COM_POLICY")
+    assert policy is not None
+    assert policy.coerce("INITIALIZE_ONLY") == "initialize_only"
+
+
 @pytest.mark.parametrize("value", [True, 3.7, "3.7"])
 def test_integer_options_reject_bool_and_fractional_values(
     schema: Schema, value: object

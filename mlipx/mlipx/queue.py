@@ -95,6 +95,7 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "pre_relax_steps": ("--pre-relax-steps",),
     "pre_relax_fmax": ("--pre-relax-fmax",),
     "velocity_policy": ("--velocity-policy",),
+    "com_policy": ("--com-policy",),
     "fmax_abort": ("--fmax-abort",),
     "seed": ("--seed",),
 }

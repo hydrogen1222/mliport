@@ -75,6 +75,7 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "nhc_tchain": 3,
         "nhc_tloop": 1,
         "save_interval": 10,
+        "com_policy": "auto",
         # ``pre_relax`` has NO built-in default here: its default is
         # ensemble-aware (off for NVE, on for NVT) and is applied by the
         # engine (CalculationEngine._create_runner). Putting a blanket
@@ -197,6 +198,7 @@ def build_incar_default(calc_type: str) -> str:
         lines.append(f"NHC_TCHAIN = {md['nhc_tchain']}")
         lines.append(f"NHC_TLOOP = {md['nhc_tloop']}")
         lines.append(f"SAVE_INTERVAL = {md['save_interval']}")
+        lines.append(f"COM_POLICY = {md['com_policy']}")
         lines.append("")
 
     lines.append("# Output Control")

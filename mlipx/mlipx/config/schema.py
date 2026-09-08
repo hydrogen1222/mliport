@@ -172,7 +172,7 @@ _SPECS: list[OptionSpec] = [
         float,
         frozenset({"safety"}),
         aliases={"FMAX_ABORT"},
-        minimum=1.0e-12,
+        minimum=0.0,
         description="MD force-safety abort threshold in eV/Angstrom.",
     ),
     # --- model / device (calculator scope) ---
@@ -490,6 +490,15 @@ _SPECS: list[OptionSpec] = [
         choices=("auto", "initialize", "preserve"),
         default="auto",
         description="Velocity initialisation policy (plan section 13.5; Phase 3).",
+    ),
+    OptionSpec(
+        "com_policy",
+        str,
+        frozenset({"md"}),
+        aliases={"COM_POLICY"},
+        choices=("auto", "none", "initialize_only", "constraint"),
+        default="auto",
+        description="Explicit center-of-mass policy for MD.",
     ),
     OptionSpec(
         "seed",

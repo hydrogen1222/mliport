@@ -84,6 +84,7 @@ def test_build_command_md_options() -> None:
             "nhc_tdamp": 150.0,
             "nhc_tchain": 4,
             "nhc_tloop": 2,
+            "com_policy": "none",
             "pre_relax": False,
             "seed": 42,
         },
@@ -94,6 +95,7 @@ def test_build_command_md_options() -> None:
     assert "--nhc-tdamp" in cmd and "150.0" in cmd
     assert "--nhc-tchain" in cmd and "4" in cmd
     assert "--nhc-tloop" in cmd and "2" in cmd
+    assert "--com-policy" in cmd and "none" in cmd
     assert "--no-pre-relax" in cmd
     assert "--seed" in cmd and "42" in cmd
 

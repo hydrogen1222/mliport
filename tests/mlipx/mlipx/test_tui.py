@@ -196,6 +196,7 @@ async def test_md_ensemble_and_options_persisted(tmp_path: Path) -> None:
         config_screen.query_one("#pre-relax-fmax-input").value = "0.08"
         config_screen.query_one("#seed-input").value = "42"
         config_screen.query_one("#velocity-policy-select").value = "initialize"
+        config_screen.query_one("#com-policy-select").value = "constraint"
         config_screen.query_one("#fmax-abort-input").value = "15"
         config_screen.query_one("#nve").value = True
         await pilot.pause()
@@ -217,6 +218,7 @@ async def test_md_ensemble_and_options_persisted(tmp_path: Path) -> None:
     assert app.get_config("pre_relax_fmax") == 0.08
     assert app.get_config("seed") == 42
     assert app.get_config("velocity_policy") == "initialize"
+    assert app.get_config("com_policy") == "constraint"
     assert app.get_config("fmax_abort") == 15.0
     assert isinstance(app.get_config("run_started_at"), float)
 
@@ -253,6 +255,7 @@ async def test_md_values_loaded_from_config() -> None:
     app.update_config("steps", 2000)
     app.update_config("save_interval", 5)
     app.update_config("pre_relax", False)
+    app.update_config("com_policy", "none")
 
     async with app.run_test(size=(80, 80)) as pilot:
         config_screen = ConfigScreen()
@@ -265,6 +268,7 @@ async def test_md_values_loaded_from_config() -> None:
         assert config_screen.query_one("#steps-input").value == "2000"
         assert config_screen.query_one("#save-interval-input").value == "5"
         assert config_screen.query_one("#pre-relax").value is False
+        assert config_screen.query_one("#com-policy-select").value == "none"
 
 
 @pytest.mark.asyncio()
@@ -400,6 +404,7 @@ async def test_run_command_contains_tui_resource_and_md_options() -> None:
             "pre_relax_fmax": 0.07,
             "seed": 42,
             "velocity_policy": "initialize",
+            "com_policy": "auto",
             "fmax_abort": 12.0,
         }
     )
@@ -419,6 +424,8 @@ async def test_run_command_contains_tui_resource_and_md_options() -> None:
         "--no-activation-checkpointing",
         "--velocity-policy",
         "initialize",
+        "--com-policy",
+        "auto",
         "--fmax-abort",
         "12.0",
         "--seed",
@@ -444,6 +451,7 @@ async def test_run_command_contains_only_active_nhc_options() -> None:
             "output_dir": "/tmp/out",
             "ensemble": "NVT",
             "thermostat": "NHC",
+            "com_policy": "none",
             "steps": 5,
             "friction": 0.003,
             "bussi_tau": 700.0,
@@ -462,6 +470,7 @@ async def test_run_command_contains_only_active_nhc_options() -> None:
     assert command[command.index("--nhc-tdamp") + 1] == "120.0"
     assert command[command.index("--nhc-tchain") + 1] == "4"
     assert command[command.index("--nhc-tloop") + 1] == "2"
+    assert command[command.index("--com-policy") + 1] == "none"
     assert "--friction" not in command
     assert "--bussi-tau" not in command
 
@@ -529,7 +538,9 @@ async def test_md_invalid_numeric_inputs_block_submission(tmp_path: Path) -> Non
             ("LANGEVIN", "#save-interval-input", "0"),
             ("LANGEVIN", "#friction-input", "0"),
             ("BUSSI", "#bussi-tau-input", "bad"),
+            ("BUSSI", "#temp-input", "0"),
             ("NHC", "#nhc-tdamp-input", "0"),
+            ("NHC", "#temp-input", "0"),
             ("NHC", "#nhc-tchain-input", "0"),
             ("NHC", "#nhc-tloop-input", "bad"),
             ("LANGEVIN", "#pre-relax-steps-input", "bad"),
@@ -554,11 +565,55 @@ async def test_md_invalid_numeric_inputs_block_submission(tmp_path: Path) -> Non
             for input_selector, value in defaults.items():
                 screen.query_one(input_selector).value = value
             screen.query_one("#thermostat-select").value = thermostat
+            screen.query_one("#com-policy-select").value = (
+                "none" if thermostat == "NHC" else "auto"
+            )
             screen.query_one(selector).value = invalid
             screen._save_and_run()
             app.push_screen.assert_not_called()
             assert screen.notify.called
             screen.notify.reset_mock()
+
+
+@pytest.mark.asyncio()
+@pytest.mark.parametrize(
+    ("ensemble", "thermostat", "com_policy"),
+    [
+        ("NVT", "NHC", "auto"),
+        ("NVT", "BUSSI", "initialize_only"),
+        ("NVE", "LANGEVIN", "initialize_only"),
+    ],
+)
+async def test_md_unsupported_com_policy_blocks_tui_submission(
+    tmp_path: Path,
+    ensemble: str,
+    thermostat: str,
+    com_policy: str,
+) -> None:
+    structure = tmp_path / "structure.cif"
+    model = tmp_path / "model.pt"
+    structure.write_text("")
+    model.write_text("")
+    app = MlipxApp()
+    app.update_config("calc_type", "md")
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(structure)
+        screen.query_one("#model-input").value = str(model)
+        screen.query_one("#thermostat-select").value = thermostat
+        screen.query_one("#com-policy-select").value = com_policy
+        screen.query_one(f"#{ensemble.lower()}").value = True
+        await pilot.pause()
+        screen.notify = Mock()
+        app.push_screen = Mock()
+
+        screen._save_and_run()
+
+        app.push_screen.assert_not_called()
+        screen.notify.assert_called_once()
 
 
 @pytest.mark.asyncio()

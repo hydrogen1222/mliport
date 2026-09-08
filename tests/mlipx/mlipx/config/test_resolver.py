@@ -42,6 +42,7 @@ def test_builtin_md_defaults() -> None:
 def test_md_thermostat_options_are_run_options_only() -> None:
     values = {
         "thermostat": "NHC",
+        "com_policy": "none",
         "friction": 0.002,
         "bussi_tau": 800.0,
         "nhc_tdamp": 120.0,
@@ -55,6 +56,61 @@ def test_md_thermostat_options_are_run_options_only() -> None:
         )
         assert values.items() <= rc.run_options.items()
         assert set(values).isdisjoint(rc.calculator_options)
+
+
+@pytest.mark.parametrize(
+    "cli",
+    [
+        {"ensemble": "NVT", "thermostat": "NHC", "com_policy": "auto"},
+        {"ensemble": "NVT", "thermostat": "NHC", "com_policy": "constraint"},
+        {"ensemble": "NVT", "thermostat": "BUSSI", "temperature": 0.0},
+        {
+            "ensemble": "NVT",
+            "thermostat": "NHC",
+            "temperature": 0.0,
+            "com_policy": "none",
+        },
+        {"ensemble": "NVE", "com_policy": "initialize_only"},
+        {
+            "ensemble": "NVT",
+            "thermostat": "BUSSI",
+            "com_policy": "initialize_only",
+        },
+        {"timestep": 0.0},
+        {"pre_relax_fmax": 0.0},
+        {"fmax_abort": 0.0},
+        {"ensemble": "NVT", "thermostat": "LANGEVIN", "friction": 0.0},
+        {"ensemble": "NVT", "thermostat": "BUSSI", "bussi_tau": 0.0},
+        {
+            "ensemble": "NVT",
+            "thermostat": "NHC",
+            "com_policy": "none",
+            "nhc_tdamp": 0.0,
+        },
+    ],
+)
+def test_resolver_rejects_unsupported_md_capability_before_model_load(cli) -> None:
+    with pytest.raises(ValueError):
+        resolve_config(calc_type="md", cli=cli)
+
+
+def test_resolver_accepts_positive_values_without_an_arbitrary_floor() -> None:
+    tiny = 1.0e-15
+    resolved = resolve_config(
+        calc_type="md",
+        cli={
+            "strict_config": True,
+            "timestep": tiny,
+            "friction": tiny,
+            "pre_relax_fmax": tiny,
+            "fmax_abort": tiny,
+        },
+    )
+
+    assert resolved.run_options["timestep"] == tiny
+    assert resolved.run_options["friction"] == tiny
+    assert resolved.run_options["pre_relax_fmax"] == tiny
+    assert resolved.settings["fmax_abort"] == tiny
 
 
 def test_builtin_opt_defaults() -> None:

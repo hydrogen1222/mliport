@@ -68,6 +68,7 @@ def test_md_thermostat_defaults_preserve_legacy_langevin() -> None:
     assert md["nhc_tdamp"] == 100.0
     assert md["nhc_tchain"] == 3
     assert md["nhc_tloop"] == 1
+    assert md["com_policy"] == "auto"
 
 
 # ---------------------------------------------------------------------------

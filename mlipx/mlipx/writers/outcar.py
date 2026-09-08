@@ -362,7 +362,7 @@ class MDOutcarWriter:
 
     This deliberately is *not* presented as a native VASP OUTCAR: an MLIP
     calculation has no electronic SCF, POTCAR, Fermi level, or VASP thermostat
-    state.  The familiar labels and ``POSITION / TOTAL-FORCE`` tables make the
+    state.  Familiar position/force tables make the
     text useful to humans and simple downstream readers without inventing
     electronic-structure data.
     """
@@ -403,7 +403,7 @@ class MDOutcarWriter:
             "=" * 100,
             "",
             f"Generated:          {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "Format contract:    mlipx.vasp-like-outcar.md/2",
+            "Format contract:    mlipx.vasp-like-outcar.md/3",
             f"Formula:            {atoms.get_chemical_formula()}",
             f"Number of ions:     {len(atoms)}",
             f"Ion counts:         {summary}",
@@ -431,6 +431,8 @@ class MDOutcarWriter:
                 "  configurational = calculator stress (no kinetic term)",
                 "  total MD stress = configurational + ideal-gas kinetic term",
                 "  scalar pressures = -trace(stress)/3 (3D PBC only)",
+                "Force table: ASE constraint-applied forces; raw model forces are",
+                "  preserved separately in raw/trajectory.traj and results JSON.",
                 "",
             ]
         )
@@ -498,24 +500,32 @@ class MDOutcarWriter:
                 + "".join(f"{value:13.7f}" for value in rec_vector)
             )
 
-        lines.extend(
-            [
-                "",
-                " POSITION                                       TOTAL-FORCE (eV/Angst)",
-                " " + "-" * 91,
-            ]
-        )
-        if forces is None:
-            force_rows = np.full((len(atoms), 3), np.nan)
-        else:
+        lines.append("")
+        if forces is not None:
             force_rows = np.asarray(forces, dtype=float)
-        for position, force in zip(atoms.positions, force_rows):
-            lines.append(
-                " "
-                + "".join(f"{value:14.8f}" for value in position)
-                + "   "
-                + "".join(f"{value:14.8f}" for value in force)
+            if force_rows.shape != (len(atoms), 3) or not np.all(
+                np.isfinite(force_rows)
+            ):
+                raise ValueError("MD OUTCAR forces must be a finite (N, 3) array")
+            lines.extend(
+                [
+                    " POSITION                         CONSTRAINT-APPLIED-FORCE (eV/Angst)",
+                    " " + "-" * 91,
+                ]
             )
+            for position, force in zip(atoms.positions, force_rows):
+                lines.append(
+                    " "
+                    + "".join(f"{value:14.8f}" for value in position)
+                    + "   "
+                    + "".join(f"{value:14.8f}" for value in force)
+                )
+        else:
+            lines.extend(
+                [" POSITION (Angstrom; force output disabled)", " " + "-" * 91]
+            )
+            for position in atoms.positions:
+                lines.append(" " + "".join(f"{value:14.8f}" for value in position))
         lines.extend(
             [
                 " " + "-" * 91,

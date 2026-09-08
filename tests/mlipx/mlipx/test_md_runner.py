@@ -130,6 +130,7 @@ def test_md_velocity_policy_auto_preserves_existing(tmp_path):
         pre_relax=False,
         verbose=False,
         velocity_policy="auto",
+        com_policy="none",
     )
     runner._initialize_velocities(atoms)
     assert np.allclose(atoms.get_momenta(), np.full((4, 3), 0.5))
@@ -183,7 +184,7 @@ def test_md_restart_momenta_reject_position_changing_pre_relax(tmp_path, policy)
         velocity_policy=policy,
         verbose=False,
     )
-    with pytest.raises(ValueError, match="exact phase-space restart"):
+    with pytest.raises(ValueError, match="not a strict trajectory restart"):
         runner.run(atoms)
 
 
@@ -292,6 +293,7 @@ def test_all_backends_share_every_md_integrator_path(
         pre_relax=False,
         verbose=False,
         seed=42,
+        com_policy="none" if thermostat == "NHC" else "auto",
     )
 
     results = runner.run(_bulk_atoms(n=4))
@@ -482,6 +484,7 @@ def test_md_provenance_records_only_active_thermostat_parameters(
         verbose=False,
         seed=12,
         velocity_policy="initialize",
+        com_policy="none" if thermostat == "NHC" else "auto",
     )
     results = runner.run(_bulk_atoms(n=4))
     provenance = results["md_provenance"]
@@ -531,6 +534,11 @@ def test_nve_provenance_has_null_thermostat_and_no_coupling_parameters(tmp_path)
         "total_steps",
         "seed",
         "velocity_policy",
+        "com_policy",
+        "com_policy_effective",
+        "constraints",
+        "degrees_of_freedom",
+        "force_contract",
     }
 
 
@@ -590,6 +598,8 @@ def test_md_streams_trajectory_to_disk(tmp_path):
             "total_energy",
             "temperature",
             "volume",
+            "max_force_raw_eV_A",
+            "max_force_applied_eV_A",
             "configurational_stress",
             "total_stress",
             "configurational_pressure_gpa",
@@ -619,6 +629,8 @@ def test_md_streams_trajectory_to_disk(tmp_path):
         "total_energy_eV",
         "temperature_K",
         "volume_A3",
+        "max_force_raw_eV_A",
+        "max_force_applied_eV_A",
         "configurational_stress_xx_eV_A3",
         "configurational_stress_yy_eV_A3",
         "configurational_stress_zz_eV_A3",
@@ -647,7 +659,7 @@ def test_md_streams_trajectory_to_disk(tmp_path):
     assert len(read(tmp_path / "vasp" / "CONTCAR", format="vasp")) == 8
     assert not (tmp_path / "analysis").exists()
     manifest = json.loads((tmp_path / "artifacts.json").read_text())
-    assert manifest["schema"] == "mlipx.md-artifacts/2"
+    assert manifest["schema"] == "mlipx.md-artifacts/3"
     assert manifest["status"] == "completed"
     assert manifest["trajectory"]["frames"] == nframes
     assert manifest["trajectory"]["positions_convention"] == "unwrapped"
