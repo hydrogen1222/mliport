@@ -19,6 +19,7 @@ TUI, so the two interfaces cannot drift apart.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -26,15 +27,17 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mlipx.config import get_schema
-from mlipx.jobs import JobManager, JobStatus
+from mlipx.jobs import JobManager, JobStatus, _lock_file, _unlock_file
 
 if TYPE_CHECKING:
-    from typing import Any
+    from collections.abc import Callable
+    from typing import Any, BinaryIO
 
 #: Task file keys that are per-task run options vs. structural fields.
 _STRUCTURAL_KEYS = {
@@ -276,7 +279,7 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
           "max_concurrent": 1,               // optional, >= 1
           "tasks": [
             {
-              "name": "opt-1",               // optional, must be unique
+              "name": "opt-1",               // optional display name
               "python": "/abs/.venv/bin/python",  // optional, per-task env
               "calc_type": "opt",            // sp | opt | md
               "structure": "/abs/a.cif",     // required, must exist
@@ -314,7 +317,6 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
     if not isinstance(raw_tasks, list) or not raw_tasks:
         raise ValueError("Task file must contain a non-empty 'tasks' list")
 
-    names: set[str] = set()
     tasks: list[dict[str, Any]] = []
     for index, task in enumerate(raw_tasks):
         if not isinstance(task, dict):
@@ -353,9 +355,8 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
                 must_exist=True,
             )
         name = str(task.get("name") or f"{calc_type}-{index + 1}")
-        if name in names:
-            raise ValueError(f"{label}: duplicate task name {name!r}")
-        names.add(name)
+        if not name.strip():
+            raise ValueError(f"{label}: task display name must not be empty")
 
         options = task.get("options") or {}
         if not isinstance(options, dict):
@@ -399,7 +400,7 @@ def submit_task_file(mgr: JobManager, path: str | Path) -> tuple[list[str], int]
     parsed = parse_task_file(path)
     job_ids: list[str] = []
     for task in parsed["tasks"]:
-        job_id = task["name"]
+        job_id = mgr.new_job_id()
         cmd = build_mlipx_command(
             calc_type=task["calc_type"],
             structure=task["structure"],
@@ -422,6 +423,7 @@ def submit_task_file(mgr: JobManager, path: str | Path) -> tuple[list[str], int]
             device=task["device"],
             cmd=cmd,
             python=task["python"],
+            display_name=task["name"],
         )
         job_ids.append(job_id)
     return job_ids, parsed["max_concurrent"]
@@ -438,6 +440,80 @@ def _probe_structure(structure: str) -> tuple[str, int]:
         return "?", 0
 
 
+def resolve_device_uuid(device: str) -> str | None:
+    """Resolve a CUDA ordinal to the immutable physical GPU UUID.
+
+    CPU jobs do not take an exclusive device lease. CUDA ordinals are resolved
+    through ``CUDA_VISIBLE_DEVICES`` before querying ``nvidia-smi`` so two
+    differently expressed ordinals cannot lease the same physical GPU.
+    """
+    normalized = str(device).strip().lower()
+    if normalized == "cpu":
+        return None
+    match = re.fullmatch(r"(?:gpu|cuda)(?::(\d+))?", normalized)
+    if match is None:
+        raise ValueError(
+            f"Cannot acquire device lease for {device!r}; expected cpu, gpu, "
+            "cuda, or cuda:N"
+        )
+    local_ordinal = int(match.group(1) or 0)
+
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible is None:
+        selector = str(local_ordinal)
+    else:
+        tokens = [token.strip() for token in visible.split(",") if token.strip()]
+        if not tokens or visible.strip() == "-1" or local_ordinal >= len(tokens):
+            raise RuntimeError(
+                f"CUDA device {device!r} is not present in CUDA_VISIBLE_DEVICES="
+                f"{visible!r}"
+            )
+        selector = tokens[local_ordinal]
+
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,uuid",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            f"Cannot resolve {device!r} to a GPU UUID; nvidia-smi failed"
+        ) from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(
+            f"Cannot resolve {device!r} to a GPU UUID: nvidia-smi {detail}"
+        )
+
+    by_index: dict[str, str] = {}
+    known_uuids: set[str] = set()
+    for line in result.stdout.splitlines():
+        fields = [field.strip() for field in line.split(",", maxsplit=1)]
+        if len(fields) != 2 or not fields[0].isdigit() or not fields[1]:
+            raise RuntimeError(f"Malformed nvidia-smi GPU inventory line: {line!r}")
+        by_index[fields[0]] = fields[1]
+        known_uuids.add(fields[1])
+
+    if selector.startswith(("GPU-", "MIG-")):
+        if selector not in known_uuids:
+            raise RuntimeError(
+                f"CUDA_VISIBLE_DEVICES references unknown GPU UUID {selector!r}"
+            )
+        return selector
+    if not selector.isdigit() or selector not in by_index:
+        raise RuntimeError(
+            f"CUDA_VISIBLE_DEVICES selector {selector!r} cannot be mapped to a GPU UUID"
+        )
+    return by_index[selector]
+
+
 class QueueScheduler:
     """Poll the job directory and launch queued (PENDING) jobs.
 
@@ -452,12 +528,22 @@ class QueueScheduler:
         jobs_dir: str | Path | None = None,
         max_concurrent: int = 1,
         poll_interval: float = 5.0,
+        device_uuid_resolver: Callable[[str], str | None] = resolve_device_uuid,
+        stale_claim_seconds: float = 60.0,
     ):
         self.mgr = JobManager(jobs_dir)
+        if isinstance(max_concurrent, bool) or not isinstance(max_concurrent, int):
+            raise TypeError("max_concurrent must be an integer")
         if max_concurrent < 1:
             raise ValueError("max_concurrent must be >= 1")
         self.max_concurrent = max_concurrent
-        self.poll_interval = max(0.5, float(poll_interval))
+        self.poll_interval = float(poll_interval)
+        if not math.isfinite(self.poll_interval) or self.poll_interval <= 0:
+            raise ValueError("poll_interval must be finite and > 0")
+        self.device_uuid_resolver = device_uuid_resolver
+        self.stale_claim_seconds = float(stale_claim_seconds)
+        if not math.isfinite(self.stale_claim_seconds) or self.stale_claim_seconds <= 0:
+            raise ValueError("stale_claim_seconds must be finite and > 0")
         self._stop_requested = False
 
     def request_stop(self) -> None:
@@ -492,6 +578,8 @@ class QueueScheduler:
                     self.mgr.update_status(
                         job["job_id"],
                         JobStatus.FAILED,
+                        expected_statuses={JobStatus.RUNNING},
+                        expected_pid=reaped[0],
                         error=(
                             "Worker process exited unexpectedly "
                             f"(status {reaped[1]})"
@@ -504,12 +592,12 @@ class QueueScheduler:
             if job.get("status") != "running":
                 continue
             pid = job.get("pid")
-            if not isinstance(pid, int) or pid <= 0:
-                continue
-            if not _pid_alive(pid):
+            if not self.mgr.running_process_matches(job):
                 self.mgr.update_status(
                     job["job_id"],
                     JobStatus.FAILED,
+                    expected_statuses={JobStatus.RUNNING},
+                    expected_pid=pid,
                     error="Worker process exited unexpectedly",
                 )
 
@@ -518,6 +606,7 @@ class QueueScheduler:
 
         Returns the number of jobs started in this pass.
         """
+        self.mgr.recover_stale_claims(max_age_seconds=self.stale_claim_seconds)
         self._reap_stale_running()
         # Pausing the queue is deliberately different from stopping the
         # scheduler: existing RUNNING workers continue, while PENDING jobs
@@ -525,36 +614,89 @@ class QueueScheduler:
         if queue_paused(self.mgr.jobs_dir):
             return 0
         launched = 0
-        running = self.mgr.count_by_status("running")
-        while running < self.max_concurrent:
+        active = self.mgr.count_by_status("running") + self.mgr.count_by_status(
+            "claimed"
+        )
+        while active < self.max_concurrent:
             # Re-check between launches so a pause request cannot cause a
             # second pending job to start after the first one in this pass.
             if queue_paused(self.mgr.jobs_dir):
                 break
-            job = self.mgr.next_pending()
-            if job is None:
+            claimed_job: dict[str, Any] | None = None
+            claim_token: str | None = None
+            for job in self.mgr.pending_jobs():
+                job_id = job["job_id"]
+                cmd = job.get("cmd") or []
+                if not cmd:
+                    self.mgr.update_status(
+                        job_id,
+                        JobStatus.FAILED,
+                        expected_statuses={JobStatus.PENDING},
+                        error="Job has no command recorded",
+                    )
+                    continue
+                try:
+                    device_uuid = self.device_uuid_resolver(
+                        str(job.get("device", "cpu"))
+                    )
+                except Exception as exc:
+                    self.mgr.update_status(
+                        job_id,
+                        JobStatus.FAILED,
+                        expected_statuses={JobStatus.PENDING},
+                        error=f"Could not acquire device lease: {exc}",
+                    )
+                    continue
+                token = self.mgr.new_job_id()
+                try:
+                    claimed_job = self.mgr.claim_job(
+                        job_id,
+                        claim_token=token,
+                        owner_pid=os.getpid(),
+                        device_uuid=device_uuid,
+                    )
+                except ValueError as exc:
+                    self.mgr.update_status(
+                        job_id,
+                        JobStatus.FAILED,
+                        expected_statuses={JobStatus.PENDING},
+                        error=f"Job must be resubmitted with an internal UUID: {exc}",
+                    )
+                    continue
+                if claimed_job is not None:
+                    claim_token = token
+                    break
+            if claimed_job is None or claim_token is None:
                 break
-            job_id = job["job_id"]
-            cmd = job.get("cmd") or []
-            if not cmd:
-                self.mgr.update_status(
-                    job_id, JobStatus.FAILED, error="Job has no command recorded"
-                )
-                continue
+
+            job_id = claimed_job["job_id"]
+            cmd = claimed_job["cmd"]
             try:
-                proc = self.mgr._spawn_worker(job_id, cmd)
+                proc = self.mgr._spawn_worker(job_id, cmd, claim_token=claim_token)
             except OSError as exc:
                 self.mgr.update_status(
-                    job_id, JobStatus.FAILED, error=f"Could not spawn worker: {exc}"
+                    job_id,
+                    JobStatus.FAILED,
+                    expected_statuses={JobStatus.CLAIMED},
+                    claim_token=claim_token,
+                    error=f"Could not spawn worker: {exc}",
                 )
                 continue
-            self.mgr.mark_running(job_id, proc.pid)
-            running += 1
+            if not self.mgr.mark_running(job_id, proc.pid, claim_token=claim_token):
+                self.mgr._kill_process(proc.pid)
+                self.mgr.update_status(
+                    job_id,
+                    JobStatus.FAILED,
+                    expected_statuses={JobStatus.CLAIMED},
+                    claim_token=claim_token,
+                    error="Could not promote claimed job to running",
+                )
+                continue
+            active += 1
             launched += 1
         return launched
 
-    def run_forever(self, stop_file: str | Path | None = None) -> None:
-        """Poll until :meth:`request_stop` is called or ``stop_file`` exists."""
+    def _run_loop(self, stop_file: str | Path | None = None) -> None:
         stop_path = Path(stop_file) if stop_file else None
         while not self._stop_requested:
             if stop_path is not None and stop_path.exists():
@@ -562,10 +704,47 @@ class QueueScheduler:
             self.run_once()
             time.sleep(self.poll_interval)
 
+    def run_forever(
+        self,
+        stop_file: str | Path | None = None,
+        *,
+        inherited_lock: BinaryIO | None = None,
+    ) -> None:
+        """Poll while holding the process-wide singleton scheduler lock."""
+        if inherited_lock is not None:
+            self._run_loop(stop_file)
+            return
+        lock_path = scheduler_lock_file(self.mgr.jobs_dir)
+        try:
+            handle = lock_path.open("a+b")
+            _lock_file(handle, blocking=False)
+        except BlockingIOError as exc:
+            handle.close()
+            raise RuntimeError("A scheduler is already running") from exc
+        pid_file = scheduler_pid_file(self.mgr.jobs_dir)
+        try:
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(os.getpid()).encode("ascii"))
+            handle.flush()
+            os.fsync(handle.fileno())
+            _atomic_write_text(pid_file, str(os.getpid()))
+            self._run_loop(stop_file)
+        finally:
+            if _scheduler_lock_owner(self.mgr.jobs_dir) == os.getpid():
+                pid_file.unlink(missing_ok=True)
+            _unlock_file(handle)
+            handle.close()
+
 
 def scheduler_pid_file(jobs_dir: str | Path) -> Path:
     """PID file for a background scheduler, next to the jobs directory."""
     return Path(jobs_dir).parent / "scheduler.pid"
+
+
+def scheduler_lock_file(jobs_dir: str | Path) -> Path:
+    """OS-lock backing file used to guarantee one scheduler process."""
+    return Path(jobs_dir).parent / "scheduler.lock"
 
 
 def scheduler_pause_file(jobs_dir: str | Path) -> Path:
@@ -582,18 +761,20 @@ def pause_scheduler(jobs_dir: str | Path) -> bool:
     """Pause dispatching PENDING jobs without affecting RUNNING workers."""
     path = scheduler_pause_file(jobs_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
+    try:
+        path.open("x", encoding="utf-8").close()
+    except FileExistsError:
         return False
-    path.touch()
     return True
 
 
 def resume_scheduler(jobs_dir: str | Path) -> bool:
     """Resume dispatching PENDING jobs. Returns whether it was paused."""
     path = scheduler_pause_file(jobs_dir)
-    if not path.exists():
+    try:
+        path.unlink()
+    except FileNotFoundError:
         return False
-    path.unlink()
     return True
 
 
@@ -613,34 +794,106 @@ def start_scheduler(
     poll_interval: float = 5.0,
 ) -> int:
     """Launch a detached background scheduler; returns its PID."""
+    if isinstance(max_concurrent, bool) or not isinstance(max_concurrent, int):
+        raise TypeError("max_concurrent must be an integer")
     if max_concurrent < 1:
         raise ValueError("max_concurrent must be >= 1")
+    poll_interval = float(poll_interval)
+    if not math.isfinite(poll_interval) or poll_interval <= 0:
+        raise ValueError("poll_interval must be finite and > 0")
+    if os.name == "nt":  # pragma: no cover - POSIX HPC path is authoritative
+        raise RuntimeError(
+            "Reliable background scheduler lock handoff is unavailable on Windows; "
+            "use 'mlipx queue start --foreground'."
+        )
     pid_file = scheduler_pid_file(jobs_dir)
-    if pid_file.exists():
-        existing = pid_file.read_text(encoding="utf-8").strip()
-        if existing.isdigit() and _pid_alive(int(existing)):
-            raise RuntimeError(
-                f"A scheduler is already running (PID {existing}); "
-                f"stop it with 'mlipx queue stop' first."
-            )
-        pid_file.unlink(missing_ok=True)
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "mlipx.queue_daemon",
-            str(Path(jobs_dir).resolve()),
-            "--max-concurrent",
-            str(max_concurrent),
-            "--poll",
-            str(poll_interval),
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    pid_file.write_text(str(proc.pid), encoding="utf-8")
+    lock_path = scheduler_lock_file(jobs_dir)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_handle = lock_path.open("a+b")
+    try:
+        _lock_file(lock_handle, blocking=False)
+    except BlockingIOError as exc:
+        lock_handle.close()
+        existing = (
+            pid_file.read_text(encoding="utf-8").strip() if pid_file.exists() else "?"
+        )
+        raise RuntimeError(
+            f"A scheduler is already running (PID {existing}); "
+            "stop it with 'mlipx queue stop' first."
+        ) from exc
+    proc: subprocess.Popen | None = None
+    try:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "mlipx.queue_daemon",
+                str(Path(jobs_dir).resolve()),
+                "--max-concurrent",
+                str(max_concurrent),
+                "--poll",
+                str(poll_interval),
+                "--lock-fd",
+                str(lock_handle.fileno()),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            pass_fds=(lock_handle.fileno(),),
+        )
+        lock_handle.seek(0)
+        lock_handle.truncate()
+        lock_handle.write(str(proc.pid).encode("ascii"))
+        lock_handle.flush()
+        os.fsync(lock_handle.fileno())
+        _atomic_write_text(pid_file, str(proc.pid))
+    except Exception:
+        if proc is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(proc.pid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(proc.pid, signal.SIGKILL)
+                proc.wait(timeout=5)
+        _unlock_file(lock_handle)
+        lock_handle.close()
+        raise
+    # Do not call LOCK_UN: the daemon inherited this same locked open-file
+    # description. Closing only the parent's descriptor leaves the singleton
+    # lock held until the daemon exits.
+    lock_handle.close()
     return proc.pid
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Durably replace a small control file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        temporary.replace(path)
+        if os.name != "nt":
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _pid_alive(pid: int) -> bool:
@@ -653,17 +906,45 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _scheduler_lock_held(jobs_dir: str | Path) -> bool:
+    path = scheduler_lock_file(jobs_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+b")
+    try:
+        _lock_file(handle, blocking=False)
+    except BlockingIOError:
+        handle.close()
+        return True
+    _unlock_file(handle)
+    handle.close()
+    return False
+
+
+def _scheduler_lock_owner(jobs_dir: str | Path) -> int | None:
+    try:
+        text = scheduler_lock_file(jobs_dir).read_text(encoding="ascii").strip()
+    except OSError:
+        return None
+    return int(text) if text.isdigit() else None
+
+
 def stop_scheduler(jobs_dir: str | Path) -> bool:
     """Stop a background scheduler (SIGTERM). Returns True if one was running."""
     pid_file = scheduler_pid_file(jobs_dir)
+    if not _scheduler_lock_held(jobs_dir):
+        pid_file.unlink(missing_ok=True)
+        return False
     if not pid_file.exists():
         return False
     pid_text = pid_file.read_text(encoding="utf-8").strip()
-    pid_file.unlink(missing_ok=True)
     if not pid_text.isdigit():
         return False
+    pid = int(pid_text)
+    if _scheduler_lock_owner(jobs_dir) != pid:
+        return False
+    pid_file.unlink(missing_ok=True)
     try:
-        os.kill(int(pid_text), signal.SIGTERM)
+        os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         return False
     return True
@@ -672,10 +953,15 @@ def stop_scheduler(jobs_dir: str | Path) -> bool:
 def scheduler_status(jobs_dir: str | Path) -> dict[str, Any]:
     """Whether a background scheduler is alive, paused, and its PID."""
     pid_file = scheduler_pid_file(jobs_dir)
-    if not pid_file.exists():
+    if not _scheduler_lock_held(jobs_dir) or not pid_file.exists():
         return {"running": False, "pid": None, "paused": queue_paused(jobs_dir)}
     pid_text = pid_file.read_text(encoding="utf-8").strip()
     if not pid_text.isdigit():
         return {"running": False, "pid": None, "paused": queue_paused(jobs_dir)}
     pid = int(pid_text)
-    return {"running": _pid_alive(pid), "pid": pid, "paused": queue_paused(jobs_dir)}
+    running = _scheduler_lock_owner(jobs_dir) == pid and _pid_alive(pid)
+    return {
+        "running": running,
+        "pid": pid if running else None,
+        "paused": queue_paused(jobs_dir),
+    }

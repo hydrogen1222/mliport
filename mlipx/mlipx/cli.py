@@ -1907,7 +1907,9 @@ def cmd_queue(args: argparse.Namespace) -> int:
             return 1
         print(f"Queued {len(job_ids)} task(s) with status PENDING.")
         for job_id in job_ids:
-            print(f"  - {job_id}")
+            job = mgr.get_job(job_id)
+            display_name = job.get("display_name", job_id) if job else job_id
+            print(f"  - {display_name} [{job_id}]")
         print(f"max_concurrent: {max_concurrent} (set in the task file)")
         print("Start the scheduler with: mlipx queue start")
         return 0
@@ -2009,7 +2011,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
         print(f"Scheduler: not running{suffix}")
     print(
         f"Queued:     {summary['pending']} pending, {summary['paused']} paused, "
-        f"{summary['running']} running"
+        f"{summary['claimed']} claimed, {summary['running']} running"
     )
     print(
         f"Finished:   {summary['done']} done, {summary['failed']} failed, ",
@@ -2026,11 +2028,16 @@ def cmd_jobs(args: argparse.Namespace) -> int:
     if not jobs:
         print("No jobs found.")
         return 0
-    print(f"{'ID':<40} {'Status':<12} {'Type':<6} {'Formula':<12} {'Device'}")
-    print("-" * 90)
+    print(
+        f"{'Name':<24} {'Run ID':<36} {'Status':<12} "
+        f"{'Type':<6} {'Formula':<12} {'Device'}"
+    )
+    print("-" * 110)
     for j in jobs:
         print(
-            f"{j['job_id']:<40} {j['status']:<12} {j.get('calc_type', ''):<6} {j.get('formula', ''):<12} {j.get('device', '')}"
+            f"{j.get('display_name', j['job_id']):<24} {j['job_id']:<36} "
+            f"{j['status']:<12} {j.get('calc_type', ''):<6} "
+            f"{j.get('formula', ''):<12} {j.get('device', '')}"
         )
     return 0
 

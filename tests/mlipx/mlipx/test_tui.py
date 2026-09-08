@@ -7,6 +7,7 @@ LICENSE file in the root directory of this source tree.
 
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
@@ -695,7 +696,7 @@ async def test_jobs_screen_handles_empty_store_and_remounts(tmp_path: Path) -> N
         await pilot.pause()
 
         table = jobs_screen.query_one("#jobs-table")
-        assert len(table.columns) == 6
+        assert len(table.columns) == 7
         assert table.row_count == 0
         assert jobs_screen.query_one("#pause-job-btn")
         assert jobs_screen.query_one("#resume-job-btn")
@@ -707,7 +708,7 @@ async def test_jobs_screen_handles_empty_store_and_remounts(tmp_path: Path) -> N
 
         await app.push_screen(jobs_screen)
         await pilot.pause()
-        assert len(table.columns) == 6
+        assert len(table.columns) == 7
         assert table.row_count == 0
 
 
@@ -715,8 +716,9 @@ async def test_jobs_screen_handles_empty_store_and_remounts(tmp_path: Path) -> N
 async def test_jobs_screen_uses_job_id_as_row_key(tmp_path: Path) -> None:
     """Selecting a table row resolves to the persisted job ID."""
     manager = JobManager(jobs_dir=tmp_path)
+    job_id = str(uuid.uuid4())
     manager._write_job_state(
-        "job-123",
+        job_id,
         status=JobStatus.RUNNING,
         calc_type="sp",
         structure="/tmp/POSCAR",
@@ -724,6 +726,7 @@ async def test_jobs_screen_uses_job_id_as_row_key(tmp_path: Path) -> None:
         natoms=2,
         pid=123,
         device="cpu",
+        display_name="job-123",
     )
 
     app = MlipxApp()
@@ -734,17 +737,19 @@ async def test_jobs_screen_uses_job_id_as_row_key(tmp_path: Path) -> None:
         await pilot.pause()
 
         table = jobs_screen.query_one("#jobs-table")
-        assert [row_key.value for row_key in table.rows] == ["job-123"]
+        assert [row_key.value for row_key in table.rows] == [job_id]
+        assert table.get_row_at(0)[:2] == ["job-123", job_id]
 
 
 @pytest.mark.asyncio()
 async def test_jobs_screen_refresh_preserves_selected_job(tmp_path: Path) -> None:
     """Auto-refresh must not move the cursor back to the first running job."""
     manager = JobManager(jobs_dir=tmp_path)
-    for job_id, status, pid in (
-        ("a-running", JobStatus.RUNNING, 123),
-        ("b-pending", JobStatus.PENDING, 0),
-    ):
+    records = (
+        (str(uuid.uuid4()), "a-running", JobStatus.RUNNING, 123),
+        (str(uuid.uuid4()), "b-pending", JobStatus.PENDING, 0),
+    )
+    for job_id, display_name, status, pid in records:
         manager._write_job_state(
             job_id,
             status=status,
@@ -754,6 +759,7 @@ async def test_jobs_screen_refresh_preserves_selected_job(tmp_path: Path) -> Non
             natoms=2,
             pid=pid,
             device="cpu",
+            display_name=display_name,
         )
 
     app = MlipxApp()
@@ -764,7 +770,8 @@ async def test_jobs_screen_refresh_preserves_selected_job(tmp_path: Path) -> Non
         await pilot.pause()
 
         table = jobs_screen.query_one("#jobs-table")
-        table.move_cursor(row=1)
+        pending_id = records[1][0]
+        table.move_cursor(row=table.get_row_index(pending_id))
         assert table.get_row_at(table.cursor_row)[0] == "b-pending"
         jobs_screen._refresh_table()
         assert table.get_row_at(table.cursor_row)[0] == "b-pending"

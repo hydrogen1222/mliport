@@ -9,6 +9,7 @@ backend: each queued job records its own interpreter and is executed by
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sys
 from pathlib import Path
@@ -21,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("jobs_dir")
     parser.add_argument("--max-concurrent", type=int, default=1)
     parser.add_argument("--poll", type=float, default=5.0)
+    parser.add_argument("--lock-fd", type=int)
     args = parser.parse_args(argv)
 
     scheduler = QueueScheduler(
@@ -35,7 +37,16 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGINT, _handle_sigterm)
 
-    scheduler.run_forever()
+    inherited_lock = (
+        os.fdopen(args.lock_fd, "a+b", closefd=True)
+        if args.lock_fd is not None
+        else None
+    )
+    try:
+        scheduler.run_forever(inherited_lock=inherited_lock)
+    finally:
+        if inherited_lock is not None:
+            inherited_lock.close()
     return 0
 
 

@@ -61,7 +61,8 @@ class RunScreen(Screen):
         self.status = self.query_one("#status-text", Static)
         try:
             atoms = read(self.app.get_config("structure_file"))
-            self._job_id = self._make_job_id()
+            display_name = self._make_display_name()
+            self._job_id = self._job_manager.new_job_id()
             command = self._build_command()
             # Submit to the queue as PENDING: the scheduler (``mlipx queue
             # start`` or the Jobs screen button) promotes it to RUNNING when a
@@ -75,21 +76,24 @@ class RunScreen(Screen):
                 natoms=len(atoms),
                 device=self.app.get_config("device", "cpu"),
                 cmd=command,
+                display_name=display_name,
             )
             log_path = self._job_manager._log_file(self._job_id).resolve()
-            self.log_widget.write_line(f"Queued job: {self._job_id} (PENDING)")
-            self.log_widget.write_line(f"Live log: {log_path}")
-            self.log_widget.write_line(
-                f"Follow live output: tail -f {shlex.quote(str(log_path))}"
+            self.log_widget.write(
+                f"Queued job: {display_name} [{self._job_id}] (PENDING)\n"
             )
-            self.log_widget.write_line(
+            self.log_widget.write(f"Live log: {log_path}\n")
+            self.log_widget.write(
+                f"Follow live output: tail -f {shlex.quote(str(log_path))}\n"
+            )
+            self.log_widget.write(
                 "The queue scheduler starts it when a slot is free; "
-                "if it is not running, start it with: mlipx queue start"
+                "if it is not running, start it with: mlipx queue start\n"
             )
             self.status.update("Queued (PENDING) — safe to go Back or exit TUI")
             self._refresh_timer = self.set_interval(0.5, self._refresh_job)
         except Exception as exc:
-            self.log_widget.write_line(f"ERROR: Could not queue the job: {exc}")
+            self.log_widget.write(f"ERROR: Could not queue the job: {exc}\n")
             self.status.update("Failed to queue")
             self.progress.update(total=100, progress=0)
             self.query_one("#cancel-btn", Button).disabled = True
@@ -100,21 +104,16 @@ class RunScreen(Screen):
             self._refresh_timer.stop()
             self._refresh_timer = None
 
-    def _make_job_id(self) -> str:
+    def _make_display_name(self) -> str:
         configured = self.app.get_config("job_name")
         base = configured or (
             f"{self.app.get_config('calc_type', 'job')}-"
             f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         )
-        job_id = str(base).replace("/", "_").replace("\\", "_")
-        candidate = job_id
-        suffix = 2
-        while self._job_manager.get_job(candidate) is not None:
-            candidate = f"{job_id}-{suffix}"
-            suffix += 1
+        display_name = str(base).replace("/", "_").replace("\\", "_")
         if configured is None:
-            self.app.update_config("job_name", candidate)
-        return candidate
+            self.app.update_config("job_name", display_name)
+        return display_name
 
     def _build_command(self) -> list[str]:
         """Build the argv for the background calculation via the shared
@@ -220,7 +219,7 @@ class RunScreen(Screen):
                 self.log_widget.clear()
                 new_text = log_text
             for line in new_text.splitlines():
-                self.log_widget.write_line(line)
+                self.log_widget.write(f"{line}\n")
             self._displayed_log = log_text
 
         data = self._job_manager.get_job(self._job_id)

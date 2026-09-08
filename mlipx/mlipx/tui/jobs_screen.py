@@ -73,7 +73,9 @@ class JobsScreen(Screen):
     def on_mount(self) -> None:
         table = self.query_one("#jobs-table", DataTable)
         if not table.columns:
-            table.add_columns("ID", "Status", "Type", "Formula", "Atoms", "Device")
+            table.add_columns(
+                "Name", "Run ID", "Status", "Type", "Formula", "Atoms", "Device"
+            )
         self._refresh_scheduler_status()
         self._refresh_table()
         self._jobs_refresh_timer = self.set_interval(
@@ -119,7 +121,7 @@ class JobsScreen(Screen):
         table = self.query_one("#jobs-table", DataTable)
         selected_job_id: str | None = None
         if table.row_count and table.cursor_row < table.row_count:
-            selected_job_id = str(table.get_row_at(table.cursor_row)[0])
+            selected_job_id = str(table.get_row_at(table.cursor_row)[1])
         table.clear()
         jobs = self._job_manager.list_jobs()
         status_icons = {
@@ -135,6 +137,7 @@ class JobsScreen(Screen):
             status = str(job.get("status", "unknown"))
             icon = status_icons.get(status, "?")
             table.add_row(
+                str(job.get("display_name", job_id)),
                 job_id,
                 f"{icon} {status}",
                 job.get("calc_type", ""),
@@ -243,7 +246,7 @@ class JobsScreen(Screen):
         if table.cursor_row is None or table.cursor_row >= table.row_count:
             return None
         row = table.get_row_at(table.cursor_row)
-        return str(row[0]) if row else None
+        return str(row[1]) if row else None
 
     def _pause_selected_job(self) -> None:
         """Pause only the selected PENDING job."""
@@ -298,8 +301,9 @@ class JobsScreen(Screen):
     def _cancel_selected_job(self) -> None:
         table = self.query_one("#jobs-table", DataTable)
         if table.cursor_row is not None and table.cursor_row < table.row_count:
-            row = table.get_row_at(table.cursor_row)
-            job_id = str(row[0])
+            job_id = self._selected_job_id()
+            if job_id is None:
+                return
             ok = self._job_manager.kill_job(job_id)
             if ok:
                 self.app.notify(f"Cancelled job: {job_id}", title="OK")
@@ -312,12 +316,8 @@ class JobsScreen(Screen):
     def _delete_selected_job(self) -> None:
         table = self.query_one("#jobs-table", DataTable)
         if table.cursor_row is not None and table.cursor_row < table.row_count:
-            row = table.get_row_at(table.cursor_row)
-            job_id = str(row[0])
-            data = self._job_manager.get_job(job_id)
-            if data and data["status"] != "running":
-                job_file = self._job_manager._job_file(job_id)
-                job_file.unlink(missing_ok=True)
+            job_id = self._selected_job_id()
+            if job_id is not None and self._job_manager.delete_job(job_id):
                 self._refresh_table()
 
     def action_back(self) -> None:
@@ -366,8 +366,7 @@ class JobDetailScreen(Screen):
     def on_mount(self) -> None:
         log = self.query_one("#job-detail-log", Log)
         text = self.log_text or "(no log output)"
-        for line in text.splitlines():
-            log.write_line(line)
+        log.write("\n".join(text.splitlines()))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "back-btn":

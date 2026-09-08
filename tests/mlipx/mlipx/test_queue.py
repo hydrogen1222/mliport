@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
-from mlipx.jobs import JobManager
+from mlipx.jobs import JobManager, JobStatus
 from mlipx.queue import (
     QueueScheduler,
     build_mlipx_command,
@@ -17,6 +21,7 @@ from mlipx.queue import (
     pause_pending_job,
     pause_scheduler,
     queue_paused,
+    resolve_device_uuid,
     resume_paused_job,
     resume_scheduler,
     scheduler_pid_file,
@@ -296,13 +301,13 @@ def test_parse_task_file_missing_structure(tmp_path: Path) -> None:
         parse_task_file(path)
 
 
-def test_parse_task_file_duplicate_names(tmp_path: Path) -> None:
+def test_parse_task_file_allows_duplicate_display_names(tmp_path: Path) -> None:
     path = _write_tasks(
         tmp_path,
         [_sample_task(tmp_path, name="dup"), _sample_task(tmp_path, name="dup")],
     )
-    with pytest.raises(ValueError, match="duplicate"):
-        parse_task_file(path)
+    parsed = parse_task_file(path)
+    assert [task["name"] for task in parsed["tasks"]] == ["dup", "dup"]
 
 
 def test_parse_task_file_bad_python(tmp_path: Path) -> None:
@@ -327,9 +332,15 @@ def mgr(tmp_path: Path) -> JobManager:
     return JobManager(jobs_dir=tmp_path / "jobs")
 
 
-def _enqueue(mgr: JobManager, job_id: str, device: str = "cpu") -> None:
+def _job_id(name: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"mlipx-queue-test:{name}"))
+
+
+def _enqueue(mgr: JobManager, name: str, device: str = "cpu") -> str:
+    job_id = _job_id(name)
     mgr.enqueue(
         job_id=job_id,
+        display_name=name,
         calc_type="sp",
         structure="s.cif",
         formula="H2O",
@@ -337,11 +348,27 @@ def _enqueue(mgr: JobManager, job_id: str, device: str = "cpu") -> None:
         device=device,
         cmd=[sys.executable, "-c", "pass"],
     )
+    return job_id
+
+
+def _mark_running(mgr: JobManager, name: str, pid: int) -> None:
+    job_id = _job_id(name)
+    token = mgr.new_job_id()
+    assert mgr.claim_job(
+        job_id,
+        claim_token=token,
+        owner_pid=os.getpid(),
+        device_uuid=None,
+    )
+    assert mgr.mark_running(job_id, pid, claim_token=token)
 
 
 def test_enqueue_writes_pending(mgr: JobManager) -> None:
-    _enqueue(mgr, "job1")
-    data = mgr.get_job("job1")
+    job_id = _enqueue(mgr, "job1")
+    data = mgr.get_job(job_id)
+    assert uuid.UUID(data["job_id"])
+    assert data["display_name"] == "job1"
+    assert data["run_id"] == data["job_id"]
     assert data["status"] == "pending"
     assert data["cmd"] == [sys.executable, "-c", "pass"]
     assert data["pid"] == 0
@@ -351,17 +378,17 @@ def test_next_pending_fifo(mgr: JobManager) -> None:
     _enqueue(mgr, "first")
     time.sleep(0.01)
     _enqueue(mgr, "second")
-    assert mgr.next_pending()["job_id"] == "first"
-    mgr.mark_running("first", 999)
-    assert mgr.next_pending()["job_id"] == "second"
-    mgr.mark_running("second", 1000)
+    assert mgr.next_pending()["job_id"] == _job_id("first")
+    _mark_running(mgr, "first", 999)
+    assert mgr.next_pending()["job_id"] == _job_id("second")
+    _mark_running(mgr, "second", 1000)
     assert mgr.next_pending() is None
 
 
 def test_count_by_status(mgr: JobManager) -> None:
     _enqueue(mgr, "a")
     _enqueue(mgr, "b")
-    mgr.mark_running("a", 1)
+    _mark_running(mgr, "a", 1)
     assert mgr.count_by_status("pending") == 1
     assert mgr.count_by_status("running") == 1
 
@@ -369,14 +396,156 @@ def test_count_by_status(mgr: JobManager) -> None:
 def test_queue_summary(mgr: JobManager) -> None:
     _enqueue(mgr, "a")
     _enqueue(mgr, "b")
-    mgr.mark_running("a", 1)
+    _mark_running(mgr, "a", 1)
     summary = mgr.queue_summary()
     assert summary["pending"] == 1
     assert summary["running"] == 1
 
 
 def test_mark_running_missing_job(mgr: JobManager) -> None:
-    assert mgr.mark_running("ghost", 1) is False
+    assert mgr.mark_running(_job_id("ghost"), 1, claim_token=mgr.new_job_id()) is False
+
+
+def test_duplicate_internal_id_is_rejected_without_truncating_log(
+    mgr: JobManager,
+) -> None:
+    job_id = _enqueue(mgr, "same name")
+    mgr._log_file(job_id).write_text("preserve me\n", encoding="utf-8")
+    before = mgr.get_job(job_id)
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        mgr.enqueue(
+            job_id=job_id,
+            display_name="replacement",
+            calc_type="sp",
+            structure="other.cif",
+            formula="X",
+            natoms=1,
+            device="cpu",
+            cmd=[sys.executable, "-c", "pass"],
+        )
+
+    assert mgr._log_file(job_id).read_text(encoding="utf-8") == "preserve me\n"
+    assert mgr.get_job(job_id) == before
+
+
+def test_duplicate_display_names_receive_distinct_run_ids(mgr: JobManager) -> None:
+    ids = []
+    for _ in range(2):
+        job_id = mgr.new_job_id()
+        mgr.enqueue(
+            job_id=job_id,
+            display_name="repeatable",
+            calc_type="sp",
+            structure="s.cif",
+            formula="X",
+            natoms=1,
+            device="cpu",
+            cmd=[sys.executable, "-c", "pass"],
+        )
+        ids.append(job_id)
+
+    assert ids[0] != ids[1]
+    assert [mgr.get_job(job_id)["display_name"] for job_id in ids] == [
+        "repeatable",
+        "repeatable",
+    ]
+
+
+def test_two_schedulers_can_only_claim_a_job_once(tmp_path: Path) -> None:
+    first = JobManager(jobs_dir=tmp_path / "jobs")
+    second = JobManager(jobs_dir=first.jobs_dir)
+    job_id = first.new_job_id()
+    first.enqueue(
+        job_id=job_id,
+        display_name="atomic",
+        calc_type="sp",
+        structure="s.cif",
+        formula="X",
+        natoms=1,
+        device="cpu",
+        cmd=[sys.executable, "-c", "pass"],
+    )
+
+    def claim(manager: JobManager) -> bool:
+        return (
+            manager.claim_job(
+                job_id,
+                claim_token=manager.new_job_id(),
+                owner_pid=os.getpid(),
+                device_uuid=None,
+            )
+            is not None
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(claim, (first, second)))
+
+    assert sorted(outcomes) == [False, True]
+    assert first.get_job(job_id)["status"] == "claimed"
+
+
+def test_gpu_uuid_lease_blocks_aliases_of_the_same_device(mgr: JobManager) -> None:
+    first_id = _enqueue(mgr, "gpu-a", device="cuda:0")
+    second_id = _enqueue(mgr, "gpu-b", device="gpu")
+    first_token = mgr.new_job_id()
+    second_token = mgr.new_job_id()
+
+    assert mgr.claim_job(
+        first_id,
+        claim_token=first_token,
+        owner_pid=os.getpid(),
+        device_uuid="GPU-physical-0",
+    )
+    assert (
+        mgr.claim_job(
+            second_id,
+            claim_token=second_token,
+            owner_pid=os.getpid(),
+            device_uuid="GPU-physical-0",
+        )
+        is None
+    )
+    assert mgr.claim_job(
+        second_id,
+        claim_token=second_token,
+        owner_pid=os.getpid(),
+        device_uuid="GPU-physical-1",
+    )
+
+
+def test_stale_claim_recovery_releases_device_lease(
+    mgr: JobManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id = _enqueue(mgr, "stale", device="cuda:0")
+    token = mgr.new_job_id()
+    assert mgr.claim_job(
+        job_id,
+        claim_token=token,
+        owner_pid=os.getpid(),
+        device_uuid="GPU-stale",
+    )
+    monkeypatch.setattr("mlipx.jobs._pid_alive", lambda pid: False)
+
+    assert mgr.recover_stale_claims() == [job_id]
+    recovered = mgr.get_job(job_id)
+    assert recovered["status"] == "pending"
+    assert recovered["device_uuid"] is None
+
+
+def test_cuda_visible_devices_is_resolved_to_physical_uuid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3,1")
+    completed = Mock(
+        returncode=0,
+        stdout="1, GPU-one\n3, GPU-three\n",
+        stderr="",
+    )
+    monkeypatch.setattr("mlipx.queue.subprocess.run", Mock(return_value=completed))
+
+    assert resolve_device_uuid("cuda:0") == "GPU-three"
+    assert resolve_device_uuid("cuda:1") == "GPU-one"
 
 
 # ---------------------------------------------------------------------------
@@ -384,16 +553,34 @@ def test_mark_running_missing_job(mgr: JobManager) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _queued_cmd(
-    mgr: JobManager, job_id: str, marker_file: Path, sleep: float = 0.0
+@pytest.mark.parametrize("value", [True, 1.5])
+def test_scheduler_rejects_non_integer_concurrency(
+    tmp_path: Path, value: object
 ) -> None:
+    with pytest.raises((TypeError, ValueError), match="max_concurrent"):
+        QueueScheduler(jobs_dir=tmp_path / "jobs", max_concurrent=value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [0.0, float("nan"), float("inf")])
+def test_scheduler_rejects_non_positive_or_non_finite_poll_interval(
+    tmp_path: Path, value: float
+) -> None:
+    with pytest.raises(ValueError, match="poll_interval"):
+        QueueScheduler(jobs_dir=tmp_path / "jobs", poll_interval=value)
+
+
+def _queued_cmd(
+    mgr: JobManager, name: str, marker_file: Path, sleep: float = 0.0
+) -> str:
     """Queue a job whose command writes a marker file and exits."""
+    job_id = _job_id(name)
     code = (
         f"import time,sys; time.sleep({sleep}); "
-        f"open({str(marker_file)!r},'w').write({job_id!r})"
+        f"open({str(marker_file)!r},'w').write({name!r})"
     )
     mgr.enqueue(
         job_id=job_id,
+        display_name=name,
         calc_type="sp",
         structure="s.cif",
         formula="X",
@@ -401,6 +588,7 @@ def _queued_cmd(
         device="cpu",
         cmd=[sys.executable, "-c", code],
     )
+    return job_id
 
 
 def test_scheduler_run_once_launches_pending(tmp_path: Path) -> None:
@@ -409,9 +597,24 @@ def test_scheduler_run_once_launches_pending(tmp_path: Path) -> None:
     scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=1)
     launched = scheduler.run_once()
     assert launched == 1
-    assert mgr.get_job("j1")["status"] == "running"
-    assert mgr.get_job("j1")["pid"] > 0
+    assert mgr.get_job(_job_id("j1"))["status"] == "running"
+    assert mgr.get_job(_job_id("j1"))["pid"] > 0
     assert mgr.count_by_status("pending") == 0
+
+
+def test_running_job_cancellation_signals_verified_worker_identity(
+    tmp_path: Path,
+) -> None:
+    mgr = JobManager(jobs_dir=tmp_path / "jobs")
+    job_id = _queued_cmd(mgr, "cancel-running", tmp_path / "marker", sleep=10.0)
+    scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=1)
+    assert scheduler.run_once() == 1
+    assert mgr.get_job(job_id)["pid_identity"] is not None
+
+    assert mgr.kill_job(job_id)
+
+    assert mgr.get_job(job_id)["status"] == "cancelled"
+    assert not (tmp_path / "marker").exists()
 
 
 def test_scheduler_concurrency_limit(tmp_path: Path) -> None:
@@ -421,17 +624,19 @@ def test_scheduler_concurrency_limit(tmp_path: Path) -> None:
     _queued_cmd(mgr, "j2", tmp_path / "m2", sleep=1.0)
     scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=1)
     assert scheduler.run_once() == 1
-    assert mgr.get_job("j1")["status"] == "running"
-    assert mgr.get_job("j2")["status"] == "pending"
+    assert mgr.get_job(_job_id("j1"))["status"] == "running"
+    assert mgr.get_job(_job_id("j2"))["status"] == "pending"
     # Waiting for j1 to finish, then the scheduler picks j2 and runs it to
     # completion (max_concurrent=1 serialises them).
     deadline = time.time() + 15
     while time.time() < deadline:
         scheduler.run_once()
-        if mgr.get_job("j2")["status"] in ("done", "failed"):
+        if mgr.get_job(_job_id("j2"))["status"] in ("done", "failed"):
             break
         time.sleep(0.2)
-    assert mgr.get_job("j2")["status"] in ("done", "failed"), mgr.get_job("j2")
+    assert mgr.get_job(_job_id("j2"))["status"] in ("done", "failed"), mgr.get_job(
+        _job_id("j2")
+    )
     assert (tmp_path / "m1").exists()
     assert (tmp_path / "m2").exists()
 
@@ -444,17 +649,17 @@ def test_scheduler_pause_keeps_pending_jobs_until_resume(tmp_path: Path) -> None
     scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=1)
 
     assert scheduler.run_once() == 1
-    assert mgr.get_job("j1")["status"] == "running"
-    assert mgr.get_job("j2")["status"] == "pending"
+    assert mgr.get_job(_job_id("j1"))["status"] == "running"
+    assert mgr.get_job(_job_id("j2"))["status"] == "pending"
     assert pause_scheduler(mgr.jobs_dir) is True
     assert queue_paused(mgr.jobs_dir) is True
 
     deadline = time.time() + 15
-    while time.time() < deadline and mgr.get_job("j1")["status"] == "running":
+    while time.time() < deadline and mgr.get_job(_job_id("j1"))["status"] == "running":
         time.sleep(0.1)
-    assert mgr.get_job("j1")["status"] == "done"
+    assert mgr.get_job(_job_id("j1"))["status"] == "done"
     assert scheduler.run_once() == 0
-    assert mgr.get_job("j2")["status"] == "pending"
+    assert mgr.get_job(_job_id("j2"))["status"] == "pending"
     assert not (tmp_path / "m2").exists()
 
     assert resume_scheduler(mgr.jobs_dir) is True
@@ -462,10 +667,10 @@ def test_scheduler_pause_keeps_pending_jobs_until_resume(tmp_path: Path) -> None
     assert scheduler.run_once() == 1
     deadline = time.time() + 15
     while time.time() < deadline:
-        if mgr.get_job("j2")["status"] in ("done", "failed"):
+        if mgr.get_job(_job_id("j2"))["status"] in ("done", "failed"):
             break
         time.sleep(0.1)
-    assert mgr.get_job("j2")["status"] == "done"
+    assert mgr.get_job(_job_id("j2"))["status"] == "done"
     assert (tmp_path / "m2").exists()
 
 
@@ -489,28 +694,28 @@ def test_pause_one_pending_job_does_not_block_other_pending_jobs(
     scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=1)
 
     assert scheduler.run_once() == 1
-    assert pause_pending_job(mgr.jobs_dir, "j2") is True
-    assert mgr.get_job("j2")["status"] == "paused"
-    assert mgr.get_job("j3")["status"] == "pending"
+    assert pause_pending_job(mgr.jobs_dir, _job_id("j2")) is True
+    assert mgr.get_job(_job_id("j2"))["status"] == "paused"
+    assert mgr.get_job(_job_id("j3"))["status"] == "pending"
 
     deadline = time.time() + 15
     while time.time() < deadline:
         scheduler.run_once()
-        if mgr.get_job("j3")["status"] in ("running", "done", "failed"):
+        if mgr.get_job(_job_id("j3"))["status"] in ("running", "done", "failed"):
             break
         time.sleep(0.1)
-    assert mgr.get_job("j3")["status"] in ("running", "done", "failed")
+    assert mgr.get_job(_job_id("j3"))["status"] in ("running", "done", "failed")
     assert not (tmp_path / "m2").exists()
 
-    assert resume_paused_job(mgr.jobs_dir, "j2") is True
-    assert mgr.get_job("j2")["status"] == "pending"
+    assert resume_paused_job(mgr.jobs_dir, _job_id("j2")) is True
+    assert mgr.get_job(_job_id("j2"))["status"] == "pending"
     deadline = time.time() + 15
     while time.time() < deadline:
         scheduler.run_once()
-        if mgr.get_job("j2")["status"] in ("done", "failed"):
+        if mgr.get_job(_job_id("j2"))["status"] in ("done", "failed"):
             break
         time.sleep(0.1)
-    assert mgr.get_job("j2")["status"] == "done"
+    assert mgr.get_job(_job_id("j2"))["status"] == "done"
     assert (tmp_path / "m2").exists()
 
 
@@ -531,18 +736,22 @@ def test_scheduler_max_concurrent_two(tmp_path: Path) -> None:
 
 def test_scheduler_marks_no_command_job_failed(tmp_path: Path) -> None:
     mgr = JobManager(jobs_dir=tmp_path / "jobs")
-    mgr.enqueue(
-        job_id="empty",
+    job_id = _job_id("empty")
+    mgr._write_job_state(
+        job_id=job_id,
+        status=JobStatus.PENDING,
         calc_type="sp",
         structure="s.cif",
         formula="X",
         natoms=1,
+        pid=0,
         device="cpu",
         cmd=[],
+        display_name="empty",
     )
     scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=1)
     scheduler.run_once()
-    assert mgr.get_job("empty")["status"] == "failed"
+    assert mgr.get_job(job_id)["status"] == "failed"
 
 
 def test_scheduler_reaps_dead_worker_pid(tmp_path: Path) -> None:
@@ -554,8 +763,10 @@ def test_scheduler_reaps_dead_worker_pid(tmp_path: Path) -> None:
     import subprocess
 
     mgr = JobManager(jobs_dir=tmp_path / "jobs")
+    zombie_id = _job_id("zombie")
     mgr.enqueue(
-        job_id="zombie",
+        job_id=zombie_id,
+        display_name="zombie",
         calc_type="sp",
         structure="s.cif",
         formula="X",
@@ -566,14 +777,14 @@ def test_scheduler_reaps_dead_worker_pid(tmp_path: Path) -> None:
     # Record a PID that no longer exists (spawn one and let it exit).
     probe = subprocess.Popen([sys.executable, "-c", "pass"])
     probe.wait()
-    mgr.mark_running("zombie", probe.pid)
+    _mark_running(mgr, "zombie", probe.pid)
 
     # A second, healthy job must be launchable after the dead one is reaped.
     _queued_cmd(mgr, "healthy", tmp_path / "m1")
     scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=1)
     assert scheduler.run_once() == 1
-    assert mgr.get_job("zombie")["status"] == "failed"
-    assert mgr.get_job("healthy")["status"] == "running"
+    assert mgr.get_job(zombie_id)["status"] == "failed"
+    assert mgr.get_job(_job_id("healthy"))["status"] == "running"
 
 
 def test_scheduler_job_finishes_done(tmp_path: Path) -> None:
@@ -584,11 +795,11 @@ def test_scheduler_job_finishes_done(tmp_path: Path) -> None:
     scheduler.run_once()
     deadline = time.time() + 15
     while time.time() < deadline:
-        status = mgr.get_job("j1")["status"]
+        status = mgr.get_job(_job_id("j1"))["status"]
         if status in ("done", "failed"):
             break
         time.sleep(0.2)
-    assert mgr.get_job("j1")["status"] == "done", mgr.get_job("j1")
+    assert mgr.get_job(_job_id("j1"))["status"] == "done", mgr.get_job(_job_id("j1"))
     assert (tmp_path / "m1").exists()
 
 
@@ -609,7 +820,7 @@ def test_scheduler_run_forever_stop_file(tmp_path: Path) -> None:
     threading.Thread(target=_stop_later, daemon=True).start()
     scheduler.run_forever(stop_file=stop_file)
     # j1 must have been processed before the stop file appeared
-    assert mgr.get_job("j1")["status"] in ("done", "failed")
+    assert mgr.get_job(_job_id("j1"))["status"] in ("done", "failed")
 
 
 # ---------------------------------------------------------------------------
@@ -621,14 +832,17 @@ def test_submit_task_file_enqueues(tmp_path: Path) -> None:
     path = _write_tasks(tmp_path, [_sample_task(tmp_path, name="jobA")])
     mgr = JobManager(jobs_dir=tmp_path / "jobs")
     job_ids, max_conc = submit_task_file(mgr, path)
-    assert job_ids == ["jobA"]
+    assert len(job_ids) == 1
+    assert uuid.UUID(job_ids[0])
     assert max_conc == 1
-    data = mgr.get_job("jobA")
+    data = mgr.get_job(job_ids[0])
+    assert data["display_name"] == "jobA"
     assert data["status"] == "pending"
     assert data["calc_type"] == "opt"
     assert data["device"] == "cuda:0"
     # cmd must carry the interpreter + mlipx.cli invocation
     assert data["cmd"][:3] == [sys.executable, "-m", "mlipx.cli"]
+    assert data["cmd"][data["cmd"].index("--name") + 1] == data["run_id"]
 
 
 def test_submit_task_file_multiple(tmp_path: Path) -> None:
@@ -645,9 +859,13 @@ def test_submit_task_file_multiple(tmp_path: Path) -> None:
     path = _write_tasks(tmp_path, tasks, max_conc=2)
     mgr = JobManager(jobs_dir=tmp_path / "jobs")
     job_ids, max_conc = submit_task_file(mgr, path)
-    assert job_ids == ["opt1", "md1"]
+    assert len(job_ids) == 2
     assert max_conc == 2
-    md_cmd = mgr.get_job("md1")["cmd"]
+    assert [mgr.get_job(job_id)["display_name"] for job_id in job_ids] == [
+        "opt1",
+        "md1",
+    ]
+    md_cmd = mgr.get_job(job_ids[1])["cmd"]
     assert "--model-type" in md_cmd and "grace" in md_cmd
     assert "--temp" in md_cmd and "400.0" in md_cmd
 
