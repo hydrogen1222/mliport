@@ -72,6 +72,11 @@ config.yml
 # Calculation output artifacts
 results/
 # Private development plans & notes (not project documentation)
+/.agent-local/
+/.local-plans/
+/audit-local/
+/*_NOT_FOR_REPO_*.md
+/*_development_plan*.md
 /mlipx_analysis_v2_unfreeze_development_plan.md
 /mlipx_analysis_v2_final_transport_hardening_plan.md
 # Private structure / model files

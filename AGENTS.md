@@ -7,6 +7,10 @@
 5. Prefer ASE/upstream algorithms over reimplementing MD integrators.
 6. Add a regression or known-answer test for scientific fixes when feasible.
 7. `archive/` is historical reference only and must never be imported.
-8. Advanced trajectory analysis is currently out of scope.
-9. Do not add features without an explicit request.
-10. Preserve reproducible raw MLMD trajectories and provenance.
+8. Active feature scope is defined by current public documentation, tests,
+   issues/PRs, and the user's explicit task. Historical archives and transient
+   audit/task-plan files are never normative requirements.
+9. Transient agent briefs, audit scratchpads, local research data, benchmark
+   outputs, and one-off development plans must not be committed.
+10. Do not add features without an explicit request.
+11. Preserve reproducible raw MLMD trajectories and provenance.

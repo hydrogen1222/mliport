@@ -92,7 +92,7 @@ fix_symmetry = false
 
 ; [model:mace_mpa0]
 ; engine = mace
-; path = /home/storm/models/mace/mace-mpa-0-medium.model
+; path = models/mace/mace-mpa-0-medium.model
 ; task = bulk
 ; dtype = float64
 
