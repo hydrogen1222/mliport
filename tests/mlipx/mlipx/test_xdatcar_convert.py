@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 from ase.io import read
+from ase.io.trajectory import Trajectory
 
 from mlipx.writers.xdatcar import XdatcarWriter, convert_to_vasp_xdatcar
 
@@ -190,3 +191,33 @@ def test_convert_creates_output_directory(tmp_path: Path) -> None:
 def test_convert_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         convert_to_vasp_xdatcar(tmp_path / "nope.XDATCAR")
+
+
+def test_xdatcar_writer_rejects_variable_cell_before_writing(tmp_path: Path) -> None:
+    frames = [
+        Atoms("Li", positions=[[0, 0, 0]], cell=[4, 4, 4], pbc=True),
+        Atoms("Li", positions=[[0, 0, 0]], cell=[5, 4, 4], pbc=True),
+    ]
+    output = tmp_path / "variable.XDATCAR"
+
+    with pytest.raises(ValueError, match="variable cell"):
+        XdatcarWriter().write(output, frames)
+
+    assert not output.exists()
+
+
+def test_convert_rejects_variable_cell_trajectory(tmp_path: Path) -> None:
+    source = tmp_path / "variable.traj"
+    frames = [
+        Atoms("Li", positions=[[0, 0, 0]], cell=[4, 4, 4], pbc=True),
+        Atoms("Li", positions=[[0, 0, 0]], cell=[5, 4, 4], pbc=True),
+    ]
+    with Trajectory(source, "w") as writer:
+        for frame in frames:
+            writer.write(frame)
+
+    output = tmp_path / "variable.XDATCAR"
+    with pytest.raises(ValueError, match="variable cell"):
+        convert_to_vasp_xdatcar(source, output)
+
+    assert not output.exists()

@@ -20,6 +20,7 @@ from mlipx.runners.singlepoint import SinglePointRunner
 from mlipx.runners.optimization import OptimizationRunner
 from mlipx.runners.md import MDRunner
 from mlipx.runners.batch import BatchRunner
+from mlipx.runners.neb import NEBRunner
 
 __all__ = [
     "BaseRunner",
@@ -27,4 +28,5 @@ __all__ = [
     "OptimizationRunner",
     "MDRunner",
     "BatchRunner",
+    "NEBRunner",
 ]

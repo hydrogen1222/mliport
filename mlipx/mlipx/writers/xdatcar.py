@@ -10,10 +10,51 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
+import numpy as np
+
 if TYPE_CHECKING:
     from typing import Any
 
     from ase import Atoms
+
+
+def _validate_fixed_cell_trajectory(
+    frames: list[Atoms], *, source: str = "trajectory"
+) -> None:
+    """Validate the fixed-cell contract required by standard XDATCAR."""
+
+    if not frames:
+        return
+    reference = frames[0]
+    reference_symbols = tuple(reference.get_chemical_symbols())
+    reference_pbc = np.asarray(reference.pbc, dtype=bool)
+    reference_cell = np.asarray(reference.cell.array, dtype=float)
+    if not np.all(np.isfinite(reference_cell)):
+        raise ValueError(f"{source} frame 0 has a non-finite cell")
+    for index, atoms in enumerate(frames):
+        if len(atoms) != len(reference):
+            raise ValueError(
+                f"{source} frame {index} changes atom count; XDATCAR requires "
+                "a fixed atom count"
+            )
+        if tuple(atoms.get_chemical_symbols()) != reference_symbols:
+            raise ValueError(
+                f"{source} frame {index} changes atom identity/order; "
+                "XDATCAR cannot represent that change"
+            )
+        if not np.array_equal(np.asarray(atoms.pbc, dtype=bool), reference_pbc):
+            raise ValueError(
+                f"{source} frame {index} changes PBC flags; XDATCAR requires "
+                "consistent PBC semantics"
+            )
+        cell = np.asarray(atoms.cell.array, dtype=float)
+        if not np.all(np.isfinite(cell)):
+            raise ValueError(f"{source} frame {index} has a non-finite cell")
+        if not np.array_equal(cell, reference_cell):
+            raise ValueError(
+                f"{source} frame {index} has a variable cell; standard XDATCAR "
+                "supports only fixed-cell trajectories"
+            )
 
 
 class XdatcarWriter:
@@ -35,6 +76,9 @@ class XdatcarWriter:
         self.configuration_index = 0
         self._stream: TextIO | None = None
         self._stream_path: Path | None = None
+        self._reference_cell: np.ndarray | None = None
+        self._reference_symbols: tuple[str, ...] | None = None
+        self._reference_pbc: np.ndarray | None = None
 
     def write_header(self, atoms: Atoms, output_path: Path | str) -> None:
         """Write XDATCAR header.
@@ -45,6 +89,10 @@ class XdatcarWriter:
         """
         self.close_stream()
         output_path = Path(output_path)
+        _validate_fixed_cell_trajectory([atoms], source="XDATCAR")
+        self._reference_cell = np.asarray(atoms.cell.array, dtype=float).copy()
+        self._reference_symbols = tuple(atoms.get_chemical_symbols())
+        self._reference_pbc = np.asarray(atoms.pbc, dtype=bool).copy()
 
         # VASP associates each count with a contiguous block of coordinates.
         # Preserve the actual atom order and therefore repeated symbol blocks;
@@ -123,13 +171,37 @@ class XdatcarWriter:
         """
         output_path = Path(output_path)
 
+        if not self.header_written:
+            raise RuntimeError("write_header() must be called before append_frame()")
+        if self._reference_cell is None:
+            raise RuntimeError("XDATCAR header state is incomplete")
+        _validate_fixed_cell_trajectory(
+            [
+                atoms,
+            ],
+            source="XDATCAR",
+        )
+        if len(atoms) != len(self._reference_symbols or ()):
+            raise ValueError("XDATCAR frame changes atom count")
+        if tuple(atoms.get_chemical_symbols()) != self._reference_symbols:
+            raise ValueError(
+                "XDATCAR frame changes atom identity/order; this is not "
+                "representable in a fixed layout"
+            )
+        if not np.array_equal(np.asarray(atoms.pbc, dtype=bool), self._reference_pbc):
+            raise ValueError("XDATCAR frame changes PBC flags")
+        if not np.array_equal(
+            np.asarray(atoms.cell.array, dtype=float), self._reference_cell
+        ):
+            raise ValueError(
+                "XDATCAR frame has a variable cell; standard XDATCAR supports "
+                "only fixed-cell trajectories"
+            )
+
         # VASP writes continuous (unwrapped) direct coordinates in XDATCAR.
         # This is essential for diffusion/MSD: wrapping into [0, 1) destroys
         # the image history whenever an atom crosses a periodic boundary.
         scaled_pos = atoms.get_scaled_positions(wrap=False)
-
-        if not self.header_written:
-            raise RuntimeError("write_header() must be called before append_frame()")
 
         self.configuration_index += 1
         # This exact marker is the VASP/ASE XDATCAR grammar.  The previous
@@ -164,6 +236,7 @@ class XdatcarWriter:
             return
 
         output_path = Path(output_path)
+        _validate_fixed_cell_trajectory(trajectory)
 
         # Write header from first frame
         self.write_header(trajectory[0], output_path)
@@ -189,52 +262,52 @@ class XdatcarWriter:
         if not trajectory_data:
             return
 
-        output_path = Path(output_path)
+        frames = []
+        reference_atoms = None
+        for frame in trajectory_data:
+            if "atoms" in frame:
+                frame_atoms = frame["atoms"]
+                frames.append(frame_atoms)
+                if reference_atoms is None:
+                    reference_atoms = frame_atoms
+                continue
+            if "positions" not in frame:
+                raise ValueError("Trajectory data must contain 'atoms' or 'positions'")
 
-        # Get initial structure for header
-        first_frame = trajectory_data[0]
-        if "atoms" in first_frame:
-            atoms = first_frame["atoms"]
-        elif "positions" in first_frame:
-            # Reconstruct from positions
             from ase import Atoms as AtomsClass
 
-            symbols = first_frame.get("symbols")
-            if symbols is None and "atoms" in first_frame:
-                symbols = first_frame["atoms"].get_chemical_symbols()
+            symbols = frame.get(
+                "symbols",
+                None
+                if reference_atoms is None
+                else reference_atoms.get_chemical_symbols(),
+            )
             if symbols is None:
                 raise ValueError(
                     "Trajectory frame with 'positions' must also contain "
                     "'symbols' (or an 'atoms' object)."
                 )
-            atoms = AtomsClass(
-                symbols=symbols,
-                positions=first_frame["positions"],
-                cell=first_frame["cell"],
-                pbc=first_frame.get("pbc", True),
-            )
-        else:
-            raise ValueError("Trajectory data must contain 'atoms' or 'positions'")
-
-        self.write_header(atoms, output_path)
-
-        # Write frames
-        for frame in trajectory_data:
-            if "atoms" in frame:
-                frame_atoms = frame["atoms"]
+            if "cell" in frame:
+                cell = frame["cell"]
+            elif reference_atoms is not None:
+                cell = reference_atoms.cell
             else:
-                # Reconstruct
-                from ase import Atoms as AtomsClass
-
-                frame_atoms = AtomsClass(
-                    symbols=frame.get("symbols", atoms.get_chemical_symbols()),
-                    positions=frame["positions"],
-                    cell=frame.get("cell", atoms.cell),
-                    pbc=frame.get("pbc", atoms.pbc),
+                raise ValueError(
+                    "Trajectory frame with 'positions' must also contain 'cell'"
                 )
+            frame_atoms = AtomsClass(
+                symbols=symbols,
+                positions=frame["positions"],
+                cell=cell,
+                pbc=frame.get(
+                    "pbc", True if reference_atoms is None else reference_atoms.pbc
+                ),
+            )
+            frames.append(frame_atoms)
+            if reference_atoms is None:
+                reference_atoms = frame_atoms
 
-            step = frame.get("step", 0)
-            self.append_frame(output_path, frame_atoms, step=step)
+        self.write(Path(output_path), frames, step_interval=step_interval)
 
 
 def convert_to_vasp_xdatcar(
@@ -265,6 +338,7 @@ def convert_to_vasp_xdatcar(
         frames = [frames]
     if not frames:
         raise ValueError(f"No trajectory frames found in {input_path}")
+    _validate_fixed_cell_trajectory(frames, source=str(input_path))
 
     if output_path is None:
         source = Path(input_path)

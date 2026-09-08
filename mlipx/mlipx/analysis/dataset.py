@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+from ase import units
 from ase.io import read
 from ase.io.trajectory import Trajectory
 from ase.stress import full_3x3_to_voigt_6_stress
@@ -111,9 +112,31 @@ def _uniform_interval(times_fs: np.ndarray) -> float | None:
     return reference
 
 
+def _uniform_integer_step(steps: np.ndarray | None) -> int | None:
+    """Return a constant positive step spacing, or ``None`` if unknown."""
+
+    if steps is None or len(steps) < 2:
+        return None
+    values = np.asarray(steps)
+    if not np.all(np.isfinite(values)) or not np.all(values == np.floor(values)):
+        return None
+    differences = np.diff(values)
+    if not np.all(differences > 0):
+        return None
+    if not np.all(differences == differences[0]):
+        return None
+    return int(differences[0])
+
+
 @dataclass(slots=True)
 class TrajectoryDataset:
-    """Normalized, backend-independent trajectory arrays and metadata."""
+    """Normalized, backend-independent trajectory arrays and metadata.
+
+    ``velocities`` are stored in Angstrom per femtosecond. ASE exposes
+    velocities in Angstrom per ASE time unit, so conversion is performed while
+    importing ASE frames; datasets constructed directly must use this same
+    contract.
+    """
 
     run_dir: Path
     source_path: Path
@@ -434,7 +457,12 @@ class TrajectoryDataset:
             positions[index] = np.asarray(atoms.positions, dtype=float)
             cells[index] = np.asarray(atoms.cell.array, dtype=float)
             if atoms.has("momenta"):
-                velocity_rows.append(np.asarray(atoms.get_velocities(), dtype=float))
+                # ASE's internal time unit is not fs. Keep the analysis
+                # contract explicit instead of labelling raw ASE values as
+                # A/fs and silently scaling VACF-derived quantities.
+                velocity_rows.append(
+                    np.asarray(atoms.get_velocities(), dtype=float) * units.fs
+                )
                 kinetic_rows.append(float(atoms.get_kinetic_energy()))
                 temperature_rows.append(float(atoms.get_temperature()))
             else:
@@ -499,6 +527,9 @@ class TrajectoryDataset:
                 "Trajectory time axis is unknown. Supply an explicit frame interval "
                 "for time-dependent analyses."
             )
+        metadata = dict(metadata)
+        if has_velocities:
+            metadata["velocity_unit"] = "A/fs"
         return cls(
             run_dir=run_dir,
             source_path=source_path,
@@ -582,12 +613,43 @@ class TrajectoryDataset:
     def slice_frames(self, indices: Iterable[int]) -> TrajectoryDataset:
         """Return a frame-sliced dataset while preserving atom semantics."""
 
-        selected = np.asarray(list(indices), dtype=int)
-        if selected.ndim != 1 or len(selected) == 0:
+        raw_indices = list(indices)
+        selected_raw = np.asarray(raw_indices)
+        if selected_raw.ndim != 1 or len(selected_raw) == 0:
             raise ValueError("Frame selection must be non-empty")
+        if not np.issubdtype(selected_raw.dtype, np.integer):
+            raise TypeError("Frame selection indices must be integers")
+        selected = selected_raw.astype(int, copy=False)
+        if np.any(selected < 0) or np.any(selected >= self.nframes):
+            raise IndexError("Frame selection contains an out-of-range index")
+        if len(selected) > 1 and np.any(np.diff(selected) <= 0):
+            raise ValueError("Frame selection must be strictly increasing")
 
         def take(value):
             return None if value is None else np.asarray(value)[selected]
+
+        sliced_times = take(self.times_fs)
+        sliced_steps = take(self.steps)
+        interval = _uniform_interval(sliced_times)
+        step_stride = _uniform_integer_step(sliced_steps)
+        if step_stride is None and self.steps is None:
+            original_stride = self.frame_stride_steps
+            index_stride = _uniform_integer_step(selected)
+            if original_stride is not None and index_stride is not None:
+                step_stride = int(original_stride) * index_stride
+
+        metadata = dict(self.metadata)
+        transformations = metadata.get("transformations", [])
+        if not isinstance(transformations, list):
+            transformations = []
+        metadata["transformations"] = [
+            *transformations,
+            {
+                "operation": "frame_slice",
+                "source_nframes": self.nframes,
+                "selected_indices": selected.tolist(),
+            },
+        ]
 
         sliced_thermo = {
             key: np.asarray(value)[selected]
@@ -598,8 +660,10 @@ class TrajectoryDataset:
             self,
             positions=self.positions[selected],
             cells=self.cells[selected],
-            times_fs=take(self.times_fs),
-            steps=take(self.steps),
+            times_fs=sliced_times,
+            steps=sliced_steps,
+            frame_stride_steps=step_stride,
+            frame_interval_fs=interval,
             velocities=take(self.velocities),
             temperature_K=take(self.temperature_K),
             potential_energy_eV=take(self.potential_energy_eV),
@@ -609,6 +673,7 @@ class TrajectoryDataset:
             pressure_GPa=take(self.pressure_GPa),
             volumes_A3=take(self.volumes_A3),
             phases=take(self.phases),
+            metadata=metadata,
             thermodynamics=sliced_thermo,
         )
 

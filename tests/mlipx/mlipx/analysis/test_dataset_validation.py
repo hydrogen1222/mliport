@@ -4,7 +4,7 @@ import json
 
 import numpy as np
 import pytest
-from ase import Atoms
+from ase import Atoms, units
 from ase.io.trajectory import Trajectory
 
 from mlipx.analysis import TrajectoryDataset, require_analysis, validate_trajectory
@@ -132,6 +132,45 @@ def test_default_analysis_view_excludes_equilibration() -> None:
     assert all_frames.nframes == 6
 
 
+def test_frame_slice_recomputes_time_and_step_spacing() -> None:
+    dataset = TrajectoryDataset.from_frames(
+        _frames(6),
+        times_fs=np.arange(6, dtype=float) * 10.0,
+        steps=np.arange(6, dtype=int),
+        frame_stride_steps=1,
+        positions_convention="unwrapped",
+    )
+
+    sliced = dataset.slice_frames([0, 2, 4])
+
+    assert sliced.times_fs.tolist() == [0.0, 20.0, 40.0]
+    assert sliced.frame_interval_fs == pytest.approx(20.0)
+    assert sliced.frame_stride_steps == 2
+    assert sliced.metadata["transformations"][-1]["operation"] == "frame_slice"
+
+
+def test_nonuniform_frame_slice_does_not_reuse_old_interval() -> None:
+    dataset = TrajectoryDataset.from_frames(
+        _frames(6),
+        times_fs=np.arange(6, dtype=float) * 10.0,
+        positions_convention="unwrapped",
+    )
+
+    sliced = dataset.slice_frames([0, 1, 3])
+
+    assert sliced.frame_interval_fs is None
+    assert validate_trajectory(sliced).time.uniform is False
+
+
+@pytest.mark.parametrize("indices", [(2, 1), (0, 0), (-1, 1), (0, 6)])
+def test_frame_slice_rejects_nonchronological_or_out_of_range_indices(indices) -> None:
+    dataset = TrajectoryDataset.from_frames(
+        _frames(4), times_fs=[0, 10, 20, 30], positions_convention="unwrapped"
+    )
+    with pytest.raises((ValueError, IndexError)):
+        dataset.slice_frames(indices)
+
+
 def test_external_ase_momenta_supply_temperature_and_kinetic_energy() -> None:
     frames = _frames(3)
     for atoms in frames:
@@ -146,6 +185,21 @@ def test_external_ase_momenta_supply_temperature_and_kinetic_energy() -> None:
     assert dataset.temperature_K is not None
     assert np.all(dataset.kinetic_energy_eV > 0)
     assert np.all(dataset.temperature_K > 0)
+
+
+def test_imported_ase_velocities_are_in_angstrom_per_fs() -> None:
+    frames = _frames(4)
+    for atoms in frames:
+        atoms.set_velocities([[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+
+    dataset = TrajectoryDataset.from_frames(
+        frames,
+        times_fs=[0, 1, 2, 3],
+        positions_convention="unwrapped",
+    )
+
+    assert dataset.velocities is not None
+    assert dataset.velocities[0, 0, 0] == pytest.approx(units.fs)
 
 
 def test_nve_energy_drift_uses_production_per_atom_energy() -> None:

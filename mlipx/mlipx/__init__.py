@@ -27,9 +27,12 @@ __all__ = [
     "BaseMLIPCalculator",
     "CalculationEngine",
     "CalculatorFactory",
+    "EngineConfig",
     "IncarConfig",
     "JobManager",
     "MDRunner",
+    "NEBRunner",
+    "NEBOptions",
     "OptimizationRunner",
     "ProgressEvent",
     "SinglePointRunner",
@@ -39,6 +42,8 @@ __all__ = [
     "run_md",
     "run_optimization",
     "run_single_point",
+    "prepare_band",
+    "validate_band_images",
 ]
 
 
@@ -51,7 +56,10 @@ def __getattr__(name: str):
         "CalculatorFactory": ".calculators.factory",
         "SUPPORTED_TYPES": ".calculators.factory",
         "OptimizationRunner": ".runners.optimization",
+        "SinglePointRunner": ".runners.singlepoint",
         "MDRunner": ".runners.md",
+        "NEBRunner": ".runners.neb",
+        "NEBOptions": ".neb.schema",
         "BatchRunner": ".runners.batch",
         "CalculationEngine": ".engine",
         "EngineConfig": ".engine",
@@ -61,6 +69,8 @@ def __getattr__(name: str):
         "run_optimization": ".api",
         "run_md": ".api",
         "calculate_energy": ".api",
+        "prepare_band": ".neb.prepare",
+        "validate_band_images": ".neb.prepare",
     }
     if name in _imports:
         import importlib  # noqa: PLC0415

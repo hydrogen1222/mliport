@@ -180,7 +180,11 @@ def _periodic_gaussian_smooth(
     shape = np.asarray(array.shape, dtype=int)
     modes = [np.fft.fftfreq(int(size)) * int(size) for size in shape]
     h_mode, k_mode, l_mode = np.meshgrid(*modes, indexing="ij")
-    reciprocal_cycles_A = np.linalg.inv(cell)
+    # Cells are stored as row vectors: r = fractional @ cell. Therefore a
+    # reciprocal row wavevector for integer fractional mode h is
+    # h @ inv(cell).T, not h @ inv(cell). The distinction matters for
+    # triclinic cells and preserves rotational invariance of the smoothing.
+    reciprocal_cycles_A = np.linalg.inv(cell).T
     coefficients = np.stack((h_mode, k_mode, l_mode), axis=-1)
     wavevectors = np.einsum("...i,ij->...j", coefficients, reciprocal_cycles_A)
     magnitude_squared = np.sum(wavevectors**2, axis=-1)

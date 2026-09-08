@@ -24,6 +24,16 @@ assert not any(name.startswith(blocked) for name in sys.modules), sorted(sys.mod
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
+def test_declared_runner_exports_resolve_without_backend_imports() -> None:
+    code = """
+from mlipx import EngineConfig, SinglePointRunner
+assert EngineConfig.__name__ == 'EngineConfig'
+assert SinglePointRunner.__name__ == 'SinglePointRunner'
+"""
+    package_root = Path(__file__).parents[3] / "mlipx"
+    subprocess.run([sys.executable, "-c", code], check=True, cwd=package_root)
+
+
 def test_analysis_v2_never_imports_archive() -> None:
     analysis = Path(__file__).parents[3] / "mlipx" / "mlipx" / "analysis"
     for path in analysis.glob("*.py"):

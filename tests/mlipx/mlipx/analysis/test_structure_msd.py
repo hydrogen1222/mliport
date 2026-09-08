@@ -12,7 +12,11 @@ from mlipx.analysis.msd import (
     fft_windowed_msd_components,
     unwrap_positions,
 )
-from mlipx.analysis.structure import density_map, radial_distribution
+from mlipx.analysis.structure import (
+    _periodic_gaussian_smooth,
+    density_map,
+    radial_distribution,
+)
 
 
 def _dataset(positions: np.ndarray, cell: np.ndarray, symbols: str = "LiS"):
@@ -243,3 +247,19 @@ def test_density_map_normalizations_survive_periodic_smoothing() -> None:
     assert np.isclose(
         np.sum(result["number_density_A^-3"]) * result["voxel_volume_A3"], 1.0
     )
+
+
+def test_triclinic_gaussian_smoothing_uses_row_cell_reciprocal_vectors() -> None:
+    cell = np.asarray([[4.0, 0.0, 0.0], [3.0, 4.0, 0.0], [0.0, 0.0, 4.0]])
+    size = 16
+    coordinate = np.arange(size, dtype=float)[:, None, None]
+    mode = np.cos(2.0 * np.pi * coordinate / size)
+    mode = np.broadcast_to(mode, (size, size, size))
+    density = 2.0 + mode
+
+    smoothed = _periodic_gaussian_smooth(density, cell, sigma_A=1.0)
+    measured_amplitude = 2.0 * np.mean((smoothed - np.mean(smoothed)) * mode)
+    expected_amplitude = 0.1454886634865615
+
+    assert measured_amplitude == pytest.approx(expected_amplitude, rel=1.0e-12)
+    assert np.sum(smoothed) == pytest.approx(np.sum(density), rel=1.0e-14)
