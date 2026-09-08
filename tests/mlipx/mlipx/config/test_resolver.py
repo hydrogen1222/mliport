@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from mlipx.config.incar import IncarConfig
 from mlipx.config.resolver import ResolvedValue, resolve_config
 from mlipx.config.settings import load_settings
 
@@ -229,6 +230,82 @@ def test_model_alias_path_resolves_relative_to_ini() -> None:
         s = load_settings(explicit=str(ini))
         rc = resolve_config(calc_type="sp", settings=s, model_alias_name="mace_mpa0")
         assert rc.model_path == str(model_file.resolve())
+
+
+def test_model_alias_path_uses_declaring_file_not_highest_priority_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_dir = tmp_path / "user"
+    project_dir = tmp_path / "project"
+    user_dir.mkdir()
+    project_dir.mkdir()
+    user_settings = user_dir / "settings.ini"
+    project_settings = project_dir / "settings.ini"
+    user_settings.write_text(
+        "[model:shared]\nengine = mace\npath = models/model.pt\ntask = bulk\n",
+        encoding="utf-8",
+    )
+    project_settings.write_text("[general]\ndevice = cpu\n", encoding="utf-8")
+    monkeypatch.setenv("MLIPX_SETTINGS", str(user_settings))
+
+    settings = load_settings(explicit=project_settings, cwd=project_dir)
+    rc = resolve_config(calc_type="sp", settings=settings, model_alias_name="shared")
+
+    assert rc.model_path == str((user_dir / "models/model.pt").resolve())
+    assert rc.sources["model_path"].base_dir == str(user_dir.resolve())
+
+
+def test_incar_types_and_relative_model_path_follow_schema(tmp_path: Path) -> None:
+    incar_path = tmp_path / "input" / "INCAR.mlipx"
+    incar_path.parent.mkdir()
+    incar_path.write_text(
+        "MODEL_TYPE = MACE\n"
+        "MODEL_PATH = models/mace.model\n"
+        "HEAD = 0\n"
+        "CPU_THREADS = 1\n"
+        "FMAX = 1D-3\n",
+        encoding="utf-8",
+    )
+    incar = IncarConfig.from_file(incar_path)
+
+    rc = resolve_config(calc_type="opt", incar=incar)
+
+    assert rc.model_path == str((incar_path.parent / "models/mace.model").resolve())
+    assert rc.calculator_options["head"] == "0"
+    assert rc.settings["torch_num_threads"] == 1
+    assert rc.run_options["fmax"] == pytest.approx(1.0e-3)
+    assert rc.sources["model_path"].location == f"{incar_path.resolve()}:2"
+
+
+def test_cli_relative_model_path_uses_explicit_cli_base(tmp_path: Path) -> None:
+    cli_dir = tmp_path / "cli"
+    settings_dir = tmp_path / "settings"
+    cli_dir.mkdir()
+    settings_dir.mkdir()
+    settings_path = settings_dir / "settings.ini"
+    settings_path.write_text("[general]\ndevice = cpu\n", encoding="utf-8")
+
+    rc = resolve_config(
+        calc_type="sp",
+        settings=load_settings(explicit=settings_path, cwd=cli_dir),
+        cli={"model_path": "models/cli.pt"},
+        cli_base_dir=cli_dir,
+    )
+
+    assert rc.model_path == str((cli_dir / "models/cli.pt").resolve())
+    assert rc.sources["model_path"].base_dir == str(cli_dir.resolve())
+
+
+def test_strict_unknown_key_never_becomes_known_settings() -> None:
+    incar = IncarConfig.from_string("STRICT_CONFIG = true\nTEMPRATURE = 999\n")
+    with pytest.raises(ValueError, match="TEMPRATURE|temprature"):
+        resolve_config(calc_type="md", incar=incar)
+
+
+@pytest.mark.parametrize("value", ["NaN", "Inf", "-Inf"])
+def test_resolver_rejects_nonfinite_physical_values(value: str) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        resolve_config(calc_type="md", incar={"TEMPERATURE": value})
 
 
 def test_cli_dtype_overrides_alias() -> None:

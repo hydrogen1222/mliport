@@ -195,6 +195,47 @@ def test_parse_task_file_ok(tmp_path: Path) -> None:
     assert task["device"] == "cuda:0"
 
 
+def test_task_paths_are_frozen_relative_to_task_file(tmp_path: Path) -> None:
+    spec_dir = tmp_path / "spec"
+    spec_dir.mkdir()
+    (spec_dir / "inputs").mkdir()
+    (spec_dir / "models").mkdir()
+    (spec_dir / "bin").mkdir()
+    (spec_dir / "inputs/s.cif").write_text("dummy", encoding="utf-8")
+    (spec_dir / "models/m.pt").write_text("dummy", encoding="utf-8")
+    python = spec_dir / "bin/python"
+    python.write_text("", encoding="utf-8")
+    path = _write_tasks(
+        spec_dir,
+        [
+            {
+                "calc_type": "md",
+                "structure": "inputs/s.cif",
+                "model": "models/m.pt",
+                "python": "bin/python",
+                "output_dir": "outputs/run",
+                "options": {
+                    "temperature": "3D2",
+                    "steps": "1",
+                    "pre_relax": "0",
+                },
+            }
+        ],
+    )
+
+    task = parse_task_file(path)["tasks"][0]
+
+    assert task["structure"] == str((spec_dir / "inputs/s.cif").resolve())
+    assert task["model"] == str((spec_dir / "models/m.pt").resolve())
+    assert task["python"] == str(python.resolve())
+    assert task["output_dir"] == str((spec_dir / "outputs/run").resolve())
+    assert task["options"] == {
+        "temperature": 300.0,
+        "steps": 1,
+        "pre_relax": False,
+    }
+
+
 def test_parse_task_file_max_concurrent(tmp_path: Path) -> None:
     path = _write_tasks(tmp_path, [_sample_task(tmp_path)], max_conc=2)
     assert parse_task_file(path)["max_concurrent"] == 2
@@ -204,6 +245,27 @@ def test_parse_task_file_max_concurrent(tmp_path: Path) -> None:
     bad2 = _write_tasks(tmp_path, [_sample_task(tmp_path)], max_conc="x")
     with pytest.raises(ValueError, match="max_concurrent"):
         parse_task_file(bad2)
+
+
+@pytest.mark.parametrize("value", [True, 1.5, "1.5"])
+def test_parse_task_file_rejects_non_integer_concurrency(
+    tmp_path: Path, value: object
+) -> None:
+    path = _write_tasks(tmp_path, [_sample_task(tmp_path)])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["max_concurrent"] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="max_concurrent"):
+        parse_task_file(path)
+
+
+def test_parse_task_file_rejects_unknown_options(tmp_path: Path) -> None:
+    path = _write_tasks(
+        tmp_path,
+        [_sample_task(tmp_path, options={"TEMPRATURE": 999})],
+    )
+    with pytest.raises(ValueError, match="TEMPRATURE|temprature"):
+        parse_task_file(path)
 
 
 def test_parse_task_file_missing_file(tmp_path: Path) -> None:

@@ -20,7 +20,9 @@ TUI, so the two interfaces cannot drift apart.
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -28,6 +30,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mlipx.config import get_schema
 from mlipx.jobs import JobManager, JobStatus
 
 if TYPE_CHECKING:
@@ -48,6 +51,7 @@ _STRUCTURAL_KEYS = {
 }
 _VALID_CALC_TYPES = {"sp", "opt", "md"}
 _VALID_ENGINES = {"uma", "fairchem", "mace", "dpa", "grace"}
+_CALC_SCOPES = {"sp", "opt", "md", "batch"}
 
 #: option key -> CLI flag mapping for the shared command builder.
 _OPT_FLAGS: dict[str, tuple[str, ...]] = {
@@ -94,6 +98,95 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "fmax_abort": ("--fmax-abort",),
     "seed": ("--seed",),
 }
+
+
+def _strict_integer(value: Any, *, label: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{label} must be an integer, got {value!r}")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            return int(value)
+        raise ValueError(f"{label} must be an integer, got {value!r}")
+    if isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+        return int(value)
+    raise ValueError(f"{label} must be an integer, got {value!r}")
+
+
+def _freeze_declared_path(
+    value: Any,
+    *,
+    base_dir: Path,
+    label: str,
+    must_exist: bool,
+) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label}: missing required path")
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    path = path.resolve()
+    if must_exist and not path.exists():
+        raise ValueError(f"{label} not found: {path}")
+    return str(path)
+
+
+def _coerce_task_options(
+    options: dict[str, Any],
+    *,
+    calc_type: str,
+    model_type: str,
+    label: str,
+) -> dict[str, Any]:
+    schema = get_schema()
+    cleaned: dict[str, Any] = {}
+    engine_scope = f"calculator.{model_type}"
+    for raw_key, raw_value in options.items():
+        key = str(raw_key)
+        if key in _STRUCTURAL_KEYS:
+            raise ValueError(
+                f"{label}: option {key!r} is a structural key, not an option"
+            )
+        spec = schema.resolve(key)
+        if spec is None:
+            suggestion = schema.suggest(key)
+            hint = f" Did you mean {suggestion[0]!r}?" if suggestion else ""
+            raise ValueError(f"{label}: unknown option {key!r}.{hint}")
+        canonical = spec.name
+        if canonical in {"calc_type", "device", "model_path", "model_type", "task"}:
+            raise ValueError(
+                f"{label}: option {key!r} is a structural key, not an option"
+            )
+        if canonical not in _OPT_FLAGS:
+            raise ValueError(
+                f"{label}: option {key!r} has no supported queue/CLI representation"
+            )
+        calc_scopes = set(spec.scopes) & _CALC_SCOPES
+        if calc_scopes and calc_type not in calc_scopes:
+            raise ValueError(
+                f"{label}: option {key!r} is not valid for calc_type={calc_type!r}"
+            )
+        calculator_scopes = {
+            scope for scope in spec.scopes if scope.startswith("calculator.")
+        }
+        if calculator_scopes and engine_scope not in calculator_scopes:
+            raise ValueError(
+                f"{label}: option {key!r} is not valid for engine={model_type!r}"
+            )
+        if canonical == "fmax_abort" and calc_type != "md":
+            raise ValueError(f"{label}: option {key!r} is only valid for MD")
+        try:
+            value = spec.coerce(raw_value)
+        except ValueError as exc:
+            raise ValueError(f"{label}: {exc}") from exc
+        errors = spec.validate_value(value)
+        if errors:
+            raise ValueError(f"{label}: " + "; ".join(errors))
+        if canonical in cleaned and cleaned[canonical] != value:
+            raise ValueError(f"{label}: conflicting aliases for option {canonical!r}")
+        cleaned[canonical] = value
+    return cleaned
 
 
 def build_mlipx_command(
@@ -199,9 +292,10 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
     Raises:
         ValueError: with a human-readable message on any problem.
     """
-    path = Path(path)
-    if not path.exists():
+    path = Path(path).expanduser().resolve()
+    if not path.is_file():
         raise ValueError(f"Task file not found: {path}")
+    base_dir = path.parent
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -209,13 +303,9 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("Task file must be a JSON object with a 'tasks' list")
 
-    max_concurrent = data.get("max_concurrent", 1)
-    try:
-        max_concurrent = int(max_concurrent)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"max_concurrent must be an integer, got {max_concurrent!r}"
-        ) from exc
+    max_concurrent = _strict_integer(
+        data.get("max_concurrent", 1), label="max_concurrent"
+    )
     if max_concurrent < 1:
         raise ValueError(f"max_concurrent must be >= 1, got {max_concurrent}")
 
@@ -235,13 +325,18 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
                 f"{label}: calc_type must be one of "
                 f"{sorted(_VALID_CALC_TYPES)}, got {task.get('calc_type')!r}"
             )
-        structure = str(task.get("structure", ""))
-        model = str(task.get("model", ""))
-        for key, value in (("structure", structure), ("model", model)):
-            if not value:
-                raise ValueError(f"{label}: missing required '{key}'")
-            if not Path(value).exists():
-                raise ValueError(f"{label}: {key} not found: {value}")
+        structure = _freeze_declared_path(
+            task.get("structure"),
+            base_dir=base_dir,
+            label=f"{label}: structure",
+            must_exist=True,
+        )
+        model = _freeze_declared_path(
+            task.get("model"),
+            base_dir=base_dir,
+            label=f"{label}: model",
+            must_exist=True,
+        )
         model_type = str(task.get("model_type", "uma")).lower()
         if model_type not in _VALID_ENGINES:
             raise ValueError(
@@ -250,8 +345,12 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
             )
         python = task.get("python")
         if python is not None:
-            if not Path(python).exists():
-                raise ValueError(f"{label}: python not found: {python}")
+            python = _freeze_declared_path(
+                python,
+                base_dir=base_dir,
+                label=f"{label}: python",
+                must_exist=True,
+            )
         name = str(task.get("name") or f"{calc_type}-{index + 1}")
         if name in names:
             raise ValueError(f"{label}: duplicate task name {name!r}")
@@ -260,25 +359,30 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
         options = task.get("options") or {}
         if not isinstance(options, dict):
             raise ValueError(f"{label}: 'options' must be an object")
-        cleaned: dict[str, Any] = {}
-        for key, value in options.items():
-            if key in _STRUCTURAL_KEYS:
-                raise ValueError(
-                    f"{label}: option {key!r} is a structural key, not an option"
-                )
-            cleaned[key] = value
+        cleaned = _coerce_task_options(
+            options,
+            calc_type=calc_type,
+            model_type=model_type,
+            label=label,
+        )
+        output_dir = _freeze_declared_path(
+            task.get("output_dir", "./results"),
+            base_dir=base_dir,
+            label=f"{label}: output_dir",
+            must_exist=False,
+        )
 
         tasks.append(
             {
                 "name": name,
-                "python": str(python) if python else None,
+                "python": python,
                 "calc_type": calc_type,
                 "structure": structure,
                 "model": model,
                 "model_type": model_type,
                 "task": str(task.get("task", "")).lower() or None,
                 "device": str(task.get("device", "cpu")),
-                "output_dir": str(task.get("output_dir", "./results")),
+                "output_dir": output_dir,
                 "options": cleaned,
             }
         )

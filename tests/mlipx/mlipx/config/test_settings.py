@@ -74,6 +74,29 @@ def test_load_settings_explicit_path() -> None:
         assert s.get("general", "device") == "cuda:0"
 
 
+def test_settings_record_each_value_declaring_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    low_dir = tmp_path / "low"
+    high_dir = tmp_path / "high"
+    low_dir.mkdir()
+    high_dir.mkdir()
+    low = low_dir / "settings.ini"
+    high = high_dir / "settings.ini"
+    low.write_text("[general]\ndevice = cuda:0\n", encoding="utf-8")
+    high.write_text("[general]\nstrict_config = true\n", encoding="utf-8")
+    monkeypatch.setenv("MLIPX_SETTINGS", str(low))
+
+    settings = load_settings(explicit=high, cwd=high_dir)
+
+    device_origin = settings.origin("general", "device")
+    strict_origin = settings.origin("general", "strict_config")
+    assert device_origin is not None and device_origin.path == low.resolve()
+    assert device_origin.line == 2
+    assert strict_origin is not None and strict_origin.path == high.resolve()
+    assert strict_origin.line == 2
+
+
 # ---------------------------------------------------------------------------
 # load_settings - env var
 # ---------------------------------------------------------------------------

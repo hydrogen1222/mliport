@@ -1272,10 +1272,13 @@ def _resolve_engine_config(
         profile_name=getattr(args, "profile", None),
         incar=incar_layer,
         cli=cli,
+        cli_base_dir=Path.cwd(),
     )
     engine_config = EngineConfig.from_resolved(resolved)
-    engine_config.output_dir = Path(
-        output_dir if output_dir else getattr(args, "output", ".")
+    engine_config.output_dir = (
+        Path(output_dir if output_dir else getattr(args, "output", "."))
+        .expanduser()
+        .resolve()
     )
     engine_config.job_name = (
         job_name if job_name is not None else getattr(args, "name", None)
@@ -1302,7 +1305,7 @@ def _emit_resolved_config(resolved, output_dir: Path) -> None:
 def cmd_run(args: argparse.Namespace) -> int:
     started_at = _run_started_at(args)
     # Load configuration
-    incar_path = Path(args.incar)
+    incar_path = Path(args.incar).expanduser()
     # Backward-compat: fall back to legacy INCAR.uma if the default is missing.
     if not incar_path.exists() and args.incar == "INCAR.mlipx":
         legacy = Path("INCAR.uma")
@@ -1335,7 +1338,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Error: No structure file specified and no default found")
         return 1
 
-    structure_path = Path(structure_file)
+    structure_path = Path(structure_file).expanduser().resolve()
     if not structure_path.exists():
         print(f"Error: Structure file not found: {structure_path}")
         return 1
@@ -1365,11 +1368,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     job_name = config.get_str("JOB_NAME", None)
     # The INCAR dict (UPPER keys) is passed as a resolver layer; aliases are
     # canonicalised automatically (MODEL_TYPE -> model_type, FMAX -> fmax ...).
-    incar_layer = {str(k): v for k, v in config.items()}
     engine_config, resolved, _settings = _resolve_engine_config(
         args,
         calc_type,
-        incar_layer=incar_layer,
+        incar_layer=config,
         output_dir=args.output,
         job_name=job_name,
     )
@@ -1388,7 +1390,7 @@ def cmd_sp(args: argparse.Namespace) -> int:
     """Execute 'sp' command."""
     started_at = _run_started_at(args)
 
-    structure_path = Path(args.structure)
+    structure_path = Path(args.structure).expanduser().resolve()
     if not structure_path.exists():
         print(f"Error: Structure file not found: {structure_path}")
         return 1
@@ -1420,7 +1422,7 @@ def cmd_opt(args: argparse.Namespace) -> int:
     """Execute 'opt' command."""
     started_at = _run_started_at(args)
 
-    structure_path = Path(args.structure)
+    structure_path = Path(args.structure).expanduser().resolve()
     if not structure_path.exists():
         print(f"Error: Structure file not found: {structure_path}")
         return 1
@@ -1452,7 +1454,7 @@ def cmd_md(args: argparse.Namespace) -> int:
     """Execute 'md' command."""
     started_at = _run_started_at(args)
 
-    structure_path = Path(args.structure)
+    structure_path = Path(args.structure).expanduser().resolve()
     if not structure_path.exists():
         print(f"Error: Structure file not found: {structure_path}")
         return 1
@@ -1484,7 +1486,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
     """Execute 'batch' command."""
     started_at = _run_started_at(args)
 
-    input_dir = Path(args.input_dir)
+    input_dir = Path(args.input_dir).expanduser().resolve()
     if not input_dir.exists():
         print(f"Error: Input directory not found: {input_dir}")
         return 1
@@ -1774,11 +1776,15 @@ def _print_transport_summary(results: dict) -> None:
     collective = results.get("collective_conductivity") or {}
     coll = collective.get("sigma_collective_mS_cm_posterior") or {}
     if coll.get("mean") is not None:
-        print("Collective Einstein ionic conductivity (trajectory/charge-model quantity):")
+        print(
+            "Collective Einstein ionic conductivity (trajectory/charge-model quantity):"
+        )
         print(f"  sigma_collective = {coll['mean']:.6e} mS/cm")
         interval = coll.get("credible_interval_95") or [None, None]
         if interval[0] is not None:
-            print(f"  95% credible interval = [{interval[0]:.6e}, {interval[1]:.6e}] mS/cm")
+            print(
+                f"  95% credible interval = [{interval[0]:.6e}, {interval[1]:.6e}] mS/cm"
+            )
         dsigma = collective.get("D_sigma_posterior_m2_s") or {}
         if dsigma.get("mean") is not None:
             print(f"  D_sigma = {dsigma['mean']:.6e} m^2/s")

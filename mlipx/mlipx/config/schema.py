@@ -21,7 +21,10 @@ instead of being silently ignored.
 from __future__ import annotations
 
 import difflib
+import math
+import re
 from dataclasses import dataclass, field
+from numbers import Integral, Real
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -41,6 +44,7 @@ class OptionSpec:
     maximum: float | None = None
     default: Any | None = None
     description: str = ""
+    is_path: bool = False
 
     def matches(self, key: str) -> bool:
         """True if ``key`` (case-insensitive) is this option's name or an alias."""
@@ -51,10 +55,12 @@ class OptionSpec:
         """Coerce ``value`` to this spec's type, raising on failure."""
         if self.type is bool:
             return _coerce_bool(value)
-        if self.type is int and not isinstance(value, bool):
-            return int(value)
-        if self.type is float and not isinstance(value, bool):
-            return float(value)
+        if self.type is int:
+            return _coerce_int(self.name, value)
+        if self.type is float:
+            return _coerce_float(self.name, value)
+        if self.type is str:
+            return _coerce_string(self.name, value, self.choices)
         try:
             return self.type(value)
         except (TypeError, ValueError) as exc:
@@ -86,8 +92,6 @@ class OptionSpec:
 def _coerce_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float)):
-        return bool(value)
     if isinstance(value, str):
         v = value.strip().lower()
         if v in {"true", "t", "yes", "y", "1", ".true.", ".t."}:
@@ -95,6 +99,50 @@ def _coerce_bool(value: Any) -> bool:
         if v in {"false", "f", "no", "n", "0", ".false.", ".f."}:
             return False
     raise ValueError(f"Cannot convert {value!r} to boolean")
+
+
+def _coerce_int(name: str, value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"Option '{name}' expects int, got bool {value!r}")
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            raise ValueError(f"Option '{name}' expects a finite int, got {value!r}")
+        if numeric.is_integer():
+            return int(numeric)
+        raise ValueError(f"Option '{name}' expects int, got {value!r}")
+    if isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+        return int(value.strip())
+    raise ValueError(f"Option '{name}' expects int, got {value!r}")
+
+
+def _coerce_float(name: str, value: Any) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"Option '{name}' expects float, got bool {value!r}")
+    token = value
+    if isinstance(value, str):
+        token = value.strip().replace("D", "E").replace("d", "e")
+    try:
+        numeric = float(token)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Option '{name}' expects float, got {value!r}") from exc
+    if not math.isfinite(numeric):
+        raise ValueError(f"Option '{name}' expects a finite float, got {value!r}")
+    return numeric
+
+
+def _coerce_string(name: str, value: Any, choices: tuple[Any, ...] | None) -> str:
+    if value is None:
+        raise ValueError(f"Option '{name}' expects str, got None")
+    text = value if isinstance(value, str) else str(value)
+    if choices is not None and all(isinstance(choice, str) for choice in choices):
+        stripped = text.strip()
+        for choice in choices:
+            if stripped.casefold() == choice.casefold():
+                return choice
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +190,7 @@ _SPECS: list[OptionSpec] = [
         frozenset({"calculator"}),
         aliases={"MODEL_PATH", "model"},
         description="Path to the model checkpoint/file.",
+        is_path=True,
     ),
     OptionSpec(
         "task",
@@ -197,7 +246,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "activation_checkpointing",
         bool,
-        frozenset({"calculator"}),
+        frozenset({"calculator.uma", "calculator.fairchem"}),
         aliases={"ACTIVATION_CHECKPOINTING"},
         description="GPU memory saving (UMA, overrides inference_mode preset).",
     ),

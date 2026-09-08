@@ -119,6 +119,33 @@ def test_device_is_string(schema: Schema) -> None:
     assert spec.type is str
 
 
+def test_schema_directed_zero_and_one_coercion(schema: Schema) -> None:
+    head = schema.resolve("HEAD")
+    threads = schema.resolve("CPU_THREADS")
+    enabled = schema.resolve("WRITE_FORCES")
+    assert head is not None and head.coerce("0") == "0"
+    assert threads is not None and threads.coerce("1") == 1
+    assert enabled is not None and enabled.coerce("0") is False
+
+
+@pytest.mark.parametrize("value", [True, 3.7, "3.7"])
+def test_integer_options_reject_bool_and_fractional_values(
+    schema: Schema, value: object
+) -> None:
+    steps = schema.resolve("STEPS")
+    assert steps is not None
+    with pytest.raises(ValueError, match="expects int"):
+        steps.coerce(value)
+
+
+@pytest.mark.parametrize("value", ["nan", "NaN", "inf", "-Inf", float("nan")])
+def test_numeric_options_reject_nonfinite_values(schema: Schema, value: object) -> None:
+    temperature = schema.resolve("TEMPERATURE")
+    assert temperature is not None
+    with pytest.raises(ValueError, match="finite"):
+        temperature.coerce(value)
+
+
 # ---------------------------------------------------------------------------
 # Scope classification
 # ---------------------------------------------------------------------------

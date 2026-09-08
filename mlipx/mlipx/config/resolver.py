@@ -25,8 +25,10 @@ from __future__ import annotations
 
 import random
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from mlipx.config.aliases import (
@@ -37,6 +39,7 @@ from mlipx.config.defaults import (
     BUILTIN_DEFAULTS,
     DEFAULT_DEVICE_BY_CALC_TYPE,
 )
+from mlipx.config.provenance import SourceLocation
 from mlipx.config.schema import Schema, get_schema
 
 if TYPE_CHECKING:
@@ -46,18 +49,20 @@ if TYPE_CHECKING:
     from mlipx.config.settings import MlipxSettings
 
 
-@dataclass
+@dataclass(frozen=True)
 class ResolvedValue:
     """A single resolved parameter with provenance."""
 
     value: Any
     source: str
+    base_dir: str | None = field(default=None, compare=False)
+    location: str | None = field(default=None, compare=False)
 
     def __repr__(self) -> str:
         return f"ResolvedValue({self.value!r}, source={self.source!r})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ResolvedConfig:
     """Fully resolved configuration produced by :func:`resolve_config`."""
 
@@ -67,12 +72,24 @@ class ResolvedConfig:
     task: str
     device: str
     inference_mode: str
-    calculator_options: dict[str, Any] = field(default_factory=dict)
-    run_options: dict[str, Any] = field(default_factory=dict)
-    settings: dict[str, Any] = field(default_factory=dict)
-    sources: dict[str, ResolvedValue] = field(default_factory=dict)
+    calculator_options: Mapping[str, Any] = field(default_factory=dict)
+    run_options: Mapping[str, Any] = field(default_factory=dict)
+    settings: Mapping[str, Any] = field(default_factory=dict)
+    sources: Mapping[str, ResolvedValue] = field(default_factory=dict)
+    unknown_options: Mapping[str, Any] = field(default_factory=dict)
     strict: bool = False
     settings_path: str | None = None
+
+    def __post_init__(self) -> None:
+        """Freeze mapping fields so execution cannot mutate resolved values."""
+        for name in (
+            "calculator_options",
+            "run_options",
+            "settings",
+            "sources",
+            "unknown_options",
+        ):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
 
     def as_dict(self) -> dict[str, Any]:
         """Flat dict suitable for ``resolved_config.json`` output."""
@@ -87,9 +104,15 @@ class ResolvedConfig:
             "run_options": dict(self.run_options),
             "settings": dict(self.settings),
             "sources": {
-                k: {"value": v.value, "source": v.source}
+                k: {
+                    "value": v.value,
+                    "source": v.source,
+                    "base_dir": v.base_dir,
+                    "location": v.location,
+                }
                 for k, v in self.sources.items()
             },
+            "unknown_options": dict(self.unknown_options),
             "strict": self.strict,
             "settings_path": self.settings_path,
         }
@@ -130,48 +153,108 @@ def _is_calculator_key(key: str, model_type: str) -> bool:
 
 
 def _settings_layer(
-    settings: MlipxSettings | None, calc_type: str | None = None
-) -> dict[str, Any]:
-    """Flatten the relevant settings.ini sections into a single dict."""
+    settings: MlipxSettings | None,
+    schema: Schema,
+    sections: tuple[str, ...],
+) -> tuple[dict[str, Any], dict[str, SourceLocation]]:
+    """Flatten settings sections while retaining each value's declaration."""
+    values: dict[str, Any] = {}
+    origins: dict[str, SourceLocation] = {}
     if settings is None:
+        return values, origins
+    for section_name in sections:
+        for key, value in settings.section(section_name).items():
+            name = schema.canonical_name(key) or key.lower()
+            values[name] = value
+            origin = settings.origin(section_name, key)
+            if origin is not None:
+                origins[name] = origin
+    return values, origins
+
+
+def _mapping_origins(raw: Mapping[str, Any]) -> dict[str, SourceLocation]:
+    """Extract per-key origins from an IncarConfig-like mapping."""
+    get_origin = getattr(raw, "origin", None)
+    if not callable(get_origin):
         return {}
-    layer: dict[str, Any] = {}
-    # Global sections feed the settings bag. Calculation sections are scoped:
-    # loading [opt] into an MD run (and vice versa) previously leaked irrelevant
-    # keys into run_options and produced misleading resolved configurations.
-    # ``sp`` was historically missing here, so a ``[sp]`` section in
-    # settings.ini (device / inference_mode) was silently ignored.
-    for section_name in ("general", "resources", "output", "safety"):
-        layer.update(settings.section(section_name))
-    if calc_type in {"sp", "md", "opt", "batch"}:
-        layer.update(settings.section(calc_type))
-    return layer
+    origins: dict[str, SourceLocation] = {}
+    for key in raw:
+        origin = get_origin(str(key))
+        if origin is not None:
+            origins[str(key)] = origin
+    return origins
 
 
-def _canonicalize_layer(raw: dict[str, Any], schema: Schema) -> dict[str, Any]:
-    """Map alias keys to canonical names and coerce types where possible."""
-    out: dict[str, Any] = {}
-    for key, value in raw.items():
-        canon = schema.canonical_name(key)
-        name = canon if canon is not None else key.lower()
-        # Avoid clobbering a canonical key set by an earlier alias in the same
-        # layer only when the value is None/empty (e.g. default_seed="").
-        if name in out and (value is None or value == ""):
+def _canonicalize_layer(
+    raw: Mapping[str, Any],
+    schema: Schema,
+    *,
+    source: str,
+    base_dir: str | Path | None = None,
+    origins: Mapping[str, SourceLocation] | None = None,
+) -> dict[str, ResolvedValue]:
+    """Canonicalize and schema-coerce one raw layer with provenance."""
+    out: dict[str, ResolvedValue] = {}
+    default_location = SourceLocation.synthetic(source, base_dir)
+    origins = origins or {}
+    for raw_key, raw_value in raw.items():
+        if raw_value is None or raw_value == "":
             continue
-        out[name] = value
+        key = str(raw_key)
+        spec = schema.resolve(key)
+        name = spec.name if spec is not None else key.lower()
+        location = origins.get(key) or origins.get(name) or origins.get(key.lower())
+        location = location or default_location
+        if spec is None:
+            value = raw_value
+        else:
+            try:
+                value = spec.coerce(raw_value)
+            except ValueError as exc:
+                raise ValueError(f"{location.display}: {exc}") from exc
+            errors = spec.validate_value(value)
+            if errors:
+                raise ValueError(f"{location.display}: " + "; ".join(errors))
+        resolved = ResolvedValue(
+            value=value,
+            source=source,
+            base_dir=str(location.base_dir),
+            location=location.display,
+        )
+        previous = out.get(name)
+        if previous is not None and previous.value != resolved.value:
+            raise ValueError(
+                f"Conflicting values for {name!r} in {source}: "
+                f"{previous.value!r} vs {resolved.value!r}"
+            )
+        out[name] = resolved
     return out
 
 
 def _merge_layer(
-    base: dict[str, ResolvedValue],
-    layer: dict[str, Any],
-    source: str,
+    base: dict[str, ResolvedValue], layer: Mapping[str, ResolvedValue]
 ) -> None:
-    """Merge ``layer`` into ``base`` recording ``source`` for each new key."""
-    for key, value in layer.items():
-        if value is None or value == "":
+    """Merge a typed layer into the accumulating resolved source map."""
+    base.update(layer)
+
+
+def _resolve_declared_paths(sources: dict[str, ResolvedValue], schema: Schema) -> None:
+    """Resolve every schema-declared path against its exact source base."""
+    for key, resolved in list(sources.items()):
+        spec = schema.resolve(key)
+        if spec is None or not spec.is_path or not resolved.value:
             continue
-        base[key] = ResolvedValue(value=value, source=source)
+        path = Path(str(resolved.value)).expanduser()
+        if not path.is_absolute():
+            if resolved.base_dir is None:
+                raise ValueError(f"Path option {key!r} has no source base directory")
+            path = Path(resolved.base_dir) / path
+        sources[key] = ResolvedValue(
+            str(path.resolve()),
+            resolved.source,
+            base_dir=resolved.base_dir,
+            location=resolved.location,
+        )
 
 
 def resolve_config(
@@ -182,8 +265,10 @@ def resolve_config(
     profiles: dict[str, Profile] | None = None,
     model_alias_name: str | None = None,
     profile_name: str | None = None,
-    incar: dict[str, Any] | None = None,
-    cli: dict[str, Any] | None = None,
+    incar: Mapping[str, Any] | None = None,
+    cli: Mapping[str, Any] | None = None,
+    incar_base_dir: str | Path | None = None,
+    cli_base_dir: str | Path | None = None,
     schema: Schema | None = None,
 ) -> ResolvedConfig:
     """Resolve a full configuration from all layers.
@@ -197,6 +282,10 @@ def resolve_config(
         profile_name: Name of a ``[profile:...]`` profile to apply.
         incar: INCAR/job-level overrides (already parsed, keys may be aliases).
         cli: Highest-priority overrides (CLI args or API kwargs).
+        incar_base_dir: Declaration directory for a plain INCAR/job mapping.
+            An :class:`IncarConfig` supplies its own per-key locations.
+        cli_base_dir: Declaration directory for relative CLI/API paths.
+            Defaults to the current working directory captured here.
         schema: Optional schema override (defaults to the global one).
 
     Returns:
@@ -204,13 +293,25 @@ def resolve_config(
         per-key ``sources`` trace.
     """
     schema = schema or get_schema()
-    calc_type = calc_type.lower()
+    calc_spec = schema.resolve("calc_type")
+    assert calc_spec is not None
+    calc_type = calc_spec.coerce(calc_type)
+    calc_errors = calc_spec.validate_value(calc_type)
+    if calc_errors:
+        raise ValueError("; ".join(calc_errors))
     model_aliases = (
         model_aliases if model_aliases is not None else _aliases_from_settings(settings)
     )
     profiles = profiles if profiles is not None else _profiles_from_settings(settings)
 
     sources: dict[str, ResolvedValue] = {}
+    cli_base = Path.cwd() if cli_base_dir is None else Path(cli_base_dir)
+    cli_base = cli_base.expanduser().resolve()
+    inferred_incar_base = getattr(incar, "base_dir", None)
+    if inferred_incar_base is None:
+        inferred_incar_base = incar_base_dir or Path.cwd()
+    inferred_incar_base = Path(inferred_incar_base).expanduser().resolve()
+    settings_base = settings.path.parent if settings and settings.path else Path.cwd()
 
     # Layer 1: built-in defaults.
     defaults_layer: dict[str, Any] = {}
@@ -223,22 +324,60 @@ def resolve_config(
         defaults_layer.update(BUILTIN_DEFAULTS.get("safety", {}))
     defaults_layer["device"] = DEFAULT_DEVICE_BY_CALC_TYPE.get(calc_type, "cpu")
     _merge_layer(
-        sources, _canonicalize_layer(defaults_layer, schema), "built-in defaults"
+        sources,
+        _canonicalize_layer(
+            defaults_layer,
+            schema,
+            source="built-in defaults",
+            base_dir=Path.cwd(),
+        ),
     )
 
-    # Canonicalise the higher layers once. Besides avoiding repeated parsing,
-    # this lets us select the right [engine:<name>] section even when the
-    # engine is chosen by a CLI flag, profile, INCAR or model alias.
-    alias_layer = _canonicalize_layer(
-        resolve_model_alias(model_alias_name, model_aliases), schema
+    settings_raw, settings_origins = _settings_layer(
+        settings,
+        schema,
+        ("general", "resources", "output", "safety", calc_type),
     )
-    profile_layer = _canonicalize_layer(resolve_profile(profile_name, profiles), schema)
+    settings_layer = _canonicalize_layer(
+        settings_raw,
+        schema,
+        source="settings.ini",
+        base_dir=settings_base,
+        origins=settings_origins,
+    )
+
+    selected_alias = model_aliases.get(model_alias_name) if model_alias_name else None
+    alias_layer = _canonicalize_layer(
+        resolve_model_alias(model_alias_name, model_aliases),
+        schema,
+        source=f"model alias {model_alias_name!r}",
+        base_dir=settings_base,
+        origins=selected_alias.origins if selected_alias is not None else None,
+    )
+    selected_profile = profiles.get(profile_name) if profile_name else None
+    profile_layer = _canonicalize_layer(
+        resolve_profile(profile_name, profiles),
+        schema,
+        source=f"profile {profile_name!r}",
+        base_dir=settings_base,
+        origins=selected_profile.origins if selected_profile is not None else None,
+    )
     profile_layer.pop("calc_type", None)
-    incar_layer = _canonicalize_layer(incar or {}, schema)
+    incar_layer = _canonicalize_layer(
+        incar or {},
+        schema,
+        source="INCAR/job",
+        base_dir=inferred_incar_base,
+        origins=_mapping_origins(incar) if incar is not None else None,
+    )
     incar_layer.pop("calc_type", None)
-    cli_layer = _canonicalize_layer(cli or {}, schema)
+    cli_layer = _canonicalize_layer(
+        cli or {},
+        schema,
+        source="CLI",
+        base_dir=cli_base,
+    )
     cli_layer.pop("calc_type", None)
-    settings_layer = _canonicalize_layer(_settings_layer(settings, calc_type), schema)
 
     # Select the final engine before applying any settings so its *built-in*
     # defaults participate at the correct lowest precedence.  Previously only
@@ -254,52 +393,57 @@ def resolve_config(
         cli_layer,
     ):
         if "model_type" in candidate:
-            engine_name = str(candidate["model_type"]).lower()
+            engine_name = str(candidate["model_type"].value).lower()
     engine_builtin_scope = f"calculator.{engine_name}"
     _merge_layer(
         sources,
-        _canonicalize_layer(BUILTIN_DEFAULTS.get(engine_builtin_scope, {}), schema),
-        f"built-in defaults ({engine_builtin_scope})",
+        _canonicalize_layer(
+            BUILTIN_DEFAULTS.get(engine_builtin_scope, {}),
+            schema,
+            source=f"built-in defaults ({engine_builtin_scope})",
+            base_dir=Path.cwd(),
+        ),
     )
 
     # Layer 2: settings.ini (calculation section + selected engine defaults).
     if settings is not None:
-        for candidate in (
-            settings_layer,
-            alias_layer,
-            profile_layer,
-            incar_layer,
-            cli_layer,
-        ):
-            if "model_type" in candidate:
-                engine_name = str(candidate["model_type"]).lower()
-        engine_defaults = settings.engine_section(str(engine_name))
-        settings_layer.update(_canonicalize_layer(engine_defaults, schema))
-    _merge_layer(sources, settings_layer, "settings.ini")
+        engine_raw, engine_origins = _settings_layer(
+            settings, schema, (f"engine:{engine_name}",)
+        )
+        settings_layer.update(
+            _canonicalize_layer(
+                engine_raw,
+                schema,
+                source="settings.ini",
+                base_dir=settings_base,
+                origins=engine_origins,
+            )
+        )
+    _merge_layer(sources, settings_layer)
 
     # Layer 3: model alias.
-    _merge_layer(sources, alias_layer, f"model alias {model_alias_name!r}")
+    _merge_layer(sources, alias_layer)
 
     # Layer 4: profile.
     # ``calc_type`` is authoritative from the caller (CLI subcommand / API);
     # a profile's calc_type is declarative only and is not allowed to override
     # it. (Plan section 4.3: CLI > profile.)
-    profile_layer.pop("calc_type", None)
-    _merge_layer(sources, profile_layer, f"profile {profile_name!r}")
+    _merge_layer(sources, profile_layer)
 
     # Layer 5: INCAR / job.
-    _merge_layer(sources, incar_layer, "INCAR/job")
+    _merge_layer(sources, incar_layer)
 
     # Layer 6: CLI / kwargs (highest priority).
-    _merge_layer(sources, cli_layer, "CLI")
+    _merge_layer(sources, cli_layer)
+
+    _resolve_declared_paths(sources, schema)
 
     # ---- Finalise model-level fields. ----
     model_type = str(
         sources.get("model_type", ResolvedValue("uma", "built-in defaults")).value
     ).lower()
-    model_path = str(
-        sources.get("model_path", ResolvedValue("", "built-in defaults")).value
-    )
+    model_path_value = sources.get("model_path")
+    model_path = str(model_path_value.value) if model_path_value is not None else ""
     task = str(
         sources.get(
             "task",
@@ -341,55 +485,78 @@ def resolve_config(
         sources["inference_mode"] = ResolvedValue(
             "default", f"built-in defaults ({model_type}: not applicable)"
         )
-    # Resolve model path relative to settings.ini when it is not absolute.
     settings_path = str(settings.path) if settings and settings.path else None
-    if settings_path and model_path and not Path(model_path).is_absolute():
-        candidate = (Path(settings.path).parent / model_path).resolve()  # type: ignore[union-attr]
-        if candidate.exists():
-            model_path = str(candidate)
 
     # ---- Split calculator vs run options. ----
     calculator_options: dict[str, Any] = {}
     run_options: dict[str, Any] = {}
     settings_bag: dict[str, Any] = {}
-    settings_scope_keys = (
-        set(BUILTIN_DEFAULTS.get("general", {}))
-        | set(BUILTIN_DEFAULTS.get("resources", {}))
-        | set(BUILTIN_DEFAULTS.get("batch", {}))
-        | set(BUILTIN_DEFAULTS.get("output", {}))
-        | set(BUILTIN_DEFAULTS.get("safety", {}))
-    )
+    unknown_options: dict[str, Any] = {}
+    scope_errors: list[str] = []
+    calc_scopes = {"sp", "opt", "md", "batch"}
 
     for key, rv in sources.items():
         if key in _MODEL_KEYS:
             continue
-        if key in settings_scope_keys:
-            settings_bag[key] = rv.value
+        spec = schema.resolve(key)
+        if spec is None:
+            unknown_options[key] = rv.value
             continue
         if _is_calculator_key(key, model_type):
             calculator_options[key] = rv.value
             continue
-        # Classify by schema scope: keys scoped to a calc type become run
-        # options; everything else (output/meta/general/...) lands in the
-        # settings bag so it neither pollutes run_options nor triggers
-        # unknown-key warnings.
-        spec = schema.resolve(key)
-        calc_scopes = {"sp", "opt", "md", "batch"}
-        if spec is not None and (set(spec.scopes) & calc_scopes):
+        option_calc_scopes = set(spec.scopes) & calc_scopes
+        non_calc_scopes = set(spec.scopes) - calc_scopes
+        if calc_type in option_calc_scopes:
             run_options[key] = rv.value
-        else:
+            continue
+        if option_calc_scopes and not non_calc_scopes:
+            scope_errors.append(
+                f"Option {key!r} from {rv.location or rv.source} is not valid "
+                f"for calc_type={calc_type!r}"
+            )
+            continue
+        calculator_scopes = {
+            scope for scope in spec.scopes if scope.startswith("calculator.")
+        }
+        if calculator_scopes:
+            scope_errors.append(
+                f"Option {key!r} from {rv.location or rv.source} is not "
+                f"applicable to engine {model_type!r}"
+            )
+            continue
+        if key == "torch_num_threads" or non_calc_scopes:
             settings_bag[key] = rv.value
+            continue
+        scope_errors.append(f"Option {key!r} has no executable configuration scope")
+
+    if scope_errors:
+        raise ValueError(
+            "Configuration scope validation failed:\n  - " + "\n  - ".join(scope_errors)
+        )
+
+    strict_value = sources.get("strict_config")
+    strict = bool(strict_value.value) if strict_value is not None else False
+    unknown_errors: list[str] = []
+    for key in unknown_options:
+        rv = sources[key]
+        suggestion = schema.suggest(key)
+        hint = f" Did you mean {suggestion[0]!r}?" if suggestion else ""
+        message = f"Unknown key {key!r} from {rv.location or rv.source}.{hint}"
+        if strict:
+            unknown_errors.append(message)
+        else:
+            warnings.warn(message, stacklevel=2)
+    if unknown_errors:
+        raise ValueError(
+            "Strict config validation failed:\n  - " + "\n  - ".join(unknown_errors)
+        )
+
     # Seed handling: auto-generate when not set, and record it.
     if "seed" not in sources and calc_type == "md":
         seed = random.randint(0, 2**31 - 1)
         sources["seed"] = ResolvedValue(seed, "auto-generated")
         run_options["seed"] = seed
-
-    strict = (
-        bool(settings_bag.get("strict_config", False))
-        if settings_bag
-        else bool(_settings_layer(settings, calc_type).get("strict_config", False))
-    )
 
     resolved = ResolvedConfig(
         calc_type=calc_type,
@@ -402,6 +569,7 @@ def resolve_config(
         run_options=run_options,
         settings=settings_bag,
         sources=sources,
+        unknown_options=unknown_options,
         strict=strict,
         settings_path=settings_path,
     )
@@ -443,7 +611,7 @@ def _aliases_from_settings(settings: MlipxSettings | None) -> dict[str, ModelAli
         return {}
     from mlipx.config.aliases import parse_model_aliases  # noqa: PLC0415
 
-    return parse_model_aliases(settings.parser)
+    return parse_model_aliases(settings.parser, settings.origins)
 
 
 def _profiles_from_settings(settings: MlipxSettings | None) -> dict[str, Profile]:
@@ -451,4 +619,4 @@ def _profiles_from_settings(settings: MlipxSettings | None) -> dict[str, Profile
         return {}
     from mlipx.config.aliases import parse_profiles  # noqa: PLC0415
 
-    return parse_profiles(settings.parser)
+    return parse_profiles(settings.parser, settings.origins)

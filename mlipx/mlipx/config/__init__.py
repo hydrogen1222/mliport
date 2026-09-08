@@ -32,6 +32,7 @@ from mlipx.config.defaults import (
     get_default_config,
 )
 from mlipx.config.incar import IncarConfig
+from mlipx.config.provenance import SourceLocation
 from mlipx.config.resolver import ResolvedConfig, ResolvedValue, resolve_config
 from mlipx.config.schema import OptionSpec, Schema, get_schema
 from mlipx.config.settings import (
@@ -63,6 +64,7 @@ __all__ = [
     "ResolvedConfig",
     "ResolvedValue",
     "Schema",
+    "SourceLocation",
     "build_incar_default",
     "get_default_config",
     "get_schema",

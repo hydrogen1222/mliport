@@ -7,22 +7,20 @@ the legacy module re-exports this class for backward compatibility.
 
 from __future__ import annotations
 
+import math
+import re
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from typing import Any
+from mlipx.config.provenance import SourceLocation
 
 
 class IncarConfig(dict):
     """VASP-style INCAR configuration parser.
 
-    Parses key-value pairs from INCAR files with support for:
-    - Boolean values: .TRUE., .FALSE., T, F
-    - Integer values
-    - Float values
-    - String values
-    - Lists (space-separated values)
+    The lexer removes syntax-level quotes/comments but deliberately keeps raw
+    value tokens as strings. The shared :mod:`mlipx.config.schema` performs
+    field-directed typing later, so ``HEAD = 0`` remains the string ``"0"``
+    while ``CPU_THREADS = 1`` becomes an integer in the resolved config.
 
     Example:
         >>> config = IncarConfig.from_file("INCAR.mlipx")
@@ -30,14 +28,22 @@ class IncarConfig(dict):
         >>> print(config.get("FMAX", 0.05))  # 0.05 with default
     """
 
-    # Boolean mappings (VASP-style and common variants)
-    TRUE_VALUES = {".true.", ".t.", "true", "t", "yes", "y", "1", ".TRUE.", ".T."}
-    FALSE_VALUES = {".false.", ".f.", "false", "f", "no", "n", "0", ".FALSE.", ".F."}
+    TRUE_VALUES = {".true.", ".t.", "true", "t", "yes", "y", "1"}
+    FALSE_VALUES = {".false.", ".f.", "false", "f", "no", "n", "0"}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        *args,
+        source_name: str = "<mapping>",
+        base_dir: str | Path | None = None,
+        **kwargs,
+    ):
         """Initialize configuration with optional initial values."""
         super().__init__(*args, **kwargs)
         self._comments: dict[str, str] = {}
+        self._origins: dict[str, SourceLocation] = {}
+        self.source_name = source_name
+        self.base_dir = SourceLocation.synthetic(source_name, base_dir).base_dir
 
     @classmethod
     def from_file(cls, filepath: str | Path) -> IncarConfig:
@@ -53,49 +59,24 @@ class IncarConfig(dict):
             FileNotFoundError: If file doesn't exist
             ValueError: If file has invalid format
         """
-        filepath = Path(filepath)
-        if not filepath.exists():
-            raise FileNotFoundError(f"Configuration file not found: {filepath}")
-
-        config = cls()
-
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-
-                # Skip empty lines and comments
-                if not line or line.startswith(("#", "!")):
-                    continue
-
-                # Extract inline comment
-                comment = ""
-                if "#" in line:
-                    line, comment = line.split("#", 1)
-                    line = line.strip()
-
-                # Parse key-value pair
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    key = key.strip().upper()
-                    value = value.strip()
-
-                    if not key:
-                        continue
-
-                    try:
-                        parsed_value = cls._parse_value(value)
-                        config[key] = parsed_value
-                        if comment:
-                            config._comments[key] = comment.strip()
-                    except ValueError as e:
-                        raise ValueError(
-                            f"Error parsing line {line_num} in {filepath}: {e}"
-                        ) from e
-
-        return config
+        path = Path(filepath).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Configuration file not found: {path}")
+        return cls._from_content(
+            path.read_text(encoding="utf-8"),
+            source_name=str(path),
+            base_dir=path.parent,
+            source_path=path,
+        )
 
     @classmethod
-    def from_string(cls, content: str) -> IncarConfig:
+    def from_string(
+        cls,
+        content: str,
+        *,
+        source_name: str = "<string>",
+        base_dir: str | Path | None = None,
+    ) -> IncarConfig:
         """Parse configuration from string content.
 
         Args:
@@ -104,75 +85,108 @@ class IncarConfig(dict):
         Returns:
             IncarConfig instance with parsed values
         """
-        config = cls()
-
-        for line_num, line in enumerate(content.split("\n"), 1):
-            line = line.strip()
-
-            if not line or line.startswith(("#", "!")):
-                continue
-
-            comment = ""
-            if "#" in line:
-                line, comment = line.split("#", 1)
-                line = line.strip()
-
-            if "=" in line:
-                key, value = line.split("=", 1)
-                key = key.strip().upper()
-                value = value.strip()
-
-                if not key:
-                    continue
-
-                try:
-                    parsed_value = cls._parse_value(value)
-                    config[key] = parsed_value
-                    if comment:
-                        config._comments[key] = comment.strip()
-                except ValueError as e:
-                    raise ValueError(f"Error parsing line {line_num}: {e}") from e
-
-        return config
+        return cls._from_content(
+            content,
+            source_name=source_name,
+            base_dir=base_dir,
+            source_path=None,
+        )
 
     @classmethod
-    def _parse_value(cls, value: str) -> Any:
-        """Parse a value string into appropriate Python type.
+    def _from_content(
+        cls,
+        content: str,
+        *,
+        source_name: str,
+        base_dir: str | Path | None,
+        source_path: Path | None,
+    ) -> IncarConfig:
+        config = cls(source_name=source_name, base_dir=base_dir)
+        for line_num, raw_line in enumerate(content.splitlines(), 1):
+            try:
+                statement, comment = cls._split_comment(raw_line)
+                statement = statement.strip()
+                if not statement:
+                    continue
+                if "=" not in statement:
+                    raise ValueError("expected exactly one KEY = VALUE assignment")
+                key, _, raw_value = statement.partition("=")
+                key = key.strip().upper()
+                if not re.fullmatch(r"[A-Z_][A-Z0-9_-]*", key):
+                    raise ValueError(f"invalid option key {key!r}")
+                value = cls._strip_syntax_quotes(raw_value.strip())
+            except ValueError as exc:
+                location = (
+                    f"line {line_num} in {source_name}"
+                    if source_path is not None
+                    else f"line {line_num}"
+                )
+                raise ValueError(f"Error parsing {location}: {exc}") from exc
 
-        Args:
-            value: Raw value string from INCAR file
+            config[key] = value
+            if comment:
+                config._comments[key] = comment.strip()
+            if source_path is not None:
+                config._origins[key] = SourceLocation.from_file(source_path, line_num)
+            else:
+                config._origins[key] = SourceLocation(
+                    base_dir=config.base_dir,
+                    line=line_num,
+                    label=source_name,
+                )
+        return config
 
-        Returns:
-            Parsed value (bool, int, float, or string)
-        """
-        value_lower = value.lower().strip()
+    @staticmethod
+    def _split_comment(line: str) -> tuple[str, str]:
+        quote: str | None = None
+        escaped = False
+        for index, char in enumerate(line):
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+                continue
+            if char in {'"', "'"}:
+                quote = char
+            elif char in {"#", "!"}:
+                return line[:index], line[index + 1 :]
+            elif char == ";":
+                raise ValueError(
+                    "semicolon-separated assignments are unsupported; use one per line"
+                )
+        if quote is not None:
+            raise ValueError("unterminated quoted value")
+        return line, ""
 
-        # Try boolean first
-        if value_lower in cls.TRUE_VALUES:
-            return True
-        if value_lower in cls.FALSE_VALUES:
-            return False
-
-        # Try integer
-        try:
-            return int(value)
-        except ValueError:
-            pass
-
-        # Try float
-        try:
-            return float(value)
-        except ValueError:
-            pass
-
-        # Return as string (strip quotes if present)
-        value = value.strip()
-        if (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        ):
-            value = value[1:-1]
-
+    @staticmethod
+    def _strip_syntax_quotes(value: str) -> str:
+        if value and value[0] in {'"', "'"}:
+            if len(value) < 2 or value[-1] != value[0]:
+                raise ValueError("quoted value must occupy the complete value token")
+            quote = value[0]
+            body = value[1:-1]
+            body = body.replace(f"\\{quote}", quote).replace("\\\\", "\\")
+            return body
         return value
+
+    @staticmethod
+    def _format_value(value: object) -> str:
+        if isinstance(value, bool):
+            return ".TRUE." if value else ".FALSE."
+        text = str(value)
+        if text != text.strip() or any(
+            char in text for char in ("#", "!", ";", "'", '"')
+        ):
+            escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+        return text
+
+    def origin(self, key: str) -> SourceLocation | None:
+        """Return the source location for ``key`` (case-insensitive)."""
+        return self._origins.get(key.upper())
 
     def get_bool(self, key: str, default: bool = False) -> bool:
         """Get boolean value with default."""
@@ -180,7 +194,7 @@ class IncarConfig(dict):
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
-            value_lower = value.lower()
+            value_lower = value.strip().lower()
             if value_lower in self.TRUE_VALUES:
                 return True
             if value_lower in self.FALSE_VALUES:
@@ -190,21 +204,38 @@ class IncarConfig(dict):
     def get_int(self, key: str, default: int = 0) -> int:
         """Get integer value with default."""
         value = self.get(key, default)
+        if isinstance(value, bool):
+            raise ValueError(f"Cannot convert {key}={value!r} to integer")
         if isinstance(value, int) and not isinstance(value, bool):
             return value
-        return int(value)
+        if isinstance(value, float):
+            if math.isfinite(value) and value.is_integer():
+                return int(value)
+            raise ValueError(f"Cannot convert {key}={value!r} to integer")
+        if isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+            return int(value)
+        raise ValueError(f"Cannot convert {key}={value!r} to integer")
 
     def get_float(self, key: str, default: float = 0.0) -> float:
         """Get float value with default."""
         value = self.get(key, default)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
-        return float(value)
+            numeric = float(value)
+        elif isinstance(value, str):
+            try:
+                numeric = float(value.strip().replace("D", "E").replace("d", "e"))
+            except ValueError as exc:
+                raise ValueError(f"Cannot convert {key}={value!r} to float") from exc
+        else:
+            raise ValueError(f"Cannot convert {key}={value!r} to float")
+        if not math.isfinite(numeric):
+            raise ValueError(f"Cannot convert {key}={value!r} to finite float")
+        return numeric
 
-    def get_str(self, key: str, default: str = "") -> str:
+    def get_str(self, key: str, default: str | None = "") -> str | None:
         """Get string value with default."""
         value = self.get(key, default)
-        return str(value)
+        return None if value is None else str(value)
 
     def write(self, filepath: str | Path) -> None:
         """Write configuration to file."""
@@ -257,10 +288,7 @@ class IncarConfig(dict):
                 current_category = category
 
             # Format value
-            if isinstance(value, bool):
-                formatted_value = ".TRUE." if value else ".FALSE."
-            else:
-                formatted_value = str(value)
+            formatted_value = self._format_value(value)
 
             # Add comment if present
             comment = self._comments.get(key, "")
@@ -286,6 +314,32 @@ class IncarConfig(dict):
             for key in required_keys:
                 if key not in self:
                     errors.append(f"Required key '{key}' is missing")
+
+        # Keep the historical domain-specific messages below, but route all
+        # other known fields through the shared typed schema. Unknown keys are
+        # handled after layering, once STRICT_CONFIG has itself been resolved.
+        from mlipx.config.schema import get_schema  # noqa: PLC0415
+
+        custom_validation = {
+            "CALC_TYPE",
+            "DEFAULT_DTYPE",
+            "DEVICE",
+            "MD_ENSEMBLE",
+            "MODEL_TYPE",
+            "OPT_ALGO",
+            "TASK",
+            "THERMOSTAT",
+        }
+        schema_values = {
+            key: value for key, value in self.items() if key not in custom_validation
+        }
+        errors.extend(
+            get_schema().validate_dict(
+                schema_values,
+                strict=False,
+                context=self.source_name,
+            )
+        )
 
         # Validate specific keys
         valid_model_types = {"uma", "fairchem", "mace", "dpa", "grace"}

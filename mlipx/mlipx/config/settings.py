@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mlipx.config.provenance import SourceLocation
+
 if TYPE_CHECKING:
     import configparser
     from typing import Any
@@ -134,15 +136,21 @@ def settings_search_paths(
         cwd: Working directory used for the ``./settings.ini`` candidate.
             Defaults to the current working directory.
     """
-    base = Path(cwd) if cwd is not None else Path.cwd()
+    base = Path(cwd).expanduser() if cwd is not None else Path.cwd()
+    base = base.resolve()
+
+    def declared_path(value: str | Path) -> Path:
+        path = Path(value).expanduser()
+        return path.resolve() if path.is_absolute() else (base / path).resolve()
+
     candidates: list[Path] = []
     if explicit:
-        candidates.append(Path(explicit).expanduser())
+        candidates.append(declared_path(explicit))
     env_path = os.environ.get("MLIPX_SETTINGS")
     if env_path:
-        candidates.append(Path(env_path).expanduser())
+        candidates.append(declared_path(env_path))
     candidates.append(base / "settings.ini")
-    candidates.append(user_config_dir() / "settings.ini")
+    candidates.append((user_config_dir() / "settings.ini").resolve())
     return candidates
 
 
@@ -173,6 +181,7 @@ class MlipxSettings:
     """Every settings.ini that contributed, lowest-priority first."""
     searched: list[Path] = field(default_factory=list)
     sections: dict[str, dict[str, str]] = field(default_factory=dict)
+    origins: dict[tuple[str, str], SourceLocation] = field(default_factory=dict)
 
     @property
     def loaded(self) -> bool:
@@ -180,38 +189,48 @@ class MlipxSettings:
         return bool(self.loaded_paths)
 
     def get(self, section: str, key: str, default: Any | None = None) -> Any | None:
-        """Return a typed value from ``[section] key``."""
+        """Return a raw value from ``[section] key``."""
         if not self.parser.has_option(section, key):
             return default
-        return self._coerce(self.parser.get(section, key))
+        return self.parser.get(section, key).strip()
 
-    def section(self, name: str) -> dict[str, Any]:
-        """Return a typed view of one section (empty if absent)."""
+    def section(self, name: str) -> dict[str, str]:
+        """Return raw tokens for one section (empty if absent)."""
         if not self.parser.has_section(name):
             return {}
-        return {k: self._coerce(v) for k, v in self.parser.items(name)}
+        return {k: v.strip() for k, v in self.parser.items(name)}
 
-    def engine_section(self, engine: str) -> dict[str, Any]:
+    def engine_section(self, engine: str) -> dict[str, str]:
         """Return the ``[engine:<name>]`` section for ``engine``."""
         return self.section(f"engine:{engine}")
 
-    @staticmethod
-    def _coerce(raw: str) -> Any:
-        value = raw.strip()
-        lowered = value.lower()
-        if lowered in {"true", ".true.", "yes", "y", "t", "1"}:
-            return True
-        if lowered in {"false", ".false.", "no", "n", "f", "0"}:
-            return False
-        try:
-            return int(value)
-        except ValueError:
-            pass
-        try:
-            return float(value)
-        except ValueError:
-            pass
-        return value
+    def origin(self, section: str, key: str) -> SourceLocation | None:
+        """Return the file/line that declared one merged setting."""
+        return self.origins.get((section.lower(), key.lower()))
+
+
+def _option_line_numbers(path: Path) -> dict[tuple[str, str], int]:
+    """Find first-line locations for configparser options in one file."""
+    locations: dict[tuple[str, str], int] = {}
+    section: str | None = None
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", ";")):
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].strip().lower()
+            continue
+        if section is None or line[:1].isspace():
+            continue
+        delimiters = [index for token in ("=", ":") if (index := line.find(token)) >= 0]
+        if not delimiters:
+            continue
+        key = line[: min(delimiters)].strip().lower()
+        if key:
+            locations[(section, key)] = line_number
+    return locations
 
 
 def load_settings(
@@ -237,16 +256,26 @@ def load_settings(
     merge_order = list(reversed(searched))
     parser = configparser.ConfigParser(interpolation=None)
     loaded_paths: list[Path] = []
+    origins: dict[tuple[str, str], SourceLocation] = {}
     for candidate in merge_order:
         if not candidate.is_file():
             continue
         try:
+            candidate_parser = configparser.ConfigParser(interpolation=None)
+            candidate_parser.read(candidate, encoding="utf-8")
             parser.read(candidate, encoding="utf-8")
         except (configparser.Error, OSError) as exc:
             raise ValueError(
                 f"Failed to parse settings file {candidate}: {exc}"
             ) from exc
         loaded_paths.append(candidate)
+        line_numbers = _option_line_numbers(candidate)
+        for section in candidate_parser.sections():
+            for key, _value in candidate_parser.items(section):
+                line = line_numbers.get((section.lower(), key.lower()))
+                origins[(section.lower(), key.lower())] = SourceLocation.from_file(
+                    candidate, line
+                )
 
     # `path` is the highest-priority file loaded (last in merge_order).
     top = loaded_paths[-1] if loaded_paths else None
@@ -261,6 +290,7 @@ def load_settings(
         loaded_paths=loaded_paths,
         searched=searched,
         sections=sections,
+        origins=origins,
     )
 
 

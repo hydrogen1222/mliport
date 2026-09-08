@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from mlipx.config.provenance import SourceLocation
+
 if TYPE_CHECKING:
     import configparser
     from typing import Any
@@ -41,6 +43,7 @@ class ModelAlias:
     path: str
     task: str = "bulk"
     options: dict[str, Any] = field(default_factory=dict)
+    origins: dict[str, SourceLocation] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a flat dict usable as a resolver layer."""
@@ -59,6 +62,7 @@ class Profile:
 
     name: str
     options: dict[str, Any] = field(default_factory=dict)
+    origins: dict[str, SourceLocation] = field(default_factory=dict)
 
     @property
     def calc_type(self) -> str | None:
@@ -67,34 +71,14 @@ class Profile:
 
 
 def _parse_section_items(section: dict[str, str]) -> dict[str, Any]:
-    """Coerce raw configparser string values into typed Python values."""
-    out: dict[str, Any] = {}
-    for key, raw in section.items():
-        out[key] = _coerce(raw)
-    return out
+    """Strip whitespace while preserving raw tokens for schema coercion."""
+    return {key: raw.strip() for key, raw in section.items()}
 
 
-def _coerce(raw: str) -> Any:
-    value = raw.strip()
-    lowered = value.lower()
-    if lowered in {"true", ".true.", "yes", "y", "t", "1"}:
-        return True
-    if lowered in {"false", ".false.", "no", "n", "f", "0"}:
-        return False
-    # int?
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    # float?
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    return value
-
-
-def parse_model_aliases(parser: configparser.ConfigParser) -> dict[str, ModelAlias]:
+def parse_model_aliases(
+    parser: configparser.ConfigParser,
+    origins: dict[tuple[str, str], SourceLocation] | None = None,
+) -> dict[str, ModelAlias]:
     """Extract all ``[model:...]`` sections from a parsed settings.ini."""
     aliases: dict[str, ModelAlias] = {}
     for section in parser.sections():
@@ -107,16 +91,41 @@ def parse_model_aliases(parser: configparser.ConfigParser) -> dict[str, ModelAli
         engine = str(items.pop("engine", "uma")).lower()
         path = str(items.pop("path", ""))
         task = str(items.pop("task", "bulk")).lower()
+        value_origins: dict[str, SourceLocation] = {}
+        origin_map = origins or {}
+        for raw_key, canonical in (
+            ("engine", "model_type"),
+            ("path", "model_path"),
+            ("task", "task"),
+        ):
+            origin = origin_map.get((section.lower(), raw_key))
+            if origin is not None:
+                value_origins[canonical] = origin
         # ``dtype`` is a friendly alias for the MACE default_dtype option.
         if "dtype" in items:
             items["default_dtype"] = str(items.pop("dtype")).lower()
+            origin = origin_map.get((section.lower(), "dtype"))
+            if origin is not None:
+                value_origins["default_dtype"] = origin
+        for key in items:
+            origin = origin_map.get((section.lower(), key.lower()))
+            if origin is not None:
+                value_origins[key] = origin
         aliases[name] = ModelAlias(
-            name=name, engine=engine, path=path, task=task, options=items
+            name=name,
+            engine=engine,
+            path=path,
+            task=task,
+            options=items,
+            origins=value_origins,
         )
     return aliases
 
 
-def parse_profiles(parser: configparser.ConfigParser) -> dict[str, Profile]:
+def parse_profiles(
+    parser: configparser.ConfigParser,
+    origins: dict[tuple[str, str], SourceLocation] | None = None,
+) -> dict[str, Profile]:
     """Extract all ``[profile:...]`` sections from a parsed settings.ini."""
     profiles: dict[str, Profile] = {}
     for section in parser.sections():
@@ -125,9 +134,14 @@ def parse_profiles(parser: configparser.ConfigParser) -> dict[str, Profile]:
         name = section[len(_PROFILE_PREFIX) :].strip()
         if not name:
             continue
-        profiles[name] = Profile(
-            name=name, options=_parse_section_items(dict(parser.items(section)))
-        )
+        options = _parse_section_items(dict(parser.items(section)))
+        value_origins = {
+            key: origin
+            for key in options
+            if (origin := (origins or {}).get((section.lower(), key.lower())))
+            is not None
+        }
+        profiles[name] = Profile(name=name, options=options, origins=value_origins)
     return profiles
 
 

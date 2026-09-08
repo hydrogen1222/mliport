@@ -59,7 +59,7 @@ def _load_structure(structure: Atoms | str | Path) -> Atoms:
     if isinstance(structure, Atoms):
         return structure
 
-    structure_path = Path(structure)
+    structure_path = Path(structure).expanduser().resolve()
     if not structure_path.exists():
         raise ValueError(f"Structure file not found: {structure_path}")
 
@@ -121,19 +121,20 @@ def _api_resolve(
     settings = load_settings(explicit=settings_path)
     if model_path:
         cli.setdefault("model_path", model_path)
+    if strict_config is not None:
+        cli["strict_config"] = strict_config
     resolved = resolve_config(
         calc_type=calc_type,
         settings=settings,
         cli=cli,
         model_alias_name=model_alias,
         profile_name=profile,
+        cli_base_dir=Path.cwd(),
     )
     ec = EngineConfig.from_resolved(resolved)
-    ec.output_dir = Path(output_dir)
+    ec.output_dir = Path(output_dir).expanduser().resolve()
     if job_name:
         ec.job_name = job_name
-    if strict_config is not None:
-        ec.strict_config = strict_config
     return ec
 
 
