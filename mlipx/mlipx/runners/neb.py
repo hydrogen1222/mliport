@@ -69,7 +69,8 @@ class NEBRunner:
             raise NEBPreparationError("NEB force snapshot contains NaN or Inf")
         return float(np.linalg.norm(values, axis=2).max()) if values.size else 0.0
 
-    def _snapshot(self, images, *, neb_forces: np.ndarray | None = None):
+    def _physical_snapshot(self, images, *, context: str):
+        """Copy and validate raw calculator energy/forces for every image."""
         energies = []
         physical_forces = []
         for image in images:
@@ -81,15 +82,19 @@ class NEBRunner:
                 image.get_forces(apply_constraint=False), dtype=float
             ).copy()
             if not np.isfinite(energy) or not np.all(np.isfinite(forces)):
-                raise NEBPreparationError("NEB energy/force contains NaN or Inf")
+                raise NEBPreparationError(f"{context} energy/force contains NaN or Inf")
             energies.append(energy)
             physical_forces.append(forces)
         force_array = np.asarray(physical_forces, dtype=float)
         if self._fmax(force_array) > self.options.force_abort_eV_A:
             raise NEBPreparationError(
-                "Raw physical NEB force exceeds force_abort_eV_A; stopping "
-                "before the band can be published"
+                f"Raw physical {context} force exceeds force_abort_eV_A; "
+                "stopping before the band can be published"
             )
+        return np.asarray(energies, dtype=float), force_array
+
+    def _snapshot(self, images, *, neb_forces: np.ndarray | None = None):
+        energies, force_array = self._physical_snapshot(images, context="NEB")
         if neb_forces is None:
             neb_array = np.empty((0, len(images), 3), dtype=float)
             max_neb = float("nan")
@@ -101,7 +106,7 @@ class NEBRunner:
             neb_array[1:-1] = interior
             max_neb = self._fmax(neb_array[1:-1])
         return (
-            np.asarray(energies, dtype=float),
+            energies,
             force_array,
             neb_array,
             max_neb,
@@ -130,21 +135,33 @@ class NEBRunner:
             return
         for index, image in enumerate((images[0], images[-1])):
             optimizer = FIRE(image, maxstep=self.options.maxstep_A, logfile=None)
-            converged = optimizer.run(
+            for _ in optimizer.irun(
                 fmax=self.options.endpoint_fmax_eV_A,
                 steps=self.options.endpoint_steps,
-            )
-            if not converged or not optimizer.converged():
+            ):
+                if self._is_cancelled():
+                    raise CancellationRequested(
+                        f"NEB endpoint {index} relaxation cancelled by user"
+                    )
+                self._physical_snapshot([image], context=f"endpoint {index} relaxation")
+            if not optimizer.converged():
                 raise NEBEndpointNotConvergedError(
                     f"Endpoint {index} did not converge within endpoint_steps"
                 )
 
     def _optimize_stage(self, neb: NEB, *, stage: str, fmax: float, steps: int):
+        # Gate raw calculator outputs before ASE can use them in tangent or
+        # spring-force arithmetic. Subsequent yielded states are checked below
+        # before the optimizer is allowed to take its next step.
+        self._physical_snapshot(neb.images[1:-1], context=f"NEB {stage}")
         optimizer = FIRE(neb, maxstep=self.options.maxstep_A, logfile=None)
-        converged = False
-        for converged in optimizer.irun(fmax=fmax, steps=steps):
+        for _ in optimizer.irun(fmax=fmax, steps=steps):
             if self._is_cancelled():
                 raise CancellationRequested(f"NEB {stage} cancelled by user")
+            # ASE optimizes constraint-applied forces. Check the raw physical
+            # state at every accepted optimizer state so a frozen high force,
+            # NaN, or Inf cannot be hidden until the final result snapshot.
+            self._physical_snapshot(neb.images[1:-1], context=f"NEB {stage}")
         neb_forces = np.asarray(neb.get_forces(), dtype=float).copy()
         if not np.all(np.isfinite(neb_forces)):
             raise NEBPreparationError(f"NEB {stage} produced a non-finite band force")

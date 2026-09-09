@@ -274,17 +274,17 @@ def _apply_idpp(images: list[Atoms], options: NEBOptions) -> None:
         method="improvedtangent",
         allow_shared_calculator=False,
     )
-    idpp_interpolate(
-        neb,
-        traj=None,
-        log=None,
-        fmax=options.idpp_fmax_eV_A,
-        optimizer=FIRE,
-        mic=options.idpp_mic,
-        steps=options.idpp_steps,
-    )
     max_force = 0.0
     try:
+        idpp_interpolate(
+            neb,
+            traj=None,
+            log=None,
+            fmax=options.idpp_fmax_eV_A,
+            optimizer=FIRE,
+            mic=options.idpp_mic,
+            steps=options.idpp_steps,
+        )
         for index, image in enumerate(images[1:-1], start=1):
             target = images[0].get_all_distances(mic=options.idpp_mic) + index * (
                 images[-1].get_all_distances(mic=options.idpp_mic)
@@ -295,6 +295,12 @@ def _apply_idpp(images: list[Atoms], options: NEBOptions) -> None:
             if not np.all(np.isfinite(force)):
                 raise NEBPreparationError("IDPP produced a non-finite force")
             max_force = max(max_force, float(np.linalg.norm(force, axis=1).max()))
+    except NEBPreparationError:
+        raise
+    except Exception as exc:
+        raise NEBPreparationError(
+            "IDPP interpolation failed; refusing an unmarked linear fallback"
+        ) from exc
     finally:
         for image in images:
             image.calc = None
