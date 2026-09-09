@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 # Built-in defaults, grouped by scope.
 #
 # Scopes mirror the settings.ini sections from the plan (section 4.4):
-#   general / resources / batch / output / safety / sp / opt / md
+#   general / resources / batch / output / safety / sp / opt / md / neb
 # plus the per-engine calculator scopes ``calculator.uma`` / ``calculator.mace``.
 #
 # Keys are lowercase internal names. The schema (see schema.py) records the
@@ -45,8 +45,8 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
     "batch": {},
     "output": {},
     "safety": {
-        # MD currently checks non-finite values unconditionally and warns at
-        # this finite-force threshold.
+        # MD and NEB check non-finite values unconditionally and apply this
+        # finite raw-force safety threshold.
         "fmax_abort": 20.0,
     },
     "sp": {
@@ -83,6 +83,28 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "pre_relax_steps": 50,
         "pre_relax_fmax": 0.1,
     },
+    "neb": {
+        "inference_mode": "default",
+        "n_intermediate_images": 7,
+        "climb": False,
+        "neb_method": "improvedtangent",
+        "neb_interpolation": "linear",
+        "path_convention": "mic",
+        "neb_spring": 0.1,
+        "fmax": 0.03,
+        "max_steps": 1000,
+        "neb_pre_fmax": 0.10,
+        "neb_pre_max_steps": 300,
+        "neb_maxstep": 0.10,
+        "endpoint_policy": "validate",
+        "endpoint_fmax": 0.02,
+        "endpoint_steps": 500,
+        "idpp_fmax": 0.10,
+        "idpp_steps": 200,
+        "idpp_mic": True,
+        "neb_min_distance": 0.5,
+        "checkpoint_interval": 10,
+    },
     "calculator": {
         # Historical canonical name; the public CLI/TUI calls this CPU Threads.
         # PyTorch consumes it for UMA/MACE/DPA and TensorFlow for GRACE.
@@ -114,11 +136,12 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
 
 
 # Map calc_type -> default device, used by the CLI resolver when nothing else
-# specifies a device. Matches the historical CLI defaults (sp/opt: cpu, md: cuda).
+# specifies a device. NEB is CPU-safe by default; users must explicitly select GPU.
 DEFAULT_DEVICE_BY_CALC_TYPE: dict[str, str] = {
     "sp": "cpu",
     "opt": "cpu",
     "md": "cuda",
+    "neb": "cpu",
     "batch": "cpu",
 }
 
@@ -149,7 +172,7 @@ def build_incar_default(calc_type: str) -> str:
     place that owns the values (plan section 17.7).
     """
     calc_type = calc_type.lower()
-    if calc_type not in {"sp", "opt", "md"}:
+    if calc_type not in {"sp", "opt", "md", "neb"}:
         raise ValueError(f"Unknown calculation type: {calc_type}")
 
     lines: list[str] = []
@@ -158,7 +181,8 @@ def build_incar_default(calc_type: str) -> str:
         f"# Generated from the single source of defaults (calc_type={calc_type})."
     )
     lines.append("")
-    lines.append(f"CALC_TYPE = {calc_type.upper()}")
+    calculation_key = "CALCULATION" if calc_type == "neb" else "CALC_TYPE"
+    lines.append(f"{calculation_key} = {calc_type.upper()}")
     lines.append("TASK = omat")
     lines.append("")
     lines.append("# Model Settings")
@@ -200,12 +224,38 @@ def build_incar_default(calc_type: str) -> str:
         lines.append(f"SAVE_INTERVAL = {md['save_interval']}")
         lines.append(f"COM_POLICY = {md['com_policy']}")
         lines.append("")
+    elif calc_type == "neb":
+        neb = BUILTIN_DEFAULTS["neb"]
+        lines.append("# Fixed-cell NEB Settings")
+        lines.append("NEB_INITIAL = initial.vasp")
+        lines.append("NEB_FINAL = final.vasp")
+        lines.append(f"NEB_IMAGES = {neb['n_intermediate_images']}")
+        lines.append(f"NEB_CLIMB = {_bool(neb['climb'])}")
+        lines.append(f"NEB_METHOD = {neb['neb_method']}")
+        lines.append(f"NEB_INTERPOLATION = {neb['neb_interpolation']}")
+        lines.append(f"NEB_PATH_CONVENTION = {neb['path_convention']}")
+        lines.append(f"NEB_SPRING = {neb['neb_spring']}")
+        lines.append(f"FMAX = {neb['fmax']}")
+        lines.append(f"MAX_STEPS = {neb['max_steps']}")
+        lines.append(f"NEB_PRE_FMAX = {neb['neb_pre_fmax']}")
+        lines.append(f"NEB_PRE_MAX_STEPS = {neb['neb_pre_max_steps']}")
+        lines.append(f"NEB_MAXSTEP = {neb['neb_maxstep']}")
+        lines.append(f"NEB_ENDPOINT_POLICY = {neb['endpoint_policy']}")
+        lines.append(f"NEB_ENDPOINT_FMAX = {neb['endpoint_fmax']}")
+        lines.append(f"NEB_ENDPOINT_STEPS = {neb['endpoint_steps']}")
+        lines.append(f"IDPP_FMAX = {neb['idpp_fmax']}")
+        lines.append(f"IDPP_STEPS = {neb['idpp_steps']}")
+        lines.append(f"IDPP_MIC = {_bool(neb['idpp_mic'])}")
+        lines.append(f"NEB_MIN_DISTANCE = {neb['neb_min_distance']}")
+        lines.append(f"NEB_CHECKPOINT_INTERVAL = {neb['checkpoint_interval']}")
+        lines.append("")
 
-    lines.append("# Output Control")
-    lines.append("WRITE_FORCES = .TRUE.")
-    lines.append("WRITE_STRESS = .TRUE.")
-    lines.append("OUTPUT_FORMAT = VASP")
-    lines.append("")
+    if calc_type != "neb":
+        lines.append("# Output Control")
+        lines.append("WRITE_FORCES = .TRUE.")
+        lines.append("WRITE_STRESS = .TRUE.")
+        lines.append("OUTPUT_FORMAT = VASP")
+        lines.append("")
     return "".join(line + "\n" for line in lines)
 
 

@@ -12,6 +12,7 @@ Provides subcommands for different calculation types:
 - sp: Single point calculation
 - opt: Geometry optimization
 - md: Molecular dynamics
+- neb: Fixed-cell NEB/CI-NEB workflow
 - batch: Batch processing
 """
 
@@ -64,6 +65,9 @@ Examples:
   # Molecular dynamics (NVT)
   mlipx md structure.cif --ensemble NVT --temp 300 --steps 10000
 
+  # Fixed-cell NEB with complete-band checkpoints
+  mlipx neb --initial initial.vasp --final final.vasp --model model.pt --output results/hop
+
   # Batch processing
   mlipx batch structures/ --pattern "*.cif" --output results/
 
@@ -87,8 +91,10 @@ Examples:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    def _add_resolver_args(p: argparse.ArgumentParser) -> None:
-        """Add config-resolver args shared by sp/opt/md/batch."""
+    def _add_resolver_args(
+        p: argparse.ArgumentParser, *, trajectory_output_flags: bool = True
+    ) -> None:
+        """Add config-resolver args shared by sp/opt/md/neb/batch."""
         p.add_argument(
             "--charge",
             type=int,
@@ -181,24 +187,25 @@ Examples:
             default=None,
             help="MACE head or DeepMD/DPA branch name.",
         )
-        p.add_argument(
-            "--write-outcar",
-            action=argparse.BooleanOptionalAction,
-            default=None,
-            help="Write the VASP-like OUTCAR output (use --no-write-outcar to reduce MD I/O).",
-        )
-        p.add_argument(
-            "--write-xdatcar",
-            action=argparse.BooleanOptionalAction,
-            default=None,
-            help="Write XDATCAR (use --no-write-xdatcar to keep only the canonical trajectory).",
-        )
-        p.add_argument(
-            "--write-trajectory",
-            action=argparse.BooleanOptionalAction,
-            default=None,
-            help="Write the canonical ASE trajectory (recommended for reproducible MD).",
-        )
+        if trajectory_output_flags:
+            p.add_argument(
+                "--write-outcar",
+                action=argparse.BooleanOptionalAction,
+                default=None,
+                help="Write the VASP-like OUTCAR output (use --no-write-outcar to reduce MD I/O).",
+            )
+            p.add_argument(
+                "--write-xdatcar",
+                action=argparse.BooleanOptionalAction,
+                default=None,
+                help="Write XDATCAR (use --no-write-xdatcar to keep only the canonical trajectory).",
+            )
+            p.add_argument(
+                "--write-trajectory",
+                action=argparse.BooleanOptionalAction,
+                default=None,
+                help="Write the canonical ASE trajectory (recommended for reproducible MD).",
+            )
         p.add_argument(
             "--model-alias",
             type=str,
@@ -544,6 +551,106 @@ Examples:
     )
     _add_resolver_args(md_parser)
 
+    # Fixed-cell NEB command. Scientific defaults stay in config/defaults.py;
+    # argparse uses None so settings/profile/checkpoint layers remain effective.
+    neb_parser = subparsers.add_parser(
+        "neb",
+        help="Fixed-cell NEB/CI-NEB reaction path",
+        description=(
+            "Run a serial-image fixed-cell NEB with atomic full-band checkpoints, "
+            "geometry resume, and VASP path export."
+        ),
+    )
+    neb_parser.add_argument("--initial", default=None, help="Initial endpoint file")
+    neb_parser.add_argument("--final", default=None, help="Final endpoint file")
+    neb_parser.add_argument(
+        "--resume",
+        default=None,
+        help="Complete checkpoint, checkpoints directory, or NEB run directory",
+    )
+    neb_parser.add_argument(
+        "--model",
+        default=None,
+        help="Model path (or alias); restored from the checkpoint for resume",
+    )
+    neb_parser.add_argument(
+        "--model-type",
+        default=None,
+        choices=["uma", "mace", "dpa", "grace"],
+    )
+    neb_parser.add_argument("--task", default=None)
+    neb_parser.add_argument(
+        "--device",
+        default=None,
+        help="cpu, cuda, gpu, or cuda:N (default: cpu)",
+    )
+    neb_parser.add_argument(
+        "--images",
+        dest="n_intermediate_images",
+        type=int,
+        default=None,
+        help="Number of intermediate images (endpoints are additional)",
+    )
+    neb_parser.add_argument(
+        "--climb", action=argparse.BooleanOptionalAction, default=None
+    )
+    neb_parser.add_argument(
+        "--method", dest="neb_method", choices=["improvedtangent"], default=None
+    )
+    neb_parser.add_argument(
+        "--interpolation",
+        dest="neb_interpolation",
+        choices=["linear", "idpp"],
+        default=None,
+    )
+    neb_parser.add_argument(
+        "--path-convention", choices=["mic", "unwrapped"], default=None
+    )
+    neb_parser.add_argument("--spring", dest="neb_spring", type=float, default=None)
+    neb_parser.add_argument("--fmax", type=float, default=None)
+    neb_parser.add_argument("--max-steps", type=int, default=None)
+    neb_parser.add_argument("--pre-fmax", dest="neb_pre_fmax", type=float, default=None)
+    neb_parser.add_argument(
+        "--pre-max-steps", dest="neb_pre_max_steps", type=int, default=None
+    )
+    neb_parser.add_argument("--maxstep", dest="neb_maxstep", type=float, default=None)
+    neb_parser.add_argument(
+        "--endpoint-policy", choices=["validate", "relax"], default=None
+    )
+    neb_parser.add_argument("--endpoint-fmax", type=float, default=None)
+    neb_parser.add_argument("--endpoint-steps", type=int, default=None)
+    neb_parser.add_argument("--idpp-fmax", type=float, default=None)
+    neb_parser.add_argument("--idpp-steps", type=int, default=None)
+    neb_parser.add_argument(
+        "--idpp-mic", action=argparse.BooleanOptionalAction, default=None
+    )
+    neb_parser.add_argument("--min-distance", dest="neb_min_distance", type=float)
+    neb_parser.add_argument("--checkpoint-interval", type=int, default=None)
+    neb_parser.add_argument("--fmax-abort", type=float, default=None)
+    neb_parser.add_argument(
+        "--atom-map",
+        default=None,
+        help="0-based final indices in initial-atom order, comma-separated",
+    )
+    neb_parser.add_argument(
+        "--image-shifts",
+        default=None,
+        help="Integer lattice shifts per atom, e.g. '0,0,0;1,0,0'",
+    )
+    neb_parser.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="New run directory; resume infers and locks the original directory",
+    )
+    neb_parser.add_argument(
+        "--name",
+        "-n",
+        default=None,
+        help="Optional new-run subdirectory (used by queue jobs)",
+    )
+    _add_resolver_args(neb_parser, trajectory_output_flags=False)
+
     # batch command
     batch_parser = subparsers.add_parser(
         "batch",
@@ -674,7 +781,7 @@ Examples:
     )
     template_parser.add_argument(
         "type",
-        choices=["sp", "opt", "md"],
+        choices=["sp", "opt", "md", "neb"],
         help="Type of template to generate",
     )
     template_parser.add_argument(
@@ -1223,6 +1330,36 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             value = getattr(args, key, None)
             if value is not None:
                 opts[key] = value
+    elif calc_type == "neb":
+        if getattr(args, "initial", None) is not None:
+            opts["neb_initial"] = args.initial
+        if getattr(args, "final", None) is not None:
+            opts["neb_final"] = args.final
+        for key in (
+            "n_intermediate_images",
+            "climb",
+            "neb_method",
+            "neb_interpolation",
+            "path_convention",
+            "neb_spring",
+            "fmax",
+            "max_steps",
+            "neb_pre_fmax",
+            "neb_pre_max_steps",
+            "neb_maxstep",
+            "endpoint_policy",
+            "endpoint_fmax",
+            "endpoint_steps",
+            "idpp_fmax",
+            "idpp_steps",
+            "idpp_mic",
+            "neb_min_distance",
+            "checkpoint_interval",
+            "fmax_abort",
+        ):
+            value = getattr(args, key, None)
+            if value is not None:
+                opts[key] = value
     elif calc_type == "batch":
         # batch `--calc-type` selects the sub-calculation (sp/opt).
         if getattr(args, "calc_type", None) is not None:
@@ -1332,6 +1469,35 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"  - {error}")
         return 1
 
+    calc_type = config.get_str("CALC_TYPE", config.get_str("CALCULATION", "sp")).lower()
+    if calc_type == "neb":
+        job_name = config.get_str("JOB_NAME", None)
+        try:
+            engine_config, resolved, _settings = _resolve_engine_config(
+                args,
+                "neb",
+                incar_layer=config,
+                output_dir=args.output,
+                job_name=job_name,
+            )
+            initial_path = resolved.run_options.get("neb_initial")
+            final_path = resolved.run_options.get("neb_final")
+            if not initial_path or not final_path:
+                raise ValueError("NEB INCAR requires both NEB_INITIAL and NEB_FINAL")
+            initial = read(initial_path)
+            final = read(final_path)
+            engine = CalculationEngine.from_config(engine_config)
+            result = engine.run_neb(
+                resolved,
+                initial=initial,
+                final=final,
+                log_fn=_console_log,
+            )
+            return 0 if result["converged"] else 2
+        except Exception as exc:
+            print(f"Error: {exc}")
+            return 1
+
     # Determine structure file
     structure_file = args.structure
     if structure_file is None:
@@ -1363,7 +1529,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     print()
 
     # Determine calculation type from INCAR (authoritative for the `run` flow).
-    calc_type = config.get_str("CALC_TYPE", "sp").lower()
     # `mlipx run` dispatches single-structure runs only. A BATCH INCAR was
     # previously accepted by validation and then crashed with a confusing
     # "Unknown calc_type: batch" after model loading. Fail fast with guidance.
@@ -1486,6 +1651,118 @@ def cmd_md(args: argparse.Namespace) -> int:
         return 0
     except Exception as e:
         print(f"Error: {e}")
+        return 1
+
+
+def _parse_neb_atom_map(value: str | None) -> list[int] | None:
+    if value is None:
+        return None
+    try:
+        parsed = [int(token.strip()) for token in value.split(",")]
+    except ValueError as exc:
+        raise ValueError("--atom-map must contain comma-separated integers") from exc
+    if not parsed or any(not token.strip() for token in value.split(",")):
+        raise ValueError("--atom-map cannot contain empty entries")
+    return parsed
+
+
+def _parse_neb_image_shifts(value: str | None) -> list[list[int]] | None:
+    if value is None:
+        return None
+    rows: list[list[int]] = []
+    try:
+        for row in value.split(";"):
+            values = [int(token.strip()) for token in row.split(",")]
+            if len(values) != 3 or any(not token.strip() for token in row.split(",")):
+                raise ValueError
+            rows.append(values)
+    except ValueError as exc:
+        raise ValueError(
+            "--image-shifts must contain one x,y,z integer row per atom, "
+            "separated by semicolons"
+        ) from exc
+    if not rows:
+        raise ValueError("--image-shifts cannot be empty")
+    return rows
+
+
+def cmd_neb(args: argparse.Namespace) -> int:
+    """Execute a new or geometry-resumed fixed-cell NEB workflow."""
+    from mlipx.neb.workflow import (  # noqa: PLC0415
+        checkpoint_resolved_layer,
+        checkpoint_run_directory,
+    )
+
+    try:
+        if args.resume is not None:
+            if args.initial is not None or args.final is not None:
+                raise ValueError("--resume cannot be combined with --initial/--final")
+            if args.atom_map is not None or args.image_shifts is not None:
+                raise ValueError(
+                    "--resume restores atom mapping/winding from the checkpoint"
+                )
+            if args.name is not None:
+                raise ValueError("--name cannot change the directory of a resumed run")
+            if args.model_alias is not None or args.profile is not None:
+                raise ValueError(
+                    "Resume restores the original alias/profile values; use direct "
+                    "CLI overrides, which are checked by the fingerprint"
+                )
+            run_dir = checkpoint_run_directory(args.resume)
+            if args.output is not None:
+                requested_output = Path(args.output).expanduser().resolve()
+                if requested_output != run_dir:
+                    raise ValueError(
+                        f"--output must be the original resume directory {run_dir}"
+                    )
+            checkpoint_layer = checkpoint_resolved_layer(args.resume)
+            engine_config, resolved, _settings = _resolve_engine_config(
+                args,
+                "neb",
+                incar_layer=checkpoint_layer,
+                output_dir=str(run_dir),
+                job_name=None,
+            )
+            initial = final = None
+            atom_map = image_shifts = None
+        else:
+            if args.initial is None or args.final is None:
+                raise ValueError("A new NEB run requires --initial and --final")
+            if args.output is None:
+                raise ValueError(
+                    "A new NEB run requires an explicit --output directory"
+                )
+            engine_config, resolved, _settings = _resolve_engine_config(args, "neb")
+            initial_path = resolved.run_options.get("neb_initial")
+            final_path = resolved.run_options.get("neb_final")
+            if not initial_path or not final_path:
+                raise ValueError("Typed NEB endpoint paths were not resolved")
+            initial = read(initial_path)
+            final = read(final_path)
+            atom_map = _parse_neb_atom_map(args.atom_map)
+            image_shifts = _parse_neb_image_shifts(args.image_shifts)
+
+        engine = CalculationEngine.from_config(engine_config)
+        result = engine.run_neb(
+            resolved,
+            initial=initial,
+            final=final,
+            resume=args.resume,
+            atom_map=atom_map,
+            image_shifts=image_shifts,
+            log_fn=_console_log,
+        )
+        print(f"NEB status: {result['status']}")
+        print(f"Run ID: {result['run_id']}")
+        print(f"Checkpoint: {result['latest_checkpoint']}")
+        if result.get("barrier_forward_sampled_eV") is not None:
+            print(
+                "Sampled forward barrier: "
+                f"{result['barrier_forward_sampled_eV']:.8f} eV"
+            )
+        return 0 if result["converged"] else 2
+    except Exception as exc:
+        print(f"Error: {exc}")
         return 1
 
 
@@ -2117,6 +2394,7 @@ def main(argv: list[str] | None = None) -> int:
         "sp": cmd_sp,
         "opt": cmd_opt,
         "md": cmd_md,
+        "neb": cmd_neb,
         "batch": cmd_batch,
         "config": cmd_config,
         "template": cmd_template,

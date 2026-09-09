@@ -167,7 +167,7 @@ def test_calc_scoped_keys_present(schema: Schema) -> None:
 def test_calc_type_choices_match_engine(schema: Schema) -> None:
     """Regression: 'analyze' was a schema choice but the engine rejects it.
     The schema, IncarConfig.validate and CalculationEngine.VALID_CALC_TYPES
-    must all agree on {sp, opt, md, batch}."""
+    must all agree on {sp, opt, md, neb, batch}."""
     spec = schema.resolve("calc_type")
     assert spec is not None
-    assert set(spec.choices) == {"sp", "opt", "md", "batch"}
+    assert set(spec.choices) == {"sp", "opt", "md", "neb", "batch"}

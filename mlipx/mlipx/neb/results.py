@@ -35,9 +35,10 @@ def barrier_metrics(energies_eV: np.ndarray) -> dict[str, float | int | str | No
         "reaction_energy_eV": float(energies[-1] - energies[0]),
         "highest_energy_image_index": peak_index,
         "barrier_status": (
-            "converged_path_estimate" if internal else "no_internal_saddle_identified"
+            "internal_peak_sampled" if internal else "no_internal_saddle_identified"
         ),
         "barrier_forward_fitted_eV": None,
+        "barrier_reverse_fitted_eV": None,
     }
 
 
@@ -49,6 +50,7 @@ class NEBResult:
     converged: bool
     energies_eV: np.ndarray
     physical_forces_eV_A: np.ndarray
+    constraint_applied_forces_eV_A: np.ndarray
     neb_forces_eV_A: np.ndarray
     stages: list[dict]
     climbing_image_index: int | None
@@ -57,17 +59,39 @@ class NEBResult:
 
     def to_dict(self) -> dict:
         metrics = barrier_metrics(self.energies_eV)
+        if metrics["barrier_status"] == "internal_peak_sampled":
+            metrics["barrier_status"] = (
+                "converged_path_estimate"
+                if self.converged
+                else "unconverged_path_sample"
+            )
         metrics.update(
             {
-                "schema": "mlipx.neb-results/1",
+                "schema": "mlipx.neb-results/2",
                 "status": self.status,
                 "converged": self.converged,
+                "failure_reason": (
+                    None
+                    if self.converged
+                    else "NEB force criterion was not reached within max_steps"
+                ),
                 "energy_unit": "eV",
+                "force_unit": "eV/Angstrom",
                 "barrier_unit": "eV",
                 "climb": self.climbing_image_index is not None,
                 "climbing_image_index": self.climbing_image_index,
                 "max_neb_force_eV_A": self.max_neb_force_eV_A,
                 "climbing_physical_fmax_eV_A": self.climbing_physical_fmax_eV_A,
+                "energies_eV": np.asarray(self.energies_eV, dtype=float).tolist(),
+                "raw_physical_forces_eV_A": np.asarray(
+                    self.physical_forces_eV_A, dtype=float
+                ).tolist(),
+                "constraint_applied_forces_eV_A": np.asarray(
+                    self.constraint_applied_forces_eV_A, dtype=float
+                ).tolist(),
+                "neb_band_forces_eV_A": np.asarray(
+                    self.neb_forces_eV_A, dtype=float
+                ).tolist(),
                 "stages": self.stages,
                 "saddle_validation": "not_performed",
             }

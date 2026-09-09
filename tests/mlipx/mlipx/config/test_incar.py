@@ -82,7 +82,7 @@ def test_file_parser_records_path_line_and_base_dir(tmp_path: Path) -> None:
 
 
 def test_validate_accepts_supported_calc_types() -> None:
-    for ct in ("SP", "OPT", "MD", "BATCH"):
+    for ct in ("SP", "OPT", "MD", "NEB", "BATCH"):
         cfg = IncarConfig.from_string(f"CALC_TYPE = {ct}\nMODEL_PATH = x.pt\n")
         assert cfg.validate() == [], f"{ct} should validate"
 
@@ -96,6 +96,14 @@ def test_validate_rejects_unsupported_calc_types() -> None:
         assert len(errors) == 1, f"{ct}: {errors}"
         # Error message must quote the value properly (missing closing quote bug).
         assert f"Invalid CALC_TYPE '{ct.lower()}'. " in errors[0], errors[0]
+
+
+def test_validate_accepts_calculation_alias_and_rejects_conflict() -> None:
+    cfg = IncarConfig.from_string("CALCULATION = NEB\nMODEL_PATH = x.pt\n")
+    assert cfg.validate() == []
+
+    conflict = IncarConfig.from_string("CALC_TYPE = SP\nCALCULATION = NEB\n")
+    assert any("Conflicting" in error for error in conflict.validate())
 
 
 def test_validate_rejects_unsupported_optimizers() -> None:

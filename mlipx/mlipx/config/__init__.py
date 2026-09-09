@@ -48,11 +48,13 @@ from mlipx.config.settings import (
 DEFAULT_SP_CONFIG = build_incar_default("sp")
 DEFAULT_OPT_CONFIG = build_incar_default("opt")
 DEFAULT_MD_CONFIG = build_incar_default("md")
+DEFAULT_NEB_CONFIG = build_incar_default("neb")
 
 __all__ = [
     "BUILTIN_DEFAULTS",
     "DEFAULT_DEVICE_BY_CALC_TYPE",
     "DEFAULT_MD_CONFIG",
+    "DEFAULT_NEB_CONFIG",
     "DEFAULT_OPT_CONFIG",
     "DEFAULT_SETTINGS_INI",
     "DEFAULT_SP_CONFIG",

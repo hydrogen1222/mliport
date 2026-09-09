@@ -155,3 +155,136 @@ def test_resolved_config_is_immutable() -> None:
         resolved.run_options["fmax"] = 0.5
     with pytest.raises(FrozenInstanceError):
         resolved.device = "cuda"
+
+
+def test_neb_cli_incar_api_and_queue_share_one_typed_resolution(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model")
+    for endpoint in ("initial.vasp", "final.vasp"):
+        (tmp_path / endpoint).write_text("placeholder", encoding="utf-8")
+    common = {
+        "model_type": "mace",
+        "model_path": "model.pt",
+        "task": "bulk",
+        "device": "cpu",
+        "neb_initial": "initial.vasp",
+        "neb_final": "final.vasp",
+        "n_intermediate_images": 3,
+        "climb": True,
+        "neb_spring": 0.2,
+        "max_steps": 4,
+        "checkpoint_interval": 2,
+    }
+
+    args = create_parser().parse_args(
+        [
+            "neb",
+            "--initial",
+            "initial.vasp",
+            "--final",
+            "final.vasp",
+            "--model",
+            "model.pt",
+            "--model-type",
+            "mace",
+            "--task",
+            "bulk",
+            "--device",
+            "cpu",
+            "--images",
+            "3",
+            "--climb",
+            "--spring",
+            "0.2",
+            "--max-steps",
+            "4",
+            "--checkpoint-interval",
+            "2",
+            "--output",
+            "out",
+        ]
+    )
+    cli_values = _build_cli_opts(args, "neb")
+    cli_values["model_path"] = args.model
+    cli_resolved = resolve_config(
+        calc_type="neb", cli=cli_values, cli_base_dir=tmp_path
+    )
+
+    incar = IncarConfig.from_string(
+        "CALCULATION = NEB\n"
+        "MODEL_TYPE = MACE\n"
+        "MODEL_PATH = model.pt\n"
+        "TASK = bulk\n"
+        "DEVICE = cpu\n"
+        "NEB_INITIAL = initial.vasp\n"
+        "NEB_FINAL = final.vasp\n"
+        "NEB_IMAGES = 3\n"
+        "NEB_CLIMB = 1\n"
+        "NEB_SPRING = 0.2\n"
+        "MAX_STEPS = 4\n"
+        "NEB_CHECKPOINT_INTERVAL = 2\n",
+        base_dir=tmp_path,
+    )
+    incar_resolved = resolve_config(calc_type="neb", incar=incar)
+
+    api_values = _build_api_cli(
+        "neb",
+        "mace",
+        "bulk",
+        "cpu",
+        None,
+        None,
+        None,
+        {key: value for key, value in common.items() if key != "model_type"},
+    )
+    api_resolved = resolve_config(
+        calc_type="neb", cli=api_values, cli_base_dir=tmp_path
+    )
+
+    task_file = tmp_path / "neb-tasks.json"
+    task_file.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "calc_type": "neb",
+                        "initial": "initial.vasp",
+                        "final": "final.vasp",
+                        "model": "model.pt",
+                        "model_type": "mace",
+                        "task": "bulk",
+                        "device": "cpu",
+                        "options": {
+                            "NEB_IMAGES": "3",
+                            "NEB_CLIMB": "1",
+                            "NEB_SPRING": "0.2",
+                            "MAX_STEPS": "4",
+                            "NEB_CHECKPOINT_INTERVAL": "2",
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    queued = parse_task_file(task_file)["tasks"][0]
+    queue_resolved = resolve_config(
+        calc_type="neb",
+        cli={
+            "model_type": queued["model_type"],
+            "model_path": queued["model"],
+            "task": queued["task"],
+            "device": queued["device"],
+            "neb_initial": queued["initial"],
+            "neb_final": queued["final"],
+            **queued["options"],
+        },
+        cli_base_dir=tmp_path,
+    )
+
+    expected = _fingerprint(cli_resolved)
+    assert _fingerprint(incar_resolved) == expected
+    assert _fingerprint(api_resolved) == expected
+    assert _fingerprint(queue_resolved) == expected

@@ -45,6 +45,11 @@ _STRUCTURAL_KEYS = {
     "python",
     "calc_type",
     "structure",
+    "initial",
+    "final",
+    "resume",
+    "atom_map",
+    "image_shifts",
     "model",
     "model_type",
     "task",
@@ -52,9 +57,9 @@ _STRUCTURAL_KEYS = {
     "output_dir",
     "options",
 }
-_VALID_CALC_TYPES = {"sp", "opt", "md"}
+_VALID_CALC_TYPES = {"sp", "opt", "md", "neb"}
 _VALID_ENGINES = {"uma", "fairchem", "mace", "dpa", "grace"}
-_CALC_SCOPES = {"sp", "opt", "md", "batch"}
+_CALC_SCOPES = {"sp", "opt", "md", "neb", "batch"}
 
 #: option key -> CLI flag mapping for the shared command builder.
 _OPT_FLAGS: dict[str, tuple[str, ...]] = {
@@ -101,6 +106,24 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "com_policy": ("--com-policy",),
     "fmax_abort": ("--fmax-abort",),
     "seed": ("--seed",),
+    # neb
+    "n_intermediate_images": ("--images",),
+    "climb": ("--climb", "--no-climb"),
+    "neb_method": ("--method",),
+    "neb_interpolation": ("--interpolation",),
+    "path_convention": ("--path-convention",),
+    "neb_spring": ("--spring",),
+    "neb_pre_fmax": ("--pre-fmax",),
+    "neb_pre_max_steps": ("--pre-max-steps",),
+    "neb_maxstep": ("--maxstep",),
+    "endpoint_policy": ("--endpoint-policy",),
+    "endpoint_fmax": ("--endpoint-fmax",),
+    "endpoint_steps": ("--endpoint-steps",),
+    "idpp_fmax": ("--idpp-fmax",),
+    "idpp_steps": ("--idpp-steps",),
+    "idpp_mic": ("--idpp-mic", "--no-idpp-mic"),
+    "neb_min_distance": ("--min-distance",),
+    "checkpoint_interval": ("--checkpoint-interval",),
 }
 
 
@@ -162,6 +185,15 @@ def _coerce_task_options(
             raise ValueError(
                 f"{label}: option {key!r} is a structural key, not an option"
             )
+        if calc_type == "neb" and canonical in {
+            "write_outcar",
+            "write_xdatcar",
+            "write_trajectory",
+        }:
+            raise ValueError(
+                f"{label}: option {key!r} is not applicable to the mandatory "
+                "NEB checkpoint/result output"
+            )
         if canonical not in _OPT_FLAGS:
             raise ValueError(
                 f"{label}: option {key!r} has no supported queue/CLI representation"
@@ -178,8 +210,8 @@ def _coerce_task_options(
             raise ValueError(
                 f"{label}: option {key!r} is not valid for engine={model_type!r}"
             )
-        if canonical == "fmax_abort" and calc_type != "md":
-            raise ValueError(f"{label}: option {key!r} is only valid for MD")
+        if canonical == "fmax_abort" and calc_type not in {"md", "neb"}:
+            raise ValueError(f"{label}: option {key!r} is only valid for MD/NEB")
         try:
             value = spec.coerce(raw_value)
         except ValueError as exc:
@@ -195,8 +227,8 @@ def _coerce_task_options(
 
 def build_mlipx_command(
     calc_type: str,
-    structure: str,
-    model: str,
+    structure: str | None,
+    model: str | None,
     model_type: str = "uma",
     task: str | None = None,
     device: str = "cpu",
@@ -204,6 +236,12 @@ def build_mlipx_command(
     job_name: str | None = None,
     options: dict[str, Any] | None = None,
     python: str | None = None,
+    *,
+    initial: str | None = None,
+    final: str | None = None,
+    resume: str | None = None,
+    atom_map: list[int] | None = None,
+    image_shifts: list[list[int]] | None = None,
 ) -> list[str]:
     """Build the argv for a ``mlipx <calc_type> ...`` calculation run.
 
@@ -215,24 +253,36 @@ def build_mlipx_command(
     only keys known to the schema are forwarded, so a GRACE task never gets
     UMA-only flags and vice versa.
     """
-    cmd = [
-        python or sys.executable,
-        "-m",
-        "mlipx.cli",
-        calc_type,
-        structure,
-        "--model",
-        model,
-        "--model-type",
-        model_type,
-        "--device",
-        device,
-        "--output",
-        output_dir,
-    ]
+    cmd = [python or sys.executable, "-m", "mlipx.cli", calc_type]
+    if calc_type == "neb":
+        if resume is not None:
+            if initial is not None or final is not None:
+                raise ValueError("NEB resume cannot also specify endpoints")
+            cmd.extend(["--resume", resume])
+        else:
+            if initial is None or final is None:
+                raise ValueError("A queued NEB run requires initial and final")
+            cmd.extend(["--initial", initial, "--final", final])
+            if atom_map is not None:
+                cmd.extend(["--atom-map", ",".join(str(index) for index in atom_map)])
+            if image_shifts is not None:
+                encoded_shifts = ";".join(
+                    ",".join(str(component) for component in row)
+                    for row in image_shifts
+                )
+                cmd.extend(["--image-shifts", encoded_shifts])
+    else:
+        if structure is None:
+            raise ValueError(f"A queued {calc_type} run requires a structure")
+        cmd.append(structure)
+    if model is not None:
+        cmd.extend(["--model", model])
+    cmd.extend(["--model-type", model_type, "--device", device])
+    if resume is None:
+        cmd.extend(["--output", output_dir])
     if task:
         cmd.extend(["--task", task])
-    if job_name:
+    if job_name and resume is None:
         cmd.extend(["--name", job_name])
 
     engine = model_type.lower()
@@ -281,7 +331,7 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
             {
               "name": "opt-1",               // optional display name
               "python": "/abs/.venv/bin/python",  // optional, per-task env
-              "calc_type": "opt",            // sp | opt | md
+              "calc_type": "opt",            // sp | opt | md | neb
               "structure": "/abs/a.cif",     // required, must exist
               "model": "/abs/uma-s-1.pt",    // required, must exist
               "model_type": "uma",           // optional
@@ -322,25 +372,148 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
         if not isinstance(task, dict):
             raise ValueError(f"tasks[{index}] must be an object")
         label = f"tasks[{index}]"
+        unknown_structural = set(task) - _STRUCTURAL_KEYS
+        if unknown_structural:
+            raise ValueError(
+                f"{label}: unknown task field(s): {sorted(unknown_structural)}"
+            )
         calc_type = str(task.get("calc_type", "")).lower()
         if calc_type not in _VALID_CALC_TYPES:
             raise ValueError(
                 f"{label}: calc_type must be one of "
                 f"{sorted(_VALID_CALC_TYPES)}, got {task.get('calc_type')!r}"
             )
-        structure = _freeze_declared_path(
-            task.get("structure"),
-            base_dir=base_dir,
-            label=f"{label}: structure",
-            must_exist=True,
-        )
+        initial = final = resume = None
+        atom_map = image_shifts = None
+        checkpoint_layer: dict[str, Any] = {}
+        if calc_type == "neb":
+            if task.get("resume") is not None:
+                if any(
+                    task.get(key) is not None
+                    for key in (
+                        "structure",
+                        "initial",
+                        "final",
+                        "atom_map",
+                        "image_shifts",
+                    )
+                ):
+                    raise ValueError(
+                        f"{label}: NEB resume cannot also specify structure/endpoints"
+                    )
+                resume = _freeze_declared_path(
+                    task.get("resume"),
+                    base_dir=base_dir,
+                    label=f"{label}: resume",
+                    must_exist=True,
+                )
+                from mlipx.neb.workflow import (  # noqa: PLC0415
+                    checkpoint_resolved_layer,
+                    checkpoint_run_directory,
+                )
+                from mlipx.neb.io import resolve_checkpoint_path  # noqa: PLC0415
+
+                checkpoint_layer = checkpoint_resolved_layer(resume)
+                resume_root = checkpoint_run_directory(resume)
+                requested_output = task.get("output_dir")
+                if requested_output is not None:
+                    frozen_output = _freeze_declared_path(
+                        requested_output,
+                        base_dir=base_dir,
+                        label=f"{label}: output_dir",
+                        must_exist=False,
+                    )
+                    if Path(frozen_output) != resume_root:
+                        raise ValueError(
+                            f"{label}: resumed output_dir must remain {resume_root}"
+                        )
+                output_dir = str(resume_root)
+                structure = str(resolve_checkpoint_path(resume) / "band.traj")
+            else:
+                if task.get("structure") is not None:
+                    raise ValueError(
+                        f"{label}: NEB uses initial/final instead of structure"
+                    )
+                initial = _freeze_declared_path(
+                    task.get("initial"),
+                    base_dir=base_dir,
+                    label=f"{label}: initial",
+                    must_exist=True,
+                )
+                final = _freeze_declared_path(
+                    task.get("final"),
+                    base_dir=base_dir,
+                    label=f"{label}: final",
+                    must_exist=True,
+                )
+                raw_map = task.get("atom_map")
+                if raw_map is not None:
+                    if not isinstance(raw_map, list) or not raw_map:
+                        raise ValueError(f"{label}: atom_map must be a non-empty list")
+                    atom_map = [
+                        _strict_integer(value, label=f"{label}: atom_map")
+                        for value in raw_map
+                    ]
+                raw_shifts = task.get("image_shifts")
+                if raw_shifts is not None:
+                    if not isinstance(raw_shifts, list) or not raw_shifts:
+                        raise ValueError(
+                            f"{label}: image_shifts must be a non-empty list"
+                        )
+                    image_shifts = []
+                    for row in raw_shifts:
+                        if not isinstance(row, list) or len(row) != 3:
+                            raise ValueError(
+                                f"{label}: every image_shifts row must have 3 integers"
+                            )
+                        image_shifts.append(
+                            [
+                                _strict_integer(value, label=f"{label}: image_shifts")
+                                for value in row
+                            ]
+                        )
+                structure = initial
+                output_dir = _freeze_declared_path(
+                    task.get("output_dir", "./results"),
+                    base_dir=base_dir,
+                    label=f"{label}: output_dir",
+                    must_exist=False,
+                )
+        else:
+            if any(
+                task.get(key) is not None
+                for key in (
+                    "initial",
+                    "final",
+                    "resume",
+                    "atom_map",
+                    "image_shifts",
+                )
+            ):
+                raise ValueError(
+                    f"{label}: initial/final/resume are only valid for NEB"
+                )
+            structure = _freeze_declared_path(
+                task.get("structure"),
+                base_dir=base_dir,
+                label=f"{label}: structure",
+                must_exist=True,
+            )
+            output_dir = _freeze_declared_path(
+                task.get("output_dir", "./results"),
+                base_dir=base_dir,
+                label=f"{label}: output_dir",
+                must_exist=False,
+            )
         model = _freeze_declared_path(
-            task.get("model"),
+            task.get("model", checkpoint_layer.get("model_path")),
             base_dir=base_dir,
             label=f"{label}: model",
             must_exist=True,
         )
-        model_type = str(task.get("model_type", "uma")).lower()
+        model_type = str(
+            task.get("model_type", checkpoint_layer.get("model_type", "uma"))
+        ).lower()
         if model_type not in _VALID_ENGINES:
             raise ValueError(
                 f"{label}: model_type must be one of {sorted(_VALID_ENGINES)}, "
@@ -367,23 +540,24 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
             model_type=model_type,
             label=label,
         )
-        output_dir = _freeze_declared_path(
-            task.get("output_dir", "./results"),
-            base_dir=base_dir,
-            label=f"{label}: output_dir",
-            must_exist=False,
-        )
-
         tasks.append(
             {
                 "name": name,
                 "python": python,
                 "calc_type": calc_type,
                 "structure": structure,
+                "initial": initial,
+                "final": final,
+                "resume": resume,
+                "atom_map": atom_map,
+                "image_shifts": image_shifts,
                 "model": model,
                 "model_type": model_type,
-                "task": str(task.get("task", "")).lower() or None,
-                "device": str(task.get("device", "cpu")),
+                "task": str(task.get("task", checkpoint_layer.get("task", ""))).lower()
+                or None,
+                "device": str(
+                    task.get("device", checkpoint_layer.get("device", "cpu"))
+                ),
                 "output_dir": output_dir,
                 "options": cleaned,
             }
@@ -412,6 +586,11 @@ def submit_task_file(mgr: JobManager, path: str | Path) -> tuple[list[str], int]
             job_name=job_id,
             options=task["options"],
             python=task["python"],
+            initial=task["initial"],
+            final=task["final"],
+            resume=task["resume"],
+            atom_map=task["atom_map"],
+            image_shifts=task["image_shifts"],
         )
         formula, natoms = _probe_structure(task["structure"])
         mgr.enqueue(

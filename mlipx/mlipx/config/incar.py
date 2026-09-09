@@ -322,6 +322,7 @@ class IncarConfig(dict):
         from mlipx.config.schema import get_schema  # noqa: PLC0415
 
         custom_validation = {
+            "CALCULATION",
             "CALC_TYPE",
             "DEFAULT_DTYPE",
             "DEVICE",
@@ -373,12 +374,27 @@ class IncarConfig(dict):
         # list in sync with CalculationEngine.VALID_CALC_TYPES and the schema
         # choices (schema.py): phonon/analyze were previously accepted here but
         # rejected at engine construction with a confusing late error.
-        valid_calc_types = {"sp", "opt", "md", "batch"}
-        if "CALC_TYPE" in self:
-            calc_type = self.get_str("CALC_TYPE").lower()
+        valid_calc_types = {"sp", "opt", "md", "neb", "batch"}
+        calc_declarations = {
+            key: self.get_str(key).lower()
+            for key in ("CALC_TYPE", "CALCULATION")
+            if key in self
+        }
+        if len(set(calc_declarations.values())) > 1:
+            errors.append(
+                "Conflicting CALC_TYPE/CALCULATION declarations: "
+                + ", ".join(
+                    f"{key}={value!r}" for key, value in calc_declarations.items()
+                )
+            )
+        if calc_declarations:
+            calc_type = next(iter(calc_declarations.values()))
             if calc_type not in valid_calc_types:
+                declaration_name = (
+                    "CALC_TYPE" if "CALC_TYPE" in calc_declarations else "CALCULATION"
+                )
                 errors.append(
-                    f"Invalid CALC_TYPE '{calc_type}'. "
+                    f"Invalid {declaration_name} '{calc_type}'. "
                     f"Must be one of: {', '.join(valid_calc_types)}"
                 )
 

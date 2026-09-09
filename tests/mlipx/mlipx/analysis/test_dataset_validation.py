@@ -37,6 +37,20 @@ def test_uniform_time_axis_is_explicit_and_eligible() -> None:
     assert report.eligible_for_msd is True
 
 
+def test_neb_band_is_rejected_as_a_time_trajectory() -> None:
+    frames = _frames()
+    for index, atoms in enumerate(frames):
+        atoms.info["trajectory_kind"] = "neb_band"
+        atoms.info["mlipx_neb_image_index"] = index
+
+    with pytest.raises(InvalidTrajectoryError, match="reaction-coordinate"):
+        TrajectoryDataset.from_frames(
+            frames,
+            times_fs=[0, 1, 2, 3],
+            positions_convention="unwrapped",
+        )
+
+
 def test_mlipx_xdatcar_is_a_direct_msd_source(tmp_path) -> None:
     run = tmp_path / "run"
     vasp = run / "vasp"

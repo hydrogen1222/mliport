@@ -433,6 +433,18 @@ class TrajectoryDataset:
         metadata: dict[str, Any],
         thermodynamics: dict[str, np.ndarray],
     ) -> TrajectoryDataset:
+        frame_kinds = {frame.info.get("trajectory_kind") for frame in frames}
+        artifact_kind = (metadata.get("artifacts") or {}).get("trajectory_kind")
+        if "neb_band" in frame_kinds or artifact_kind == "neb_band":
+            from mlipx.analysis.validation import (  # noqa: PLC0415
+                InvalidTrajectoryError,
+            )
+
+            raise InvalidTrajectoryError(
+                "trajectory_kind='neb_band' is a reaction-coordinate image set, "
+                "not a time trajectory; MSD, VACF, kinisi, GEMDAT, and other "
+                "trajectory analyses are forbidden"
+            )
         symbols = tuple(frames[0].get_chemical_symbols())
         masses = np.asarray(frames[0].get_masses(), dtype=float)
         pbc = np.asarray(frames[0].pbc, dtype=bool)

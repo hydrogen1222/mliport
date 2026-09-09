@@ -115,6 +115,34 @@ def _api_resolve(
     strict_config: bool | None,
 ) -> EngineConfig:
     """Thin wrapper around resolve_config for the API layer."""
+    config, _resolved = _api_resolve_full(
+        calc_type,
+        model_path,
+        cli,
+        output_dir,
+        job_name,
+        settings_path,
+        model_alias,
+        profile,
+        strict_config,
+    )
+    return config
+
+
+def _api_resolve_full(
+    calc_type: str,
+    model_path: str | None,
+    cli: dict[str, Any],
+    output_dir: str | Path,
+    job_name: str | None,
+    settings_path: str | None,
+    model_alias: str | None,
+    profile: str | None,
+    strict_config: bool | None,
+    *,
+    incar_layer: dict[str, Any] | None = None,
+) -> tuple[EngineConfig, Any]:
+    """Resolve API inputs while retaining immutable provenance for workflows."""
     from mlipx.config import load_settings  # noqa: PLC0415
     from mlipx.config import resolve_config  # noqa: PLC0415
 
@@ -126,6 +154,7 @@ def _api_resolve(
     resolved = resolve_config(
         calc_type=calc_type,
         settings=settings,
+        incar=incar_layer,
         cli=cli,
         model_alias_name=model_alias,
         profile_name=profile,
@@ -135,7 +164,7 @@ def _api_resolve(
     ec.output_dir = Path(output_dir).expanduser().resolve()
     if job_name:
         ec.job_name = job_name
-    return ec
+    return ec, resolved
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +490,162 @@ def run_md(
     )
 
 
+def run_neb(
+    initial: Atoms | str | Path | None = None,
+    final: Atoms | str | Path | None = None,
+    model_path: str | None = None,
+    *,
+    resume: str | Path | None = None,
+    model_type: str | None = None,
+    task: str | None = None,
+    device: str | None = None,
+    inference_mode: str | None = None,
+    output_dir: str | Path | None = None,
+    job_name: str | None = None,
+    n_intermediate_images: int | None = None,
+    climb: bool | None = None,
+    method: str | None = None,
+    interpolation: str | None = None,
+    path_convention: str | None = None,
+    spring: float | None = None,
+    fmax: float | None = None,
+    max_steps: int | None = None,
+    pre_fmax: float | None = None,
+    pre_max_steps: int | None = None,
+    maxstep: float | None = None,
+    endpoint_policy: str | None = None,
+    endpoint_fmax: float | None = None,
+    endpoint_steps: int | None = None,
+    idpp_fmax: float | None = None,
+    idpp_steps: int | None = None,
+    idpp_mic: bool | None = None,
+    min_distance: float | None = None,
+    checkpoint_interval: int | None = None,
+    atom_map=None,
+    image_shifts=None,
+    verbose: bool = True,
+    settings_path: str | None = None,
+    model_alias: str | None = None,
+    default_dtype: str | None = None,
+    head: str | None = None,
+    profile: str | None = None,
+    strict_config: bool | None = None,
+    **kwargs,
+) -> dict[str, Any]:
+    """Run or geometry-resume a fixed-cell NEB/CI-NEB workflow.
+
+    New runs require two endpoints, a model (path or alias), and an explicit
+    output directory. Resume restores model and scientific options from the
+    checkpoint, preserves the original run ID/directory, and creates a new
+    attempt ID. Every interface uses the same typed resolver and output schema.
+    """
+    from mlipx.neb.workflow import (  # noqa: PLC0415
+        checkpoint_resolved_layer,
+        checkpoint_run_directory,
+    )
+
+    extra = dict(kwargs)
+    for name, value in (
+        ("n_intermediate_images", n_intermediate_images),
+        ("climb", climb),
+        ("neb_method", method),
+        ("neb_interpolation", interpolation),
+        ("path_convention", path_convention),
+        ("neb_spring", spring),
+        ("fmax", fmax),
+        ("max_steps", max_steps),
+        ("neb_pre_fmax", pre_fmax),
+        ("neb_pre_max_steps", pre_max_steps),
+        ("neb_maxstep", maxstep),
+        ("endpoint_policy", endpoint_policy),
+        ("endpoint_fmax", endpoint_fmax),
+        ("endpoint_steps", endpoint_steps),
+        ("idpp_fmax", idpp_fmax),
+        ("idpp_steps", idpp_steps),
+        ("idpp_mic", idpp_mic),
+        ("neb_min_distance", min_distance),
+        ("checkpoint_interval", checkpoint_interval),
+    ):
+        if value is not None:
+            extra[name] = value
+
+    checkpoint_layer = None
+    if resume is not None:
+        if initial is not None or final is not None:
+            raise ValueError("resume cannot be combined with new NEB endpoints")
+        if atom_map is not None or image_shifts is not None:
+            raise ValueError("resume restores atom mapping/winding from checkpoint")
+        if job_name is not None:
+            raise ValueError("job_name cannot change a resumed run directory")
+        if model_alias is not None or profile is not None:
+            raise ValueError(
+                "resume restores original alias/profile values; use direct kwargs, "
+                "which are checked by the fingerprint"
+            )
+        run_dir = checkpoint_run_directory(resume)
+        if (
+            output_dir is not None
+            and Path(output_dir).expanduser().resolve() != run_dir
+        ):
+            raise ValueError(
+                f"output_dir must remain the original run directory {run_dir}"
+            )
+        output_dir = run_dir
+        checkpoint_layer = checkpoint_resolved_layer(resume)
+        initial_atoms = final_atoms = None
+    else:
+        if initial is None or final is None:
+            raise ValueError("A new NEB run requires initial and final endpoints")
+        if output_dir is None:
+            raise ValueError("A new NEB run requires an explicit output_dir")
+        initial_atoms = _load_structure(initial)
+        final_atoms = _load_structure(final)
+        if not isinstance(initial, Atoms):
+            extra["neb_initial"] = str(initial)
+        if not isinstance(final, Atoms):
+            extra["neb_final"] = str(final)
+
+    cli = _build_api_cli(
+        "neb",
+        model_type,
+        task,
+        device,
+        inference_mode,
+        default_dtype,
+        head,
+        extra,
+    )
+    config, resolved = _api_resolve_full(
+        "neb",
+        model_path,
+        cli,
+        output_dir,
+        job_name,
+        settings_path,
+        model_alias,
+        profile,
+        strict_config,
+        incar_layer=checkpoint_layer,
+    )
+    if verbose:
+        if initial_atoms is not None:
+            print(
+                f"NEB endpoints: {initial_atoms.get_chemical_formula()} "
+                f"({len(initial_atoms)} atoms, {n_intermediate_images or 'resolved'} images)"
+            )
+        print(f"Loading model: {resolved.model_path}")
+    engine = CalculationEngine.from_config(config)
+    return engine.run_neb(
+        resolved,
+        initial=initial_atoms,
+        final=final_atoms,
+        resume=resume,
+        atom_map=atom_map,
+        image_shifts=image_shifts,
+        log_fn=_console_log if verbose else None,
+    )
+
+
 def calculate_energy(
     structure: Atoms | str | Path,
     model_path: str,
@@ -555,6 +740,7 @@ def calculate_energy(
 __all__ = [
     "calculate_energy",
     "run_md",
+    "run_neb",
     "run_optimization",
     "run_single_point",
 ]

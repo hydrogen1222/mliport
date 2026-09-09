@@ -274,7 +274,7 @@ def resolve_config(
     """Resolve a full configuration from all layers.
 
     Args:
-        calc_type: ``sp``/``opt``/``md``/``batch``.
+        calc_type: ``sp``/``opt``/``md``/``neb``/``batch``.
         settings: Loaded :class:`MlipxSettings` (may be None).
         model_aliases/profiles: Parsed alias/profile maps (usually extracted
             from ``settings``). If None they are derived from ``settings``.
@@ -318,9 +318,9 @@ def resolve_config(
     defaults_layer.update(BUILTIN_DEFAULTS.get("general", {}))
     defaults_layer.update(BUILTIN_DEFAULTS.get(calc_type, {}))
     defaults_layer.update(BUILTIN_DEFAULTS.get("calculator", {}))
-    if calc_type == "md":
-        # Implemented MD guards are resolved like user [safety] overrides, so
-        # EngineConfig.from_resolved can route them to MDRunner.
+    if calc_type in {"md", "neb"}:
+        # Implemented force guards are resolved like user [safety] overrides,
+        # so execution cannot silently fall back to a different threshold.
         defaults_layer.update(BUILTIN_DEFAULTS.get("safety", {}))
     defaults_layer["device"] = DEFAULT_DEVICE_BY_CALC_TYPE.get(calc_type, "cpu")
     _merge_layer(
@@ -493,7 +493,7 @@ def resolve_config(
     settings_bag: dict[str, Any] = {}
     unknown_options: dict[str, Any] = {}
     scope_errors: list[str] = []
-    calc_scopes = {"sp", "opt", "md", "batch"}
+    calc_scopes = {"sp", "opt", "md", "neb", "batch"}
 
     for key, rv in sources.items():
         if key in _MODEL_KEYS:
@@ -586,6 +586,25 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
             f"Unsupported OUTPUT_FORMAT {output_format!r}; only VASP is "
             "currently implemented."
         )
+
+    if resolved.calc_type == "neb":
+        for required in ("write_forces", "write_json"):
+            if resolved.settings.get(required) is False:
+                raise ValueError(
+                    f"{required}=false is incompatible with the mandatory NEB "
+                    "result/provenance schema"
+                )
+        for unsupported in (
+            "write_outcar",
+            "write_xdatcar",
+            "write_trajectory",
+            "write_stress",
+        ):
+            if resolved.settings.get(unsupported) is True:
+                raise ValueError(
+                    f"{unsupported}=true is not a supported NEB output; use the "
+                    "complete-band checkpoints and VASP path export"
+                )
 
     if resolved.calc_type == "md":
         options = resolved.run_options

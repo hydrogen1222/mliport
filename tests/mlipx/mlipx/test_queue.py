@@ -12,8 +12,10 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from ase import Atoms
 
 from mlipx.jobs import JobManager, JobStatus
+from mlipx.neb.io import NEBCheckpointStore
 from mlipx.queue import (
     QueueScheduler,
     build_mlipx_command,
@@ -103,6 +105,33 @@ def test_build_command_md_options() -> None:
     assert "--com-policy" in cmd and "none" in cmd
     assert "--no-pre-relax" in cmd
     assert "--seed" in cmd and "42" in cmd
+
+
+def test_build_command_neb_uses_two_endpoints_and_serial_job_flags() -> None:
+    cmd = build_mlipx_command(
+        "neb",
+        None,
+        "model.pt",
+        output_dir="out",
+        initial="initial.vasp",
+        final="final.vasp",
+        atom_map=[1, 0],
+        image_shifts=[[0, 0, 0], [1, 0, 0]],
+        options={
+            "n_intermediate_images": 3,
+            "climb": True,
+            "checkpoint_interval": 2,
+        },
+    )
+
+    assert cmd[3] == "neb"
+    assert cmd[cmd.index("--initial") + 1] == "initial.vasp"
+    assert cmd[cmd.index("--final") + 1] == "final.vasp"
+    assert cmd[cmd.index("--images") + 1] == "3"
+    assert "--climb" in cmd
+    assert cmd[cmd.index("--checkpoint-interval") + 1] == "2"
+    assert cmd[cmd.index("--atom-map") + 1] == "1,0"
+    assert cmd[cmd.index("--image-shifts") + 1] == "0,0,0;1,0,0"
 
 
 def test_build_command_forwards_molecular_electronic_state() -> None:
@@ -200,6 +229,92 @@ def test_parse_task_file_ok(tmp_path: Path) -> None:
     assert task["calc_type"] == "opt"
     assert task["model_type"] == "uma"
     assert task["device"] == "cuda:0"
+
+
+def test_parse_neb_task_freezes_both_endpoints(tmp_path: Path) -> None:
+    for name in ("initial.vasp", "final.vasp", "model.pt"):
+        (tmp_path / name).write_text("dummy", encoding="utf-8")
+    path = _write_tasks(
+        tmp_path,
+        [
+            {
+                "calc_type": "neb",
+                "initial": "initial.vasp",
+                "final": "final.vasp",
+                "model": "model.pt",
+                "model_type": "mace",
+                "task": "bulk",
+                "device": "cpu",
+                "output_dir": "out",
+                "atom_map": [1, 0],
+                "image_shifts": [[0, 0, 0], [1, 0, 0]],
+                "options": {"NEB_IMAGES": "3", "NEB_CLIMB": "1"},
+            }
+        ],
+    )
+
+    task = parse_task_file(path)["tasks"][0]
+
+    assert task["initial"] == str((tmp_path / "initial.vasp").resolve())
+    assert task["final"] == str((tmp_path / "final.vasp").resolve())
+    assert task["atom_map"] == [1, 0]
+    assert task["image_shifts"] == [[0, 0, 0], [1, 0, 0]]
+    assert task["options"] == {"n_intermediate_images": 3, "climb": True}
+
+
+def test_parse_neb_resume_restores_device_and_model_for_gpu_lease(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model")
+    run = tmp_path / "run"
+    images = [
+        Atoms("H", positions=[[x, 0, 0]], cell=[4, 4, 4], pbc=True)
+        for x in (0.5, 1.0, 1.5)
+    ]
+    NEBCheckpointStore(run).write(
+        images,
+        run_id=str(uuid.uuid4()),
+        attempt_id=str(uuid.uuid4()),
+        stage="neb",
+        stage_step=1,
+        resume_fingerprint={},
+        resume_fingerprint_sha256="test",
+        resolved_config={
+            "model_type": "mace",
+            "model_path": str(model),
+            "task": "bulk",
+            "device": "cpu",
+            "inference_mode": "default",
+            "calculator_options": {},
+            "run_options": {},
+            "settings": {},
+        },
+    )
+    path = _write_tasks(
+        tmp_path,
+        [{"calc_type": "neb", "resume": str(run)}],
+    )
+
+    task = parse_task_file(path)["tasks"][0]
+    command = build_mlipx_command(
+        task["calc_type"],
+        task["structure"],
+        task["model"],
+        model_type=task["model_type"],
+        task=task["task"],
+        device=task["device"],
+        output_dir=task["output_dir"],
+        job_name="queue-id",
+        options=task["options"],
+        resume=task["resume"],
+    )
+
+    assert task["model"] == str(model.resolve())
+    assert task["device"] == "cpu"
+    assert command[command.index("--resume") + 1] == str(run.resolve())
+    assert "--output" not in command
+    assert "--name" not in command
 
 
 def test_task_paths_are_frozen_relative_to_task_file(tmp_path: Path) -> None:

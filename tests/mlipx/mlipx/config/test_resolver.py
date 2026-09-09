@@ -454,6 +454,45 @@ def test_batch_calc_type() -> None:
     assert rc.device == "cpu"
 
 
+def test_neb_defaults_and_incar_paths_are_typed(tmp_path: Path) -> None:
+    incar = IncarConfig.from_string(
+        "CALCULATION = NEB\n"
+        "MODEL_PATH = model.pt\n"
+        "NEB_INITIAL = initial.vasp\n"
+        "NEB_FINAL = final.vasp\n"
+        "NEB_IMAGES = 3\n"
+        "NEB_CLIMB = 1\n",
+        base_dir=tmp_path,
+    )
+
+    resolved = resolve_config(calc_type="neb", incar=incar)
+
+    assert resolved.device == "cpu"
+    assert resolved.run_options["n_intermediate_images"] == 3
+    assert resolved.run_options["climb"] is True
+    assert resolved.run_options["neb_initial"] == str(
+        (tmp_path / "initial.vasp").resolve()
+    )
+    assert resolved.run_options["neb_final"] == str((tmp_path / "final.vasp").resolve())
+    assert resolved.settings["fmax_abort"] == 20.0
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("WRITE_FORCES", "0"),
+        ("WRITE_JSON", "false"),
+        ("WRITE_STRESS", "true"),
+        ("WRITE_XDATCAR", "1"),
+    ],
+)
+def test_neb_rejects_ignored_or_disabled_mandatory_outputs(
+    option: str, value: str
+) -> None:
+    with pytest.raises(ValueError, match="NEB output|mandatory NEB"):
+        resolve_config(calc_type="neb", incar={option: value})
+
+
 def test_sp_no_auto_seed() -> None:
     """Only MD auto-generates a seed."""
     rc = resolve_config(calc_type="sp")

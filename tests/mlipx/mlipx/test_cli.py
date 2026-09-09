@@ -309,6 +309,84 @@ def test_md_thermostat_flags_default_to_resolver() -> None:
     assert args.com_policy is None
 
 
+def test_neb_parser_keeps_scientific_defaults_in_resolver() -> None:
+    args = create_parser().parse_args(
+        [
+            "neb",
+            "--initial",
+            "initial.vasp",
+            "--final",
+            "final.vasp",
+            "--model",
+            "model.pt",
+            "--images",
+            "5",
+            "--climb",
+            "--spring",
+            "0.2",
+            "--output",
+            "results/hop",
+        ]
+    )
+
+    assert args.command == "neb"
+    assert args.n_intermediate_images == 5
+    assert args.climb is True
+    assert args.neb_spring == pytest.approx(0.2)
+    assert args.fmax is None
+    assert args.device is None
+
+
+def test_neb_command_uses_typed_resolver_and_public_engine(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    initial = _write_poscar(tmp_path)
+    final = tmp_path / "final.vasp"
+    final.write_text(initial.read_text(encoding="utf-8"), encoding="utf-8")
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model")
+    captured = {}
+
+    class DummyEngine:
+        def run_neb(self, resolved, **kwargs):
+            captured["resolved"] = resolved
+            captured.update(kwargs)
+            return {
+                "status": "completed",
+                "converged": True,
+                "run_id": "run-id",
+                "latest_checkpoint": "checkpoint",
+                "barrier_forward_sampled_eV": 0.0,
+            }
+
+    monkeypatch.setattr(
+        "mlipx.cli.CalculationEngine.from_config", lambda config: DummyEngine()
+    )
+
+    rc = main(
+        [
+            "neb",
+            "--initial",
+            str(initial),
+            "--final",
+            str(final),
+            "--model",
+            str(model),
+            "--images",
+            "1",
+            "--output",
+            str(tmp_path / "neb-run"),
+        ]
+    )
+
+    assert rc == 0
+    assert captured["resolved"].calc_type == "neb"
+    assert captured["resolved"].run_options["n_intermediate_images"] == 1
+    assert captured["initial"].pbc.all()
+    assert captured["final"].pbc.all()
+    capsys.readouterr()
+
+
 def test_grace_memory_and_md_output_flags_parse() -> None:
     parser = create_parser()
     args = parser.parse_args(
@@ -656,3 +734,48 @@ def test_run_incar_calc_type_phonon_rejected_at_validation(capsys) -> None:
             assert "Invalid CALC_TYPE" in out
         finally:
             os.chdir(old)
+
+
+def test_run_incar_calculation_neb_uses_endpoint_paths(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    initial = _write_poscar(tmp_path)
+    final = tmp_path / "final.vasp"
+    final.write_text(initial.read_text(encoding="utf-8"), encoding="utf-8")
+    incar = tmp_path / "INCAR.mlipx"
+    incar.write_text(
+        "CALCULATION = NEB\n"
+        "MODEL_PATH = model.pt\n"
+        "TASK = omat\n"
+        "NEB_INITIAL = POSCAR\n"
+        "NEB_FINAL = final.vasp\n"
+        "NEB_IMAGES = 1\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    class DummyEngine:
+        def run_neb(self, resolved, **kwargs):
+            captured["resolved"] = resolved
+            captured.update(kwargs)
+            return {"converged": True}
+
+    monkeypatch.setattr(
+        "mlipx.cli.CalculationEngine.from_config", lambda config: DummyEngine()
+    )
+
+    rc = main(
+        [
+            "run",
+            "--incar",
+            str(incar),
+            "--output",
+            str(tmp_path / "run"),
+        ]
+    )
+
+    assert rc == 0
+    assert captured["resolved"].calc_type == "neb"
+    assert captured["resolved"].run_options["neb_initial"] == str(initial.resolve())
+    assert captured["resolved"].run_options["neb_final"] == str(final.resolve())
+    capsys.readouterr()

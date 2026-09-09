@@ -39,7 +39,7 @@ class EngineConfig:
     """Unified configuration for all calculation types and interfaces.
 
     Fields:
-        calc_type: sp, opt, md, or batch.
+        calc_type: sp, opt, md, neb, or batch.
         model_path: Path to model checkpoint/file.
         model_type: MLIP engine (uma, mace, dpa, grace).
         task: Task type. UMA: omat/omol/...; others: bulk/molecule.
@@ -67,7 +67,7 @@ class EngineConfig:
         detach: If True, submit as background job.
     """
 
-    calc_type: Literal["sp", "opt", "md", "batch"]
+    calc_type: Literal["sp", "opt", "md", "neb", "batch"]
     model_path: Path
     model_type: str = "uma"
     task: str = "omat"
@@ -96,10 +96,10 @@ class EngineConfig:
         run_options = dict(resolved.run_options)
         # Safety options live in ResolvedConfig.settings so they do not get
         # mistaken for arbitrary runner kwargs.  Copy the one guard currently
-        # implemented by MDRunner into its typed option bag.  Without this
-        # bridge, [safety] fmax_abort was recorded in resolved_config.json but
-        # silently had no effect on an actual MD run.
-        if resolved.calc_type == "md" and "fmax_abort" in resolved.settings:
+        # implemented by MDRunner/NEBRunner into their typed option bags.
+        # Without this bridge, [safety] fmax_abort would be recorded in
+        # resolved_config.json but silently have no effect on execution.
+        if resolved.calc_type in {"md", "neb"} and "fmax_abort" in resolved.settings:
             run_options.setdefault("fmax_abort", resolved.settings["fmax_abort"])
 
         return cls(
@@ -127,10 +127,10 @@ class CalculationEngine:
     """Unified execution engine for MLIP calculations.
 
     Use CalculationEngine.from_config() to create an instance, then
-    call run(), run_async(), or run_batch().
+    call run(), run_async(), run_neb(), or run_batch().
     """
 
-    VALID_CALC_TYPES: ClassVar[set[str]] = {"sp", "opt", "md", "batch"}
+    VALID_CALC_TYPES: ClassVar[set[str]] = {"sp", "opt", "md", "neb", "batch"}
 
     def __init__(self, config: EngineConfig):
         self.config = config
@@ -401,6 +401,96 @@ class CalculationEngine:
             except Exception as exc:
                 run_logger(f"Calculation failed: {exc}", "error")
                 raise
+
+    def run_neb(
+        self,
+        resolved: Any,
+        *,
+        initial: Atoms | None = None,
+        final: Atoms | None = None,
+        resume: str | Path | None = None,
+        atom_map=None,
+        image_shifts=None,
+        progress_callback: ProgressCallback | None = None,
+        cancel_event: threading.Event | None = None,
+        log_fn: Any | None = None,
+    ) -> dict[str, Any]:
+        """Run the public NEB workflow with one shared model instance."""
+        if self.config.calc_type != "neb" or resolved.calc_type != "neb":
+            raise ValueError("run_neb requires calc_type='neb'")
+
+        from mlipx.neb.workflow import (  # noqa: PLC0415
+            _preflight_new_output,
+            _run_directory_lock,
+            _run_neb_workflow_locked,
+            checkpoint_run_directory,
+            options_from_resolved,
+        )
+
+        # Reject invalid scientific options before importing/loading a backend.
+        options_from_resolved(resolved)
+        output = self.output_dir.resolve()
+        if resume is None:
+            _preflight_new_output(output)
+        elif output != checkpoint_run_directory(resume):
+            raise ValueError(
+                "Resume output differs from the checkpoint's original run directory"
+            )
+
+        # Own the run directory before opening/truncating its log or loading a
+        # potentially large model. This closes the race where two frontends
+        # could both load a model before the workflow-level lock was acquired.
+        with _run_directory_lock(output):
+            with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
+                run_logger(f"Output directory: {output}")
+                run_logger(f"Live log: {self.run_log_path}")
+                run_logger(
+                    f"Follow live output: {follow_log_command(self.run_log_path)}"
+                )
+                run_logger(
+                    f"Loading {self.config.model_type.upper()} model on "
+                    f"{self.config.device}: {self.config.model_path}"
+                )
+                if progress_callback is not None:
+                    progress_callback(
+                        ProgressEvent(
+                            phase="loading_model",
+                            message=(
+                                "Loading one model instance for serial NEB images..."
+                            ),
+                        )
+                    )
+                calculator = self._create_calculator()
+                try:
+                    result = _run_neb_workflow_locked(
+                        calculator,
+                        resolved,
+                        output_dir=output,
+                        initial=initial,
+                        final=final,
+                        resume=resume,
+                        atom_map=atom_map,
+                        image_shifts=image_shifts,
+                        verbose=False,
+                        progress_callback=progress_callback,
+                        cancel_event=cancel_event,
+                    )
+                except CancellationRequested as exc:
+                    run_logger(f"NEB calculation cancelled: {exc}", "warning")
+                    raise
+                except Exception as exc:
+                    run_logger(f"NEB calculation failed: {exc}", "error")
+                    raise
+                if progress_callback is not None:
+                    progress_callback(
+                        ProgressEvent(
+                            phase="done",
+                            message=(
+                                f"NEB workflow finished with status {result['status']}"
+                            ),
+                        )
+                    )
+                return result
 
     async def run_async(
         self,

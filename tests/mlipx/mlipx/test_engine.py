@@ -68,6 +68,14 @@ class TestEngineConfig:
         config = EngineConfig.from_resolved(resolved)
         assert config.run_options["fmax_abort"] == 20.0
 
+    def test_from_resolved_routes_neb_safety_threshold(self):
+        from mlipx.config.resolver import resolve_config
+        from mlipx.engine import EngineConfig
+
+        resolved = resolve_config(calc_type="neb")
+        config = EngineConfig.from_resolved(resolved)
+        assert config.run_options["fmax_abort"] == 20.0
+
     @pytest.mark.parametrize("model_type", ["uma", "mace", "dpa", "grace"])
     def test_from_resolved_routes_backend_thread_count(self, model_type):
         from mlipx.config.resolver import resolve_config
@@ -354,10 +362,56 @@ def test_python_api_forwards_all_thermostat_options(monkeypatch):
     )
 
 
+def test_python_neb_api_forwards_typed_options_to_public_engine(tmp_path, monkeypatch):
+    from ase import Atoms
+
+    from mlipx import api
+
+    captured = {}
+    resolved = Mock(calc_type="neb", model_path=str(tmp_path / "model.pt"))
+
+    def fake_resolve(calc_type, model_path, cli, *args, **kwargs):
+        captured["calc_type"] = calc_type
+        captured["cli"] = dict(cli)
+        return object(), resolved
+
+    class DummyEngine:
+        def run_neb(self, actual_resolved, **kwargs):
+            captured["resolved"] = actual_resolved
+            captured["run"] = kwargs
+            return {"status": "completed", "converged": True}
+
+    monkeypatch.setattr(api, "_api_resolve_full", fake_resolve)
+    monkeypatch.setattr(
+        api.CalculationEngine, "from_config", lambda config: DummyEngine()
+    )
+    initial = Atoms("H", positions=[[0, 0, 0]], cell=[4, 4, 4], pbc=True)
+    final = initial.copy()
+    final.positions[0, 0] = 1.0
+
+    result = api.run_neb(
+        initial,
+        final,
+        "model.pt",
+        output_dir=tmp_path / "run",
+        n_intermediate_images=3,
+        spring=0.2,
+        climb=True,
+        verbose=False,
+    )
+
+    assert result["converged"] is True
+    assert captured["calc_type"] == "neb"
+    assert captured["cli"]["n_intermediate_images"] == 3
+    assert captured["cli"]["neb_spring"] == pytest.approx(0.2)
+    assert captured["cli"]["climb"] is True
+    assert captured["resolved"] is resolved
+
+
 class TestMaceDtypeDefaults:
     """MACE defaults to accuracy-first float64 for every calculation type."""
 
-    @pytest.mark.parametrize("calc_type", ["sp", "opt", "md"])
+    @pytest.mark.parametrize("calc_type", ["sp", "opt", "md", "neb"])
     def test_mace_default_dtype_is_float64_for_all_calc_types(self, calc_type):
         from mlipx.engine import CalculationEngine, EngineConfig
 

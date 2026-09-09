@@ -4,7 +4,7 @@ The schema records, for every recognised option:
 
 * its canonical (internal) name,
 * the Python type,
-* the scopes it belongs to (``sp``/``opt``/``md``/``batch``/``calculator``/
+* the scopes it belongs to (``sp``/``opt``/``md``/``neb``/``batch``/``calculator``/
   ``general`` ...),
 * any aliases (e.g. ``TEMPERATURE`` / ``--temp`` / ``temperature``),
 * allowed ``choices`` and numeric bounds.
@@ -295,7 +295,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "charge",
         int,
-        frozenset({"sp", "opt", "md", "batch"}),
+        frozenset({"sp", "opt", "md", "neb", "batch"}),
         aliases={"CHARGE"},
         minimum=-100,
         maximum=100,
@@ -304,7 +304,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "spin",
         int,
-        frozenset({"sp", "opt", "md", "batch"}),
+        frozenset({"sp", "opt", "md", "neb", "batch"}),
         aliases={"SPIN", "SPIN_MULTIPLICITY"},
         minimum=0,
         maximum=100,
@@ -324,7 +324,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "fmax",
         float,
-        frozenset({"opt"}),
+        frozenset({"opt", "neb"}),
         aliases={"FMAX"},
         minimum=0.0,
         description="Force convergence threshold in eV/Angstrom.",
@@ -332,7 +332,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "max_steps",
         int,
-        frozenset({"opt"}),
+        frozenset({"opt", "neb"}),
         aliases={"MAX_STEPS"},
         minimum=0,
         description="Maximum optimization steps.",
@@ -350,6 +350,157 @@ _SPECS: list[OptionSpec] = [
         frozenset({"opt"}),
         aliases={"FIX_SYMMETRY"},
         description="Preserve crystal symmetry during optimization.",
+    ),
+    # --- fixed-cell NEB run options ---
+    OptionSpec(
+        "neb_initial",
+        str,
+        frozenset({"neb"}),
+        aliases={"NEB_INITIAL"},
+        is_path=True,
+        description="Initial endpoint structure for NEB.",
+    ),
+    OptionSpec(
+        "neb_final",
+        str,
+        frozenset({"neb"}),
+        aliases={"NEB_FINAL"},
+        is_path=True,
+        description="Final endpoint structure for NEB.",
+    ),
+    OptionSpec(
+        "n_intermediate_images",
+        int,
+        frozenset({"neb"}),
+        aliases={"NEB_IMAGES", "IMAGES"},
+        minimum=1,
+        description="Number of intermediate images; endpoints are additional.",
+    ),
+    OptionSpec(
+        "climb",
+        bool,
+        frozenset({"neb"}),
+        aliases={"NEB_CLIMB", "CLIMB"},
+        description="Run a second climbing-image NEB stage.",
+    ),
+    OptionSpec(
+        "neb_method",
+        str,
+        frozenset({"neb"}),
+        aliases={"NEB_METHOD"},
+        choices=("improvedtangent",),
+        description="ASE NEB tangent method.",
+    ),
+    OptionSpec(
+        "neb_interpolation",
+        str,
+        frozenset({"neb"}),
+        aliases={"NEB_INTERPOLATION"},
+        choices=("linear", "idpp"),
+        description="Initial band interpolation method.",
+    ),
+    OptionSpec(
+        "path_convention",
+        str,
+        frozenset({"neb"}),
+        aliases={"NEB_PATH_CONVENTION"},
+        choices=("mic", "unwrapped"),
+        description="Periodic path convention.",
+    ),
+    OptionSpec(
+        "neb_spring",
+        float,
+        frozenset({"neb"}),
+        aliases={"NEB_SPRING"},
+        minimum=1.0e-12,
+        description="NEB spring constant in eV/Angstrom^2.",
+    ),
+    OptionSpec(
+        "neb_pre_fmax",
+        float,
+        frozenset({"neb"}),
+        aliases={"NEB_PRE_FMAX"},
+        minimum=1.0e-12,
+        description="Ordinary pre-stage force criterion in eV/Angstrom.",
+    ),
+    OptionSpec(
+        "neb_pre_max_steps",
+        int,
+        frozenset({"neb"}),
+        aliases={"NEB_PRE_MAX_STEPS"},
+        minimum=0,
+        description="Maximum ordinary pre-stage optimizer steps.",
+    ),
+    OptionSpec(
+        "neb_maxstep",
+        float,
+        frozenset({"neb"}),
+        aliases={"NEB_MAXSTEP"},
+        minimum=1.0e-12,
+        description="Maximum FIRE displacement per step in Angstrom.",
+    ),
+    OptionSpec(
+        "endpoint_policy",
+        str,
+        frozenset({"neb"}),
+        aliases={"NEB_ENDPOINT_POLICY"},
+        choices=("validate", "relax"),
+        description="Validate or relax endpoint geometries before NEB.",
+    ),
+    OptionSpec(
+        "endpoint_fmax",
+        float,
+        frozenset({"neb"}),
+        aliases={"NEB_ENDPOINT_FMAX"},
+        minimum=1.0e-12,
+        description="Endpoint convergence threshold in eV/Angstrom.",
+    ),
+    OptionSpec(
+        "endpoint_steps",
+        int,
+        frozenset({"neb"}),
+        aliases={"NEB_ENDPOINT_STEPS"},
+        minimum=1,
+        description="Maximum endpoint relaxation steps.",
+    ),
+    OptionSpec(
+        "idpp_fmax",
+        float,
+        frozenset({"neb"}),
+        aliases={"IDPP_FMAX"},
+        minimum=1.0e-12,
+        description="IDPP interpolation force criterion.",
+    ),
+    OptionSpec(
+        "idpp_steps",
+        int,
+        frozenset({"neb"}),
+        aliases={"IDPP_STEPS"},
+        minimum=1,
+        description="Maximum IDPP interpolation steps.",
+    ),
+    OptionSpec(
+        "idpp_mic",
+        bool,
+        frozenset({"neb"}),
+        aliases={"IDPP_MIC"},
+        description="Use minimum-image distances in IDPP.",
+    ),
+    OptionSpec(
+        "neb_min_distance",
+        float,
+        frozenset({"neb"}),
+        aliases={"NEB_MIN_DISTANCE"},
+        minimum=1.0e-12,
+        description="Minimum allowed interatomic distance in Angstrom.",
+    ),
+    OptionSpec(
+        "checkpoint_interval",
+        int,
+        frozenset({"neb"}),
+        aliases={"NEB_CHECKPOINT_INTERVAL"},
+        minimum=1,
+        description="Trusted optimizer-state interval between full-band checkpoints.",
     ),
     # --- MD run options ---
     OptionSpec(
@@ -517,17 +668,17 @@ _SPECS: list[OptionSpec] = [
         choices=("sp", "opt"),
         description="Sub-calculation type for a sweep batch (sp/opt).",
     ),
-    # ``calc_type`` is a meta key: it selects the runner (sp/opt/md/batch).
+    # ``calc_type`` is a meta key: it selects the runner (sp/opt/md/neb/batch).
     # The resolver pops it from every layer; it never becomes a run option.
     OptionSpec(
         "calc_type",
         str,
         frozenset({"meta"}),
-        aliases={"CALC_TYPE"},
+        aliases={"CALC_TYPE", "CALCULATION"},
         # Keep in sync with CalculationEngine.VALID_CALC_TYPES and
         # IncarConfig.validate(): "analyze" was previously accepted here but
         # rejected by the engine with a late, confusing error.
-        choices=("sp", "opt", "md", "batch"),
+        choices=("sp", "opt", "md", "neb", "batch"),
         description="Top-level calculation type (selects the runner).",
     ),
     OptionSpec(

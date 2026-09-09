@@ -27,6 +27,7 @@ def test_all_expected_scopes_present() -> None:
         "sp",
         "opt",
         "md",
+        "neb",
         "calculator",
         "calculator.uma",
         "calculator.mace",
@@ -47,12 +48,14 @@ def test_inference_mode_in_calc_type_scopes() -> None:
     assert BUILTIN_DEFAULTS["sp"]["inference_mode"] == "default"
     assert BUILTIN_DEFAULTS["opt"]["inference_mode"] == "default"
     assert BUILTIN_DEFAULTS["md"]["inference_mode"] == "turbo"
+    assert BUILTIN_DEFAULTS["neb"]["inference_mode"] == "default"
 
 
 def test_device_per_calc_type() -> None:
     assert DEFAULT_DEVICE_BY_CALC_TYPE["sp"] == "cpu"
     assert DEFAULT_DEVICE_BY_CALC_TYPE["opt"] == "cpu"
     assert DEFAULT_DEVICE_BY_CALC_TYPE["md"] == "cuda"
+    assert DEFAULT_DEVICE_BY_CALC_TYPE["neb"] == "cpu"
 
 
 def test_mace_default_dtype_is_float64() -> None:
@@ -110,6 +113,16 @@ def test_build_incar_default_md() -> None:
     assert "CALC_TYPE = MD" in text
     assert "DEVICE = cuda" in text
     assert "INFERENCE_MODE = turbo" in text
+
+
+def test_build_incar_default_neb() -> None:
+    text = build_incar_default("neb")
+    assert "CALCULATION = NEB" in text
+    assert "NEB_INITIAL = initial.vasp" in text
+    assert "NEB_FINAL = final.vasp" in text
+    assert "NEB_IMAGES = 7" in text
+    assert "DEVICE = cpu" in text
+    assert "WRITE_STRESS" not in text
 
 
 def test_build_incar_default_invalid_type() -> None:

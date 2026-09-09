@@ -345,7 +345,7 @@ def test_shared_calculator_recomputes_a_b_a_without_stale_results() -> None:
     ]
     runner = NEBRunner(calculator, NEBOptions(), verbose=False)
 
-    energies, forces, _, _ = runner._snapshot(images)
+    energies, forces, _, _, _ = runner._snapshot(images)
 
     assert energies[0] == pytest.approx(energies[2])
     assert forces[0] == pytest.approx(forces[2])
@@ -391,6 +391,7 @@ def test_ci_requires_climbing_force_even_if_ordinary_neb_residual_is_small() -> 
     assert result.stages[1]["max_neb_force_eV_A"] == pytest.approx(0.3)
     assert result.status == "not_converged"
     assert result.converged is False
+    assert result.to_dict()["barrier_status"] == "unconverged_path_sample"
 
 
 @pytest.mark.parametrize("failure", ["energy_nan", "force_inf"])
@@ -511,7 +512,7 @@ def test_snapshot_force_arrays_do_not_alias_reused_calculator_results() -> None:
     ]
     runner = NEBRunner(calculator, NEBOptions(), verbose=False)
 
-    _, forces, _, _ = runner._snapshot(images)
+    _, forces, _, _, _ = runner._snapshot(images)
     expected = np.asarray([[[0.4, 0, 0]], [[1.4, 0, 0]], [[-0.8, 0, 0]]])
     calculator.buffer[:] = 99.0
 

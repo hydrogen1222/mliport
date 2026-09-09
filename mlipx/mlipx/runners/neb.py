@@ -21,8 +21,8 @@ from mlipx.protocols import CancellationRequested, ProgressEvent
 class NEBRunner:
     """Run a prepared band serially with one calculator instance.
 
-    This class deliberately has no file output or model-loading policy yet.
-    It is the CPU-known-answer core for the later common engine/CLI workflow.
+    File output and model loading remain owned by the public workflow. The
+    runner exposes only trusted complete-band checkpoint callbacks.
     """
 
     def __init__(
@@ -33,12 +33,15 @@ class NEBRunner:
         verbose: bool = True,
         progress_callback=None,
         cancel_event: threading.Event | None = None,
+        checkpoint_callback=None,
     ):
         self.calculator = calculator
         self.options = options or NEBOptions()
         self.verbose = verbose
         self.progress_callback = progress_callback
         self.cancel_event = cancel_event
+        self.checkpoint_callback = checkpoint_callback
+        self.last_band: tuple | None = None
 
     def _emit(self, message: str, *, step: int | None = None, stage: str = "running"):
         if self.verbose:
@@ -95,6 +98,14 @@ class NEBRunner:
 
     def _snapshot(self, images, *, neb_forces: np.ndarray | None = None):
         energies, force_array = self._physical_snapshot(images, context="NEB")
+        applied_array = np.asarray(
+            [
+                np.asarray(image.get_forces(apply_constraint=True), dtype=float).copy()
+                for image in images
+            ],
+            dtype=float,
+        )
+        self._fmax(applied_array)
         if neb_forces is None:
             neb_array = np.empty((0, len(images), 3), dtype=float)
             max_neb = float("nan")
@@ -108,6 +119,7 @@ class NEBRunner:
         return (
             energies,
             force_array,
+            applied_array,
             neb_array,
             max_neb,
         )
@@ -162,6 +174,8 @@ class NEBRunner:
             # state at every accepted optimizer state so a frozen high force,
             # NaN, or Inf cannot be hidden until the final result snapshot.
             self._physical_snapshot(neb.images[1:-1], context=f"NEB {stage}")
+            if self.checkpoint_callback is not None:
+                self.checkpoint_callback(stage, int(optimizer.nsteps), neb.images)
         neb_forces = np.asarray(neb.get_forces(), dtype=float).copy()
         if not np.all(np.isfinite(neb_forces)):
             raise NEBPreparationError(f"NEB {stage} produced a non-finite band force")
@@ -191,8 +205,15 @@ class NEBRunner:
             )
         for image in images:
             image.calc = calc
-        self._validate_or_relax_endpoints(images)
-        if self.options.endpoint_policy == "relax":
+        resume_has_optimized_band = band.source == "checkpoint_optimized_band"
+        if resume_has_optimized_band:
+            # Geometry resume must preserve the saved interior path. Endpoints
+            # in an optimized-band checkpoint have already passed the original
+            # endpoint stage; only re-run the raw physical safety gate here.
+            self._physical_snapshot(images, context="resumed NEB band")
+        else:
+            self._validate_or_relax_endpoints(images)
+        if self.options.endpoint_policy == "relax" and not resume_has_optimized_band:
             images = interpolate_lifted_band(images[0], images[-1], self.options)
             for image in images:
                 image.calc = calc
@@ -228,9 +249,19 @@ class NEBRunner:
                 steps=self.options.max_steps,
             )
             stages.append(stage_result)
-        energies, physical_forces, band_forces, max_neb = self._snapshot(
-            images, neb_forces=neb_forces
-        )
+        (
+            energies,
+            physical_forces,
+            constraint_applied_forces,
+            band_forces,
+            max_neb,
+        ) = self._snapshot(images, neb_forces=neb_forces)
+        final_band = []
+        for image in images:
+            snapshot = image.copy()
+            snapshot.calc = None
+            final_band.append(snapshot)
+        self.last_band = tuple(final_band)
         climbing_index = int(neb.imax) if neb.climb else None
         climbing_fmax = (
             float(np.linalg.norm(physical_forces[climbing_index], axis=1).max())
@@ -242,6 +273,7 @@ class NEBRunner:
             converged=converged,
             energies_eV=energies,
             physical_forces_eV_A=physical_forces,
+            constraint_applied_forces_eV_A=constraint_applied_forces,
             neb_forces_eV_A=band_forces,
             stages=stages,
             climbing_image_index=climbing_index,
