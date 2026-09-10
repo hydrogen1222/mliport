@@ -609,6 +609,26 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
         """Whether stress is supported."""
         return "stress" in self.implemented_properties
 
+    def _checkpoint_precision(self) -> list[str] | None:
+        """Report the dtype of the stored weights, not of cast output tensors.
+
+        TensorPotential builds its SavedModel input/output signatures and output
+        tensors in float64 regardless of the stored parameter dtype, so reading
+        the output placement would misreport a float32 model as float64.
+        The checkpoint variable dtype map is the authoritative evidence.
+        """
+        try:
+            import tensorflow as tf
+
+            checkpoint = self.model_path / "variables" / "variables"
+            reader = tf.train.load_checkpoint(str(checkpoint))
+            dtypes = {
+                dtype.name for dtype in reader.get_variable_to_dtype_map().values()
+            }
+        except Exception:
+            return None
+        return sorted(name for name in dtypes if name.startswith("float")) or None
+
     def info(self) -> dict:
         """Return model metadata.
 
@@ -624,6 +644,11 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
         )
         return {
             **identity,
+            # The checkpoint weight dtype is authoritative for precision:
+            # TensorPotential casts output tensors to float64 regardless of it.
+            "model_precision": (
+                self._checkpoint_precision() or identity.get("model_precision")
+            ),
             "model_type": "grace",
             "model_path": str(self.model_path),
             "requested_device": self._device,

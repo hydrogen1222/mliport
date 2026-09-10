@@ -55,3 +55,67 @@ def test_first_inference_failure_invalidates_exposed_calculator(tmp_path):
         wrapper.get_calculator()
     with pytest.raises(RuntimeError, match="failed inference state"):
         candidate.calculate()
+
+
+class _DType:
+    def __init__(self, name: str):
+        self.name = name
+
+
+def _fake_tensorflow(monkeypatch, reader):
+    fake_tf = SimpleNamespace(
+        train=SimpleNamespace(load_checkpoint=lambda path: reader)
+    )
+    monkeypatch.setitem(sys.modules, "tensorflow", fake_tf)
+
+
+def _checkpoint_fixture(tmp_path, monkeypatch, reader):
+    (tmp_path / "variables").mkdir()
+    (tmp_path / "variables" / "variables").write_bytes(b"")
+    _fake_tensorflow(monkeypatch, reader)
+    return GRACECalculatorWrapper(tmp_path, device="cpu", neighbor_cache=False)
+
+
+def test_checkpoint_precision_reports_weight_dtype(tmp_path, monkeypatch):
+    """Stored weight dtypes are the precision evidence (plan A-09)."""
+    reader = SimpleNamespace(
+        get_variable_to_dtype_map=lambda: {
+            "weights": _DType("float32"),
+            "bias": _DType("float32"),
+            "meta": _DType("string"),
+            "index": _DType("int32"),
+        }
+    )
+    wrapper = _checkpoint_fixture(tmp_path, monkeypatch, reader)
+    assert wrapper._checkpoint_precision() == ["float32"]
+
+
+def test_checkpoint_precision_survives_unreadable_checkpoint(tmp_path, monkeypatch):
+    def boom(path):
+        raise ValueError("no checkpoint")
+
+    wrapper = _checkpoint_fixture(
+        tmp_path, monkeypatch, SimpleNamespace(load_checkpoint=boom)
+    )
+    assert wrapper._checkpoint_precision() is None
+
+
+def test_info_reports_checkpoint_weight_precision(tmp_path, monkeypatch):
+    """info() must not label a float32 model float64 via output tensors."""
+    reader = SimpleNamespace(
+        get_variable_to_dtype_map=lambda: {"weights": _DType("float32")}
+    )
+    wrapper = _checkpoint_fixture(tmp_path, monkeypatch, reader)
+    monkeypatch.setattr(wrapper, "_apply_device_env", lambda: None)
+    calc = SimpleNamespace(
+        data_builders=[SimpleNamespace(extract_from_ase_atoms=lambda atoms: {})],
+        implemented_properties=["energy", "free_energy", "forces"],
+    )
+    factory = MagicMock(return_value=calc)
+    monkeypatch.setitem(sys.modules, "tensorpotential", MagicMock())
+    monkeypatch.setitem(
+        sys.modules,
+        "tensorpotential.calculator",
+        SimpleNamespace(TPCalculator=factory),
+    )
+    assert wrapper.info()["model_precision"] == ["float32"]
