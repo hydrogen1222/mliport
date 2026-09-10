@@ -626,6 +626,9 @@ Examples:
     )
     neb_parser.add_argument("--min-distance", dest="neb_min_distance", type=float)
     neb_parser.add_argument("--checkpoint-interval", type=int, default=None)
+    neb_parser.add_argument(
+        "--allow-unvalidated-neb", action=argparse.BooleanOptionalAction, default=None
+    )
     neb_parser.add_argument("--fmax-abort", type=float, default=None)
     neb_parser.add_argument(
         "--atom-map",
@@ -1355,6 +1358,7 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             "idpp_mic",
             "neb_min_distance",
             "checkpoint_interval",
+            "allow_unvalidated_neb",
             "fmax_abort",
         ):
             value = getattr(args, key, None)

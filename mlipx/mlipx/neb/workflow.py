@@ -26,6 +26,10 @@ from mlipx.neb.io import (
     resolve_checkpoint_path,
 )
 from mlipx.neb.prepare import BandInput, prepare_band
+from mlipx.neb.revisions import (
+    NEB_CHECKPOINT_SCHEMA_REVISION,
+    NEB_SCIENTIFIC_REVISION,
+)
 from mlipx.neb.schema import NEBOptions, NEBPreparationError
 from mlipx.protocols import CancellationRequested
 from mlipx.queue import resolve_device_uuid
@@ -162,6 +166,17 @@ def _model_record(
         model_alias = source.source.removeprefix("model alias ").strip("'")
     return {
         "model_type": model_type,
+        "actual_device_type": info.get("actual_device_type", "unknown"),
+        "actual_device_logical_index": info.get("actual_device_logical_index"),
+        "actual_device_uuid": info.get("actual_device_uuid"),
+        "inference_mode": info.get(
+            "inference_mode",
+            calculator.inference_mode
+            if hasattr(calculator, "inference_mode")
+            else "default",
+        ),
+        "compile_enabled": info.get("compile_enabled"),
+        "direct_forces": info.get("direct_forces"),
         "model_path": str(Path(resolved.model_path).expanduser().resolve()),
         "model_sha256": _hash_model(resolved.model_path),
         "model_alias": model_alias,
@@ -330,8 +345,16 @@ def _fingerprint(
     options: NEBOptions,
     model: Mapping[str, Any],
 ) -> tuple[dict[str, Any], str]:
+    package_version = _distribution_version("mlipx")
+    if package_version is None:
+        raise NEBPreparationError("Cannot determine mlipx version for resume identity")
     value = {
         "schema": "mlipx.neb-resume-fingerprint/1",
+        "software": {
+            "mlipx_version": package_version,
+            "neb_scientific_revision": NEB_SCIENTIFIC_REVISION,
+            "neb_checkpoint_schema_revision": NEB_CHECKPOINT_SCHEMA_REVISION,
+        },
         "model": {
             key: model.get(key)
             for key in (
@@ -343,6 +366,8 @@ def _fingerprint(
                 "task",
                 "head_effective",
                 "dtype_effective",
+                "inference_mode",
+                "compile_enabled",
             )
         },
         "initial_identity": _identity(band.initial),
@@ -604,9 +629,37 @@ def _run_neb_workflow_locked(
             raise NEBPreparationError("Checkpoint run_id is not a canonical UUID")
     attempt_id = str(uuid.uuid4())
 
+    if resolved.device != "cpu":
+        from mlipx.validation import evaluate
+
+        probe = band.initial.copy()
+        probe.calc = calculator.get_calculator()
+        evaluate(probe)
     model = _model_record(calculator, resolved)
+    from dataclasses import asdict
+    from mlipx.capabilities import require_neb_capability, resolve_capabilities
+
+    capability_method = getattr(calculator, "capabilities", None)
+    capability = (
+        capability_method(model)
+        if callable(capability_method)
+        else resolve_capabilities(
+            model, calculator.get_calculator().implemented_properties
+        )
+    )
+    require_neb_capability(
+        capability,
+        experimental=resolved.run_options.get("allow_unvalidated_neb", False),
+    )
+    model["capabilities"] = asdict(capability)
     _restore_checkpoint_model_source(model, checkpoint_record)
     device_uuid = resolve_device_uuid(resolved.device)
+    if device_uuid is not None:
+        from mlipx.devices import verify_runtime_uuid
+
+        if model["actual_device_type"] != "cuda":
+            raise NEBPreparationError("Backend did not confirm actual CUDA execution")
+        verify_runtime_uuid(model["actual_device_uuid"], device_uuid)
     fingerprint, fingerprint_sha256 = _fingerprint(band, options, model)
     if checkpoint_record is not None:
         recorded_digest = checkpoint_record.get("resume_fingerprint_sha256")
@@ -642,6 +695,9 @@ def _run_neb_workflow_locked(
             "requested": resolved.device,
             "effective": "cpu" if device_uuid is None else device_uuid,
             "effective_uuid": device_uuid,
+            "actual_device_type": model["actual_device_type"],
+            "actual_device_logical_index": model["actual_device_logical_index"],
+            "actual_device_uuid": model["actual_device_uuid"],
         },
         "status": "running",
         "converged": None,

@@ -104,6 +104,7 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "idpp_mic": True,
         "neb_min_distance": 0.5,
         "checkpoint_interval": 10,
+        "allow_unvalidated_neb": False,
     },
     "calculator": {
         # Historical canonical name; the public CLI/TUI calls this CPU Threads.

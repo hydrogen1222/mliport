@@ -62,6 +62,13 @@ class FakeMACEWrapper:
     task = "bulk"
     has_stress = False
 
+    def capabilities(self, model_record):
+        from mlipx.capabilities import CalculatorCapabilities
+
+        return CalculatorCapabilities(
+            True, True, False, "validated", "test-known-answer"
+        )
+
     def __init__(self, calculator=None) -> None:
         self.calculator = calculator or ZeroCalculator()
         self.get_calls = 0
@@ -145,6 +152,9 @@ def test_workflow_writes_context_result_complete_band_and_vasp_export(
         "requested": "cpu",
         "effective": "cpu",
         "effective_uuid": None,
+        "actual_device_type": "unknown",
+        "actual_device_logical_index": None,
+        "actual_device_uuid": None,
     }
     assert result["model"]["backend_version"] == "99.1-test"
     assert result["model"]["framework_versions"] == {"torch": "99.2-test"}
@@ -268,6 +278,27 @@ def test_geometry_resume_preserves_run_id_and_rejects_fingerprint_change(
             verbose=False,
         )
     assert len(list((output / "checkpoints").glob("step_*"))) == checkpoint_count
+
+
+@pytest.mark.parametrize(
+    "revision", ["NEB_SCIENTIFIC_REVISION", "NEB_CHECKPOINT_SCHEMA_REVISION"]
+)
+def test_resume_rejects_changed_software_revision(tmp_path, monkeypatch, revision):
+    from mlipx.neb import workflow
+
+    model, output, _, _ = _run(tmp_path)
+    checkpoint = output / "checkpoints" / "latest"
+    metadata, _ = load_checkpoint(checkpoint)
+    assert metadata["resume_fingerprint"]["software"]["mlipx_version"]
+    monkeypatch.setattr(workflow, revision, 2)
+    with pytest.raises(NEBPreparationError, match="fingerprint is incompatible"):
+        run_neb_workflow(
+            FakeMACEWrapper(),
+            _resolved(model),
+            output_dir=output,
+            resume=checkpoint,
+            verbose=False,
+        )
 
 
 def test_checkpoint_checksum_corruption_fails_closed(tmp_path: Path) -> None:

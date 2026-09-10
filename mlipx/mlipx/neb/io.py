@@ -18,6 +18,7 @@ import numpy as np
 from ase.io import read, write
 from ase.io.trajectory import Trajectory
 
+from mlipx.neb.revisions import NEB_CHECKPOINT_SCHEMA_REVISION
 from mlipx.neb.schema import NEBPreparationError
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from ase import Atoms
 
 
-_CHECKPOINT_SCHEMA = "mlipx.neb-checkpoint/1"
+_CHECKPOINT_SCHEMA = f"mlipx.neb-checkpoint/{NEB_CHECKPOINT_SCHEMA_REVISION}"
 _BAND_KIND = "neb_band"
 _STEP_PATTERN = re.compile(r"step_(\d{6})$")
 

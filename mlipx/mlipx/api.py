@@ -521,6 +521,7 @@ def run_neb(
     idpp_mic: bool | None = None,
     min_distance: float | None = None,
     checkpoint_interval: int | None = None,
+    allow_unvalidated_neb: bool | None = None,
     atom_map=None,
     image_shifts=None,
     verbose: bool = True,
@@ -565,6 +566,7 @@ def run_neb(
         ("idpp_mic", idpp_mic),
         ("neb_min_distance", min_distance),
         ("checkpoint_interval", checkpoint_interval),
+        ("allow_unvalidated_neb", allow_unvalidated_neb),
     ):
         if value is not None:
             extra[name] = value
