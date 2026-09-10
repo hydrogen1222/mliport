@@ -91,3 +91,9 @@ class BaseMLIPCalculator(ABC):
         """
         calc = self.get_calculator()
         return list(calc.implemented_properties)
+
+    def capabilities(self, model_record: dict):
+        """Return evidence-bound capabilities for this exact loaded model."""
+        from mlipx.capabilities import resolve_capabilities
+
+        return resolve_capabilities(model_record, self.implemented_properties)

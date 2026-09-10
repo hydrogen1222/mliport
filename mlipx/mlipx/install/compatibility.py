@@ -232,8 +232,6 @@ class BackendArchProfile:
         cuda_channel: Optional explicit CUDA channel override.
         upstream_supported: The upstream project declares this combination
             as supported.
-        mlipx_verified: mlipx has actually run a smoke test (SP+MD) on real
-            hardware of this architecture family.
         extra_packages: Additional pip packages for this combination.
         notes: Human-readable rationale.
     """
@@ -241,18 +239,35 @@ class BackendArchProfile:
     framework_version: str
     cuda_channel: str | None = None
     upstream_supported: bool = True
-    mlipx_verified: bool = False
     extra_packages: tuple[str, ...] = ()
     notes: str = ""
 
     @property
     def status(self) -> Status:
-        """Derived status: verified / needs_smoke_test / experimental."""
+        """Architecture compatibility is not a workload certification."""
         if not self.upstream_supported:
             return "experimental"
-        if self.mlipx_verified:
-            return "verified"
         return "needs_smoke_test"
+
+    @property
+    def mlipx_verified(self) -> bool:
+        """Compatibility shim: never make a model-independent verified claim."""
+        return False
+
+    @property
+    def workload_support(self) -> dict:
+        """Exact model/runtime evidence is resolved separately by capabilities."""
+        return {
+            workload: {"status": "not_run", "evidence_id": None}
+            for workload in (
+                "installation",
+                "single_point",
+                "short_md",
+                "energy_force_consistency",
+                "neb",
+                "neighbor_cache",
+            )
+        }
 
 
 @dataclass(frozen=True)
@@ -330,52 +345,44 @@ BACKENDS: dict[str, BackendSpec] = {
             "maxwell": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=False,
-                mlipx_verified=False,
                 notes="Experimental. fairchem-core 2.21.0 → torch~=2.8.0. "
                 "Maxwell via cu126 legacy channel; upstream does not test this GPU.",
             ),
             "pascal": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="torch 2.8.0+cu126 includes sm60 kernel. "
                 "fairchem-core 2.21.0 constraint torch~=2.8.0 satisfied.",
             ),
             "volta": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=True,
-                notes="Verified on V100 (sm_70). "
+                notes="Architecture profile: V100 (sm_70). "
                 "torch 2.8.0+cu126 includes sm70 kernel.",
             ),
             "turing": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128) for Turing+.",
             ),
             "ampere": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128) for Ampere.",
             ),
             "ada": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=True,
-                notes="Verified on RTX 4090. Modern CUDA (cu128) for Ada.",
+                notes="Architecture profile: RTX 4090. Modern CUDA (cu128) for Ada.",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128) for Hopper.",
             ),
             "blackwell": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128) for Blackwell.",
             ),
         },
@@ -394,52 +401,44 @@ BACKENDS: dict[str, BackendSpec] = {
             "maxwell": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=False,
-                mlipx_verified=False,
                 notes="Experimental. MACE 0.3.16 has torch>=1.12, no upper bound. "
                 "Maxwell via cu126; upstream does not test this GPU.",
             ),
             "pascal": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="torch 2.8.0+cu126 includes sm60. "
                 "MACE 0.3.16 explicitly fixed torch 2.8 compile issues.",
             ),
             "volta": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=True,
-                notes="Verified on V100 (sm_70). "
+                notes="Architecture profile: V100 (sm_70). "
                 "torch 2.8.0+cu126 includes sm70 kernel.",
             ),
             "turing": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
             "ampere": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
             "ada": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=True,
-                notes="Verified on RTX 4090 with modern CUDA (cu128).",
+                notes="Architecture profile: RTX 4090 with modern CUDA (cu128).",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
             "blackwell": BackendArchProfile(
                 framework_version="2.8.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
         },
@@ -457,14 +456,12 @@ BACKENDS: dict[str, BackendSpec] = {
             "maxwell": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=False,
-                mlipx_verified=False,
                 notes="Experimental. deepmd-kit 3.1.3 pins torch==2.10.0. "
                 "Maxwell via cu126; must be smoke-tested on real hardware.",
             ),
             "pascal": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="P40 installation exposed a CUDA-wheel selection bug; "
                 "torch 2.10.0+cu126 includes sm60 for sm61 compatibility and "
                 "must be pinned including the +cu126 local version. Runtime "
@@ -473,38 +470,32 @@ BACKENDS: dict[str, BackendSpec] = {
             "volta": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=True,
-                notes="Verified on V100 (sm_70). "
+                notes="Architecture profile: V100 (sm_70). "
                 "torch 2.10.0+cu126 includes sm70 kernel.",
             ),
             "turing": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
             "ampere": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
             "ada": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=True,
-                notes="Verified on RTX 4090 with modern CUDA (cu128).",
+                notes="Architecture profile: RTX 4090 with modern CUDA (cu128).",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
             "blackwell": BackendArchProfile(
                 framework_version="2.10.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 notes="Modern CUDA (cu128).",
             ),
         },
@@ -525,7 +516,6 @@ BACKENDS: dict[str, BackendSpec] = {
             "maxwell": BackendArchProfile(
                 framework_version="2.20.0",
                 upstream_supported=False,
-                mlipx_verified=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
                 notes="Experimental. TF 2.20 official wheel build target "
                 "starts at sm_60 (Pascal); Maxwell sm_50 not in the wheel. "
@@ -534,7 +524,6 @@ BACKENDS: dict[str, BackendSpec] = {
             "pascal": BackendArchProfile(
                 framework_version="2.20.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
                 notes="TF 2.20.0 + CUDA 12.5 + cuDNN 9.3. "
                 "Official wheel includes sm_60 target.",
@@ -542,14 +531,13 @@ BACKENDS: dict[str, BackendSpec] = {
             "volta": BackendArchProfile(
                 framework_version="2.20.0",
                 upstream_supported=True,
-                mlipx_verified=True,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
-                notes="Verified on V100 (sm_70). " "TF 2.20.0 + CUDA 12.5 + cuDNN 9.3.",
+                notes="Architecture profile: V100 (sm_70). "
+                "TF 2.20.0 + CUDA 12.5 + cuDNN 9.3.",
             ),
             "turing": BackendArchProfile(
                 framework_version="2.20.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
                 notes="TF 2.20.0 + CUDA 12.5 + cuDNN 9.3. "
                 "sm75 via sm70 SASS forward-compat.",
@@ -557,7 +545,6 @@ BACKENDS: dict[str, BackendSpec] = {
             "ampere": BackendArchProfile(
                 framework_version="2.20.0",
                 upstream_supported=True,
-                mlipx_verified=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
                 notes="TF 2.20.0 + CUDA 12.5 + cuDNN 9.3. "
                 "sm86 via sm80 SASS forward-compat.",
@@ -565,22 +552,20 @@ BACKENDS: dict[str, BackendSpec] = {
             "ada": BackendArchProfile(
                 framework_version="2.20.0",
                 upstream_supported=True,
-                mlipx_verified=True,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
-                notes="Verified on RTX 4090. TF 2.20.0 + CUDA 12.5 + "
+                notes="Architecture profile: RTX 4090. TF 2.20.0 + CUDA 12.5 + "
                 "cuDNN 9.3; sm89 explicitly compiled.",
             ),
             "hopper": BackendArchProfile(
                 framework_version="2.20.0",
-                upstream_supported=True,
-                mlipx_verified=False,
+                upstream_supported=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
-                notes="TF 2.20.0 + CUDA 12.5 + cuDNN 9.3. " "compute_90 via PTX JIT.",
+                notes="TF 2.20.0 + CUDA 12.5 + cuDNN 9.3. "
+                "compute_90 via PTX JIT (experimental).",
             ),
             "blackwell": BackendArchProfile(
                 framework_version="2.20.0",
-                upstream_supported=True,
-                mlipx_verified=False,
+                upstream_supported=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
                 notes="TF 2.20.0 + CUDA 12.5 + cuDNN 9.3. "
                 "Blackwell not in TF 2.20 build target; PTX JIT may work.",

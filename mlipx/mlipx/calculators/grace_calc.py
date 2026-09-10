@@ -390,6 +390,7 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
         self._neighbor_skin = neighbor_skin
         self._calculator: Calculator | None = None
         self._neighbor_cache_inst: _NeighborListCache | None = None
+        self._inference_failed = False
 
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model file not found: {self.model_path}")
@@ -436,6 +437,11 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
 
     def get_calculator(self) -> Calculator:
         """Return the cached GRACE ASE calculator (lazy import)."""
+        if self._inference_failed:
+            raise RuntimeError(
+                "GRACE inference failed; create a fresh wrapper instead of "
+                "reusing potentially incomplete runtime/cache state."
+            )
         if self._calculator is None:
             self._apply_device_env()
             try:
@@ -476,11 +482,12 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
             # mlipx does not expose those UQ tensors, so retaining them wastes
             # substantial host/GPU memory without changing the requested
             # physical observables.
-            self._calculator = TPCalculator(
+            candidate = TPCalculator(
                 model=str(self.model_path),
                 enable_uq_if_available=False,
             )
-            builders = getattr(self._calculator, "data_builders", None)
+            self._guard_inference(candidate)
+            builders = getattr(candidate, "data_builders", None)
             builder = builders[0] if builders else None
             if builder is None or not hasattr(builder, "extract_from_ase_atoms"):
                 if self._neighbor_cache or self._task == "molecule":
@@ -489,7 +496,8 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
                         "compatible geometry data builder; mlipx cannot install "
                         "the requested cache or preserve molecular PBC semantics."
                     )
-                return self._calculator
+                self._calculator = candidate
+                return candidate
             if self._neighbor_cache:
                 required = (
                     "cutoff",
@@ -507,13 +515,34 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
                         "with --no-neighbor-cache or install a supported version."
                     )
                 cache = _NeighborListCache(builder, self._neighbor_skin)
-                self._neighbor_cache_inst = cache
                 builder.extract_from_ase_atoms = cache  # type: ignore[method-assign]
+                self._neighbor_cache_inst = cache
             else:
                 builder.extract_from_ase_atoms = _PBCPreservingExtractor(
                     builder.extract_from_ase_atoms
                 )  # type: ignore[method-assign]
+            self._calculator = candidate
         return self._calculator
+
+    def _guard_inference(self, candidate) -> None:
+        """Invalidate failed inference state, including a failing first call."""
+        calculate = getattr(candidate, "calculate", None)
+        if not callable(calculate):
+            return
+
+        def guarded(*args, **kwargs):
+            if self._inference_failed:
+                raise RuntimeError("GRACE calculator is in a failed inference state")
+            try:
+                return calculate(*args, **kwargs)
+            except BaseException:
+                self._inference_failed = True
+                self._calculator = None
+                self._neighbor_cache_inst = None
+                candidate.results = {}
+                raise
+
+        candidate.calculate = guarded
 
     @property
     def _uses_gpu(self) -> bool:
@@ -550,34 +579,10 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
             ) from e
 
     def _apply_device_env(self) -> None:
-        """Honour a requested device for GRACE/TensorFlow (plan section 7.5).
+        """Validate isolation; allocation policy uses the TensorFlow API."""
+        from mlipx.devices import require_isolated_visibility
 
-        ``TPCalculator`` has no ``device`` parameter; TensorFlow device
-        placement is governed by ``CUDA_VISIBLE_DEVICES``, which must be set
-        *before* TensorFlow is imported. mlipx imports tensorpotential lazily
-        here, so setting the env var just above makes a ``cuda:N`` / ``cpu``
-        request actually take effect. An explicit mlipx device selection takes
-        precedence over an inherited environment value.
-        """
-        import os  # noqa: PLC0415
-
-        dev = str(self._device).lower()
-        if dev.startswith("cuda:") and dev != "cuda:":
-            idx = dev.split(":", 1)[1]
-            os.environ["CUDA_VISIBLE_DEVICES"] = idx
-        elif dev == "cpu":
-            # Hide GPUs so TensorFlow runs on CPU.
-            os.environ["CUDA_VISIBLE_DEVICES"] = ""
-        if dev == "cpu":
-            return
-        if self._gpu_memory_limit_mb is not None:
-            # A logical-device cap and TensorFlow memory growth are mutually
-            # exclusive. Set this before importing TensorFlow.
-            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
-        elif self._gpu_memory_growth:
-            # This environment-level guard is read by TensorFlow's BFC
-            # allocator and complements the explicit config call below.
-            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+        require_isolated_visibility(self._device, "GRACE")
 
     def _actual_device(self) -> str:
         """Best-effort actual device, else 'unknown' (plan section 7.5).
@@ -611,7 +616,14 @@ class GRACECalculatorWrapper(BaseMLIPCalculator):
         when TensorFlow placement cannot be read). The legacy ``device`` key is
         kept (== requested) for backward-compatible output writers (plan 7.5).
         """
+        from mlipx.devices import tensorflow_output_identity
+
+        self.get_calculator()
+        identity = tensorflow_output_identity(
+            getattr(self._calculator, "outputs", None), self._device
+        )
         return {
+            **identity,
             "model_type": "grace",
             "model_path": str(self.model_path),
             "requested_device": self._device,

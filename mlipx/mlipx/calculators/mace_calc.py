@@ -236,4 +236,12 @@ class MACECalculatorWrapper(BaseMLIPCalculator):
                 except Exception:
                     pass
             base["num_models"] = len(model) if isinstance(model, list) else 1
+            from mlipx.devices import torch_model_identity
+
+            base.update(
+                torch_model_identity(
+                    model[0] if isinstance(model, list) and model else None,
+                    self._device,
+                )
+            )
         return base

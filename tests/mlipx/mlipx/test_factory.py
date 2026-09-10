@@ -225,6 +225,8 @@ class TestGenericWrappers:
         assert w._head == "Domains_SSE_PBE"
 
     def test_dpa_multitask_model_requires_explicit_head(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+
         class _Eval:
             def get_model_def_script(self):
                 return {
@@ -252,6 +254,8 @@ class TestGenericWrappers:
     def test_dpa_records_canonical_active_head_and_precision(
         self, tmp_path, monkeypatch
     ):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+
         class _Eval:
             def get_model_def_script(self):
                 return {
@@ -303,11 +307,14 @@ class TestGenericWrappers:
 
 
 class TestDpaGraceDevice:
-    """Plan section 6.2 / 7.5: DPA/GRACE device must take effect (via env) and
-    info() must distinguish requested vs actual device (never guess)."""
+    """Adapters must not change parent visibility or reinterpret GPU ordinals."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated_cpu(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
 
     def test_dpa_honours_cuda_index(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-selected")
 
         class _FakeDPCalc:
             implemented_properties: ClassVar = ["energy", "forces", "stress"]
@@ -320,17 +327,17 @@ class TestDpaGraceDevice:
 
         model = tmp_path / "dpa.pth"
         model.write_text("x")
-        w = DPACalculatorWrapper(model, device="cuda:1", task="bulk")
+        w = DPACalculatorWrapper(model, device="cuda:0", task="bulk")
         w.get_calculator()
-        assert os.environ.get("CUDA_VISIBLE_DEVICES") == "1"
+        assert os.environ.get("CUDA_VISIBLE_DEVICES") == "GPU-selected"
         info = w.info()
-        assert info["requested_device"] == "cuda:1"
-        assert info["device"] == "cuda:1"  # backward-compat alias
+        assert info["requested_device"] == "cuda:0"
+        assert info["device"] == "cuda:0"  # backward-compat alias
         assert info["actual_device"] == "unknown"
         fake_dp_cls.assert_called_once_with(model=str(model), type_dict=None)
 
     def test_dpa_cpu_hides_gpus(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
 
         class _FakeDPCalc:
             dp = None
@@ -360,11 +367,13 @@ class TestDpaGraceDevice:
         model = tmp_path / "dpa.pth"
         model.write_text("x")
         w = DPACalculatorWrapper(model, device="cuda:1", task="bulk")
-        w.get_calculator()
-        assert os.environ.get("CUDA_VISIBLE_DEVICES") == "1"
+        with pytest.raises(RuntimeError, match="process-level device isolation"):
+            w.get_calculator()
+        assert os.environ.get("CUDA_VISIBLE_DEVICES") == "2"
+        fake_dp_cls.assert_not_called()
 
     def test_grace_honours_cuda_index(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-selected")
         monkeypatch.delenv("TF_FORCE_GPU_ALLOW_GROWTH", raising=False)
 
         class _FakeTPCalc:
@@ -381,23 +390,23 @@ class TestDpaGraceDevice:
         model = tmp_path / "grace_model"
         model.mkdir()
         w = GRACECalculatorWrapper(
-            model, device="cuda:1", task="bulk", neighbor_cache=False
+            model, device="cuda:0", task="bulk", neighbor_cache=False
         )
         w.get_calculator()
-        assert os.environ.get("CUDA_VISIBLE_DEVICES") == "1"
+        assert os.environ.get("CUDA_VISIBLE_DEVICES") == "GPU-selected"
         info = w.info()
-        assert info["requested_device"] == "cuda:1"
+        assert info["requested_device"] == "cuda:0"
         assert info["actual_device"] == "unknown"
         fake_tf.config.experimental.set_memory_growth.assert_called_once_with(
             "GPU:0", True
         )
-        assert os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] == "true"
+        assert "TF_FORCE_GPU_ALLOW_GROWTH" not in os.environ
         fake_tp_cls.assert_called_once_with(
             model=str(model), enable_uq_if_available=False
         )
 
     def test_grace_cpu_hides_gpus(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
         fake_tp_cls = MagicMock(return_value=MagicMock())
         mod = MagicMock()
         mod.TPCalculator = fake_tp_cls
@@ -463,6 +472,7 @@ class TestDpaGraceDevice:
         model = tmp_path / "grace_model"
         model.mkdir()
 
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-selected")
         wrapper = GRACECalculatorWrapper(model, device="cuda", gpu_memory_limit_mb=6144)
         wrapper.get_calculator()
 
@@ -471,7 +481,7 @@ class TestDpaGraceDevice:
             memory_limit=6144
         )
         fake_tf.config.experimental.set_memory_growth.assert_not_called()
-        assert os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] == "false"
+        assert os.environ.get("TF_FORCE_GPU_ALLOW_GROWTH") is None
         assert wrapper.info()["gpu_memory_limit_mb"] == 6144
 
     def test_grace_gpu_policy_fails_closed_after_tf_initialization(
@@ -490,6 +500,7 @@ class TestDpaGraceDevice:
         model = tmp_path / "grace_model"
         model.mkdir()
 
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-selected")
         wrapper = GRACECalculatorWrapper(model, device="cuda")
         with pytest.raises(RuntimeError, match="refusing to run"):
             wrapper.get_calculator()

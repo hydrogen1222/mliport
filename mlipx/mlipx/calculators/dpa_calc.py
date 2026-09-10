@@ -71,6 +71,15 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
         """Return the cached DPA ASE calculator (lazy import)."""
         if self._calculator is None:
             self._apply_device_env()
+            if self.model_path.suffix.lower() == ".pb":
+                try:
+                    import tensorflow  # noqa: F401, PLC0415
+                except ImportError as exc:
+                    raise ImportError(
+                        "DPA .pb requires the dpa-tensorflow-legacy runtime. "
+                        "The dpa-pytorch installer profile only certifies .pt/.pth; "
+                        "install a compatible DeepMD TensorFlow environment separately."
+                    ) from exc
             self._preload_packaged_cuda_runtime()
             try:
                 from deepmd.calculator import DP  # noqa: PLC0415
@@ -154,24 +163,10 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
         self._model_precision = _deepmd_precisions(selected)
 
     def _apply_device_env(self) -> None:
-        """Honour a requested device for DeepMD (plan section 6.2).
+        """Validate process isolation; never reinterpret a visible ordinal."""
+        from mlipx.devices import require_isolated_visibility
 
-        The ASE ``DP`` calculator has no ``device`` parameter; DeepMD places
-        the model through ``CUDA_VISIBLE_DEVICES`` / ``deepmd.env.DEVICE``.
-        Setting the env var *before* deepmd is imported (mlipx imports it
-        lazily above) makes a ``cuda:N`` (or ``cpu``) request actually take
-        effect. An explicit mlipx device selection takes precedence over an
-        inherited environment value.
-        """
-        import os  # noqa: PLC0415
-
-        dev = str(self._device).lower()
-        if dev.startswith("cuda:") and dev != "cuda:":
-            idx = dev.split(":", 1)[1]
-            os.environ["CUDA_VISIBLE_DEVICES"] = idx
-        elif dev == "cpu":
-            # Hide GPUs so the DeepMD backend falls back to CPU.
-            os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        require_isolated_visibility(self._device, "DPA")
 
     @staticmethod
     def _preload_packaged_cuda_runtime() -> None:
@@ -233,8 +228,19 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
         legacy ``device`` key is kept (== requested) for backward-compatible
         output writers (plan section 6.2).
         """
+        from mlipx.devices import torch_model_identity
+
+        self.get_calculator()
+        evaluator = getattr(getattr(self._calculator, "dp", None), "deep_eval", None)
+        identity = torch_model_identity(getattr(evaluator, "dp", None), self._device)
         return {
+            **identity,
             "model_type": "dpa",
+            "backend_profile": (
+                "dpa-tensorflow-legacy"
+                if self.model_path.suffix.lower() == ".pb"
+                else "dpa-pytorch"
+            ),
             "model_path": str(self.model_path),
             "requested_device": self._device,
             "actual_device": self._actual_device(),

@@ -339,12 +339,24 @@ class UMACalculator(BaseMLIPCalculator):
         Returns:
             Dictionary with calculator details
         """
+        from mlipx.devices import torch_model_identity
+
+        self.get_calculator()
+        model = getattr(self._predictor, "model", None)
+        if getattr(self._predictor, "lazy_model_intialized", None) is False:
+            model = None  # Upstream has not moved/executed this model yet.
+        identity = torch_model_identity(model, self.device)
         return {
+            **identity,
             "model_type": "uma",
             "model_path": str(self.model_path),
             "task": self.task,
             "device": self.device,
             "inference_mode": self.inference_mode,
+            "direct_forces": getattr(self._predictor, "direct_forces", None),
+            "compile_enabled": getattr(
+                getattr(self._predictor, "inference_settings", None), "compile", None
+            ),
             "implemented_properties": self.implemented_properties,
             "has_stress": self.has_stress,
         }

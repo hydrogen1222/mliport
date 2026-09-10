@@ -159,11 +159,11 @@ def test_status_derivation() -> None:
 
 
 def test_verified_platforms_match_real_hardware() -> None:
-    """Only the real-tested V100 and RTX 4090 families are verified."""
+    """No architecture-wide claim may substitute for exact workload evidence."""
 
     for backend in BACKENDS.values():
-        for arch_name, bp in backend.arch_profiles.items():
-            if bp.mlipx_verified:
-                assert arch_name in {"volta", "ada"}
-        assert backend.arch_profiles["volta"].mlipx_verified
-        assert backend.arch_profiles["ada"].mlipx_verified
+        for bp in backend.arch_profiles.values():
+            assert not bp.mlipx_verified
+            assert all(
+                record["evidence_id"] is None for record in bp.workload_support.values()
+            )

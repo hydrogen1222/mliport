@@ -323,7 +323,7 @@ def setup_report_json(gpus: list[GpuInfo] | None) -> dict[str, Any]:
                     "framework_version": bp.framework_version,
                     "status": bp.status,
                     "upstream_supported": bp.upstream_supported,
-                    "mlipx_verified": bp.mlipx_verified,
+                    "workloads": bp.workload_support,
                     "notes": bp.notes,
                 }
 

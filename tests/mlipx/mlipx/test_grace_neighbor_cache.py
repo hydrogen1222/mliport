@@ -17,9 +17,16 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from ase import Atoms
-from matscipy.neighbours import neighbour_list
 
-from mlipx.calculators.grace_calc import _NeighborListCache
+# These tests exercise the real tensorpotential geometry-data contract via
+# matscipy; skip them (instead of erroring) in environments without those
+# optional GRACE dependencies. They run in the dedicated GRACE venv.
+pytest.importorskip("matscipy")
+pytest.importorskip("tensorpotential")
+
+from matscipy.neighbours import neighbour_list  # noqa: E402
+
+from mlipx.calculators.grace_calc import _NeighborListCache  # noqa: E402
 
 
 class FakeBuilder:

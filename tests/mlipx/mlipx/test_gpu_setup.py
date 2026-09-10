@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest import mock
 
+import pytest
+
 from mlipx.gpu_setup import (
     GpuInfo,
     cc_arch_name,
@@ -13,10 +15,15 @@ from mlipx.gpu_setup import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _unmasked_probe(monkeypatch):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+
 def test_detect_gpus_parses_plain_csv() -> None:
     fake = mock.Mock(
         returncode=0,
-        stdout="NVIDIA GeForce RTX 4090,8.9,535.104.05,24564\n",
+        stdout="NVIDIA GeForce RTX 4090,8.9,535.104.05,24564,0,GPU-test\n",
     )
     with mock.patch("mlipx.install.hardware.subprocess.run", return_value=fake):
         gpus = detect_gpus()
@@ -31,7 +38,7 @@ def test_detect_gpus_parses_plain_csv() -> None:
 def test_detect_gpus_handles_quoted_commas_in_name() -> None:
     fake = mock.Mock(
         returncode=0,
-        stdout='"Tesla V100-SXM2-16GB, Special",7.0,535.104.05,16384\n',
+        stdout='"Tesla V100-SXM2-16GB, Special",7.0,535.104.05,16384,0,GPU-test\n',
     )
     with mock.patch("mlipx.install.hardware.subprocess.run", return_value=fake):
         gpus = detect_gpus()
@@ -43,7 +50,8 @@ def test_detect_gpus_handles_quoted_commas_in_name() -> None:
 def test_detect_gpus_skips_malformed_rows() -> None:
     fake = mock.Mock(
         returncode=0,
-        stdout="bad row without enough fields\n" "NVIDIA A100,8.0,535.104.05,40960\n",
+        stdout="bad row without enough fields\n"
+        "NVIDIA A100,8.0,535.104.05,40960,0,GPU-test\n",
     )
     with mock.patch("mlipx.install.hardware.subprocess.run", return_value=fake):
         gpus = detect_gpus()
