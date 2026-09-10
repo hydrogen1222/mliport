@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from mlipx.install.compatibility import classify_gpu
+from mlipx.devices import VisibleGpu, visible_gpus
 
 # Minimum VRAM (MiB) to comfortably run the UMA-s model (~1.1 GB) on small
 # systems. Below this we warn (still allowed).
@@ -40,6 +41,9 @@ class GpuInfo:
     cc_minor: int
     driver_version: str
     vram_mib: int
+    uuid: str | None = None
+    physical_index: int | None = None
+    logical_index: int | None = None
 
     @property
     def compute_capability(self) -> str:
@@ -77,7 +81,7 @@ def detect_gpus() -> list[GpuInfo] | None:
         is unavailable (no NVIDIA driver installed). Never raises.
     """
     query = (
-        "name,compute_cap,driver_version,memory.total",
+        "name,compute_cap,driver_version,memory.total,index,uuid",
         "--format=csv,noheader,nounits",
     )
     try:
@@ -106,7 +110,7 @@ def detect_gpus() -> list[GpuInfo] | None:
         parts = [p.strip() for p in parts]
         if not parts or all(p == "" for p in parts):
             continue
-        if len(parts) < 4:
+        if len(parts) != 6:
             continue
         name, cc, driver, vram = parts[0], parts[1], parts[2], parts[3]
         try:
@@ -114,6 +118,7 @@ def detect_gpus() -> list[GpuInfo] | None:
             cc_major = int(cc_major_str)
             cc_minor = int(cc_minor_str) if cc_minor_str else 0
             vram_mib = int(vram)
+            physical_index = int(parts[4])
         except ValueError:
             continue
         gpus.append(
@@ -123,10 +128,33 @@ def detect_gpus() -> list[GpuInfo] | None:
                 cc_minor=cc_minor,
                 driver_version=driver,
                 vram_mib=vram_mib,
+                physical_index=physical_index,
+                uuid=parts[5],
             )
         )
 
-    return gpus or None
+    try:
+        visible = visible_gpus(
+            [
+                VisibleGpu(
+                    i,
+                    gpu.uuid,
+                    gpu.physical_index,
+                    gpu.name,
+                    (gpu.cc_major, gpu.cc_minor),
+                )
+                for i, gpu in enumerate(gpus)
+            ]
+        )
+    except RuntimeError:
+        return None
+    by_uuid = {gpu.uuid: gpu for gpu in gpus}
+    selected = []
+    for entry in visible:
+        gpu = by_uuid[entry.uuid]
+        gpu.logical_index = entry.logical_index
+        selected.append(gpu)
+    return selected or None
 
 
 def _pick_oldest(gpus: Sequence[GpuInfo]) -> GpuInfo:

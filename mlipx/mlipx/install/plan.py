@@ -407,6 +407,11 @@ def generate_plan(
         plan.steps.append(_venv_step(backend, py_ver))
 
         if engine == "grace":
+            if is_cpu:
+                plan.warnings.append(
+                    "TensorPotential 0.6.0 on Linux requires tensorflow[and-cuda] "
+                    "even for CPU execution. This is not a CUDA-free minimal install."
+                )
             bp = get_backend_arch_profile("grace", arch_name) if not is_cpu else None
             if is_cpu:
                 # Use any arch profile's framework version (all use TF 2.20).
@@ -438,6 +443,63 @@ def generate_plan(
                 _torch_steps(backend, arch_name, bp, src, cuda_tag, cpu=is_cpu)
             )
 
+        # One immutable constraint set across every resolver stage. In
+        # particular, installing the backend must not replace the CUDA build
+        # selected by the earlier framework stage.
+        framework_pin = f"{backend.framework}=={bp.framework_version}"
+        if backend.framework == "torch":
+            framework_pin += "+cpu" if is_cpu else f"+{cuda_tag}"
+        pins = [framework_pin, backend.requirement, *bp.extra_packages]
+        pins.extend(pkg for pkg in backend.install_packages()[1:] if "==" in pkg)
+        constraint_path = f"{backend.venv_name}/mlipx-constraints.txt"
+        constraint_text = "\n".join(dict.fromkeys(pins)) + "\n"
+        first_pip = next(
+            i
+            for i, step in enumerate(plan.steps)
+            if step.stage == "pip"
+            and step.argv[step.argv.index("--python") + 1]
+            == f"{backend.venv_name}/bin/python"
+        )
+        plan.steps.insert(
+            first_pip,
+            InstallStep(
+                stage="constraints",
+                description=f"Freeze {backend.label} dependency contract",
+                argv=[
+                    f"{backend.venv_name}/bin/python",
+                    "-c",
+                    "from pathlib import Path; import sys; "
+                    "Path(sys.argv[1]).write_text(sys.argv[2], encoding='utf-8')",
+                    constraint_path,
+                    constraint_text,
+                ],
+            ),
+        )
+        for step in plan.steps[first_pip + 1 :]:
+            if step.stage == "pip":
+                step.argv.extend(["--constraint", constraint_path])
+        python = f"{backend.venv_name}/bin/python"
+        plan.steps.append(
+            InstallStep(
+                stage="check",
+                description=f"Check {backend.label} dependency consistency",
+                argv=["uv", "pip", "check", "--python", python],
+            )
+        )
+        plan.steps.append(
+            InstallStep(
+                stage="inventory",
+                description=f"Record {backend.label} final inventory",
+                argv=[
+                    python,
+                    "-m",
+                    "mlipx.install.inventory",
+                    "--write",
+                    "--constraints",
+                    constraint_path,
+                ],
+            )
+        )
         if verify:
             plan.steps.append(_verify_step(backend, "cpu" if is_cpu else device))
 

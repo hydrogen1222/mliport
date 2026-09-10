@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mlipx.config import get_schema
+from mlipx.devices import VisibleGpu, visible_gpus
 from mlipx.jobs import JobManager, JobStatus, _lock_file, _unlock_file
 
 if TYPE_CHECKING:
@@ -124,6 +125,7 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "idpp_mic": ("--idpp-mic", "--no-idpp-mic"),
     "neb_min_distance": ("--min-distance",),
     "checkpoint_interval": ("--checkpoint-interval",),
+    "allow_unvalidated_neb": ("--allow-unvalidated-neb", "--no-allow-unvalidated-neb"),
 }
 
 
@@ -637,18 +639,6 @@ def resolve_device_uuid(device: str) -> str | None:
         )
     local_ordinal = int(match.group(1) or 0)
 
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
-    if visible is None:
-        selector = str(local_ordinal)
-    else:
-        tokens = [token.strip() for token in visible.split(",") if token.strip()]
-        if not tokens or visible.strip() == "-1" or local_ordinal >= len(tokens):
-            raise RuntimeError(
-                f"CUDA device {device!r} is not present in CUDA_VISIBLE_DEVICES="
-                f"{visible!r}"
-            )
-        selector = tokens[local_ordinal]
-
     try:
         result = subprocess.run(
             [
@@ -671,26 +661,20 @@ def resolve_device_uuid(device: str) -> str | None:
             f"Cannot resolve {device!r} to a GPU UUID: nvidia-smi {detail}"
         )
 
-    by_index: dict[str, str] = {}
-    known_uuids: set[str] = set()
+    inventory: list[VisibleGpu] = []
     for line in result.stdout.splitlines():
         fields = [field.strip() for field in line.split(",", maxsplit=1)]
         if len(fields) != 2 or not fields[0].isdigit() or not fields[1]:
             raise RuntimeError(f"Malformed nvidia-smi GPU inventory line: {line!r}")
-        by_index[fields[0]] = fields[1]
-        known_uuids.add(fields[1])
-
-    if selector.startswith(("GPU-", "MIG-")):
-        if selector not in known_uuids:
-            raise RuntimeError(
-                f"CUDA_VISIBLE_DEVICES references unknown GPU UUID {selector!r}"
-            )
-        return selector
-    if not selector.isdigit() or selector not in by_index:
-        raise RuntimeError(
-            f"CUDA_VISIBLE_DEVICES selector {selector!r} cannot be mapped to a GPU UUID"
+        inventory.append(
+            VisibleGpu(len(inventory), fields[1], int(fields[0]), "", None)
         )
-    return by_index[selector]
+    visible = visible_gpus(inventory)
+    if local_ordinal >= len(visible):
+        raise RuntimeError(
+            f"CUDA device {device!r} is not present in CUDA_VISIBLE_DEVICES"
+        )
+    return visible[local_ordinal].uuid
 
 
 class QueueScheduler:

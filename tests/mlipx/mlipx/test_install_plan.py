@@ -108,7 +108,7 @@ def test_p40_dpa_plan_pins_exact_legacy_torch_build() -> None:
     torch_step = next(
         step
         for step in plan.steps
-        if any(arg.startswith("torch==") for arg in step.argv)
+        if step.stage == "pip" and any(arg.startswith("torch==") for arg in step.argv)
     )
     assert "torch==2.10.0+cu126" in torch_step.argv
     assert "--find-links" in torch_step.argv
@@ -123,7 +123,7 @@ def test_4090_plan_modern() -> None:
     assert "cu128" in argv
     assert "cu126" not in argv
     assert "torch==2.10.0+cu128" in argv
-    assert not any("DPA" in w and "needs smoke test" in w for w in plan.warnings)
+    assert any("DPA" in w and "needs smoke test" in w for w in plan.warnings)
 
 
 def test_mixed_gpu_uses_oldest() -> None:
@@ -279,7 +279,9 @@ def test_china_source_all_packages_use_mirror() -> None:
     for step in plan.steps:
         joined = " ".join(step.argv)
         # A standalone torch install step has a bare "torch==X" token.
-        is_torch = any(a.startswith("torch==") for a in step.argv)
+        is_torch = step.stage == "pip" and any(
+            a.startswith("torch==") for a in step.argv
+        )
         if is_torch:
             # torch wheel → Aliyun; transitive packages → selected PyPI mirror
             assert "aliyun" in joined

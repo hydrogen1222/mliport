@@ -135,6 +135,17 @@ def _probe_output_tail(stdout: str, stderr: str, *, limit: int = 8) -> str:
     return "\n".join(lines[-limit:])
 
 
+def _probe_environment(device: str) -> dict[str, str]:
+    """Use the same immutable identity/isolation contract as queued jobs."""
+    from mlipx.job_worker import leased_process_environment
+    from mlipx.queue import resolve_device_uuid
+
+    _, environment = leased_process_environment(
+        {"device": device, "device_uuid": resolve_device_uuid(device)}, [], os.environ
+    )
+    return environment
+
+
 def _runtime_probe(
     engine: str,
     device: str,
@@ -219,11 +230,7 @@ except BaseException as exc:
 print({_PROBE_SENTINEL!r} + json.dumps(payload, sort_keys=True))
 raise SystemExit(0 if payload["ok"] else 1)
 """
-    env = os.environ.copy()
-    if device == "cpu":
-        env["CUDA_VISIBLE_DEVICES"] = ""
-    elif device.startswith("cuda:"):
-        env["CUDA_VISIBLE_DEVICES"] = device.split(":", 1)[1]
+    env = _probe_environment(device)
 
     try:
         completed = subprocess.run(
@@ -373,11 +380,7 @@ except BaseException as exc:
 print({_PROBE_SENTINEL!r} + json.dumps(payload, sort_keys=True))
 raise SystemExit(0 if payload["ok"] else 1)
 """
-    env = os.environ.copy()
-    if device == "cpu":
-        env["CUDA_VISIBLE_DEVICES"] = ""
-    elif device.startswith("cuda:"):
-        env["CUDA_VISIBLE_DEVICES"] = device.split(":", 1)[1]
+    env = _probe_environment(device)
     try:
         completed = subprocess.run(
             [sys.executable, "-c", script],
@@ -533,6 +536,29 @@ def run_diagnostics(
         Tuple of (results list, number of failures).
     """
     checks: list[dict[str, Any]] = []
+    from mlipx.install.inventory import verify_inventory
+
+    try:
+        inventory_present = verify_inventory()
+        checks.append(
+            {
+                "name": "Installer inventory",
+                "value": "matched" if inventory_present else "not recorded",
+                "status": "ok" if inventory_present else "warn",
+                "detail": "Exact installed package/RECORD identity checked."
+                if inventory_present
+                else "Legacy/manual environment: no installer inventory certification.",
+            }
+        )
+    except (RuntimeError, ValueError, KeyError, OSError) as exc:
+        checks.append(
+            {
+                "name": "Installer inventory",
+                "value": "mismatch",
+                "status": "fail",
+                "detail": str(exc),
+            }
+        )
     target_engine = str(engine).strip().lower()
     if target_engine == "fairchem":
         target_engine = "uma"
