@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ase.constraints import FixAtoms
+from ase.io import read as ase_read
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import (
@@ -480,6 +482,170 @@ class ConfigScreen(Screen):
                 id="fmax-abort-input",
             )
 
+        elif calc_type == "neb":
+            from mlipx.config.defaults import BUILTIN_DEFAULTS
+
+            neb_defaults = BUILTIN_DEFAULTS.get("neb", {})
+
+            def neb_hint(key: str) -> str:
+                value = neb_defaults.get(key)
+                return "default: -" if value is None else f"default: {value}"
+
+            def neb_number(key: str, config_key: str | None = None) -> Input:
+                stored = self.app.get_config(config_key or key)
+                return Input(
+                    value="" if stored is None else str(stored),
+                    placeholder=neb_hint(key),
+                    id=f"{config_key or key}-input",
+                )
+
+            def neb_bool(config_key: str, widget_id: str) -> Switch:
+                stored = self.app.get_config(config_key)
+                default = neb_defaults.get(config_key, False)
+                return Switch(
+                    value=bool(default if stored is None else stored),
+                    id=widget_id,
+                )
+
+            yield Static("🧭 Endpoints & Mapping", classes="section-title")
+
+            yield Label("Final Endpoint File:")
+            yield Input(
+                placeholder="e.g., final.vasp (relative paths supported)",
+                value=str(self.app.get_config("neb_final", "") or ""),
+                id="final-structure-input",
+            )
+            yield Static("", id="final-structure-status")
+
+            resume = self.app.get_config("neb_resume")
+            yield Label("Resume From (checkpoint dir, checkpoints root, or run dir):")
+            yield Input(
+                placeholder="blank = new run from endpoints",
+                value=str(resume or ""),
+                id="neb-resume-input",
+            )
+
+            yield Label("Atom Map (0-based final indices in initial-atom order):")
+            yield Input(
+                placeholder="blank = atoms already in the same order",
+                value=str(self.app.get_config("neb_atom_map_text", "") or ""),
+                id="atom-map-input",
+            )
+
+            yield Label("Image Shifts (per atom: rows ';', lattice ','):")
+            yield Input(
+                placeholder="e.g., 0,0,0;1,0,0 (blank = automatic)",
+                value=str(self.app.get_config("neb_image_shifts_text", "") or ""),
+                id="image-shifts-input",
+            )
+
+            yield Static("", id="neb-preview")
+
+            yield Static("🛤️  NEB Path", classes="section-title")
+
+            yield Label("Intermediate Images (endpoints are additional):")
+            yield neb_number("n_intermediate_images")
+
+            yield Label("Interpolation:")
+            _stored = self.app.get_config("neb_interpolation")
+            yield Select(
+                options=[("Linear", "linear"), ("IDPP", "idpp")],
+                value=str(_stored)
+                if _stored is not None
+                else str(neb_defaults.get("neb_interpolation", "linear")),
+                id="neb-interpolation-select",
+            )
+
+            yield Horizontal(
+                Label("Climbing Image (CI-NEB):"),
+                neb_bool("climb", "neb-climb-switch"),
+                classes="switch-row",
+            )
+
+            yield Label("Spring Constant (eV/Å²):")
+            yield neb_number("neb_spring")
+
+            yield Label("Path Convention:")
+            _stored = self.app.get_config("path_convention")
+            yield Select(
+                options=[
+                    ("Minimum image (mic)", "mic"),
+                    ("Unwrapped", "unwrapped"),
+                ],
+                value=str(_stored)
+                if _stored is not None
+                else str(neb_defaults.get("path_convention", "mic")),
+                id="neb-path-convention-select",
+            )
+
+            yield Label("Minimum Interatomic Distance (Å):")
+            yield neb_number("neb_min_distance")
+
+            yield Label("IDPP Fmax (eV/Å):", id="idpp_fmax-label")
+            yield neb_number("idpp_fmax")
+            yield Label("IDPP Steps:", id="idpp_steps-label")
+            yield neb_number("idpp_steps")
+            yield Horizontal(
+                Label("IDPP Minimum-Image Convention:", id="idpp_mic-label"),
+                neb_bool("idpp_mic", "idpp-mic-switch"),
+                classes="switch-row",
+            )
+
+            yield Static("🧱 Endpoint Policy", classes="section-title")
+
+            yield Label("Endpoint Policy:")
+            _stored = self.app.get_config("endpoint_policy")
+            yield Select(
+                options=[
+                    ("Validate (fail if endpoints move)", "validate"),
+                    ("Relax endpoints first", "relax"),
+                ],
+                value=str(_stored)
+                if _stored is not None
+                else str(neb_defaults.get("endpoint_policy", "validate")),
+                id="endpoint-policy-select",
+            )
+
+            yield Label("Endpoint Fmax (eV/Å):")
+            yield neb_number("endpoint_fmax")
+
+            yield Label("Endpoint Steps:")
+            yield neb_number("endpoint_steps")
+
+            yield Static("🎯 Convergence & Safety", classes="section-title")
+
+            yield Label("CI/NEB Fmax (eV/Å):")
+            yield neb_number("fmax")
+
+            yield Label("Max Steps:")
+            yield neb_number("max_steps")
+
+            yield Label("Pre-stage Fmax (eV/Å) (CI-NEB only):")
+            yield neb_number("neb_pre_fmax")
+
+            yield Label("Pre-stage Max Steps (CI-NEB only):")
+            yield neb_number("neb_pre_max_steps")
+
+            yield Label("Optimizer Max Step (Å):")
+            yield neb_number("neb_maxstep")
+
+            yield Label("Checkpoint Interval (steps):")
+            yield neb_number("checkpoint_interval")
+
+            yield Label("Force-safety Abort Threshold (eV/Å):")
+            yield neb_number("fmax_abort")
+
+            yield Horizontal(
+                Label("Allow unvalidated NEB (skip engine evidence check):"),
+                neb_bool("allow_unvalidated_neb", "allow-unvalidated-neb-switch"),
+                classes="switch-row",
+            )
+            yield Static(
+                "NEB runs are checked against the installed validation records; "
+                "unvalidated engines require an explicit opt-in here.",
+                id="neb-validation-note",
+            )
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         button_id = event.button.id
@@ -533,6 +699,8 @@ class ConfigScreen(Screen):
             self._update_molecular_option_states()
         elif event.select.id == "thermostat-select":
             self._update_thermostat_option_states()
+        elif event.select.id == "neb-interpolation-select":
+            self._update_neb_option_states()
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         """Refresh thermostat controls when NVT/NVE changes."""
@@ -541,8 +709,20 @@ class ConfigScreen(Screen):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle live path validation on input change."""
-        if event.input.id in ("structure-input", "model-input"):
+        if event.input.id in (
+            "structure-input",
+            "model-input",
+            "final-structure-input",
+        ):
             self._validate_path(event.input.id, event.value)
+        if self.app.get_config("calc_type") == "neb" and event.input.id in (
+            "structure-input",
+            "final-structure-input",
+            "atom-map-input",
+            "image-shifts-input",
+            "neb-resume-input",
+        ):
+            self._update_neb_option_states()
 
     def on_mount(self) -> None:
         """Initialize and validate paths on mount."""
@@ -552,8 +732,13 @@ class ConfigScreen(Screen):
         self._validate_path("structure-input", structure_input.value)
         self._validate_path("model-input", model_input.value)
         self._update_engine_option_states()
-        if self.app.get_config("calc_type") == "md":
+        calc_type = self.app.get_config("calc_type")
+        if calc_type == "md":
             self._update_thermostat_option_states()
+        elif calc_type == "neb":
+            final_input = self.query_one("#final-structure-input", Input)
+            self._validate_path("final-structure-input", final_input.value)
+            self._update_neb_option_states()
 
     def _update_engine_option_states(self) -> None:
         """Show only controls consumed by the selected backend."""
@@ -692,40 +877,204 @@ class ConfigScreen(Screen):
             spin_label.update("Spin Metadata (model-specific):")
             spin_input.placeholder = "blank = do not inject spin metadata"
 
+    def _update_neb_option_states(self) -> None:
+        """Toggle IDPP-only controls and refresh the endpoint preview."""
+        interpolation_select = self.query_one("#neb-interpolation-select", Select)
+        is_idpp = str(interpolation_select.value or "linear") == "idpp"
+        for selector in (
+            "#idpp_fmax-label",
+            "#idpp_fmax-input",
+            "#idpp_steps-label",
+            "#idpp_steps-input",
+        ):
+            widget = self.query_one(selector)
+            widget.display = is_idpp
+            if isinstance(widget, Input):
+                widget.disabled = not is_idpp
+        mic_row = self.query_one("#idpp_mic-label", Label).parent
+        mic_row.display = is_idpp
+        self.query_one("#idpp-mic-switch", Switch).disabled = not is_idpp
+        self._update_neb_preview()
+
+    def _parse_neb_atom_map_text(self) -> tuple[list[int] | None, str | None]:
+        """Parse the atom-map input; returns (value, error)."""
+        text = self.query_one("#atom-map-input", Input).value.strip()
+        if not text:
+            return None, None
+        try:
+            values = [int(part) for part in text.split(",")]
+        except ValueError:
+            return None, "Atom map must be comma-separated integers"
+        return values, None
+
+    def _parse_neb_image_shifts_text(
+        self,
+    ) -> tuple[list[list[int]] | None, str | None]:
+        """Parse the image-shifts input; returns (value, error)."""
+        text = self.query_one("#image-shifts-input", Input).value.strip()
+        if not text:
+            return None, None
+        rows: list[list[int]] = []
+        for row in text.split(";"):
+            parts = row.strip().split(",")
+            if len(parts) != 3:
+                return None, "Each image-shift row needs 3 lattice integers"
+            try:
+                rows.append([int(part) for part in parts])
+            except ValueError:
+                return None, "Image shifts must be integers"
+        return rows, None
+
+    def _update_neb_preview(self) -> None:
+        """Show an endpoint consistency summary (formula, constraints, motion)."""
+        try:
+            preview = self.query_one("#neb-preview", Static)
+        except Exception:
+            return
+        resume_text = self.query_one("#neb-resume-input", Input).value.strip()
+        preview.set_classes("")
+        if resume_text:
+            preview.update(
+                "Resume mode: endpoints, atom map, and image shifts are ignored."
+            )
+            return
+        initial_text = self.query_one("#structure-input", Input).value.strip()
+        final_text = self.query_one("#final-structure-input", Input).value.strip()
+        if not initial_text or not final_text:
+            preview.update("")
+            return
+        try:
+            initial = ase_read(initial_text)
+            final = ase_read(final_text)
+        except Exception as exc:
+            preview.update(f"[!] Could not read endpoints: {exc}")
+            preview.set_classes("status-error")
+            return
+        lines = [
+            f"Initial: {initial.get_chemical_formula()} ({len(initial)} atoms)",
+            f"Final:   {final.get_chemical_formula()} ({len(final)} atoms)",
+        ]
+        atom_map, map_error = self._parse_neb_atom_map_text()
+        if map_error:
+            lines.append(f"[!] {map_error}")
+            preview.update("\n".join(lines))
+            preview.set_classes("status-error")
+            return
+        image_shifts, shifts_error = self._parse_neb_image_shifts_text()
+        if shifts_error:
+            lines.append(f"[!] {shifts_error}")
+            preview.update("\n".join(lines))
+            preview.set_classes("status-error")
+            return
+        fixed_initial = 0
+        for constraint in initial.constraints:
+            if isinstance(constraint, FixAtoms):
+                fixed_initial += len(constraint.index)
+        lines.append(f"Fixed atoms (initial): {fixed_initial}")
+        if image_shifts is not None:
+            path_convention = str(
+                self.query_one("#neb-path-convention-select", Select).value or "mic"
+            )
+            if path_convention != "unwrapped":
+                lines.append("[!] Image shifts require path convention 'unwrapped'")
+                preview.update("\n".join(lines))
+                preview.set_classes("status-error")
+                return
+            if len(image_shifts) != len(initial):
+                lines.append(
+                    f"[!] Image shifts need one row per initial atom "
+                    f"({len(image_shifts)} rows for {len(initial)} atoms)"
+                )
+                preview.update("\n".join(lines))
+                preview.set_classes("status-error")
+                return
+        if len(initial) != len(final):
+            lines.append(
+                "[!] Endpoints have different atom counts; an atom map is required"
+            )
+            preview.update("\n".join(lines))
+            preview.set_classes("status-error")
+            return
+        if atom_map is not None:
+            if len(atom_map) != len(initial) or sorted(atom_map) != list(
+                range(len(initial))
+            ):
+                lines.append(
+                    f"[!] Atom map must list each final index once "
+                    f"(0..{len(initial) - 1})"
+                )
+                preview.update("\n".join(lines))
+                preview.set_classes("status-error")
+                return
+            mapped_final = final[atom_map]
+        else:
+            mapped_final = final
+        displacements = mapped_final.positions - initial.positions
+        norms = (displacements**2).sum(axis=1) ** 0.5
+        max_index = int(norms.argmax())
+        lines.append(
+            f"Preview displacement: max {norms[max_index]:.3f} Å "
+            f"at atom {max_index} ({initial.get_chemical_symbols()[max_index]})"
+        )
+        preview.update("\n".join(lines))
+
     def _save_and_run(self) -> None:
         """Save configuration and run calculation."""
         run_started_at = time.perf_counter()
+
+        calc_type = self.app.get_config("calc_type")
 
         # Get file paths
         structure = self.query_one("#structure-input", Input).value
         model = self.query_one("#model-input", Input).value
         output = self.query_one("#output-input", Input).value
 
-        if not structure:
+        # NEB resume mode: the checkpoint carries the endpoints and model.
+        neb_resume_path: Path | None = None
+        resume_mode = False
+        if calc_type == "neb":
+            resume_text = self.query_one("#neb-resume-input", Input).value.strip()
+            resume_mode = bool(resume_text)
+            if resume_mode:
+                neb_resume_path = Path(resume_text).resolve()
+
+        if not structure and not resume_mode:
             self.notify("Please specify a structure file", severity="error")
             return
 
-        if not model:
+        if not model and not resume_mode:
             self.notify("Please specify a model file", severity="error")
             return
 
         # Resolve paths to absolute paths
-        structure_path = Path(structure.strip()).resolve()
-        model_path = Path(model.strip()).resolve()
+        structure_path = (
+            Path(structure.strip()).resolve() if structure.strip() else None
+        )
+        model_path = Path(model.strip()).resolve() if model.strip() else None
         output_path = Path(output.strip()).resolve()
 
-        if not structure_path.exists():
+        if structure_path is not None and not structure_path.exists():
             self.notify(f"Structure file not found: {structure_path}", severity="error")
             return
 
-        if not model_path.exists():
+        if model_path is not None and not model_path.exists():
             self.notify(f"Model file not found: {model_path}", severity="error")
             return
 
+        if resume_mode and not neb_resume_path.exists():
+            self.notify(f"Resume path not found: {neb_resume_path}", severity="error")
+            return
+
         # Save absolute paths to config
-        self.app.update_config("structure_file", str(structure_path))
-        self.app.update_config("model_file", str(model_path))
+        self.app.update_config(
+            "structure_file", str(structure_path) if structure_path else None
+        )
+        self.app.update_config("model_file", str(model_path) if model_path else None)
         self.app.update_config("output_dir", str(output_path))
+        if calc_type == "neb":
+            self.app.update_config(
+                "neb_resume", str(neb_resume_path) if resume_mode else None
+            )
 
         # Get job name
         job_name = self.query_one("#job-name-input", Input).value
@@ -1129,6 +1478,149 @@ class ConfigScreen(Screen):
                 return
             self.app.update_config("fmax_abort", fmax_abort)
 
+        if calc_type == "neb":
+            self.app.update_config(
+                "neb_interpolation",
+                str(self.query_one("#neb-interpolation-select", Select).value),
+            )
+            self.app.update_config(
+                "climb", self.query_one("#neb-climb-switch", Switch).value
+            )
+            self.app.update_config(
+                "path_convention",
+                str(self.query_one("#neb-path-convention-select", Select).value),
+            )
+            self.app.update_config(
+                "endpoint_policy",
+                str(self.query_one("#endpoint-policy-select", Select).value),
+            )
+            self.app.update_config(
+                "idpp_mic", self.query_one("#idpp-mic-switch", Switch).value
+            )
+            self.app.update_config(
+                "allow_unvalidated_neb",
+                self.query_one("#allow-unvalidated-neb-switch", Switch).value,
+            )
+
+            int_fields = (
+                ("n_intermediate_images", 1),
+                ("max_steps", 1),
+                ("neb_pre_max_steps", 0),
+                ("endpoint_steps", 0),
+                ("idpp_steps", 0),
+                ("checkpoint_interval", 1),
+            )
+            for key, minimum in int_fields:
+                text = self.query_one(f"#{key}-input", Input).value.strip()
+                if not text:
+                    continue
+                try:
+                    parsed = int(text)
+                except ValueError:
+                    self.notify(
+                        f"{key.replace('_', ' ').capitalize()} must be an integer",
+                        severity="error",
+                    )
+                    return
+                if parsed < minimum:
+                    self.notify(
+                        f"{key.replace('_', ' ').capitalize()} must be >= {minimum}",
+                        severity="error",
+                    )
+                    return
+                self.app.update_config(key, parsed)
+
+            float_fields = (
+                "neb_spring",
+                "neb_min_distance",
+                "fmax",
+                "neb_pre_fmax",
+                "neb_maxstep",
+                "endpoint_fmax",
+                "idpp_fmax",
+                "fmax_abort",
+            )
+            for key in float_fields:
+                text = self.query_one(f"#{key}-input", Input).value.strip()
+                if not text:
+                    continue
+                try:
+                    parsed = float(text)
+                except ValueError:
+                    self.notify(
+                        f"{key.replace('_', ' ').capitalize()} must be a number",
+                        severity="error",
+                    )
+                    return
+                if not math.isfinite(parsed) or parsed <= 0:
+                    self.notify(
+                        f"{key.replace('_', ' ').capitalize()} must be finite and > 0",
+                        severity="error",
+                    )
+                    return
+                self.app.update_config(key, parsed)
+
+            if resume_mode:
+                # The checkpoint owns the endpoints and mapping; the inputs
+                # above stay in the form but are not forwarded.
+                self.app.update_config("neb_final", None)
+                self.app.update_config("neb_atom_map", None)
+                self.app.update_config("neb_image_shifts", None)
+            else:
+                final_text = self.query_one(
+                    "#final-structure-input", Input
+                ).value.strip()
+                if not final_text:
+                    self.notify(
+                        "Please specify a final endpoint file", severity="error"
+                    )
+                    return
+                final_path = Path(final_text).resolve()
+                if not final_path.exists():
+                    self.notify(
+                        f"Final endpoint not found: {final_path}", severity="error"
+                    )
+                    return
+                atom_map, map_error = self._parse_neb_atom_map_text()
+                if map_error:
+                    self.notify(map_error, severity="error")
+                    return
+                image_shifts, shifts_error = self._parse_neb_image_shifts_text()
+                if shifts_error:
+                    self.notify(shifts_error, severity="error")
+                    return
+                try:
+                    initial_atoms = ase_read(structure_path)
+                    ase_read(final_path)  # fail closed if unreadable
+                except Exception as exc:
+                    self.notify(f"Could not read endpoints: {exc}", severity="error")
+                    return
+                if atom_map is not None and (
+                    len(atom_map) != len(initial_atoms)
+                    or sorted(atom_map) != list(range(len(initial_atoms)))
+                ):
+                    self.notify(
+                        "Atom map must be a 0-based permutation of the initial "
+                        "atoms (one final index per initial atom)",
+                        severity="error",
+                    )
+                    return
+                if image_shifts is not None and len(image_shifts) != len(initial_atoms):
+                    self.notify(
+                        "Image shifts need one 3-component row per initial atom",
+                        severity="error",
+                    )
+                    return
+                path_convention = str(self.app.get_config("path_convention", "mic"))
+                if image_shifts is not None and path_convention != "unwrapped":
+                    self.notify(
+                        "Image shifts require path convention 'unwrapped'",
+                        severity="error",
+                    )
+                    return
+                self.app.update_config("neb_final", str(final_path))
+                self.app.update_config("neb_atom_map", atom_map)
+                self.app.update_config("neb_image_shifts", image_shifts)
         # TUI calculations are launched as persistent background processes.
         self.app.update_config("detach", True)
         self.app.update_config("run_started_at", run_started_at)

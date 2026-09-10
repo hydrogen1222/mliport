@@ -802,3 +802,431 @@ def test_jobs_screen_unmount_cancels_timer() -> None:
 
     timer.stop.assert_called_once()
     assert screen._jobs_refresh_timer is None
+
+
+# ---------------------------------------------------------------------------
+# NEB (R3-D): TUI consumes the shared queue helper; no TUI-private defaults.
+# ---------------------------------------------------------------------------
+
+
+def _write_neb_endpoints(tmp_path: Path) -> tuple[Path, Path, Path]:
+    from ase import Atoms
+    from ase.io import write
+
+    initial = tmp_path / "initial.xyz"
+    final = tmp_path / "final.xyz"
+    model = tmp_path / "model.pt"
+    write(initial, Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.74]]))
+    write(final, Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.20, 0.0, 0.0]]))
+    model.write_text("placeholder")
+    return initial, final, model
+
+
+@pytest.mark.asyncio()
+async def test_main_screen_lists_neb_entry() -> None:
+    from textual.widgets import ListView
+
+    app = MlipxApp()
+    async with app.run_test(size=(80, 24)):
+        items = [
+            item.id
+            for item in app.screen.query_one("#calc-type-list", ListView).children
+        ]
+    assert "neb" in items
+
+
+@pytest.mark.asyncio()
+async def test_neb_run_command_matches_shared_queue_helper(tmp_path: Path) -> None:
+    """TUI-built NEB argv must equal the CLI/queue/API command for the same
+    configuration (both go through build_mlipx_command)."""
+    from mlipx.queue import build_mlipx_command
+
+    initial, final, model = _write_neb_endpoints(tmp_path)
+    output_dir = str(tmp_path / "out")
+    app = MlipxApp()
+    app.config.update(
+        {
+            "calc_type": "neb",
+            "structure_file": str(initial),
+            "neb_final": str(final),
+            "neb_atom_map": [1, 0],
+            "neb_image_shifts": [[0, 0, 0]],
+            "neb_resume": None,
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": output_dir,
+            "n_intermediate_images": 5,
+            "climb": True,
+            "neb_interpolation": "idpp",
+            "idpp_mic": False,
+            "path_convention": "mic",
+            "neb_spring": 0.2,
+            "fmax": 0.05,
+            "max_steps": 200,
+            "endpoint_policy": "relax",
+            "allow_unvalidated_neb": True,
+            "inference_mode": "default",
+            "fmax_abort": 15,
+        }
+    )
+
+    async with app.run_test(size=(80, 40)):
+        screen = RunScreen()
+        screen._job_id = "test-neb"
+        command = screen._build_command()
+
+    expected = build_mlipx_command(
+        calc_type="neb",
+        structure=str(initial),
+        model=str(model),
+        model_type="mace",
+        task="bulk",
+        device="cpu",
+        output_dir=output_dir,
+        job_name="test-neb",
+        options={
+            "n_intermediate_images": 5,
+            "climb": True,
+            "neb_interpolation": "idpp",
+            "idpp_mic": False,
+            "path_convention": "mic",
+            "neb_spring": 0.2,
+            "fmax": 0.05,
+            "max_steps": 200,
+            "endpoint_policy": "relax",
+            "allow_unvalidated_neb": True,
+            "inference_mode": "default",
+            "default_dtype": "float64",
+            "fmax_abort": 15,
+        },
+        initial=str(initial),
+        final=str(final),
+        atom_map=[1, 0],
+        image_shifts=[[0, 0, 0]],
+    )
+    assert command == expected
+
+    # Every visible NEB control reaches the argv with its CLI flag.
+    assert command[command.index("--initial") + 1] == str(initial)
+    assert command[command.index("--final") + 1] == str(final)
+    assert command[command.index("--images") + 1] == "5"
+    assert "--climb" in command
+    assert command[command.index("--interpolation") + 1] == "idpp"
+    assert "--no-idpp-mic" in command
+    assert command[command.index("--spring") + 1] == "0.2"
+    assert command[command.index("--fmax") + 1] == "0.05"
+    assert command[command.index("--max-steps") + 1] == "200"
+    assert command[command.index("--endpoint-policy") + 1] == "relax"
+    assert "--allow-unvalidated-neb" in command
+    assert command[command.index("--atom-map") + 1] == "1,0"
+    assert command[command.index("--image-shifts") + 1] == "0,0,0"
+    # Blank/None options must not hard-code TUI defaults.
+    assert "--pre-fmax" not in command
+    assert "--min-distance" not in command
+
+
+@pytest.mark.asyncio()
+async def test_neb_resume_command_locks_original_directory(tmp_path: Path) -> None:
+    resume_path = str(tmp_path / "run" / "checkpoints" / "latest")
+    app = MlipxApp()
+    app.config.update(
+        {
+            "calc_type": "neb",
+            "structure_file": None,
+            "neb_final": None,
+            "neb_atom_map": None,
+            "neb_image_shifts": None,
+            "neb_resume": resume_path,
+            "model_file": None,
+            "model_type": "mace",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+        }
+    )
+
+    async with app.run_test(size=(80, 40)):
+        screen = RunScreen()
+        screen._job_id = "test-neb-resume"
+        command = screen._build_command()
+
+    assert command[command.index("--resume") + 1] == resume_path
+    assert "--initial" not in command
+    assert "--final" not in command
+    assert "--model" not in command
+    # Resume infers and locks the original run directory.
+    assert "--output" not in command
+    assert "--name" not in command
+
+
+@pytest.mark.asyncio()
+async def test_neb_run_screen_queues_without_mount_error(tmp_path: Path) -> None:
+    initial, final, model = _write_neb_endpoints(tmp_path)
+    app = MlipxApp()
+    app.config.update(
+        {
+            "calc_type": "neb",
+            "structure_file": str(initial),
+            "neb_final": str(final),
+            "neb_atom_map": None,
+            "neb_image_shifts": None,
+            "neb_resume": None,
+            "model_file": str(model),
+            "model_type": "uma",
+            "task": "omat",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "results"),
+        }
+    )
+    async with app.run_test(size=(100, 60)) as pilot:
+        screen = RunScreen()
+        screen._job_manager = JobManager(jobs_dir=tmp_path / "jobs")
+        await app.push_screen(screen)
+        await pilot.pause()
+        assert screen._job_id is not None
+        job = screen._job_manager.get_job(screen._job_id)
+        assert job is not None
+        assert job["status"] == "pending"
+        assert "Failed to queue" not in str(screen.status.render())
+
+
+@pytest.mark.asyncio()
+async def test_neb_config_screen_sections_and_idpp_toggle(tmp_path: Path) -> None:
+    initial, final, _model = _write_neb_endpoints(tmp_path)
+    app = MlipxApp()
+    app.update_config("calc_type", "neb")
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        # Plan R3-D sections: endpoints/mapping, path, endpoint policy,
+        # convergence/safety.
+        for selector in (
+            "#final-structure-input",
+            "#neb-resume-input",
+            "#atom-map-input",
+            "#image-shifts-input",
+            "#neb-preview",
+            "#neb-interpolation-select",
+            "#neb-climb-switch",
+            "#neb-path-convention-select",
+            "#endpoint-policy-select",
+            "#endpoint_fmax-input",
+            "#fmax-input",
+            "#max_steps-input",
+            "#checkpoint_interval-input",
+            "#fmax_abort-input",
+            "#allow-unvalidated-neb-switch",
+            "#neb-validation-note",
+        ):
+            screen.query_one(selector)
+
+        # Linear interpolation hides the IDPP-only controls.
+        assert screen.query_one("#idpp_fmax-input").display is False
+        screen.query_one("#neb-interpolation-select").value = "idpp"
+        await pilot.pause()
+        assert screen.query_one("#idpp_fmax-input").display is True
+        assert screen.query_one("#idpp-mic-switch").display is True
+
+        # Endpoint preview summarizes composition and sampled displacement.
+        screen.query_one("#structure-input").value = str(initial)
+        screen.query_one("#final-structure-input").value = str(final)
+        screen._update_neb_preview()
+        preview = str(screen.query_one("#neb-preview").render())
+        assert "Initial: H2" in preview
+        assert "Final:   H2" in preview
+        assert "Preview displacement" in preview
+
+        # Resume mode ignores endpoint inputs.
+        screen.query_one("#neb-resume-input").value = str(tmp_path / "run")
+        screen._update_neb_option_states()
+        preview = str(screen.query_one("#neb-preview").render())
+        assert "Resume mode" in preview
+
+
+@pytest.mark.asyncio()
+async def test_neb_invalid_atom_map_blocks_submission(tmp_path: Path) -> None:
+    initial, final, model = _write_neb_endpoints(tmp_path)
+    app = MlipxApp()
+    app.update_config("calc_type", "neb")
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(initial)
+        screen.query_one("#model-input").value = str(model)
+        screen.query_one("#final-structure-input").value = str(final)
+        screen.notify = Mock()
+        app.push_screen = Mock()
+
+        for invalid in ("abc", "0,0", "0,5", "0"):
+            screen.query_one("#atom-map-input").value = invalid
+            screen._save_and_run()
+            app.push_screen.assert_not_called()
+            assert screen.notify.called
+            screen.notify.reset_mock()
+
+        # A valid permutation passes validation and launches the run screen.
+        screen.query_one("#atom-map-input").value = "1,0"
+        screen._save_and_run()
+        app.push_screen.assert_called_once()
+
+
+@pytest.mark.asyncio()
+async def test_neb_image_shifts_require_unwrapped_convention(tmp_path: Path) -> None:
+    initial, final, model = _write_neb_endpoints(tmp_path)
+    app = MlipxApp()
+    app.update_config("calc_type", "neb")
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(initial)
+        screen.query_one("#model-input").value = str(model)
+        screen.query_one("#final-structure-input").value = str(final)
+        screen.query_one("#neb-path-convention-select").value = "mic"
+        screen.query_one("#image-shifts-input").value = "0,0,0; 0,0,0"
+        screen.notify = Mock()
+        app.push_screen = Mock()
+
+        screen._save_and_run()
+        app.push_screen.assert_not_called()
+        assert screen.notify.called
+        assert "unwrapped" in str(screen.notify.call_args)
+
+        # Switching to unwrapped lets the same shifts through.
+        screen.query_one("#neb-path-convention-select").value = "unwrapped"
+        screen._save_and_run()
+        app.push_screen.assert_called_once()
+        assert app.get_config("neb_image_shifts") == [[0, 0, 0], [0, 0, 0]]
+
+
+@pytest.mark.asyncio()
+async def test_neb_run_screen_live_status_reads_engine_artifacts(
+    tmp_path: Path,
+) -> None:
+    """The run screen reports NEB progress from engine artifacts only (no
+    TUI-side re-evaluation, no runner stdout parsing)."""
+    import json
+
+    initial, final, model = _write_neb_endpoints(tmp_path)
+    output_dir = tmp_path / "results"
+    run_dir = output_dir / "job-neb"
+    checkpoint_dir = run_dir / "checkpoints" / "step_000003"
+    checkpoint_dir.mkdir(parents=True)
+    (checkpoint_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "schema": "mlipx.neb-checkpoint/1",
+                "stage": "neb",
+                "stage_step": 12,
+                "resume_fingerprint": {"neb_options": {"max_steps": 1000}},
+            }
+        )
+    )
+    (run_dir / "artifacts.json").write_text(
+        json.dumps(
+            {
+                "schema": "mlipx.neb-artifacts/1",
+                "status": "running",
+                "artifacts": {
+                    "checkpoint": {"path": str(checkpoint_dir), "kind": "neb_band"},
+                    "result": None,
+                },
+            }
+        )
+    )
+    app = MlipxApp()
+    app.config.update(
+        {
+            "calc_type": "neb",
+            "structure_file": str(initial),
+            "neb_final": str(final),
+            "neb_resume": None,
+            "model_file": str(model),
+            "model_type": "uma",
+            "device": "cpu",
+            "output_dir": str(output_dir),
+        }
+    )
+    async with app.run_test(size=(100, 60)) as pilot:
+        screen = RunScreen()
+        screen._job_manager = JobManager(jobs_dir=tmp_path / "jobs")
+        await app.push_screen(screen)
+        await pilot.pause()
+        assert screen._job_id is not None
+        screen._job_id = "job-neb"
+
+        screen._refresh_neb_status("running")
+        running_text = str(screen.status.render())
+        assert "stage neb" in running_text
+        assert "step 12" in running_text
+        assert "max 1000 steps/stage" in running_text
+
+        # Completed run: converged barrier summary comes from neb_results.json.
+        (run_dir / "neb_results.json").write_text(
+            json.dumps(
+                {
+                    "schema": "mlipx.neb-results/2",
+                    "status": "completed",
+                    "converged": True,
+                    "barrier_forward_sampled_eV": 0.42,
+                    "max_neb_force_eV_A": 0.02,
+                    "climbing_image_index": 3,
+                }
+            )
+        )
+        (run_dir / "artifacts.json").write_text(
+            json.dumps(
+                {
+                    "schema": "mlipx.neb-artifacts/1",
+                    "status": "completed",
+                    "artifacts": {
+                        "checkpoint": {
+                            "path": str(checkpoint_dir),
+                            "kind": "neb_band",
+                        },
+                        "result": str(run_dir / "neb_results.json"),
+                    },
+                }
+            )
+        )
+        screen._refresh_neb_status("done")
+        done_text = str(screen.status.render())
+        assert "converged" in done_text
+        assert "0.42" in done_text
+        assert "climbing image 3" in done_text
+
+        # Not-converged completion points the user at resume.
+        (run_dir / "neb_results.json").write_text(
+            json.dumps(
+                {
+                    "schema": "mlipx.neb-results/2",
+                    "status": "not_converged",
+                    "converged": False,
+                }
+            )
+        )
+        (run_dir / "artifacts.json").write_text(
+            json.dumps(
+                {
+                    "schema": "mlipx.neb-artifacts/1",
+                    "status": "not_converged",
+                    "artifacts": {
+                        "checkpoint": {
+                            "path": str(checkpoint_dir),
+                            "kind": "neb_band",
+                        },
+                        "result": str(run_dir / "neb_results.json"),
+                    },
+                }
+            )
+        )
+        screen._refresh_neb_status("done")
+        assert "NOT converged" in str(screen.status.render())
+        assert "resume" in str(screen.status.render()).lower()

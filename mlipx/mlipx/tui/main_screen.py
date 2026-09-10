@@ -51,6 +51,13 @@ class MainScreen(Screen):
                 ),
                 ListItem(
                     Static(
+                        "🛤️  Nudged Elastic Band (NEB)\n   "
+                        "Find minimum energy paths and barriers"
+                    ),
+                    id="neb",
+                ),
+                ListItem(
+                    Static(
                         "📈 Analyze Existing Run\n   Validated structure and ion transport"
                     ),
                     id="analysis",
@@ -108,6 +115,7 @@ class TemplateScreen(Screen):
             Static("Select template type:", id="subtitle"),
             ListView(
                 ListItem(Static("Single Point (SP)"), id="sp"),
+                ListItem(Static("Nudged Elastic Band (NEB)"), id="neb"),
                 ListItem(Static("Geometry Optimization (OPT)"), id="opt"),
                 ListItem(Static("Molecular Dynamics (MD)"), id="md"),
                 id="template-list",
@@ -141,6 +149,7 @@ class TemplateScreen(Screen):
             "sp": self._sp_template(),
             "opt": self._opt_template(),
             "md": self._md_template(),
+            "neb": self._neb_template(),
         }
 
         content = templates.get(template_type, self._sp_template())
@@ -199,4 +208,33 @@ SAVE_INTERVAL = 10
 PRE_RELAX = .TRUE.
 PRE_RELAX_STEPS = 50
 PRE_RELAX_FMAX = 0.1
+"""
+
+    def _neb_template(self) -> str:
+        return """# Nudged Elastic Band (NEB) Template
+CALC_TYPE = NEB
+INITIAL = initial.vasp
+FINAL = final.vasp
+MODEL_PATH = uma-s-1.pt
+DEVICE = cpu
+
+# Path settings
+IMAGES = 7  # intermediate images (endpoints are additional)
+INTERPOLATION = linear  # linear or idpp
+CLIMB = .FALSE.  # .TRUE. enables CI-NEB
+SPRING = 0.1
+PATH_CONVENTION = mic
+
+# Endpoint handling
+ENDPOINT_POLICY = validate  # validate or relax
+ENDPOINT_FMAX = 0.02
+ENDPOINT_STEPS = 500
+
+# Convergence
+FMAX = 0.03
+MAX_STEPS = 1000
+PRE_FMAX = 0.1
+PRE_MAX_STEPS = 300
+MAXSTEP = 0.1
+CHECKPOINT_INTERVAL = 10
 """

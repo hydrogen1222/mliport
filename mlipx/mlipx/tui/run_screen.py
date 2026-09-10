@@ -9,8 +9,10 @@ Run screen for persistent background calculations with live output.
 
 from __future__ import annotations
 
+import json
 import shlex
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ase.io import read
@@ -59,8 +61,19 @@ class RunScreen(Screen):
         self.log_widget = self.query_one("#run-log", Log)
         self.progress = self.query_one("#progress-bar", ProgressBar)
         self.status = self.query_one("#status-text", Static)
+        calc_type = self.app.get_config("calc_type", "sp")
         try:
-            atoms = read(self.app.get_config("structure_file"))
+            if calc_type == "neb" and self.app.get_config("neb_resume"):
+                # Resume locks the original run directory; the band geometry
+                # comes from the checkpoint, not the structure input.
+                from mlipx.neb.io import resolve_checkpoint_path
+
+                checkpoint_dir = resolve_checkpoint_path(
+                    str(self.app.get_config("neb_resume"))
+                )
+                atoms = read(checkpoint_dir / "band.traj")
+            else:
+                atoms = read(self.app.get_config("structure_file"))
             display_name = self._make_display_name()
             self._job_id = self._job_manager.new_job_id()
             command = self._build_command()
@@ -70,7 +83,7 @@ class RunScreen(Screen):
             # several submitted jobs.
             self._job_manager.enqueue(
                 job_id=self._job_id,
-                calc_type=self.app.get_config("calc_type", "sp"),
+                calc_type=calc_type,
                 structure=self.app.get_config("structure_file"),
                 formula=atoms.get_chemical_formula(),
                 natoms=len(atoms),
@@ -122,15 +135,15 @@ class RunScreen(Screen):
         model_type = self.app.get_config("model_type", "uma")
         structure_file = self.app.get_config("structure_file")
         model_file = self.app.get_config("model_file")
+        resume_path = self.app.get_config("neb_resume") if calc_type == "neb" else None
         # Guard against a missing model: previously an unset model_file was
         # stringified into the argv list as the literal ``--model None``, which
         # made the child process fail later with a confusing "model not found"
         # error instead of surfacing the real problem in the TUI.
-        if not model_file:
+        if not model_file and not resume_path:
             raise ValueError("No model file configured; go back and set it.")
-        if not structure_file:
+        if not structure_file and not resume_path:
             raise ValueError("No structure file configured; go back and set it.")
-
         options: dict = {}
         for key in (
             "charge",
@@ -195,17 +208,51 @@ class RunScreen(Screen):
                     value = self.app.get_config(key)
                     if value is not None:
                         options[key] = value
+        elif calc_type == "neb":
+            for key in (
+                "n_intermediate_images",
+                "climb",
+                "neb_method",
+                "neb_interpolation",
+                "path_convention",
+                "neb_spring",
+                "fmax",
+                "max_steps",
+                "neb_pre_fmax",
+                "neb_pre_max_steps",
+                "neb_maxstep",
+                "endpoint_policy",
+                "endpoint_fmax",
+                "endpoint_steps",
+                "idpp_fmax",
+                "idpp_steps",
+                "idpp_mic",
+                "neb_min_distance",
+                "checkpoint_interval",
+                "fmax_abort",
+                "allow_unvalidated_neb",
+            ):
+                value = self.app.get_config(key)
+                if value is not None:
+                    options[key] = value
 
         return build_mlipx_command(
             calc_type=calc_type,
-            structure=structure_file,
-            model=model_file,
+            structure=None if resume_path else structure_file,
+            model=None if resume_path else model_file,
             model_type=model_type,
-            task=self.app.get_config("task", "omat"),
+            task=None if resume_path else self.app.get_config("task", "omat"),
             device=self.app.get_config("device", "cpu"),
             output_dir=self.app.get_config("output_dir", "./results"),
             job_name=self._job_id,
             options=options,
+            initial=None if resume_path else structure_file,
+            final=None if resume_path else self.app.get_config("neb_final"),
+            resume=resume_path,
+            atom_map=None if resume_path else self.app.get_config("neb_atom_map"),
+            image_shifts=(
+                None if resume_path else self.app.get_config("neb_image_shifts")
+            ),
         )
 
     def _refresh_job(self) -> None:
@@ -235,6 +282,89 @@ class RunScreen(Screen):
             if self._refresh_timer is not None:
                 self._refresh_timer.stop()
                 self._refresh_timer = None
+        if self.app.get_config("calc_type") == "neb":
+            self._refresh_neb_status(status)
+
+    def _neb_artifacts_path(self) -> Path | None:
+        """artifacts.json of this job's NEB run directory, if it exists."""
+        if self._job_id is None:
+            return None
+        run_root = Path(str(self.app.get_config("output_dir", "./results")))
+        artifacts_path = run_root / str(self._job_id) / "artifacts.json"
+        return artifacts_path if artifacts_path.is_file() else None
+
+    def _refresh_neb_status(self, job_status: str) -> None:
+        """Overlay engine artifacts (artifacts.json, checkpoints) on the status."""
+        if job_status == "pending":
+            return  # Base pending text is already accurate.
+        artifacts_path = self._neb_artifacts_path()
+        if artifacts_path is None:
+            return
+        try:
+            artifacts = json.loads(artifacts_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        engine_status = str(artifacts.get("status", ""))
+
+        if job_status in {"done", "failed", "cancelled"}:
+            self.status.update(self._neb_result_summary(artifacts, engine_status))
+            return
+
+        # Still running: report the stage/step recorded by the latest
+        # complete-band checkpoint written by the engine itself.
+        detail = ""
+        checkpoint = (artifacts.get("artifacts") or {}).get("checkpoint") or {}
+        latest = checkpoint.get("path")
+        if latest:
+            try:
+                metadata = json.loads(
+                    (Path(str(latest)) / "checkpoint.json").read_text(encoding="utf-8")
+                )
+                detail = (
+                    f" — stage {metadata.get('stage', 'running')}, "
+                    f"step {metadata.get('stage_step', 0)}"
+                )
+                max_steps = (
+                    metadata.get("resume_fingerprint", {})
+                    .get("neb_options", {})
+                    .get("max_steps")
+                )
+                if max_steps:
+                    detail += f" (max {max_steps} steps/stage)"
+            except Exception:
+                detail = " — checkpoint written"
+        self.status.update(f"NEB {engine_status or 'running'}{detail}")
+
+    def _neb_result_summary(self, artifacts: dict, engine_status: str) -> str:
+        """Human summary for a finished NEB job (converged/not/failed)."""
+        result_path = (artifacts.get("artifacts") or {}).get("result")
+        if result_path:
+            try:
+                result = json.loads(Path(str(result_path)).read_text(encoding="utf-8"))
+            except Exception:
+                result = None
+            if isinstance(result, dict):
+                if result.get("converged"):
+                    summary = (
+                        "Completed — converged; sampled forward barrier "
+                        f"{result.get('barrier_forward_sampled_eV')} eV"
+                    )
+                    if result.get("climbing_image_index") is not None:
+                        summary += f", climbing image {result['climbing_image_index']}"
+                    summary += (
+                        f", max NEB force {result.get('max_neb_force_eV_A')} eV/Å"
+                    )
+                    return summary
+                if engine_status == "not_converged":
+                    return (
+                        "Completed — NOT converged within max_steps; resume "
+                        "from the latest checkpoint to continue"
+                    )
+        if engine_status == "cancelled":
+            return "Cancelled — resume from the latest checkpoint to continue"
+        if engine_status == "failed":
+            return "Failed — see the log and run_context.json for the reason"
+        return f"Finished ({engine_status or 'unknown'})"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "back-btn":
