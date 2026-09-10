@@ -121,7 +121,7 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 
 > **Why two CUDA routes?** Maxwell/Pascal/Volta must use the **cu126 Legacy** channel: PyTorch 2.8+ removed Maxwell/Pascal from cu128 builds, and PyTorch 2.11+ removed Volta from cu128+. Turing+ use the **modern** channel (cu128 for torch 2.8–2.10, cu130 for torch 2.12+). Maxwell is Experimental because TensorFlow 2.20 official wheels start at sm_60.
 
-**Per-engine verification status** (from `mlipx/install/compatibility.py`; V100 and RTX 4090 have been tested on real hardware. P40 uses the corrected exact `+cu126` wheel pin but still needs a post-fix model smoke retest):
+**Per-engine install verification status** (from `mlipx/install/compatibility.py`; V100 and RTX 4090 have been tested on real hardware. P40 uses the corrected exact `+cu126` wheel pin but still needs a post-fix model smoke retest). "Verified" here means the engine installed and produced a real model prediction on that GPU family — not that every workload was exercised. Workload-level statuses for V100 are listed below.
 
 | Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ |
 |---|---|---|---|---|---|
@@ -129,6 +129,18 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 | MACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
 | DPA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
 | GRACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+
+**Workload-level verification (single V100-SXM2-16GB, sm_70, driver 580.173.02)** — short real-model runs with hard timeouts on one GPU. Sanitized records live in [`validation/runtime/v100/`](validation/runtime/v100/) (the GPU is identified only by a SHA-256 of its UUID); each status maps to exactly one record:
+
+| Backend / model | SP | Short MD | E–F gradient | NEB smoke | GRACE cache | Records |
+|---|---|---|---|---|---|---|
+| UMA | not run | not run | not run | not run | n/a | [uma.json](validation/runtime/v100/uma.json) (no offline wheelhouse on this machine) |
+| MACE float64 | passed | passed | passed | passed | n/a | [mace.json](validation/runtime/v100/mace.json) |
+| MACE float32 | passed | passed | passed | passed | n/a | [mace-float32.json](validation/runtime/v100/mace-float32.json) |
+| DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](validation/runtime/v100/dpa.json) |
+| GRACE float32 | passed | passed | passed | passed | passed (ON and OFF) | [grace.json](validation/runtime/v100/grace.json), [grace-nocache.json](validation/runtime/v100/grace-nocache.json) |
+
+The NEB smoke is a short 5-image fixed-cell run on a 4-atom Cu cell with `saddle_validation: not_performed` — see [NEB](#nudged-elastic-band-neb) for what that implies.
 
 ### Download sources
 
@@ -177,6 +189,20 @@ Offline mode also requires the requested Python to be already discoverable by
   --device cuda --steps 10000
 ```
 
+### Nudged elastic band (NEB)
+
+```bash
+.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
+  --model uma-s-1.pt --task omat --device cuda \
+  --output results/hop --images 7 --climb --fmax 0.03
+```
+
+Engines without a matching validation record refuse to start a NEB run; pass
+`--allow-unvalidated-neb` to override explicitly. Resume from the latest
+complete-band checkpoint with `--resume results/hop/checkpoints/latest` — the
+model and all scientific options are restored from the checkpoint (see
+[Resume semantics](#resume-semantics)).
+
 ### Other engines
 
 ```bash
@@ -210,6 +236,22 @@ MODEL_TYPE  = UMA        # or MACE / DPA / GRACE
 MODEL_PATH  = uma-s-1.pt
 TASK        = omat       # UMA: omat/omol/...; others: bulk/molecule
 DEVICE      = cpu
+```
+
+NEB uses the same mechanism — `mlipx template neb` writes `INCAR.neb`
+(`CALCULATION = NEB`) with endpoints, path, endpoint-policy, and convergence
+keywords:
+
+```ini
+CALCULATION          = NEB
+MODEL_TYPE           = UMA
+MODEL_PATH           = uma-s-1.pt
+NEB_INITIAL          = initial.vasp
+NEB_FINAL            = final.vasp
+NEB_IMAGES           = 7
+NEB_INTERPOLATION    = linear   # or idpp
+NEB_CLIMB            = .FALSE.  # .TRUE. enables CI-NEB
+FMAX                 = 0.03
 ```
 
 ### Batch
@@ -366,10 +408,17 @@ The request hash includes the source fingerprint, selection, range, axes, drift 
 ### Python API
 
 ```python
-from mlipx.api import run_single_point, run_md, calculate_energy
+from mlipx.api import run_single_point, run_md, run_neb, calculate_energy
 
 result = run_single_point("structure.cif", "uma-s-1.pt", task="omat")
 energy = calculate_energy("structure.cif", "uma-s-1.pt", task="omat")
+
+neb = run_neb(
+    "initial.vasp", "final.vasp", "uma-s-1.pt",
+    task="omat", device="cuda:0", output_dir="results/hop",
+    n_intermediate_images=7, climb=True,
+)
+print(neb["converged"], neb["barrier_forward_sampled_eV"])
 ```
 
 ---
@@ -399,8 +448,22 @@ energy = calculate_energy("structure.cif", "uma-s-1.pt", task="omat")
 | MD | `STEPS` | `1000` |
 | MD | `THERMOSTAT` | `LANGEVIN` |
 | MD | `SAVE_INTERVAL` | `10` |
+| NEB | `NEB_IMAGES` | `7` |
+| NEB | `NEB_CLIMB` | `.FALSE.` |
+| NEB | `NEB_METHOD` | `improvedtangent` |
+| NEB | `NEB_INTERPOLATION` | `linear` |
+| NEB | `NEB_PATH_CONVENTION` | `mic` |
+| NEB | `NEB_SPRING` | `0.1` |
+| NEB | `FMAX` | `0.03` (NEB scope) |
+| NEB | `MAX_STEPS` | `1000` (NEB scope) |
+| NEB | `NEB_PRE_FMAX` / `NEB_PRE_MAX_STEPS` | `0.1` / `300` |
+| NEB | `NEB_MAXSTEP` | `0.1` |
+| NEB | `NEB_ENDPOINT_POLICY` | `validate` |
+| NEB | `NEB_ENDPOINT_FMAX` / `NEB_ENDPOINT_STEPS` | `0.02` / `500` |
+| NEB | `NEB_CHECKPOINT_INTERVAL` | `10` |
+| NEB | `NEB_MIN_DISTANCE` | `0.5` |
 
-See the generated templates (`mlipx template sp/opt/md`) for the full keyword list with comments.
+See the generated templates (`mlipx template sp/opt/md/neb`) for the full keyword list with comments.
 
 ---
 
@@ -421,6 +484,54 @@ OUTPUT/
 ```
 
 For high-throughput runs, use `--no-write-outcar --no-write-xdatcar` to skip the VASP interoperability text I/O; the canonical trajectory remains enabled.
+
+## Nudged Elastic Band (NEB)
+
+`mlipx neb` runs a fixed-cell NEB/CI-NEB (`improvedtangent` spring method)
+between two endpoints. Endpoints are validated or relaxed first
+(`NEB_ENDPOINT_POLICY`), the initial band comes from linear or IDPP
+interpolation, and complete bands are checkpointed every `NEB_CHECKPOINT_INTERVAL`
+steps for crash-safe resume.
+
+### Output layout
+
+```
+results/hop/
+├── run_context.json     run/attempt IDs, model identity, resolved options
+├── artifacts.json       status + pointers (checkpoint, result, VASP export)
+├── checkpoints/
+│   ├── step_000003/     complete band: band.traj + checkpoint.json
+│   └── latest           symlink to the newest complete checkpoint
+├── neb_results.json     mlipx.neb-results/2: converged, sampled barriers,
+│                        reaction energy, highest-energy image, max NEB force
+└── vasp_path/           00/POSCAR ... NN/POSCAR export, no MLIP energies
+                         (vasp_path_<attempt>/ after a resume)
+```
+
+### Resume semantics
+
+```text
+geometry resume ≠ strict FIRE optimizer state restart
+```
+
+`--resume results/hop/checkpoints/latest` restores the band geometry, the model
+identity, and every scientific option from the checkpoint, reuses the original
+run ID and output directory, and starts a new attempt. It is a geometry-level
+restart — not a bit-exact optimizer-state reload — so results depend only on
+the restored geometry and options. On resume, endpoints, atom map, and image
+shifts are ignored (the checkpoint's original path identity is authoritative).
+
+### Scientific semantics
+
+- The climbing image is a **candidate** saddle: `converged: true` means the NEB
+  force criterion was met — a Hessian-validated first-order saddle point was
+  *not* verified (`saddle_validation: not_performed`).
+- MLIP barriers are model barriers, not VASP/DFT barriers; compare like with
+  like.
+- Absolute energies from different model tasks, heads, or reference levels must
+  never be mixed — including between the endpoints and the images of one path.
+- Engines without a matching validation record are refused for NEB by default;
+  `--allow-unvalidated-neb` overrides explicitly (fail-closed elsewhere).
 
 ---
 
@@ -549,6 +660,22 @@ Analysis extras (optional): `./mlipx[analysis]` (scipy/matplotlib),
 `./mlipx[transport]` (kinisi), `./mlipx[electrolyte]` (gemdat), or
 `./mlipx[analysis-all]` for all three.
 
+
+## Versioning & revisions
+
+Provenance does not hang off the package version alone. Four independent
+revision axes are recorded in outputs, results, and checkpoints:
+
+- Package version (SemVer, e.g. `2.0.0`), recorded as `mlipx_version`.
+- Result schema revisions (`mlipx.neb-results/2`, `mlipx.runtime-validation/1`,
+  ...).
+- NEB checkpoint schema revision (`mlipx.neb-checkpoint/1`).
+- NEB scientific revision — bumped for changes that alter path preparation,
+  force, or convergence semantics (see `mlipx/mlipx/neb/revisions.py`).
+
+The NEB resume fingerprint pins all of these together (plus model identity and
+path identity). A mismatch in any axis fails resume closed rather than
+silently resuming with changed semantics.
 ---
 
 ## License

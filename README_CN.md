@@ -119,7 +119,7 @@ uv pip install --no-config --python .venv-grace/bin/python \
 
 > **为什么有两条 CUDA 路线？** Maxwell/Pascal/Volta 必须使用 **cu126 Legacy** 通道：PyTorch 2.8+ 从 cu128 构建中移除了 Maxwell/Pascal，PyTorch 2.11+ 从 cu128+ 中移除了 Volta。Turing+ 使用**现代**通道（torch 2.8–2.10 用 cu128，torch 2.12+ 用 cu130）。Maxwell 标记为实验性，因为 TensorFlow 2.20 官方 wheel 从 sm_60 开始构建。
 
-**各引擎验证状态**（来自 `mlipx/install/compatibility.py`；V100 和 RTX 4090 已经过真机测试。P40 使用修正后的精确 `+cu126` wheel pin，但仍需在修复后重新做模型 smoke test）：
+**各引擎安装级验证状态**（来自 `mlipx/install/compatibility.py`；V100 和 RTX 4090 已经过安装级真机测试。P40 使用修正后的精确 `+cu126` wheel pin，但仍需在修复后重新做模型 smoke test）。这里的 "verified" 只表示该引擎在此 GPU 系列上完成安装并给出了真实模型预测——不代表所有 workload 都已验证。V100 的 workload 级状态见下表。
 
 | 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | 其他 Turing+ |
 |---|---|---|---|---|---|
@@ -127,6 +127,18 @@ uv pip install --no-config --python .venv-grace/bin/python \
 | MACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
 | DPA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
 | GRACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+
+**Workload 级验证（单张 V100-SXM2-16GB，sm_70，driver 580.173.02）**——单 GPU 上的短真实模型运行、强制超时。脱敏记录位于 [`validation/runtime/v100/`](validation/runtime/v100/)（GPU 仅以 UUID 的 SHA-256 标识）；每个状态一一对应一条记录：
+
+| 后端 / 模型 | SP | 短 MD | E–F 梯度 | NEB smoke | GRACE cache | 记录 |
+|---|---|---|---|---|---|---|
+| UMA | not run | not run | not run | not run | n/a | [uma.json](validation/runtime/v100/uma.json)（本机无离线 wheelhouse） |
+| MACE float64 | passed | passed | passed | passed | n/a | [mace.json](validation/runtime/v100/mace.json) |
+| MACE float32 | passed | passed | passed | passed | n/a | [mace-float32.json](validation/runtime/v100/mace-float32.json) |
+| DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](validation/runtime/v100/dpa.json) |
+| GRACE float32 | passed | passed | passed | passed | passed（ON 与 OFF） | [grace.json](validation/runtime/v100/grace.json)、[grace-nocache.json](validation/runtime/v100/grace-nocache.json) |
+
+NEB smoke 是 4 原子 Cu 晶胞上的短 5-image 固定晶胞运行（`saddle_validation: not_performed`）——含义见 [过渡态搜索（NEB）](#过渡态搜索neb) 一节。
 
 ### 下载源
 
@@ -174,6 +186,19 @@ PyPI 包和 PyTorch wheel 分开处理。安装器**不会修改**你的全局
   --device cuda --steps 10000
 ```
 
+### 过渡态搜索（NEB）
+
+```bash
+.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
+  --model uma-s-1.pt --task omat --device cuda \
+  --output results/hop --images 7 --climb --fmax 0.03
+```
+
+没有对应验证记录的引擎默认拒绝启动 NEB；显式传入 `--allow-unvalidated-neb`
+方可覆盖。用 `--resume results/hop/checkpoints/latest` 从最新的完整 band
+checkpoint 恢复——模型与全部科学选项都从 checkpoint 恢复（语义见
+[Resume 语义](#resume-语义)）。
+
 ### 其他引擎
 
 ```bash
@@ -207,6 +232,21 @@ MODEL_TYPE  = UMA        # 或 MACE / DPA / GRACE
 MODEL_PATH  = uma-s-1.pt
 TASK        = omat       # UMA: omat/omol/...；其他: bulk/molecule
 DEVICE      = cpu
+```
+
+NEB 使用同样机制——`mlipx template neb` 生成 `INCAR.neb`
+（`CALCULATION = NEB`），包含端点、路径、端点策略与收敛关键字：
+
+```ini
+CALCULATION          = NEB
+MODEL_TYPE           = UMA
+MODEL_PATH           = uma-s-1.pt
+NEB_INITIAL          = initial.vasp
+NEB_FINAL            = final.vasp
+NEB_IMAGES           = 7
+NEB_INTERPOLATION    = linear   # 或 idpp
+NEB_CLIMB            = .FALSE.  # .TRUE. 启用 CI-NEB
+FMAX                 = 0.03
 ```
 
 ### 批量计算
@@ -341,10 +381,17 @@ jump/percolation CSV、CIF 位点产物以及无 GUI 的密度/自由能/机制�
 ### Python API
 
 ```python
-from mlipx.api import run_single_point, run_md, calculate_energy
+from mlipx.api import run_single_point, run_md, run_neb, calculate_energy
 
 result = run_single_point("structure.cif", "uma-s-1.pt", task="omat")
 energy = calculate_energy("structure.cif", "uma-s-1.pt", task="omat")
+
+neb = run_neb(
+    "initial.vasp", "final.vasp", "uma-s-1.pt",
+    task="omat", device="cuda:0", output_dir="results/hop",
+    n_intermediate_images=7, climb=True,
+)
+print(neb["converged"], neb["barrier_forward_sampled_eV"])
 ```
 
 ---
@@ -374,8 +421,22 @@ energy = calculate_energy("structure.cif", "uma-s-1.pt", task="omat")
 | MD | `STEPS` | `1000` |
 | MD | `THERMOSTAT` | `LANGEVIN` |
 | MD | `SAVE_INTERVAL` | `10` |
+| NEB | `NEB_IMAGES` | `7` |
+| NEB | `NEB_CLIMB` | `.FALSE.` |
+| NEB | `NEB_METHOD` | `improvedtangent` |
+| NEB | `NEB_INTERPOLATION` | `linear` |
+| NEB | `NEB_PATH_CONVENTION` | `mic` |
+| NEB | `NEB_SPRING` | `0.1` |
+| NEB | `FMAX` | `0.03`（NEB 作用域） |
+| NEB | `MAX_STEPS` | `1000`（NEB 作用域） |
+| NEB | `NEB_PRE_FMAX` / `NEB_PRE_MAX_STEPS` | `0.1` / `300` |
+| NEB | `NEB_MAXSTEP` | `0.1` |
+| NEB | `NEB_ENDPOINT_POLICY` | `validate` |
+| NEB | `NEB_ENDPOINT_FMAX` / `NEB_ENDPOINT_STEPS` | `0.02` / `500` |
+| NEB | `NEB_CHECKPOINT_INTERVAL` | `10` |
+| NEB | `NEB_MIN_DISTANCE` | `0.5` |
 
-完整的带注释关键字列表见 `mlipx template sp/opt/md` 生成的模板。
+完整的带注释关键字列表见 `mlipx template sp/opt/md/neb` 生成的模板。
 
 ---
 
@@ -396,6 +457,50 @@ OUTPUT/
 ```
 
 高通量场景下可使用 `--no-write-outcar --no-write-xdatcar` 跳过 VASP 互操作文本输出；标准轨迹仍然保留。
+
+## 过渡态搜索（NEB）
+
+`mlipx neb` 在两个端点之间运行固定晶胞 NEB/CI-NEB（`improvedtangent` 弹簧
+方法）。端点会先被验证或弛豫（`NEB_ENDPOINT_POLICY`），初始 band 由 linear 或
+IDPP 插值生成，每 `NEB_CHECKPOINT_INTERVAL` 步写入一个完整 band checkpoint，
+支持崩溃后恢复。
+
+### 输出布局
+
+```
+results/hop/
+├── run_context.json     run/attempt ID、模型身份、解析后的选项
+├── artifacts.json       状态与指针（checkpoint、结果、VASP 导出）
+├── checkpoints/
+│   ├── step_000003/     完整 band：band.traj + checkpoint.json
+│   └── latest           指向最新完整 checkpoint 的软链
+├── neb_results.json     mlipx.neb-results/2：converged、采样势垒、
+│                        反应能、最高能量 image、最大 NEB 力
+└── vasp_path/           00/POSCAR ... NN/POSCAR 导出，不含 MLIP 能量
+                         （resume 后为 vasp_path_<attempt>/）
+```
+
+### Resume 语义
+
+```text
+几何恢复 ≠ 严格的 FIRE 优化器状态重启
+```
+
+`--resume results/hop/checkpoints/latest` 从 checkpoint 恢复 band 几何、模型
+身份与全部科学选项，复用原 run ID 与输出目录，并开始新的 attempt。它是
+几何层面的重启——不是逐比特一致的优化器状态重载——结果只取决于恢复的
+几何与选项。resume 时不接受端点、atom map 与 image shifts（checkpoint 的
+原始路径身份是唯一权威）。
+
+### 科学语义
+
+- climbing image 只是**候选**鞍点：`converged: true` 表示满足 NEB 力判据——
+  并不表示已用 Hessian 验证过一阶鞍点（`saddle_validation: not_performed`）。
+- MLIP 势垒是模型势垒，不是 VASP/DFT 势垒；对比时务必同类比较。
+- 不同模型任务、head 或参考能级的绝对能量绝不能混用——包括同一条路径的
+  端点与 image 之间。
+- 没有对应验证记录的引擎默认拒绝 NEB；`--allow-unvalidated-neb` 显式覆盖
+  （其余场景 fail-closed）。
 
 ---
 
@@ -521,6 +626,21 @@ UMA 通过外部 `fairchem-core` 依赖提供。核心代码位于 `mlipx/mlipx/
 分析 extras（可选）：`./mlipx[analysis]`（scipy/matplotlib）、
 `./mlipx[transport]`（kinisi）、`./mlipx[electrolyte]`（gemdat），或
 `./mlipx[analysis-all]` 一次性安装三者。
+
+## 版本与 revision 策略
+
+provenance 不应只挂在包版本上。输出、结果与 checkpoint 中记录了四条互相
+独立的 revision 轴：
+
+- 包版本（SemVer，例如 `2.0.0`），记录为 `mlipx_version`。
+- 结果 schema revision（`mlipx.neb-results/2`、`mlipx.runtime-validation/1`、
+  ...）。
+- NEB checkpoint schema revision（`mlipx.neb-checkpoint/1`）。
+- NEB 科学 revision——凡改变路径准备、力或收敛语义的变更都要递增（见
+  `mlipx/mlipx/neb/revisions.py`）。
+
+NEB resume 指纹会把上述全部（加上模型身份与路径身份）绑在一起；任何一轴
+不匹配都会让 resume 直接失败，而不是带着被改变的语义静默续算。
 
 ---
 
