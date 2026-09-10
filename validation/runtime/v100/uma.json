@@ -1,0 +1,15 @@
+{
+  "schema": "mlipx.runtime-validation/1",
+  "backend": "uma",
+  "status": "not_run",
+  "reason": "No UMA/fairchem-core environment is provisioned on this machine. packages/fairchem-core is a source checkout without a compatible offline wheelhouse, so the V100 short validation (V1-V6) was not executed. UMA stays needs_smoke_test until a dedicated environment is installed and the same record is produced.",
+  "python": "n/a",
+  "os": "n/a",
+  "gpu": {
+    "name": "Tesla V100-SXM2-16GB",
+    "compute_capability": [
+      7,
+      0
+    ]
+  }
+}

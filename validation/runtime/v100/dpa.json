@@ -1,0 +1,144 @@
+{
+  "schema": "mlipx.runtime-validation/1",
+  "backend": "dpa",
+  "python": "3.12.13",
+  "os": "Linux",
+  "model_sha256": "876354744aeaae17b2639a6a690514470273784f2b4836280850f50cbb799165",
+  "task": "bulk",
+  "requested_head": "Domains_Alloy",
+  "workloads": {
+    "single_point": {
+      "status": "passed",
+      "energy_eV": -14.201502561569214,
+      "max_force_eV_A": 0.5184660844505834,
+      "stress_checked": true
+    },
+    "shared_calculator": {
+      "status": "passed",
+      "absolute_tolerance": 2e-05,
+      "repeat_errors": {
+        "energy_eV": 1.1920928955078125e-07,
+        "forces_eV_A": 7.965126727627059e-08,
+        "stress_eV_A3": 7.997359192414566e-09
+      }
+    },
+    "energy_force_consistency": {
+      "status": "passed",
+      "force_atol_eV_A": 0.005,
+      "free_dof_count": 6,
+      "samples": [
+        {
+          "delta_A": 0.0005,
+          "errors_eV_A": [
+            0.0002404079589837238,
+            0.00014735019144040962,
+            0.00018342389313374952,
+            0.0001288773162286816,
+            0.000603672719027934,
+            0.00015862580144387906
+          ],
+          "max_error_eV_A": 0.000603672719027934
+        },
+        {
+          "delta_A": 0.001,
+          "errors_eV_A": [
+            9.139634704524724e-05,
+            2.8140901889628367e-05,
+            8.47970083555083e-05,
+            9.668026677900343e-06,
+            0.00017118766305214417,
+            0.0004970252910854178
+          ],
+          "max_error_eV_A": 0.0004970252910854178
+        },
+        {
+          "delta_A": 0.002,
+          "errors_eV_A": [
+            0.0001360998306267902,
+            5.794322427732368e-05,
+            0.00018342389313374952,
+            2.013429570979497e-05,
+            2.2527432467875363e-05,
+            0.00010959510004537876
+          ],
+          "max_error_eV_A": 0.00018342389313374952
+        }
+      ]
+    },
+    "short_md": {
+      "status": "passed",
+      "steps": 10,
+      "frames": 11
+    },
+    "neb": {
+      "status": "passed",
+      "total_images": 5,
+      "converged": true,
+      "saddle_validation": "not_performed"
+    }
+  },
+  "source_commit": "b3612290e412e964d5a77cc713370ed512037687",
+  "source_dirty": false,
+  "runtime": {
+    "actual_device_type": "cuda",
+    "actual_device_logical_index": 0,
+    "model_precision": [
+      "float32"
+    ],
+    "active_head": "Domains_Alloy",
+    "inference_mode": null,
+    "gpu_uuid_sha256": "c0c37a4d8178c0b3b6f37d93b2c5f835972fbe611593bf16204793867b4f202a"
+  },
+  "gpu": {
+    "name": "Tesla V100-SXM2-16GB",
+    "compute_capability": [
+      7,
+      0
+    ],
+    "driver": "580.173.02"
+  },
+  "versions": {
+    "torch": "2.10.0+cu126",
+    "mlipx": "2.0.0",
+    "dpa": "3.1.3"
+  },
+  "model_identity": {
+    "model_type": "dpa",
+    "model_sha256": "876354744aeaae17b2639a6a690514470273784f2b4836280850f50cbb799165",
+    "backend_version": "3.1.3",
+    "framework_versions": {
+      "torch": "2.10.0+cu126"
+    },
+    "task": "bulk",
+    "head_effective": "Domains_Alloy",
+    "dtype_effective": [
+      "float32"
+    ],
+    "inference_mode": "default",
+    "compile_enabled": null,
+    "actual_device_type": "cuda"
+  },
+  "evidence_id": "v100-dpa-876354744aea-native-cacheTrue",
+  "fixture": {
+    "element": "Cu",
+    "atoms": 4,
+    "cell_A": [
+      3.65,
+      3.65,
+      3.65
+    ],
+    "pbc": [
+      true,
+      true,
+      true
+    ],
+    "initial_displacement_A": [
+      0.07,
+      -0.03,
+      0.02
+    ]
+  },
+  "peak_vram_MiB": 166.3232421875,
+  "status": "passed",
+  "elapsed_seconds": 229.94793688197387
+}

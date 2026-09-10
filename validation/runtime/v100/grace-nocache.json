@@ -1,0 +1,144 @@
+{
+  "schema": "mlipx.runtime-validation/1",
+  "backend": "grace",
+  "python": "3.12.13",
+  "os": "Linux",
+  "model_sha256": "87e72b50a2eb151f00242a0ad7ab1253d507860f9da837cdc2f9010371b1490a",
+  "task": "bulk",
+  "requested_head": null,
+  "workloads": {
+    "single_point": {
+      "status": "passed",
+      "energy_eV": -14.9549560546875,
+      "max_force_eV_A": 0.4834717913485148,
+      "stress_checked": true
+    },
+    "shared_calculator": {
+      "status": "passed",
+      "absolute_tolerance": 2e-05,
+      "repeat_errors": {
+        "energy_eV": 4.76837158203125e-07,
+        "forces_eV_A": 1.0140749476250654e-07,
+        "stress_eV_A3": 4.799494831295506e-09
+      }
+    },
+    "energy_force_consistency": {
+      "status": "passed",
+      "force_atol_eV_A": 0.005,
+      "free_dof_count": 6,
+      "samples": [
+        {
+          "delta_A": 0.0005,
+          "errors_eV_A": [
+            0.0005504854121800573,
+            8.223845231919436e-05,
+            1.4395576146575273e-05,
+            9.203872770499263e-05,
+            0.0009201596585910465,
+            0.000492625024561967
+          ],
+          "max_error_eV_A": 0.0009201596585910465
+        },
+        {
+          "delta_A": 0.001,
+          "errors_eV_A": [
+            0.0001647703251246302,
+            0.0005590756105223194,
+            0.00022402300295498723,
+            0.00014637985139656987,
+            0.00020490392128635904,
+            1.578786635884205e-05
+          ],
+          "max_error_eV_A": 0.0005590756105223194
+        },
+        {
+          "delta_A": 0.002,
+          "errors_eV_A": [
+            4.556103557384894e-05,
+            0.00032065703142075686,
+            0.00010481371340420598,
+            9.203872770499263e-05,
+            0.00020490392128635904,
+            0.00022263071274272045
+          ],
+          "max_error_eV_A": 0.00032065703142075686
+        }
+      ]
+    },
+    "short_md": {
+      "status": "passed",
+      "steps": 10,
+      "frames": 11
+    },
+    "neb": {
+      "status": "passed",
+      "total_images": 5,
+      "converged": true,
+      "saddle_validation": "not_performed"
+    }
+  },
+  "source_commit": "b3612290e412e964d5a77cc713370ed512037687",
+  "source_dirty": false,
+  "runtime": {
+    "actual_device_type": "cuda",
+    "actual_device_logical_index": 0,
+    "model_precision": [
+      "float32"
+    ],
+    "active_head": null,
+    "inference_mode": null,
+    "gpu_uuid_sha256": "c0c37a4d8178c0b3b6f37d93b2c5f835972fbe611593bf16204793867b4f202a"
+  },
+  "gpu": {
+    "name": "Tesla V100-SXM2-16GB",
+    "compute_capability": [
+      7,
+      0
+    ],
+    "driver": "580.173.02"
+  },
+  "versions": {
+    "tensorflow": "2.20.0",
+    "mlipx": "2.0.0",
+    "grace": "0.6.0"
+  },
+  "model_identity": {
+    "model_type": "grace",
+    "model_sha256": "87e72b50a2eb151f00242a0ad7ab1253d507860f9da837cdc2f9010371b1490a",
+    "backend_version": "0.6.0",
+    "framework_versions": {
+      "tensorflow": "2.20.0"
+    },
+    "task": "bulk",
+    "head_effective": null,
+    "dtype_effective": [
+      "float32"
+    ],
+    "inference_mode": "default",
+    "compile_enabled": null,
+    "actual_device_type": "cuda"
+  },
+  "evidence_id": "v100-grace-87e72b50a2eb-native-cacheFalse",
+  "fixture": {
+    "element": "Cu",
+    "atoms": 4,
+    "cell_A": [
+      3.65,
+      3.65,
+      3.65
+    ],
+    "pbc": [
+      true,
+      true,
+      true
+    ],
+    "initial_displacement_A": [
+      0.07,
+      -0.03,
+      0.02
+    ]
+  },
+  "peak_vram_MiB": 330.544189453125,
+  "status": "passed",
+  "elapsed_seconds": 28.1283151099924
+}
