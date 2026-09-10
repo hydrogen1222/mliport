@@ -62,7 +62,7 @@ class TestCalculatorFactory:
         }
         assert all(thermostat_keys.isdisjoint(keys) for keys in _CALC_KEYS.values())
 
-    def test_uma_tasks_match_installed_fairchem_api(self):
+    def test_uma_tasks_match_installed_fairchem_api(self, tmp_path):
         """When fairchem-core is installed, the UMA task set matches it.
 
         Skipped when fairchem-core is not importable (external dependency,
@@ -71,8 +71,12 @@ class TestCalculatorFactory:
         pytest.importorskip("fairchem.core")
         from fairchem.core.units.mlip_unit.api.inference import UMATask
 
-        assert {task.value for task in UMATask} == UMACalculator.VALID_TASKS
-        assert "oc22" not in UMACalculator.VALID_TASKS
+        model = tmp_path / "metadata-only.pt"
+        model.write_bytes(b"metadata-only test; never loaded")
+        wrapper = UMACalculator(model, task="omat", device="cpu")
+        assert {task.value for task in UMATask} == wrapper.VALID_TASKS
+        assert "oc22" not in wrapper.VALID_TASKS
+        assert wrapper._calculator is None
 
     def test_uma_creates_umacalculator(self, tmp_path):
         """UMA engine produces a UMACalculator that is a BaseMLIPCalculator."""

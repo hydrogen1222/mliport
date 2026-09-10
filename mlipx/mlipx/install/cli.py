@@ -33,6 +33,8 @@ from mlipx.install.sources import (
     CHINA_SOURCE_CHOICES,
     SOURCE_PROFILES,
     resolve_source,
+    source_environment,
+    source_environment_summary,
 )
 
 
@@ -213,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
     for w in plan.warnings:
         print(f"[mlipx] WARNING: {w}", file=sys.stderr)
 
+    env = source_environment(src, os.environ)
+    for setting in source_environment_summary(src, env):
+        print(f"[mlipx] Effective custom source environment: {setting}")
+
     # Existing-venv Python mismatch check (fail unless --clean).
     if not args.clean:
         for step in plan.steps:
@@ -238,9 +244,6 @@ def main(argv: list[str] | None = None) -> int:
 
     # Execute
     cwd = Path.cwd()
-    env = os.environ.copy()
-    env["UV_NO_CONFIG"] = "1"
-    env.update(src.env)
 
     failures = 0
     for step in plan.steps:

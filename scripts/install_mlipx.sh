@@ -19,12 +19,6 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if ! command -v uv >/dev/null 2>&1; then
-    echo "[mlipx] ERROR: 'uv' not found on PATH." >&2
-    echo "        Install it first:  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
-    exit 1
-fi
-
 cd "$REPO_ROOT"
 
 # Respect the final --source and --python values before bootstrapping Python.
@@ -34,6 +28,8 @@ SOURCE_PROFILE="auto"
 TARGET_PYTHON="3.12"
 EXPECT_SOURCE_VALUE=0
 EXPECT_PYTHON_VALUE=0
+READ_ONLY=0
+HELP_ONLY=0
 for ARG in "$@"; do
     if [[ "$EXPECT_SOURCE_VALUE" -eq 1 ]]; then
         SOURCE_PROFILE="$ARG"
@@ -46,6 +42,13 @@ for ARG in "$@"; do
         continue
     fi
     case "$ARG" in
+        --help|-h)
+            READ_ONLY=1
+            HELP_ONLY=1
+            ;;
+        --dry-run)
+            READ_ONLY=1
+            ;;
         --source)
             EXPECT_SOURCE_VALUE=1
             ;;
@@ -61,10 +64,26 @@ for ARG in "$@"; do
     esac
 done
 
+bootstrap_help() {
+    echo "Usage: install_mlipx.sh [--engines uma,mace,dpa,grace] [--device auto|cuda|cpu]"
+    echo "       [--source auto|official|china|china-aliyun|china-ustc|china-tencent|custom|offline]"
+    echo "       [--python 3.10|3.11|3.12] [--dry-run] [--clean] [--skip-doctor] [--non-interactive]"
+    echo "UMA requires Python >=3.11. Help and dry-run never download Python."
+}
+
+if ! command -v uv >/dev/null 2>&1; then
+    if [[ "$HELP_ONLY" -eq 1 ]]; then
+        bootstrap_help
+        exit 0
+    fi
+    echo "[mlipx] ERROR: 'uv' not found on PATH. Install uv before running the installer." >&2
+    exit 1
+fi
+
 # Pick a Python interpreter that uv manages (3.12 preferred, 3.10/3.11 ok).
 # This avoids depending on an old system python3 that cannot parse the
 # modern type annotations used by mlipx.install.
-if [[ -z "${MLIPX_INSTALL_PYTHON:-}" ]]; then
+if [[ -z "${MLIPX_INSTALL_PYTHON:-}" && "$HELP_ONLY" -eq 0 ]]; then
     case "$TARGET_PYTHON" in
         3.10|3.11|3.12) ;;
         *)
@@ -74,16 +93,48 @@ if [[ -z "${MLIPX_INSTALL_PYTHON:-}" ]]; then
     esac
 fi
 PY_SPEC="${MLIPX_INSTALL_PYTHON:-$TARGET_PYTHON}"
-if [[ "$SOURCE_PROFILE" == "offline" ]]; then
+if [[ "$SOURCE_PROFILE" == "offline" || "$READ_ONLY" -eq 1 ]]; then
     export UV_OFFLINE=1
+    export UV_PYTHON_DOWNLOADS=never
     if ! UV_PY="$(uv python find "$PY_SPEC" 2>/dev/null)"; then
+        if [[ "$HELP_ONLY" -eq 1 ]]; then
+            bootstrap_help
+            exit 0
+        fi
+        if [[ "$SOURCE_PROFILE" != "offline" ]]; then
+            echo "[mlipx] ERROR: dry-run requires an existing Python $PY_SPEC interpreter; automatic download is disabled." >&2
+            exit 1
+        fi
         echo "[mlipx] ERROR: offline mode requires an existing Python $PY_SPEC interpreter; automatic download is disabled." >&2
         exit 1
     fi
 else
-    UV_PY="$(uv python find "$PY_SPEC" 2>/dev/null \
-        || { uv python install "$PY_SPEC" >/dev/null 2>&1 && uv python find "$PY_SPEC"; } \
-        || { echo "[mlipx] ERROR: could not obtain a Python $PY_SPEC interpreter via uv." >&2; exit 1; })"
+    # Use an existing runtime to validate the full plan before uv is allowed
+    # to download the target interpreter while creating its environments.
+    UV_PY="$(UV_PYTHON_DOWNLOADS=never uv python find "$PY_SPEC" 2>/dev/null \
+        || { echo "[mlipx] ERROR: preflight requires an existing Python $PY_SPEC interpreter; set MLIPX_INSTALL_PYTHON to a local compatible runtime." >&2; exit 1; })"
+fi
+
+# The planner uses packaging.SpecifierSet. A bare managed interpreter can
+# lack packaging even when the target Python exists. Reuse an installed
+# local planner runtime without changing the requested target --python.
+if ! "$UV_PY" -c 'import packaging.specifiers' >/dev/null 2>&1; then
+    PLANNER_PY=""
+    for CANDIDATE in "$REPO_ROOT/.venv/bin/python" python3 python; do
+        if "$CANDIDATE" -c 'import sys, packaging.specifiers; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1; then
+            PLANNER_PY="$CANDIDATE"
+            break
+        fi
+    done
+    if [[ -z "$PLANNER_PY" ]]; then
+        if [[ "$HELP_ONLY" -eq 1 ]]; then
+            bootstrap_help
+            exit 0
+        fi
+        echo "[mlipx] ERROR: preflight needs a local Python 3.10-3.12 with packaging installed. Set MLIPX_INSTALL_PYTHON to that interpreter; no dependencies were downloaded." >&2
+        exit 1
+    fi
+    UV_PY="$PLANNER_PY"
 fi
 
 # Make the mlipx package importable: PYTHONPATH -> <repo>/mlipx (project root),

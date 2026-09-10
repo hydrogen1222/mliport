@@ -30,6 +30,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from packaging.specifiers import SpecifierSet
+
+PROJECT_REQUIRES_PYTHON = SpecifierSet(">=3.10,<3.13")
+# Fixed-version PyPI Requires-Python and published CPython wheel tags.
+# Update together with framework pins; an unknown pin requires a new audit.
+FRAMEWORK_PYTHON = {
+    ("torch", "2.8.0"): SpecifierSet(">=3.9,<3.14"),
+    ("torch", "2.10.0"): SpecifierSet(">=3.10,<3.15"),
+    ("tensorflow", "2.20.0"): SpecifierSet(">=3.9,<3.14"),
+}
+
 # ---------------------------------------------------------------------------
 # Architecture profiles (GPU families)
 # ---------------------------------------------------------------------------
@@ -168,22 +179,24 @@ _LEGACY_CUDA_CHANNELS = ("cu126",)
 # ---------------------------------------------------------------------------
 # For legacy GPUs (Maxwell/Pascal/Volta) the channel is always cu126.
 # For modern GPUs (Turing+) the channel depends on the torch version:
-#   torch 2.8.x – 2.10.x  → cu128
-#   torch 2.12.x – 2.13.x  → cu130
+#   torch 2.8.0 / 2.10.0 → cu128
+# Other releases require an explicit wheel compatibility audit.
 # This table is the single central mapping; update it when a new torch
 # version changes its modern CUDA channel.
 
 
 def _torch_modern_cuda(version: str) -> str:
     """Return the modern CUDA channel for a given torch version."""
-    major_minor = ".".join(str(version).split(".")[:2])
     mapping = {
-        "2.8": "cu128",
-        "2.10": "cu128",
-        "2.12": "cu130",
-        "2.13": "cu130",
+        "2.8.0": "cu128",
+        "2.10.0": "cu128",
     }
-    return mapping.get(major_minor, "cu128")
+    if version not in mapping:
+        raise ValueError(
+            f"Unknown torch version {version!r}: CUDA wheel compatibility "
+            "requires a resolver update"
+        )
+    return mapping[version]
 
 
 def select_cuda_channel(arch: ArchProfile, torch_version: str) -> str:
@@ -192,9 +205,10 @@ def select_cuda_channel(arch: ArchProfile, torch_version: str) -> str:
     Legacy GPUs (Maxwell/Pascal/Volta) always use ``cu126``.  Modern GPUs
     (Turing+) use the torch version's modern CUDA channel.
     """
+    modern = _torch_modern_cuda(torch_version)
     if arch.name in ("maxwell", "pascal", "volta"):
         return "cu126"
-    return _torch_modern_cuda(torch_version)
+    return modern
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +284,7 @@ class BackendSpec:
     version: str
     framework: str
     upstream_constraint: str
+    requires_python: SpecifierSet
     arch_profiles: dict[str, BackendArchProfile] = field(default_factory=dict)
     venv_name: str = ""
     install_extra: tuple[str, ...] = ()
@@ -309,6 +324,7 @@ BACKENDS: dict[str, BackendSpec] = {
         version="2.21.0",
         framework="torch",
         upstream_constraint="torch~=2.8.0",
+        requires_python=SpecifierSet(">=3.11,<3.14"),
         venv_name=".venv",
         arch_profiles={
             "maxwell": BackendArchProfile(
@@ -372,6 +388,7 @@ BACKENDS: dict[str, BackendSpec] = {
         version="0.3.16",
         framework="torch",
         upstream_constraint="torch>=1.12",
+        requires_python=SpecifierSet(">=3.9"),
         install_extra=("e3nn==0.4.4",),
         arch_profiles={
             "maxwell": BackendArchProfile(
@@ -435,6 +452,7 @@ BACKENDS: dict[str, BackendSpec] = {
         version="3.1.3",
         framework="torch",
         upstream_constraint="torch==2.10.0",
+        requires_python=SpecifierSet(">=3.10"),
         arch_profiles={
             "maxwell": BackendArchProfile(
                 framework_version="2.10.0",
@@ -499,6 +517,7 @@ BACKENDS: dict[str, BackendSpec] = {
         version="0.6.0",
         framework="tensorflow",
         upstream_constraint="tensorflow<=2.20",
+        requires_python=SpecifierSet(">=3.9"),
         arch_profiles={
             # All GPU archs use TF 2.20.0 because tensorpotential 0.6.0
             # pins tensorflow<=2.20.  The only difference is Maxwell:

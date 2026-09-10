@@ -36,6 +36,75 @@ Source profiles:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Mapping
+import re
+from urllib.parse import urlsplit
+
+
+_UV_NETWORK_CACHE_ENV = frozenset(
+    {
+        "UV_CACHE_DIR",
+        "UV_NO_CACHE",
+        "UV_NATIVE_TLS",
+        "UV_SYSTEM_CERTS",
+        "UV_HTTP_TIMEOUT",
+        "UV_HTTP_CONNECT_TIMEOUT",
+        "UV_HTTP_RETRIES",
+        "UV_CONCURRENT_DOWNLOADS",
+        "UV_NO_PROGRESS",
+        "PIP_CERT",
+        "PIP_CLIENT_CERT",
+    }
+)
+
+
+def source_environment(
+    profile: SourceProfile, inherited: Mapping[str, str]
+) -> dict[str, str]:
+    """Apply source policy without changing the caller's environment.
+
+    Preserve proxy/certificate settings and ordinary process variables. Only
+    custom profiles inherit uv resolver settings; unknown UV_* settings are
+    removed for managed profiles so future source knobs cannot bypass policy.
+    Offline uses the uv cache only, without inherited remote find-links.
+    """
+    env = dict(inherited)
+    if profile.name != "custom":
+        env = {
+            key: value
+            for key, value in env.items()
+            if not key.startswith(("UV_", "PIP_")) or key in _UV_NETWORK_CACHE_ENV
+        }
+    env.update(profile.env)
+    env["UV_NO_CONFIG"] = "1"
+    if profile.offline:
+        env["UV_OFFLINE"] = "1"
+        env["UV_PYTHON_DOWNLOADS"] = "never"
+    return env
+
+
+def source_environment_summary(
+    profile: SourceProfile, env: Mapping[str, str]
+) -> list[str]:
+    """Show custom resolver settings without exposing credentials or URL paths."""
+    if profile.name != "custom":
+        return []
+    lines = []
+    for key, value in sorted(env.items()):
+        if not key.startswith(("UV_", "PIP_")):
+            continue
+        # Paths, query strings and userinfo may all contain secrets. Only
+        # disclose remote source origins; retain no other arbitrary values.
+        origins = []
+        for token in re.findall(r"https?://[^\s]+", value):
+            try:
+                parsed = urlsplit(token)
+                if parsed.hostname:
+                    origins.append(f"{parsed.scheme}://{parsed.hostname}/[redacted]")
+            except ValueError:
+                pass
+        lines.append(f"{key}=" + (", ".join(origins) if origins else "[configured]"))
+    return lines
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,42 @@ from mlipx.install import cli
 from mlipx.install.plan import InstallPlanError
 
 
+def test_executor_uses_managed_source_environment(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("UV_INDEX_URL", "https://wrong.example/simple")
+    monkeypatch.setenv("UV_FIND_LINKS", "https://wrong.example/wheels")
+    monkeypatch.setattr(cli, "detect_gpus", lambda: None)
+    monkeypatch.setattr(cli, "_existing_venv_python_mismatch", lambda *_args: False)
+    calls = []
+
+    def execute(argv, **kwargs):
+        calls.append((argv, kwargs["env"]))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cli.subprocess, "run", execute)
+    assert (
+        cli.main(
+            [
+                "--engines",
+                "mace",
+                "--device",
+                "cpu",
+                "--source",
+                "official",
+                "--skip-doctor",
+                "--non-interactive",
+            ]
+        )
+        == 0
+    )
+    assert calls
+    for _argv, env in calls:
+        assert "UV_INDEX_URL" not in env
+        assert "UV_FIND_LINKS" not in env
+        assert env["UV_NO_CONFIG"] == "1"
+
+
 def test_china_source_prompt_accepts_number_after_invalid_input(capsys) -> None:
     answers = iter(["not-a-number", "6", "3"])
 

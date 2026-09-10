@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from packaging.specifiers import SpecifierSet
+
 from mlipx.install.compatibility import (
     ARCH_PROFILES,
     BACKENDS,
@@ -50,10 +53,8 @@ def test_select_cuda_channel_legacy_vs_modern() -> None:
     for prof in ARCH_PROFILES.values():
         if prof.name in legacy:
             assert select_cuda_channel(prof, "2.8.0") == "cu126"
-            assert select_cuda_channel(prof, "2.13.0") == "cu126"
         else:
             assert select_cuda_channel(prof, "2.8.0") == "cu128"
-            assert select_cuda_channel(prof, "2.13.0") == "cu130"
 
 
 def test_torch_channel_mapping() -> None:
@@ -61,8 +62,13 @@ def test_torch_channel_mapping() -> None:
 
     assert _torch_modern_cuda("2.8.0") == "cu128"
     assert _torch_modern_cuda("2.10.0") == "cu128"
-    assert _torch_modern_cuda("2.12.0") == "cu130"
-    assert _torch_modern_cuda("2.13.1") == "cu130"
+
+
+@pytest.mark.parametrize("version", ["2.8.1", "2.12.0", "2.13.1", "99.0.0", "invalid"])
+def test_unknown_torch_channel_fails_on_every_architecture(version):
+    for arch in ARCH_PROFILES.values():
+        with pytest.raises(ValueError, match="resolver update"):
+            select_cuda_channel(arch, version)
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +143,7 @@ def test_status_derivation() -> None:
             version="1",
             framework="torch",
             upstream_constraint="torch>=1",
+            requires_python=SpecifierSet(">=3.10"),
         ).arch_profiles
         == {}
     )

@@ -12,6 +12,15 @@ from mlipx.install.plan import (
 )
 
 
+def test_backend_python_intersection_before_clean_plan():
+    with pytest.raises(InstallPlanError, match="fairchem-core==2.21.0"):
+        generate_plan(None, ["uma"], python_version="3.10", device="cpu", clean=True)
+    for py in ("3.11", "3.12"):
+        assert generate_plan(None, ["uma"], python_version=py, device="cpu").steps
+    for engine in ("mace", "dpa", "grace"):
+        assert generate_plan(None, [engine], python_version="3.10", device="cpu").steps
+
+
 def _gpu(name: str, major: int, minor: int, vram: int = 8192) -> GpuInfo:
     return GpuInfo(
         name=name,

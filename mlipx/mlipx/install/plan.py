@@ -29,6 +29,8 @@ if TYPE_CHECKING:
 
 from mlipx.install.compatibility import (
     BACKENDS,
+    FRAMEWORK_PYTHON,
+    PROJECT_REQUIRES_PYTHON,
     BackendSpec,
     effective_cuda_channel,
     get_backend_arch_profile,
@@ -316,6 +318,23 @@ def generate_plan(
     except ValueError as exc:
         raise InstallPlanError(str(exc)) from exc
     engine_list = normalize_engines(engines)
+    for engine in engine_list:
+        backend = BACKENDS[engine]
+        constraints = [
+            ("mlipx", PROJECT_REQUIRES_PYTHON),
+            (backend.requirement, backend.requires_python),
+        ]
+        for bp in backend.arch_profiles.values():
+            key = (backend.framework, bp.framework_version)
+            if key not in FRAMEWORK_PYTHON:
+                raise InstallPlanError(f"Unknown framework Python/wheel support: {key}")
+            constraints.append(("==".join(key) + " wheels", FRAMEWORK_PYTHON[key]))
+        for origin, constraint in constraints:
+            if py_ver not in constraint:
+                raise InstallPlanError(
+                    f"Python {py_ver} is incompatible with {origin}: "
+                    f"requires-python {constraint}. No environment changes were made."
+                )
 
     # ---- Resolve device / architecture (fail closed for cuda) ----
     is_cpu: bool

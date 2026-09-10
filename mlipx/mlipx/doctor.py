@@ -26,6 +26,7 @@ from packaging.requirements import Requirement
 
 from mlipx.gpu_compat import arch_supports_device
 from mlipx.gpu_setup import TorchRecommendation, recommend_torch
+from mlipx.install.compatibility import BACKENDS, PROJECT_REQUIRES_PYTHON
 from mlipx.install.hardware import (
     MIN_VRAM_MIB_WARN,
     GpuInfo,
@@ -676,6 +677,24 @@ def run_diagnostics(
         version = _distribution_version(spec["distribution"])
         installed_versions[engine_name] = version
         selected = engine_name == target_engine
+        if selected:
+            backend = BACKENDS[engine_name]
+            compatible = (
+                py_ver in PROJECT_REQUIRES_PYTHON and py_ver in backend.requires_python
+            )
+            checks.append(
+                {
+                    "name": f"{spec['label']} installer Python constraint",
+                    "value": py_ver,
+                    "status": "ok" if compatible else "fail",
+                    "detail": (
+                        f"mlipx requires-python {PROJECT_REQUIRES_PYTHON}; "
+                        f"installer pin {backend.requirement} requires-python "
+                        f"{backend.requires_python} (fixed-version PyPI metadata). "
+                        "This describes the installer pin, not other installed versions."
+                    ),
+                }
+            )
         if version is not None:
             checks.append(
                 {
