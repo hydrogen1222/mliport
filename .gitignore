@@ -74,6 +74,8 @@ results/
 # Private development plans & notes (not project documentation)
 /.agent-local/
 /.local-plans/
+# Local wheelhouse / offline install sources
+/packages/
 /audit-local/
 /*_NOT_FOR_REPO_*.md
 /*_development_plan*.md
