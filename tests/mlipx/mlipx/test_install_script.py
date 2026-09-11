@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -235,9 +236,17 @@ def test_online_planner_falls_back_to_local_runtime_when_target_absent(
     )
     fake_uv.chmod(0o755)
     # A local python3.12 that satisfies the planner contract (any interpreter
-    # 3.10-3.12 with packaging installed).
+    # 3.10-3.12 with packaging installed). Delegating via a shim instead of a
+    # symlink matters: a symlink to a uv-venv python resolves past the venv
+    # (bin/python is itself a symlink to the managed interpreter), so the
+    # planner check would run against the bare managed interpreter and lose
+    # the venv's site-packages.
     stub = tmp_path / "python3.12"
-    stub.symlink_to(sys.executable)
+    stub.write_text(
+        "#!/usr/bin/env bash\n" f'exec {shlex.quote(sys.executable)} "$@"\n',
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
     env = os.environ.copy()
     env.pop("MLIPX_INSTALL_PYTHON", None)
     env["PATH"] = f"{tmp_path}:{env['PATH']}"

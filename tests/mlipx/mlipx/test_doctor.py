@@ -297,6 +297,22 @@ def test_cuda_target_fails_when_framework_cannot_see_gpu(monkeypatch):
     assert failures == 1
 
 
+def _unexpected_failures(checks: list[dict]) -> list[dict]:
+    """Failures other than the documented interpreter-vs-installer-pin one.
+
+    The UMA installer pin (fairchem-core==2.21.0) requires Python >=3.11, so
+    on a 3.10 interpreter doctor reports "UMA installer Python constraint"
+    as fail by design. These tests exercise the GPU recommendation logic,
+    not that constraint.
+    """
+    return [
+        check
+        for check in checks
+        if check["status"] == "fail"
+        and check["name"] != "UMA installer Python constraint"
+    ]
+
+
 def test_doctor_verifies_uma_torch_recommendation_on_4090(monkeypatch):
     """Regression: installer verification must not mix dict and object APIs."""
     _mock_4090_runtime(
@@ -308,7 +324,7 @@ def test_doctor_verifies_uma_torch_recommendation_on_4090(monkeypatch):
     runtime_gpu = next(c for c in checks if c["name"] == "Runtime GPU 0")
 
     assert runtime_gpu["status"] == "ok"
-    assert failures == 0
+    assert _unexpected_failures(checks) == []
 
 
 def test_doctor_reports_missing_4090_kernel_without_crashing(monkeypatch):
@@ -321,7 +337,8 @@ def test_doctor_reports_missing_4090_kernel_without_crashing(monkeypatch):
     assert runtime_gpu["status"] == "fail"
     assert "do not support sm_89" in runtime_gpu["detail"]
     assert "torch 2.8.0+cu128" in runtime_gpu["detail"]
-    assert failures == 1
+    unexpected = _unexpected_failures(checks)
+    assert len(unexpected) == 1 and unexpected[0]["name"] == "Runtime GPU 0"
 
 
 def test_doctor_p40_dpa_recommends_exact_deepmd_cu126_build(monkeypatch):
@@ -384,7 +401,7 @@ def test_doctor_falls_back_to_nvidia_smi_when_container_reports_zero_vram(
 
     assert "24.0 GB" in names["Runtime GPU 0"]["value"]
     assert "Runtime GPU 0 VRAM" not in names
-    assert failures == 0
+    assert _unexpected_failures(checks) == []
 
 
 def test_backend_import_failure_is_not_reported_as_installed_runtime(monkeypatch):

@@ -43,6 +43,9 @@ analysis-all = [
 ]
 dev = [
     "pytest",
+    "pytest-asyncio",
+    # exercised via ase.spacegroup.symmetrize (fix-symmetry contract tests)
+    "spglib",
     "ruff",
     "mypy",
 ]
