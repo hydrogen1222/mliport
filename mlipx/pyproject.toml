@@ -54,6 +54,16 @@ documentation = "https://github.com/hydrogen1222/mlipx/blob/main/README.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
+# Explicit include list: auto-discovery would pick up stale setuptools build
+# caches (build/lib/**) and other repository artifacts as packages.
+include = ["mlipx", "mlipx.*", "examples", "examples.*"]
+namespaces = false
+
+
+# Curated capability evidence must ship inside the wheel so an installed
+# mlipx can resolve capabilities without a repository checkout.
+[tool.setuptools.package-data]
+mlipx = ["data/validation/*.json"]
 
 [tool.ruff]
 line-length = 88

@@ -14,6 +14,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "cpu_and_gpu: mark test to run on both GPU and CPU workers"
     )
+    config.addinivalue_line(
+        "markers", "wheel_integration: build a wheel and install it into a clean venv"
+    )
 
 
 def pytest_runtest_setup(item):
