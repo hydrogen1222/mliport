@@ -521,6 +521,7 @@ def workflow_path_init(ctx, args, out_dir) -> int:
             options = NEBOptions(
                 n_intermediate_images=3,
                 interpolation=interp,
+                path_convention="unwrapped",
                 fmax_eV_A=CI_FMAX,
                 pre_fmax_eV_A=NEB_PRE_FMAX,
                 max_steps=NEB_MAX_STEPS,
@@ -534,6 +535,8 @@ def workflow_path_init(ctx, args, out_dir) -> int:
                 entry["final"],
                 options,
                 atom_map=np.asarray(pair["atom_map"]),
+                # explicit zero winding shifts (in-cell hop) under the
+                # unwrapped convention, as required by the product
                 image_shifts=np.asarray(pair["image_shifts"]),
             )
             energies = band_energies(ctx, band.images)
@@ -606,6 +609,9 @@ def _ci_neb_record(
         "endpoint_fmax": ENDPOINT_FMAX,
         "endpoint_steps": ENDPOINT_STEPS,
         "endpoint_policy": "validate",
+        # the harness proves calculator identity itself (common.calculator_identity);
+        # this only skips the engine-evidence table check for these profiles
+        "allow_unvalidated_neb": True,
     }
     if extra_run_options:
         run_options.update(extra_run_options)
@@ -801,6 +807,7 @@ def workflow_resume_identity(ctx, args, out_dir) -> int:
         "endpoint_fmax": ENDPOINT_FMAX,
         "endpoint_steps": ENDPOINT_STEPS,
         "endpoint_policy": "validate",
+        "allow_unvalidated_neb": True,  # harness proves identity itself
         "checkpoint_interval": RESUME_CHECKPOINT_INTERVAL,
     }
     run_dir = _run_dir(Path(args.out), args.tag, "t5g_resume")
@@ -1034,6 +1041,7 @@ def workflow_na3ps4_hop(ctx, args, out_dir) -> int:
             "endpoint_fmax": ENDPOINT_FMAX,
             "endpoint_steps": ENDPOINT_STEPS,
             "endpoint_policy": "validate",
+            "allow_unvalidated_neb": True,  # harness proves identity itself
         }
         resolved = _neb_resolved(ctx, args, **run_options)
         run_dir = _run_dir(Path(args.out), args.tag, "t5i_na3ps4_hop")
