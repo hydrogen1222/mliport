@@ -96,8 +96,11 @@ def _run_dir(out_dir: Path, tag: str | None, name: str) -> Path:
     return d
 
 
-def _md_run_dir_for(args, temperature_k: float) -> Path:
-    """Resolve the trajectory run directory for one temperature.
+def _md_run_dir_for(args, temperature_k: float, engine: str) -> Path:
+    """Resolve the trajectory run directory for one engine+temperature.
+
+    Run directories are engine-qualified: a completed run belongs to exactly
+    one calculator and must never be silently reused by another backend.
 
     ``--run-dir`` (analysis-only phase) applies to a single temperature.
     """
@@ -108,7 +111,7 @@ def _md_run_dir_for(args, temperature_k: float) -> Path:
                 "one temperature"
             )
         return Path(args.run_dir)
-    name = f"t7_na3ps4_T{temperature_k:g}K"
+    name = f"t7_na3ps4_{engine}_T{temperature_k:g}K"
     return _run_dir(Path(args.out), args.tag, name)
 
 
@@ -125,11 +128,11 @@ def _md_run_complete(run_dir: Path, equil_steps: int, prod_steps: int) -> bool:
     return bool(steps) and steps[-1] >= equil_steps + prod_steps - 1
 
 
-def _load_md_dataset(args, temperature_k: float):
+def _load_md_dataset(args, temperature_k: float, engine: str):
     """Load one completed MD run through the product loading path."""
     from mlipx.analysis.dataset import TrajectoryDataset
 
-    run_dir = _md_run_dir_for(args, temperature_k)
+    run_dir = _md_run_dir_for(args, temperature_k, engine)
     equil_steps = int(round(EQUILIBRATION_PS * 1000.0 / TIMESTEP_FS))
     prod_steps = int(round(args.production_ps * 1000.0 / TIMESTEP_FS))
     if not _md_run_complete(run_dir, equil_steps, prod_steps):
@@ -157,13 +160,16 @@ def _kinisi_transport(dataset, temperature_k: float) -> dict[str, Any]:
         random_seed=MD_SEED,
     )
     tracer = result.get("tracer_diffusion", {})
+    ne = result.get("nernst_einstein", {})
     return {
-        "kinisi_version": result.get("kinisi_version"),
+        "kinisi_version": tracer.get("kinisi_version"),
         "fit_start_ps": KINISI_FIT_START_PS,
         "D_posterior_m2_s": tracer.get("D_posterior_m2_s"),
         "D_posterior_cm2_s": tracer.get("D_posterior_cm2_s"),
-        "sigma_NE_S_m": result.get("sigma_NE_S_m"),
-        "sigma_NE_mS_cm": result.get("sigma_NE_mS_cm"),
+        "sigma_NE_S_m": ne.get("sigma_NE_tracer_S_m"),
+        "sigma_NE_mS_cm": ne.get("sigma_NE_tracer_mS_cm"),
+        "sigma_NE_posterior_mS_cm": ne.get("sigma_NE_tracer_posterior_mS_cm"),
+        "nernst_einstein_definition": ne.get("definition"),
         "kinisi_position_semantics": result.get("kinisi_position_semantics"),
     }
 
@@ -258,6 +264,19 @@ def _arrhenius_fit(temperatures: list[float], diffusivities: list[float],
     }
 
 
+def _jsonable(value: Any) -> Any:
+    """Recursively convert numpy scalars/arrays to plain JSON types."""
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return _jsonable(value.tolist())
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
 def _write(ctx, case_id, test_id, status, parameters, metrics,
            diagnostics=None, structure_id=None, wall=0.0, peak_vram=None,
            exception=None) -> int:
@@ -273,8 +292,8 @@ def _write(ctx, case_id, test_id, status, parameters, metrics,
         dtype=ctx.dtype,
         device=common.device_record(ctx.device),
         input_structure_id=structure_id,
-        parameters=parameters,
-        metrics=metrics,
+        parameters=_jsonable(parameters),
+        metrics=_jsonable(metrics),
         diagnostics=diagnostics,
         wall_seconds=wall,
         peak_vram=peak_vram,
@@ -318,7 +337,7 @@ def run_md_case(ctx, args) -> int:
     for temperature in temperatures:
         t0 = time.perf_counter()
         try:
-            run_dir = _md_run_dir_for(args, temperature)
+            run_dir = _md_run_dir_for(args, temperature, ctx.engine)
             if _md_run_complete(run_dir, equil_steps, prod_steps):
                 rows = _production_csv_rows(run_dir, equil_steps)
             else:
@@ -429,7 +448,7 @@ def run_transport_case(ctx, args) -> int:
     for temperature in temperatures:
         peak_vram = None
         try:  # noqa: PERF203
-            run_dir, dataset = _load_md_dataset(args, temperature)
+            run_dir, dataset = _load_md_dataset(args, temperature, ctx.engine)
             peak_vram = common.peak_vram_mib()
             # Thermo stability from the runner CSV (production rows only).
             rows = _production_csv_rows(run_dir, equil_steps)
@@ -562,7 +581,7 @@ def run_gemdat_case(ctx, args) -> int:
     failures = 0
     for temperature in temperatures:
         try:  # noqa: PERF203
-            _, dataset = _load_md_dataset(args, temperature)
+            _, dataset = _load_md_dataset(args, temperature, ctx.engine)
             diag = _gemdat_diagnostic(dataset, args, temperature)
             sufficient = diag["n_transition_events"] >= MIN_GEMDAT_EVENTS
             status = "characterized" if sufficient else "unsupported"
@@ -681,7 +700,7 @@ def main() -> int:
                 wrapper=None,
                 calculator=None,
                 device=args.device,
-                dtype=args.dtype or "n/a",
+                dtype="engine-defined",  # MD ran in the engine venv
                 task=profile.get("task"),
                 head=args.head,
                 backend_version=args.backend_version

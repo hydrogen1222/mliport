@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
 import time
 from importlib.metadata import PackageNotFoundError
@@ -343,6 +344,9 @@ def write_result(
         name += f"-{dtype}"
     if tag:
         name += f"-{tag}"
+    # Path-safety: slugs are built from free-form fields; an embedded path
+    # separator would otherwise make the record unwritable (or misplace it).
+    name = name.replace("/", "_").replace(os.sep, "_")
     path = out / f"{name}.json"
     path.write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
