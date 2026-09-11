@@ -25,7 +25,7 @@ dependencies = [
 # requirement.
 analysis = [
     "scipy>=1.11",
-    "matplotlib>=3.7",
+    "matplotlib>=3.10.9",
 ]
 transport = [
     "kinisi>=2.0.5,<3",
@@ -35,7 +35,7 @@ electrolyte = [
 ]
 analysis-all = [
     "scipy>=1.11",
-    "matplotlib>=3.7",
+    "matplotlib>=3.10.9",
     "kinisi>=2.0.5,<3",
     "gemdat>=1.7.3,<2",
 ]
