@@ -167,7 +167,9 @@ def test_invalid_target_python_fails_before_uv_download(tmp_path: Path) -> None:
     assert "unsupported Python 3.9" in result.stderr
     assert not calls.exists()
 
+
 # --- RC-06: online install decouples the planner runtime from the target runtime ---
+
 
 def test_online_explicit_planner_override_skips_target_lookup(tmp_path: Path) -> None:
     """MLIPX_INSTALL_PYTHON plans the install; the target env is built later by uv."""
