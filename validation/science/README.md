@@ -21,6 +21,7 @@ committed.
 | `scripts/finite_difference.py` | T2-FD — ASE native FD sweep vs analytical forces/stress |
 | `scripts/static_suite.py` | T4 — static properties: single points, relaxations, EOS, elastic constants, phonons/thermo, vacancy, surface, energetics |
 | `scripts/neb_suite.py` | T5 — NEB/CI-NEB: endpoint symmetry, path init, warm-up, CI convergence, resume identity, FD-Hessian saddle verdict, Na3PS4 hop |
+| `scripts/md_suite.py` | T6 — MD: NVE timestep drift sweep, NVT Langevin seed reproducibility, Bussi/CSVR + FixAtoms, Nose-Hoover chain with rejection matrix, constraint exactness/DOF, force-safety abort |
 | `scripts/transforms.py` | Rotation/Voigt algebra with hand-verified known answers |
 | `scripts/build_cases.py` | Regenerates/pins `cases/manifests/fixtures.json` |
 | `scripts/omat_subset.py` | OMat24 val-subset acquisition + deterministic selection |
@@ -66,6 +67,22 @@ committed.
   within 50% of the mean, and |<v-, tangent>| >= 0.8; otherwise it is
   `ci_neb_candidate_only`, and two or more robust negative modes fail the
   record as `bad_saddle_candidate`.
+
+- **T6 MD semantics** — every run drives the product `MDRunner` with a
+  pinned seed and `velocity_policy="initialize"` so all engines start from
+  identical coordinates and velocities (identical KE(0) is part of the
+  evidence); trajectories across backends are never compared atom-by-atom
+  (chaotic divergence) — only integration/ensemble diagnostics are.  The NVE
+  drift gate is the broad trend `|slope(0.25 fs)| < |slope(2.0 fs)|` in
+  eV/atom/ps; no global drift cutoff is invented.  NHC is validated only in
+  its capability-matrix-allowed form (unconstrained, `com_policy="none"`);
+  every wrong-DOF combination (NHC+constraints, NHC+COM removal, compound
+  constraints) must be refused, never silently integrated.  The force-safety
+  abort derives its threshold from a measured pre-flight force (half of it,
+  both numbers recorded) and must checkpoint the unsafe frame, write an
+  `aborted` artifacts manifest with `error.type=force_safety_abort`, and
+  leave a CONTCAR.
+
 ## Quickstart (single engine, backend venv)
 
 ```bash

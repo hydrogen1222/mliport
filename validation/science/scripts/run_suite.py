@@ -38,6 +38,7 @@ TIER_COMMANDS: dict[str, list[str]] = {
     "t2fd": ["finite_difference.py"],
     "t4": ["static_suite.py"],
     "t5": ["neb_suite.py"],
+    "t6": ["md_suite.py"],
 }
 
 #: backend venvs live in the repository root, next to .venv-mace etc.
