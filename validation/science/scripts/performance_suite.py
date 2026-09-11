@@ -95,7 +95,17 @@ def _sp_record(
     atoms.calc = ctx.calculator
     common.reset_vram_counter()
 
+    # Deterministic micro-perturbations between timed calls: reusing
+    # identical positions would hit the ASE calculator result cache and
+    # "measure" a dictionary lookup (~0.2 ms) instead of model inference.
+    # 0.01 A keeps the neighbour topology realistic (steady-state latency).
+    rng = np.random.default_rng(20260911)
+    pristine_positions = atoms.positions.copy()
+
     def _energy():
+        atoms.positions = atoms.positions + rng.normal(
+            0.0, 0.01, size=atoms.positions.shape
+        )
         return float(atoms.get_potential_energy())
 
     try:
@@ -128,6 +138,7 @@ def _sp_record(
         _, warm_s = common.timed(_energy, device)
         warm_times.append(warm_s)
 
+    atoms.positions = pristine_positions
     forces = atoms.get_forces()
     finite = bool(np.isfinite(forces).all()) and np.isfinite(energy)
     throughput = natoms / statistics.median(warm_times)

@@ -46,14 +46,31 @@ def _record_for_system(
 
     common.reset_vram_counter()
 
+    # Deterministic micro-perturbations so every timed call is a REAL model
+    # evaluation. Reusing identical positions would hit the ASE calculator
+    # result cache and measure dictionary lookups (~0.2 ms) instead of
+    # inference -- that defect shipped in the first t1 pass and made the
+    # warm-call medians meaningless.
+    rng = np.random.default_rng(20260911)
+    pristine_positions = atoms.positions.copy()
+
+    def _perturb() -> None:
+        atoms.positions = atoms.positions + rng.normal(
+            0.0, 0.01, size=atoms.positions.shape
+        )
+
     def _energy():
         return float(atoms.get_potential_energy())
 
     energy, first_call_s = common.timed(_energy, device)
     warm_times: list[float] = []
     for _ in range(WARM_REPS):
+        _perturb()
         _, warm_times_s = common.timed(_energy, device)
         warm_times.append(warm_times_s)
+    # recorded observables (energy/forces/stress) must all describe the
+    # pristine fixture; the perturbations only fed the warm timing calls
+    atoms.positions = pristine_positions
 
     forces = atoms.get_forces()
     stress_supported = True
