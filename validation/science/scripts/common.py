@@ -155,6 +155,15 @@ def device_record(requested: str) -> dict[str, Any]:
         dev = str(requested)
         if dev.startswith("cuda:") and dev[5:].isdigit():
             idx = int(dev[5:])
+        if idx == 0 and not dev.startswith("cuda"):
+            # CPU inference was requested; the process may still see GPUs
+            # but they did not run the calculator.  Keep the record honest.
+            return {
+                "requested": requested,
+                "actual": "cpu",
+                "gpu_name": None,
+                "gpu_uuid_hash": None,
+            }
         if not torch.cuda.is_available():
             return {
                 "requested": requested,
@@ -195,6 +204,14 @@ def device_record(requested: str) -> dict[str, Any]:
         }
     idx = 0
     dev = str(requested)
+    if idx == 0 and not dev.startswith("cuda"):
+        # CPU inference was requested; keep the record honest.
+        return {
+            "requested": requested,
+            "actual": "cpu",
+            "gpu_name": None,
+            "gpu_uuid_hash": None,
+        }
     if dev.startswith("cuda:") and dev[5:].isdigit():
         idx = int(dev[5:])
     idx = min(idx, len(gpus) - 1)
@@ -204,9 +221,7 @@ def device_record(requested: str) -> dict[str, Any]:
         details = {}
     uuid = details.get("uuid")
     uuid_hash = (
-        hashlib.sha256(str(uuid).encode("utf-8")).hexdigest()[:16]
-        if uuid
-        else None
+        hashlib.sha256(str(uuid).encode("utf-8")).hexdigest()[:16] if uuid else None
     )
     name = details.get("device_name")
     return {
@@ -215,6 +230,7 @@ def device_record(requested: str) -> dict[str, Any]:
         "gpu_name": name,
         "gpu_uuid_hash": uuid_hash,
     }
+
 
 def timed(fn: Callable[[], Any], device: str = "cpu") -> tuple[Any, float]:
     """Run ``fn`` once and return ``(result, wall_seconds)`` with GPU sync."""

@@ -36,11 +36,11 @@ TIER_COMMANDS: dict[str, list[str]] = {
     "t1": ["inference.py"],
     "t2": ["invariance.py"],
     "t2fd": ["finite_difference.py"],
+    "t4": ["static_suite.py"],
 }
 
 #: backend venvs live in the repository root, next to .venv-mace etc.
 DEFAULT_VENV_ROOT = str(Path(__file__).resolve().parents[3])
-
 
 
 def venv_python(engine: str, override: str | None) -> str | None:
@@ -64,7 +64,12 @@ def write_blocked(engine: str, reason: str, out_dir: Path) -> None:
         task=None,
         head=None,
         dtype="n/a",
-        device={"requested": "cuda:0", "actual": None, "gpu_name": None, "gpu_uuid_hash": None},
+        device={
+            "requested": "cuda:0",
+            "actual": None,
+            "gpu_name": None,
+            "gpu_uuid_hash": None,
+        },
         input_structure_id=None,
         parameters={"reason": reason},
         metrics={},
@@ -141,7 +146,9 @@ def main() -> int:
     ][args.profile_id]
     head = args.head or manifest_profile.get("head")
     dtype = args.dtype or manifest_profile.get("dtype")
-    dtype_arg = dtype if args.engine == "mace" and dtype in ("float32", "float64") else None
+    dtype_arg = (
+        dtype if args.engine == "mace" and dtype in ("float32", "float64") else None
+    )
     child_env = os.environ.copy()
     gpu_uuid = resolve_gpu_uuid(args.device)
     if gpu_uuid:

@@ -19,6 +19,7 @@ committed.
 | `scripts/inference.py` | T1 — first-call/warm-call timings, E/F/stress, VRAM |
 | `scripts/invariance.py` | T2 — repeatability floor, permutation/PBC/translation/rotation invariance, A→B→A cache-state check |
 | `scripts/finite_difference.py` | T2-FD — ASE native FD sweep vs analytical forces/stress |
+| `scripts/static_suite.py` | T4 — static properties: single points, relaxations, EOS, elastic constants, phonons/thermo, vacancy, surface, energetics |
 | `scripts/transforms.py` | Rotation/Voigt algebra with hand-verified known answers |
 | `scripts/build_cases.py` | Regenerates/pins `cases/manifests/fixtures.json` |
 | `scripts/omat_subset.py` | OMat24 val-subset acquisition + deterministic selection |
@@ -39,6 +40,18 @@ committed.
 - **Stress signs are never hand-flipped**; FD stress vs analytical stress
   is compared component-wise (normals and shears separately).
 - **GPU UUIDs are hashed** before entering any record.
+- **Status semantics for T4** — `pass` = workflow-internal convergence/fit
+  criteria met; `characterized` = done but the value characterizes the
+  model (defect/surface energies) or the criterion describes the model
+  itself; `fail` = non-convergence, bad fit, or robust imaginary modes;
+  `unsupported` = a required reference is not pinned (e.g. isolated-atom
+  energies for cross-engine formation energies), never silently faked.
+- **Supercell convergence is proven, not assumed** — phonons run 2³ and
+  3³ supercells at three displacement amplitudes; a robust imaginary mode
+  (< -0.1 meV) anywhere on the sampled q-grid fails the record, and the
+  2×2×2 vs 3×3×3 delta-convergence is part of the evidence.
+- **Na3PS4 (mp-28782) is a geometry fixture only** — pinned provenance in
+  `data_manifest.json`; never compared against Materials Project energies.
 
 ## Quickstart (single engine, backend venv)
 

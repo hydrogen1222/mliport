@@ -32,12 +32,15 @@ import invariance  # noqa: E402
 import transforms  # noqa: E402
 
 MANIFEST = REPO / "validation" / "science" / "model_manifest.json"
-FIXTURE_MANIFEST = REPO / "validation" / "science" / "cases" / "manifests" / "fixtures.json"
+FIXTURE_MANIFEST = (
+    REPO / "validation" / "science" / "cases" / "manifests" / "fixtures.json"
+)
 
 
 # --------------------------------------------------------------------------
 # unit conversion (taskbook section 13)
 # --------------------------------------------------------------------------
+
 
 def test_ev_per_a3_to_gpa_exact():
     assert pytest.approx(160.21766208, abs=1e-9) == common.EV_A3_TO_GPA
@@ -46,6 +49,7 @@ def test_ev_per_a3_to_gpa_exact():
 # --------------------------------------------------------------------------
 # transforms: synthetic-tensor known answers (taskbook section 11.6)
 # --------------------------------------------------------------------------
+
 
 def test_proper_rotation_is_proper():
     rot = transforms.proper_rotation((1.0, 1.0, 1.0), 0.37)
@@ -81,7 +85,9 @@ def test_rotate_stress_voigt_known_answer():
         [[5.0, -2.0, -6.0], [-2.0, 1.0, 3.0], [-6.0, 3.0, 9.0]],
         atol=1e-10,
     )
-    got_voigt = transforms.rotate_stress_voigt(transforms.matrix_to_voigt(sigma), rot_z90)
+    got_voigt = transforms.rotate_stress_voigt(
+        transforms.matrix_to_voigt(sigma), rot_z90
+    )
     assert np.allclose(transforms.voigt_to_matrix(got_voigt), expected, atol=1e-10)
 
 
@@ -97,6 +103,7 @@ def test_isotropic_stress_is_rotation_invariant():
 # --------------------------------------------------------------------------
 # structure identity
 # --------------------------------------------------------------------------
+
 
 def test_structure_id_determinism_and_sensitivity():
     atoms, _ = fixtures.build_fixture("cu_fcc")
@@ -131,6 +138,7 @@ def test_invariance_systems_include_triclinic_and_distorted():
 # --------------------------------------------------------------------------
 # manifests
 # --------------------------------------------------------------------------
+
 
 def test_committed_model_manifest_loads():
     manifest = common.load_model_manifest(MANIFEST)
@@ -170,7 +178,9 @@ def test_schema_ids_match_scripts():
         (REPO / "validation" / "science" / "schemas" / "result.schema.json").read_text()
     )
     summary_schema = json.loads(
-        (REPO / "validation" / "science" / "schemas" / "summary.schema.json").read_text()
+        (
+            REPO / "validation" / "science" / "schemas" / "summary.schema.json"
+        ).read_text()
     )
     assert result_schema["$id"] == common.RESULT_SCHEMA
     assert summary_schema["$id"] == common.SUMMARY_SCHEMA
@@ -179,6 +189,7 @@ def test_schema_ids_match_scripts():
 # --------------------------------------------------------------------------
 # result records
 # --------------------------------------------------------------------------
+
 
 def _record(status="pass", **overrides):
     base = {
@@ -191,7 +202,12 @@ def _record(status="pass", **overrides):
         "task": "bulk",
         "head": None,
         "dtype": "float64",
-        "device": {"requested": "cpu", "actual": "cpu", "gpu_name": None, "gpu_uuid_hash": None},
+        "device": {
+            "requested": "cpu",
+            "actual": "cpu",
+            "gpu_name": None,
+            "gpu_uuid_hash": None,
+        },
         "input_structure_id": None,
         "parameters": {},
         "metrics": {},
@@ -218,6 +234,7 @@ def test_write_result_filename_composition(tmp_path):
 # aggregation logic (incl. harness-integrity violations, section 47)
 # --------------------------------------------------------------------------
 
+
 def _raw_record(wrapper="mlipx.calculators", **kw):
     rec = _record(**kw)
     rec["diagnostics"] = {"wrapper_module": wrapper}
@@ -225,7 +242,6 @@ def _raw_record(wrapper="mlipx.calculators", **kw):
 
 
 def test_aggregate_flags_foreign_wrapper(tmp_path):
-
     foreign = _raw_record(wrapper="some.silent.emt.fallback")
     path = tmp_path / "bad.json"
     path.write_text(json.dumps(foreign))
@@ -240,6 +256,7 @@ def test_aggregate_flags_foreign_wrapper(tmp_path):
     assert "mlipx.calculators.dpa_calc" in common.ALLOWED_WRAPPER_MODULES
     assert "mlipx.calculators.grace_calc" in common.ALLOWED_WRAPPER_MODULES
     assert all(m.startswith("mlipx.") for m in common.ALLOWED_WRAPPER_MODULES)
+
 
 def test_support_matrix_distinguishes_unsupported_and_not_run():
     rec_full = _raw_record()
@@ -260,6 +277,7 @@ def test_support_matrix_distinguishes_unsupported_and_not_run():
 # --------------------------------------------------------------------------
 # finite difference machinery on EMT (CPU known answer)
 # --------------------------------------------------------------------------
+
 
 def _cu_distorted_emt():
     atoms, _ = fixtures.build_extra("cu_distorted")
@@ -288,8 +306,12 @@ def test_emt_analytical_matches_fd_stress():
 
 def test_fd_dof_selection_deterministic_and_capped():
     atoms, _, forces, _ = _cu_distorted_emt()
-    a = finite_difference.select_force_dofs(atoms, forces, finite_difference.MAX_FORCE_DOFS)
-    b = finite_difference.select_force_dofs(atoms, forces, finite_difference.MAX_FORCE_DOFS)
+    a = finite_difference.select_force_dofs(
+        atoms, forces, finite_difference.MAX_FORCE_DOFS
+    )
+    b = finite_difference.select_force_dofs(
+        atoms, forces, finite_difference.MAX_FORCE_DOFS
+    )
     assert a == b
     assert 1 <= len(a) <= finite_difference.MAX_FORCE_DOFS
     # multi-species coverage when species exist (MgO) and Cu2x2x2 here: Cu only,
@@ -304,6 +326,7 @@ def test_fd_dof_selection_deterministic_and_capped():
 # --------------------------------------------------------------------------
 # invariance check machinery end-to-end on EMT (CPU)
 # --------------------------------------------------------------------------
+
 
 def test_invariance_checks_pass_on_emt():
     atoms, _ = fixtures.build_extra("cu_distorted")
@@ -336,3 +359,250 @@ def test_tolerance_uses_measured_floor():
     # degenerate floor falls back to the absolute floor
     assert invariance._tol(0.0, 1e-9) == pytest.approx(1e-9)
     assert invariance._tol(float("nan"), 1e-9) == pytest.approx(1e-9)
+
+
+# --------------------------------------------------------------------------
+# static suite (T4) machinery: CPU known answers only
+# --------------------------------------------------------------------------
+
+
+import static_suite  # noqa: E402
+
+
+class _CubicHookeCalculator:
+    """Exact cubic Hooke's-law calculator for convention tests.
+
+    sigma = C @ eps(voigt, engineering shear), E = V/2 eps.sigma about the
+    reference cell.  NOT a real backend: only used for CPU known-answer
+    arithmetic tests (taskbook section 47 allows this class of synthetic
+    reference for pure-math plumbing checks).
+    """
+
+    def __init__(self, reference_cell, c11, c12, c44):
+        from ase.calculators.calculator import Calculator, all_changes
+
+        ref = np.array(reference_cell, dtype=float)
+        c = np.array(
+            [
+                [c11, c12, c12, 0.0, 0.0, 0.0],
+                [c12, c11, c12, 0.0, 0.0, 0.0],
+                [c12, c12, c11, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, c44, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, c44, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, c44],
+            ]
+        )
+
+        class _Calc(Calculator):
+            implemented_properties = ["energy", "forces", "stress"]  # noqa: RUF012
+
+            def calculate(
+                self, atoms, properties=("energy",), system_changes=all_changes
+            ):
+                super().calculate(atoms, properties, system_changes)
+                f = atoms.cell.array @ np.linalg.inv(ref).T
+                eps = (f + f.T) / 2.0 - np.eye(3)
+                # voigt strain with ENGINEERING shear: [xx, yy, zz, yz, xz, xy]
+                eps_v = np.array(
+                    [
+                        eps[0, 0],
+                        eps[1, 1],
+                        eps[2, 2],
+                        2 * eps[1, 2],
+                        2 * eps[0, 2],
+                        2 * eps[0, 1],
+                    ]
+                )
+                stress_v = c @ eps_v
+                volume = atoms.get_volume()
+                energy = 0.5 * volume * float(eps_v @ stress_v)
+                self.results = {
+                    "energy": energy,
+                    "forces": np.zeros((len(atoms), 3)),
+                    "stress": stress_v,
+                }
+
+        self._calc_cls = _Calc
+
+    def get_calculator(self):
+        return self._calc_cls()
+
+
+def _math_ctx(calculator):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(calculator=calculator, device="cpu", engine="cpu-math-test")
+
+
+def test_strain_eps_shear_uses_engineering_convention():
+    eps = static_suite.strain_eps("xy", 0.01)
+    assert eps[0, 1] == pytest.approx(0.005)
+    assert eps[1, 0] == pytest.approx(0.005)
+    assert eps[2, 2] == 0.0
+    normal = static_suite.strain_eps("xx", 0.0025)
+    assert normal[0, 0] == pytest.approx(0.0025)
+    assert abs(normal).sum() == pytest.approx(0.0025)
+
+
+def test_apply_strain_volume_scaling_exact():
+    from ase.build import bulk
+
+    atoms = bulk("Cu", "fcc", a=3.615, cubic=True)
+    for ratio in (0.94, 1.06):
+        s = ratio ** (1.0 / 3.0)
+        work = atoms.copy()
+        work.set_cell(atoms.cell.array * s, scale_atoms=True)
+        assert work.get_volume() / atoms.get_volume() == pytest.approx(ratio, rel=1e-12)
+    sheared = static_suite.apply_strain(atoms, "xy", 0.01)
+    # symmetric pure shear det(I+eps) = 1 - eps_xy^2 -> O(gamma^2) volume change
+    assert sheared.get_volume() / atoms.get_volume() == pytest.approx(
+        1.0 - 0.005**2, abs=1e-12
+    )
+
+
+def test_cubic_elastic_conventions_recovered_exactly():
+    from ase.build import bulk
+
+    c11_ref, c12_ref, c44_ref = 100.0, 60.0, 30.0  # eV/A^3 scaled toy values
+    atoms = bulk("Cu", "fcc", a=3.615, cubic=True)
+    calc = _CubicHookeCalculator(atoms.cell.array, c11_ref, c12_ref, c44_ref)
+    result = static_suite._cubic_elastic(_math_ctx(calc.get_calculator()), atoms, False)
+    assert result["C11_eV_A3"] == pytest.approx(c11_ref, rel=1e-8)
+    assert result["C12_eV_A3"] == pytest.approx(c12_ref, rel=1e-8)
+    assert result["C44_eV_A3"] == pytest.approx(c44_ref, rel=1e-8)
+    assert result["max_fit_residual_eV_A3"] == pytest.approx(0.0, abs=1e-10)
+    # energy-curvature cross-check must reproduce the same constants
+    assert result["energy_curvature"]["C11_energy"] == pytest.approx(c11_ref, rel=1e-8)
+    # shear energy carries an O(gamma^4) finite-strain correction
+    # (E ~ 0.5 V C44 gamma^2 (1 - gamma^2/4)), so the quadratic-fit
+    # recovery is only approximate at the largest sampled strain
+    assert result["energy_curvature"]["C44_energy"] == pytest.approx(c44_ref, rel=1e-3)
+    assert all(result["born_stability"].values())
+
+
+def test_cubic_elastic_emt_known_answer():
+    # EMT Cu near a=3.615: mechanically stable, B=(C11+2C12)/3 ~ 130 GPa
+    from ase.build import bulk
+
+    atoms = bulk("Cu", "fcc", a=3.615, cubic=True)
+    result = static_suite._cubic_elastic(_math_ctx(EMT()), atoms, False)
+    assert result["born_stability"]["C11_minus_C12_positive"]
+    assert result["born_stability"]["C11_plus_2C12_positive"]
+    assert result["born_stability"]["C44_positive"]
+    assert result["B_GPa"] == pytest.approx(134.0, abs=25.0)
+    # cross-path consistency between the two C12 estimates (cubic symmetry)
+    c12s = result["fits"]
+    assert c12s["C12_from_yy"]["slope"] == pytest.approx(
+        c12s["C12_from_xx"]["slope"], rel=0.05
+    )
+
+
+def test_thermo_einstein_crystal_limits():
+    n_modes = 12
+    omega0 = 0.03  # eV
+    freqs = np.full(n_modes, omega0)
+    out = static_suite._thermo_from_modes(freqs, [10.0, 5000.0])
+    assert out["zero_point_energy_eV"] == pytest.approx(0.5 * n_modes * omega0)
+    assert out["n_negative_modes"] == 0
+    high = next(t for t in out["per_temperature"] if t["T_K"] == 5000.0)
+    low = next(t for t in out["per_temperature"] if t["T_K"] == 10.0)
+    # Dulong-Petit high-T limit: Cv -> n_modes * kB
+    assert high["cv_eV_per_K"] == pytest.approx(
+        n_modes * static_suite.KB_EV_PER_K, rel=0.01
+    )
+    assert low["cv_eV_per_K"] < 0.05 * high["cv_eV_per_K"]
+    assert high["entropy_eV_per_K"] > 0.0
+
+
+def test_thermo_flags_negative_modes():
+    freqs = np.array([0.03, 0.02, 0.01, -0.002])
+    out = static_suite._thermo_from_modes(freqs, [300.0])
+    assert out["n_negative_modes"] == 1
+    assert out["n_robust_imaginary_modes"] == 1  # -2 meV is below -0.1 meV
+    # ZPE uses |omega| over all modes (documented policy)
+    assert out["zero_point_energy_eV"] == pytest.approx(
+        0.5 * (0.03 + 0.02 + 0.01 + 0.002)
+    )
+
+
+def test_seeded_displacements_deterministic_and_exact():
+    d1 = static_suite.seeded_displacements(16, 0.05)
+    d2 = static_suite.seeded_displacements(16, 0.05)
+    assert np.array_equal(d1, d2)
+    assert np.allclose(np.linalg.norm(d1, axis=1), 0.05)
+    d3 = static_suite.seeded_displacements(16, 0.01)
+    assert np.allclose(np.linalg.norm(d3, axis=1), 0.01)
+    assert not np.allclose(d1, d3)
+
+
+def test_na3ps4_fixture_pinned_to_mp28782():
+    atoms, desc = fixtures.build_extra("na3ps4")
+    assert atoms.get_chemical_formula() == "Na6P2S8"
+    assert desc["structure_id"] == (
+        "7f4e778f75b21f59b9e40efdd1c6ff03cd4cda01a66ff53d40121f3aff433ff4"
+    )
+    spglib = pytest.importorskip("spglib")
+    cell = (atoms.cell.array, atoms.get_scaled_positions(wrap=True), atoms.numbers)
+    assert spglib.get_spacegroup(cell, symprec=1e-3) == "P-42_1c (114)"
+
+
+def test_data_manifest_records_na3ps4_source():
+    manifest = json.loads((REPO / "validation/science/data_manifest.json").read_text())
+    sources = {s["name"]: s for s in manifest["sources"]}
+    assert "alpha-Na3PS4 tetragonal (geometry fixture)" in sources
+    entry = sources["alpha-Na3PS4 tetragonal (geometry fixture)"]
+    assert entry["upstream_id"] == "mp-28782"
+    assert entry["space_group"] == "P-42_1c (114)"
+    assert entry["fixture_structure_id"].startswith("7f4e778f")
+
+
+def test_vacancy_formula_emt_known_answer():
+    from ase.build import bulk
+
+    base = bulk("Cu", "fcc", a=3.615, cubic=True)
+    supercell = base.repeat((2, 2, 2))
+    n_sites = len(supercell)
+    bulk_cell = supercell.copy()
+    bulk_cell.calc = EMT()
+    e_bulk = bulk_cell.get_potential_energy()
+    defect = supercell.copy()
+    del defect[0]
+    defect.calc = EMT()
+    e_def = defect.get_potential_energy()
+    e_vac = e_def - (n_sites - 1) / n_sites * e_bulk
+    # EMT Cu unrelaxed vacancy is a stable reference value for this fixture
+    assert e_vac == pytest.approx(1.2534, abs=0.15)
+    assert e_vac > 0
+
+
+def test_surface_gamma_formula_emt_known_answer():
+    from ase.build import bulk, fcc111
+
+    prim = bulk("Cu", "fcc", a=3.615, cubic=False)
+    prim.calc = EMT()
+    e_per_atom = prim.get_potential_energy()
+    slab = fcc111("Cu", size=(2, 2, 4), a=3.615, vacuum=10.0)
+    area = abs(np.linalg.norm(np.cross(slab.cell[0], slab.cell[1])))
+    slab.calc = EMT()
+    e_slab = slab.get_potential_energy()
+    gamma = (e_slab - len(slab) * e_per_atom) / (2.0 * area) * 16.021766208
+    assert gamma == pytest.approx(1.035, abs=0.25)
+    assert gamma > 0.0
+
+
+def test_eos_fit_recovers_known_parameters():
+    import ase.eos
+
+    v = np.linspace(40.0, 52.0, 9)
+    e_true = ase.eos.birchmurnaghan(v, -4.0, 0.75, 4.8, 46.0)
+    out = static_suite._fit_eos(list(v), list(e_true), "birchmurnaghan")
+    assert out["fit_converged"]
+    assert out["v0_A3"] == pytest.approx(46.0, abs=0.01)
+    assert out["b0_GPa"] == pytest.approx(0.75 * 160.21766208, abs=0.5)
+    assert out["b0_prime"] == pytest.approx(4.8, abs=0.05)
+    assert out["max_abs_residual_eV"] < 1e-8
+    assert out["minimum_inside_sampled_range"]
+    # cross-form fit must stay close (independent functional form)
+    out2 = static_suite._fit_eos(list(v), list(e_true), "pouriertarantola")
+    assert out2["b0_GPa"] == pytest.approx(0.75 * 160.21766208, abs=2.0)
+    assert out2["b0_prime"] > 0.0
