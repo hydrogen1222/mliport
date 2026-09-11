@@ -14,7 +14,9 @@ dependencies = [
     "numpy",
     "packaging",
     "tqdm",
-    "textual>=0.40.0",
+    # Textual 8.x is the verified baseline for the TUI; the upper bound keeps
+    # untested major releases (v9+) out until they pass the TUI suite.
+    "textual>=8.2.8,<9",
 ]
 
 [project.optional-dependencies]
