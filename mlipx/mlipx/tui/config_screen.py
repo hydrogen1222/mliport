@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 from ase.constraints import FixAtoms
 from ase.io import read as ase_read
 from textual.containers import Container, Horizontal, VerticalScroll
@@ -971,52 +972,70 @@ class ConfigScreen(Screen):
             if isinstance(constraint, FixAtoms):
                 fixed_initial += len(constraint.index)
         lines.append(f"Fixed atoms (initial): {fixed_initial}")
-        if image_shifts is not None:
-            path_convention = str(
-                self.query_one("#neb-path-convention-select", Select).value or "mic"
+        from mlipx.neb.prepare import (  # noqa: PLC0415
+            NEBPreparationError,
+            prepare_endpoint_geometry,
+        )
+
+        path_convention = str(
+            self.query_one("#neb-path-convention-select", Select).value or "mic"
+        )
+        # Shared with the production band preparation: the preview reports the
+        # same mapped/shifted/MIC-resolved displacement the NEB will run with
+        # (RC-05), instead of a raw wrapped-coordinate difference.
+        try:
+            endpoint = prepare_endpoint_geometry(
+                initial,
+                final,
+                atom_map=atom_map,
+                image_shifts=image_shifts,
+                path_convention=path_convention,
             )
-            if path_convention != "unwrapped":
-                lines.append("[!] Image shifts require path convention 'unwrapped'")
-                preview.update("\n".join(lines))
-                preview.set_classes("status-error")
-                return
-            if len(image_shifts) != len(initial):
-                lines.append(
-                    f"[!] Image shifts need one row per initial atom "
-                    f"({len(image_shifts)} rows for {len(initial)} atoms)"
-                )
-                preview.update("\n".join(lines))
-                preview.set_classes("status-error")
-                return
-        if len(initial) != len(final):
-            lines.append(
-                "[!] Endpoints have different atom counts; an atom map is required"
-            )
+        except NEBPreparationError as exc:
+            lines.append(f"[!] {exc}")
             preview.update("\n".join(lines))
             preview.set_classes("status-error")
             return
-        if atom_map is not None:
-            if len(atom_map) != len(initial) or sorted(atom_map) != list(
-                range(len(initial))
-            ):
-                lines.append(
-                    f"[!] Atom map must list each final index once "
-                    f"(0..{len(initial) - 1})"
-                )
-                preview.update("\n".join(lines))
-                preview.set_classes("status-error")
-                return
-            mapped_final = final[atom_map]
-        else:
-            mapped_final = final
-        displacements = mapped_final.positions - initial.positions
+        displacements = endpoint.intended_displacement
         norms = (displacements**2).sum(axis=1) ** 0.5
         max_index = int(norms.argmax())
         lines.append(
             f"Preview displacement: max {norms[max_index]:.3f} Å "
             f"at atom {max_index} ({initial.get_chemical_symbols()[max_index]})"
         )
+        segments = self._neb_preview_segment_count()
+        if segments is not None:
+            lines.append(
+                f"Per-segment estimate ({segments} segments): "
+                f"{norms[max_index] / segments:.3f} Å"
+            )
+        if endpoint.winding_present:
+            shifted_atoms = int(
+                np.count_nonzero(np.asarray(endpoint.image_shifts).any(axis=1))
+            )
+            lines.append(
+                f"Winding: present (explicit lattice shifts on "
+                f"{shifted_atoms} atoms)"
+            )
+        else:
+            lines.append("Winding: none")
         preview.update("\n".join(lines))
+
+    def _neb_preview_segment_count(self) -> int | None:
+        """Band segment count implied by the configured image count, if set."""
+        try:
+            text = self.query_one("#n_intermediate_images-input", Input).value.strip()
+        except Exception:
+            return None
+        if not text:
+            return None
+        try:
+            n_intermediate = int(text)
+        except ValueError:
+            return None
+        if n_intermediate < 1:
+            return None
+        return n_intermediate + 1
 
     def _save_and_run(self) -> None:
         """Save configuration and run calculation."""

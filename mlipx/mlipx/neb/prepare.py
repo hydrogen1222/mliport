@@ -167,16 +167,60 @@ def _validate_fixed_coordinates(initial: Atoms, final: Atoms) -> None:
         )
 
 
-def _lifted_final(
+@dataclass(slots=True)
+class EndpointDisplacement:
+    """Calculator-free resolution of the intended NEB endpoint displacement.
+
+    ``intended_displacement`` is the per-atom displacement the band is
+    prepared for: the mapped final endpoint minus the initial endpoint,
+    resolved through the general triclinic minimum-image convention
+    (``path_convention='mic'``) or lifted by explicit per-atom lattice
+    winding shifts (``path_convention='unwrapped'``).
+    """
+
+    mapped_final: Atoms
+    atom_map: np.ndarray
+    image_shifts: np.ndarray
+    intended_displacement: np.ndarray
+    lifted_final_positions: np.ndarray
+    winding_present: bool
+    path_convention: str
+
+
+def prepare_endpoint_geometry(
     initial: Atoms,
-    mapped_final: Atoms,
-    options: NEBOptions,
-    image_shifts: np.ndarray | None,
-) -> tuple[np.ndarray, np.ndarray]:
+    final: Atoms,
+    *,
+    atom_map: Iterable[int] | None = None,
+    image_shifts: Iterable[Iterable[int]] | None = None,
+    path_convention: str,
+) -> EndpointDisplacement:
+    """Map the final endpoint and resolve the intended displacement.
+
+    Shared by the production band preparation (:func:`prepare_band`) and the
+    TUI endpoint preview so both report the same displacement semantics.
+    This performs the endpoint mapping (identity validation included), the
+    explicit image-shift handling and the general triclinic MIC resolution.
+    It uses no calculator and mutates no input.
+    """
+    if path_convention not in {"mic", "unwrapped"}:
+        raise NEBPreparationError("path_convention must be 'mic' or 'unwrapped'")
+    if len(initial) != len(final):
+        raise NEBPreparationError("NEB endpoints have different atom counts")
+    if not np.allclose(initial.cell.array, final.cell.array, rtol=0.0, atol=1.0e-8):
+        raise NEBPreparationError("NEB endpoints have different cells")
+    if not np.array_equal(initial.pbc, final.pbc):
+        raise NEBPreparationError("NEB endpoints have different PBC flags")
+    mapping = (
+        np.arange(len(initial), dtype=int)
+        if atom_map is None
+        else _integer_array(atom_map, shape=(len(initial),), name="atom_map")
+    )
+    mapped_final = _validate_identity(initial, final, mapping)
     pbc = np.asarray(initial.pbc, dtype=bool)
     cell = np.asarray(initial.cell.array, dtype=float)
     if image_shifts is not None:
-        if options.path_convention != "unwrapped":
+        if path_convention != "unwrapped":
             raise NEBPreparationError(
                 "image_shifts is only valid with path_convention='unwrapped'"
             )
@@ -191,13 +235,21 @@ def _lifted_final(
         shifts = np.zeros((len(initial), 3), dtype=int)
 
     displacement = np.asarray(mapped_final.positions - initial.positions, dtype=float)
-    if options.path_convention == "mic":
+    if path_convention == "mic":
         displacement, _ = find_mic(displacement, cell=cell, pbc=pbc)
     elif image_shifts is not None:
         displacement = displacement + shifts @ cell
     if not np.all(np.isfinite(displacement)):
         raise NEBPreparationError("Endpoint displacement contains NaN or Inf")
-    return initial.positions + displacement, shifts
+    return EndpointDisplacement(
+        mapped_final=mapped_final,
+        atom_map=mapping,
+        image_shifts=shifts,
+        intended_displacement=displacement,
+        lifted_final_positions=initial.positions + displacement,
+        winding_present=bool(np.any(shifts)),
+        path_convention=path_convention,
+    )
 
 
 def _set_fix_atoms(image: Atoms, fixed: np.ndarray) -> None:
@@ -377,28 +429,20 @@ def prepare_band(
 
     initial_copy = initial.copy()
     final_copy = final.copy()
-    if not np.allclose(
-        initial_copy.cell.array, final_copy.cell.array, rtol=0.0, atol=1.0e-8
-    ):
-        raise NEBPreparationError("NEB endpoints have different cells")
-    if not np.array_equal(initial_copy.pbc, final_copy.pbc):
-        raise NEBPreparationError("NEB endpoints have different PBC flags")
-    mapping = (
-        np.arange(len(initial_copy), dtype=int)
-        if atom_map is None
-        else _integer_array(atom_map, shape=(len(initial_copy),), name="atom_map")
+    endpoint = prepare_endpoint_geometry(
+        initial_copy,
+        final_copy,
+        atom_map=atom_map,
+        image_shifts=None if image_shifts is None else np.asarray(image_shifts),
+        path_convention=options.path_convention,
     )
-    mapped_final = _validate_identity(initial_copy, final_copy, mapping)
+    mapping = endpoint.atom_map
     fixed_initial = _fixed_indices(initial_copy)
     fixed_final = _mapped_fixed_indices(final_copy, mapping)
     if not np.array_equal(fixed_initial, fixed_final):
         raise NEBPreparationError("atom_map changes the FixAtoms constraint")
-    lifted_positions, shifts = _lifted_final(
-        initial_copy,
-        mapped_final,
-        options,
-        None if image_shifts is None else np.asarray(image_shifts),
-    )
+    lifted_positions = endpoint.lifted_final_positions
+    shifts = endpoint.image_shifts
     # For an explicit winding path, fixed atoms must also remain at the same
     # lifted position; this catches a nonzero shift on a frozen atom while
     # still allowing a wrapped endpoint representation of the same image.

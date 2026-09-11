@@ -809,6 +809,32 @@ def test_jobs_screen_unmount_cancels_timer() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _write_periodic_endpoints(
+    tmp_path: Path,
+    cell: list[list[float]],
+    initial_positions: list[list[float]],
+    final_positions: list[list[float]],
+    symbols: str = "H2",
+) -> tuple[Path, Path]:
+    """Write periodic endpoints as extxyz so cell/PBC survive the round trip."""
+    from ase import Atoms
+    from ase.io import write
+
+    initial = tmp_path / "initial_periodic.extxyz"
+    final = tmp_path / "final_periodic.extxyz"
+    write(
+        initial,
+        Atoms(symbols, positions=initial_positions, cell=cell, pbc=True),
+        format="extxyz",
+    )
+    write(
+        final,
+        Atoms(symbols, positions=final_positions, cell=cell, pbc=True),
+        format="extxyz",
+    )
+    return initial, final
+
+
 def _write_neb_endpoints(tmp_path: Path) -> tuple[Path, Path, Path]:
     from ase import Atoms
     from ase.io import write
@@ -1104,6 +1130,150 @@ async def test_neb_image_shifts_require_unwrapped_convention(tmp_path: Path) -> 
         screen._save_and_run()
         app.push_screen.assert_called_once()
         assert app.get_config("neb_image_shifts") == [[0, 0, 0], [0, 0, 0]]
+
+
+def _render_neb_preview(screen: ConfigScreen) -> str:
+    screen._update_neb_preview()
+    return str(screen.query_one("#neb-preview").render())
+
+
+@pytest.mark.asyncio()
+async def test_neb_preview_uses_mic_for_periodic_crossing(tmp_path: Path) -> None:
+    """RC-05: 9.9 → 0.1 in a 10 Å cell previews as the +0.2 Å MIC hop, and the
+    production band preparation produces the same intended displacement."""
+    import numpy as np
+    from ase.io import read
+
+    from mlipx.neb import NEBOptions, prepare_band
+
+    app = MlipxApp()
+    app.update_config("calc_type", "neb")
+    cell = [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]]
+    initial, final = _write_periodic_endpoints(
+        tmp_path,
+        cell,
+        [[9.9, 5.0, 5.0], [5.0, 5.0, 5.0]],
+        [[0.1, 5.0, 5.0], [5.0, 5.0, 5.0]],
+    )
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(initial)
+        screen.query_one("#final-structure-input").value = str(final)
+        screen.query_one("#neb-path-convention-select").value = "mic"
+        screen.query_one("#n_intermediate_images-input").value = "4"
+        preview = _render_neb_preview(screen)
+        assert "0.200 Å" in preview
+        assert "-9.800" not in preview
+        assert "Per-segment estimate (5 segments): 0.040 Å" in preview
+        assert "Winding: none" in preview
+
+        # Production parity: the band's final image is the MIC-lifted endpoint.
+        initial_atoms = read(initial)
+        final_atoms = read(final)
+        band = prepare_band(
+            initial_atoms, final_atoms, NEBOptions(n_intermediate_images=4)
+        )
+        assert np.allclose(
+            band.final.positions,
+            initial_atoms.positions + np.array([[0.2, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+        )
+
+
+@pytest.mark.asyncio()
+async def test_neb_preview_reports_explicit_winding(tmp_path: Path) -> None:
+    """RC-05: an explicit +1 lattice shift previews as a nonzero winding hop
+    even though the wrapped endpoints look almost identical."""
+    app = MlipxApp()
+    app.update_config("calc_type", "neb")
+    cell = [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]]
+    positions = [[0.1, 5.0, 5.0], [0.4, 5.0, 5.0]]
+    initial, final = _write_periodic_endpoints(tmp_path, cell, positions, positions)
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(initial)
+        screen.query_one("#final-structure-input").value = str(final)
+        screen.query_one("#neb-path-convention-select").value = "unwrapped"
+        screen.query_one("#image-shifts-input").value = "1,0,0; 0,0,0"
+        preview = _render_neb_preview(screen)
+        assert "max 10.000 Å at atom 0 (H)" in preview
+        assert "Winding: present" in preview
+
+
+@pytest.mark.asyncio()
+async def test_neb_preview_uses_general_triclinic_mic(tmp_path: Path) -> None:
+    """RC-05: the preview resolves the general triclinic MIC instead of a
+    per-component fractional wrap."""
+    import numpy as np
+    from ase.geometry import find_mic
+
+    app = MlipxApp()
+    app.update_config("calc_type", "neb")
+    cell = [[10.0, 0.0, 0.0], [5.0, 10.0, 0.0], [0.0, 0.0, 10.0]]
+    initial, final = _write_periodic_endpoints(
+        tmp_path,
+        cell,
+        [[0.0, 5.0, 5.0]],
+        [[8.9, 5.0, 5.0]],
+        symbols="H",
+    )
+
+    # The raw displacement is (8.9, 0, 0). The general MIC shortens it to
+    # ~1.1 Å along -a, while a naive per-component fractional wrap would give
+    # a much longer vector (~5.8 Å).
+    mic, _ = find_mic(np.array([[8.9, 0.0, 0.0]]), cell=np.array(cell), pbc=True)
+    mic_norm = float(np.linalg.norm(mic[0]))
+    assert abs(mic_norm - 1.1) < 1.0e-6
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(initial)
+        screen.query_one("#final-structure-input").value = str(final)
+        screen.query_one("#neb-path-convention-select").value = "mic"
+        preview = _render_neb_preview(screen)
+        assert f"max {mic_norm:.3f} Å at atom 0 (H)" in preview
+        assert "5.8" not in preview
+
+
+@pytest.mark.asyncio()
+async def test_neb_preview_applies_atom_map_before_image_shifts(
+    tmp_path: Path,
+) -> None:
+    """RC-05: after atom mapping, image shifts are indexed in the initial
+    identity order, so the shifted atom is the mapped one."""
+    app = MlipxApp()
+    app.update_config("calc_type", "neb")
+    cell = [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]]
+    initial, final = _write_periodic_endpoints(
+        tmp_path,
+        cell,
+        [[9.0, 5.0, 5.0], [2.0, 5.0, 5.0], [5.0, 5.0, 5.0]],
+        [[2.5, 5.0, 5.0], [5.5, 5.0, 5.0], [0.5, 5.0, 5.0]],
+        symbols="H3",
+    )
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(initial)
+        screen.query_one("#final-structure-input").value = str(final)
+        screen.query_one("#neb-path-convention-select").value = "unwrapped"
+        # atom_map: initial atom 0 -> final index 2 (x: 9.0 -> 0.5), and the
+        # shift row for initial atom 0 lifts the hop to +1.5 Å instead of the
+        # raw -8.5 Å wrapped difference.
+        screen.query_one("#atom-map-input").value = "2,0,1"
+        screen.query_one("#image-shifts-input").value = "1,0,0; 0,0,0; 0,0,0"
+        preview = _render_neb_preview(screen)
+        assert "max 1.500 Å at atom 0 (H)" in preview
+        assert "Winding: present" in preview
 
 
 @pytest.mark.asyncio()
