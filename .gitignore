@@ -87,3 +87,6 @@ LGPS*
 # Accidental uv lockfiles inside the package dir (no workspace lock)
 /mlipx/uv.lock
 /uv.lock
+# Beta scientific validation working data (taskbook section 9)
+/.validation-work/
+/.validation-cache/

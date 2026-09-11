@@ -1,0 +1,53 @@
+{
+  "bulk_fixtures": {
+    "cu_fcc": {
+      "a_A": 3.615,
+      "crystalstructure": "fcc",
+      "formula": "Cu4",
+      "name": "cu_fcc",
+      "natoms": 4,
+      "source": "experimental RT lattice constant",
+      "structure_id": "61db40e1781a20ea1c75bd08420424c897cbb22cb3c373abb623693af2221465"
+    },
+    "mgo_rocksalt": {
+      "a_A": 4.212,
+      "crystalstructure": "rocksalt",
+      "formula": "Mg4O4",
+      "name": "mgo_rocksalt",
+      "natoms": 8,
+      "source": "experimental RT lattice constant",
+      "structure_id": "7404ead4657f05a2c923b60413cb48daab5d59a4305ee9e6b300c0449dabd27f"
+    },
+    "si_diamond": {
+      "a_A": 5.43,
+      "crystalstructure": "diamond",
+      "formula": "Si8",
+      "name": "si_diamond",
+      "natoms": 8,
+      "source": "experimental RT lattice constant",
+      "structure_id": "9a3935d89c994eb9d9aff774a00613122e9eaab6a5c9e4edf7f81b815a10022f"
+    }
+  },
+  "extra_fixtures": {
+    "cu_distorted": {
+      "formula": "Cu32",
+      "name": "cu_distorted",
+      "natoms": 32,
+      "structure_id": "dd782c548495c08b2afe3f9880cd34d16b3a793f3afab22897eb031a87593d6b"
+    },
+    "si_diamond_prim": {
+      "formula": "Si2",
+      "name": "si_diamond_prim",
+      "natoms": 2,
+      "structure_id": "c8d17c65efa7e65826447879ca205dca9da695a66b2f7f73b6054e5908670b43"
+    }
+  },
+  "invariance_systems": [
+    "cu_fcc",
+    "si_diamond_prim",
+    "cu_distorted",
+    "mgo_rocksalt"
+  ],
+  "schema": "mlipx.beta-case-fixtures/1",
+  "suite_revision": 1
+}

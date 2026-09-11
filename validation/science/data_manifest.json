@@ -1,0 +1,46 @@
+{
+  "schema": "mlipx.beta-data-manifest/1",
+  "suite_revision": 1,
+  "description": "Pinned OMat24 validation-subset provenance (taskbook section 6.1). The subset is drawn ONLY from the official validation split, using the corrected 2024-12-20 files (fairchem issue #942), so none of these structures are model training data. Raw download caches live in an ignored local directory; the selected ~256-structure subset and this manifest are committed.",
+  "dataset": {
+    "name": "Meta Open Materials 2024 (OMat24), validation split",
+    "upstream": "https://huggingface.co/datasets/facebook/OMAT24",
+    "license": "CC-BY-4.0",
+    "correction_note": "corrected validation sets uploaded 2024-12-20; see https://github.com/FAIR-Chem/fairchem/issues/942"
+  },
+  "selection": {
+    "seed": 20260911,
+    "per_stratum": 64,
+    "rule": "numpy default_rng(seed) shuffle of stratum indices, first per_stratum kept, sorted; selection script validation/science/scripts/omat_subset.py"
+  },
+  "sources": [
+    {
+      "name": "rattled-1000-subsampled",
+      "url": "https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-1000-subsampled.tar.gz",
+      "tarball_sha256": "a5a06b296acb0cfd4f6d436f7022db4a4319915f003f47ee69dac4189c6d9fc1",
+      "tarball_bytes": 79870946,
+      "official_structure_count": 39785
+    },
+    {
+      "name": "rattled-300-subsampled",
+      "url": "https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-300-subsampled.tar.gz",
+      "tarball_sha256": "b13c8f54fdc1b3b07f00125fc85ddb012915d5613c4349bce406fe6e92fd20c3",
+      "tarball_bytes": 71395159,
+      "official_structure_count": 35579
+    },
+    {
+      "name": "aimd-from-PBE-3000-npt",
+      "url": "https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/aimd-from-PBE-3000-npt.tar.gz",
+      "tarball_sha256": "515658226009fe7dcaae050058d3b684f971a882e10bf7f6d93ac7b03adf3a00",
+      "tarball_bytes": 295386144,
+      "official_structure_count": 62130
+    },
+    {
+      "name": "rattled-relax",
+      "url": "https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-relax.tar.gz",
+      "tarball_sha256": "e1959ba23d14e607d64bfe0a33e6679c56e02a8508604021ab3ee1fc5d69a2a8",
+      "tarball_bytes": 122957680,
+      "official_structure_count": 95206
+    }
+  ]
+}

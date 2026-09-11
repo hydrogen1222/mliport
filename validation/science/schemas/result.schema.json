@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mlipx.beta-validation-result/1",
+  "title": "mlipx beta scientific validation result record",
+  "type": "object",
+  "required": [
+    "schema", "suite_revision", "git_commit", "case_id", "test_id",
+    "status", "engine", "model_identity", "model_sha256", "task", "head",
+    "dtype", "python", "mlipx_version", "backend_version",
+    "framework_version", "device", "input_structure_id", "parameters",
+    "metrics", "diagnostics", "wall_seconds", "peak_vram_mib", "exception"
+  ],
+  "properties": {
+    "schema": { "const": "mlipx.beta-validation-result/1" },
+    "suite_revision": { "type": "integer", "minimum": 1 },
+    "git_commit": { "type": "string" },
+    "case_id": { "type": "string" },
+    "test_id": { "type": "string" },
+    "status": {
+      "enum": ["pass", "fail", "characterized", "insufficient_sampling",
+               "unsupported", "blocked"]
+    },
+    "engine": { "enum": ["uma", "mace", "dpa", "grace"] },
+    "model_identity": { "type": "string" },
+    "model_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "task": { "type": ["string", "null"] },
+    "head": { "type": ["string", "null"] },
+    "dtype": { "type": "string" },
+    "python": { "type": "string" },
+    "mlipx_version": { "type": "string" },
+    "backend_version": { "type": ["string", "null"] },
+    "framework_version": { "type": ["string", "null"] },
+    "device": {
+      "type": "object",
+      "required": ["requested", "actual", "gpu_name", "gpu_uuid_hash"],
+      "properties": {
+        "requested": { "type": "string" },
+        "actual": { "type": ["string", "null"] },
+        "gpu_name": { "type": ["string", "null"] },
+        "gpu_uuid_hash": {
+          "description": "truncated sha256 of the GPU UUID; raw UUIDs never leave the local machine",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "input_structure_id": {
+      "description": "sha256 of canonicalized (species, positions, cell, pbc)",
+      "type": ["string", "null"]
+    },
+    "parameters": { "type": "object" },
+    "metrics": { "type": "object" },
+    "diagnostics": { "type": "object" },
+    "wall_seconds": { "type": "number", "minimum": 0 },
+    "peak_vram_mib": { "type": ["integer", "null"] },
+    "exception": { "type": ["string", "null"] }
+  }
+}
