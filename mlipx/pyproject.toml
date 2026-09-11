@@ -28,7 +28,7 @@ analysis = [
     "matplotlib>=3.7",
 ]
 transport = [
-    "kinisi>=2.0.5,<3",
+    "kinisi>=2.1.0,<3",
 ]
 electrolyte = [
     "gemdat>=1.7.3,<2",
@@ -36,7 +36,7 @@ electrolyte = [
 analysis-all = [
     "scipy>=1.11",
     "matplotlib>=3.7",
-    "kinisi>=2.0.5,<3",
+    "kinisi>=2.1.0,<3",
     "gemdat>=1.7.3,<2",
 ]
 dev = [
