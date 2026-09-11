@@ -40,6 +40,7 @@ TIER_COMMANDS: dict[str, list[str]] = {
     "t5": ["neb_suite.py"],
     "t6": ["md_suite.py"],
     "t7": ["analysis_suite.py"],
+    "t8": ["performance_suite.py"],
 }
 
 #: backend venvs live in the repository root, next to .venv-mace etc.

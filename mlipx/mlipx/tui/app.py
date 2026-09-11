@@ -212,11 +212,20 @@ class MlipxApp(App):
             "nhc_tchain": 3,
             "nhc_tloop": 1,
             "save_interval": 10,
-            "pre_relax": True,  # NEW: Pre-relaxation for MD
+            # ``pre_relax`` has NO TUI default: its default is ensemble-aware
+            # (off for NVE, on for NVT) and is applied by the engine, mirroring
+            # the resolver (config/defaults.py). A blanket True here would make
+            # TUI-submitted NVE runs silently pre-relax while CLI/API runs do
+            # not -- an interface-equivalence violation. ``None`` means "let
+            # the engine decide"; the config screen derives the display value.
+            "pre_relax": None,
             "pre_relax_steps": 50,
             "pre_relax_fmax": 0.1,
             "seed": None,
-            "velocity_policy": "auto",
+            # ``velocity_policy`` has NO TUI default either: the MDRunner
+            # default is "auto" and the TUI must not turn an implicit
+            # default into an explicit override (interface equivalence).
+            "velocity_policy": None,
             "com_policy": "auto",
             "fmax_abort": 20.0,
             # Batch options

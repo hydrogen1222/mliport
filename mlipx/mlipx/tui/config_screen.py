@@ -425,10 +425,17 @@ class ConfigScreen(Screen):
                 id="nhc-tloop-input",
             )
 
+            # Unset (None) means "engine ensemble-aware default": display the
+            # value the engine will actually apply for the selected ensemble.
+            pre_relax_config = self.app.get_config("pre_relax")
+            if pre_relax_config is None:
+                pre_relax_config = (
+                    str(self.app.get_config("ensemble", "NVT")).upper() != "NVE"
+                )
             yield Horizontal(
                 Label("Pre-relaxation:"),
                 Switch(
-                    value=self.app.get_config("pre_relax", True),
+                    value=pre_relax_config,
                     id="pre-relax",
                 ),
                 classes="switch-row",
@@ -455,13 +462,17 @@ class ConfigScreen(Screen):
             )
 
             yield Label("Velocity Policy:")
+            velocity_policy_config = self.app.get_config("velocity_policy")
+            if velocity_policy_config is None:
+                # Unset (None) means "MDRunner default (auto)"; display it.
+                velocity_policy_config = "auto"
             yield Select(
                 options=[
                     ("Auto", "auto"),
                     ("Initialize / overwrite", "initialize"),
                     ("Preserve existing velocities", "preserve"),
                 ],
-                value=self.app.get_config("velocity_policy", "auto"),
+                value=velocity_policy_config,
                 id="velocity-policy-select",
             )
 

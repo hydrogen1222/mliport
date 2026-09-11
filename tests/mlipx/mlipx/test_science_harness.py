@@ -606,3 +606,73 @@ def test_eos_fit_recovers_known_parameters():
     out2 = static_suite._fit_eos(list(v), list(e_true), "pouriertarantola")
     assert out2["b0_GPa"] == pytest.approx(0.75 * 160.21766208, abs=2.0)
     assert out2["b0_prime"] > 0.0
+
+
+# --------------------------------------------------------------------------
+# t8 performance suite plumbing (taskbook section 33)
+# --------------------------------------------------------------------------
+
+
+def test_t8_supercell_plan_builds_requested_sizes():
+    """SP scaling sizes are exact Na3PS4 supercells of the pinned unit cell."""
+    import performance_suite
+
+    base, _meta = fixtures.build_extra("na3ps4")
+    assert len(base) == 16
+    for natoms, repeat in performance_suite.SP_SIZES.items():
+        atoms, built = performance_suite._build_supercell(natoms)
+        assert built == repeat
+        assert len(atoms) == natoms
+        assert len(atoms) == 16 * repeat[0] * repeat[1] * repeat[2]
+        # composition stays a multiple of the pinned unit cell
+        na_count = sum(1 for atom in atoms if atom.symbol == "Na")
+        assert na_count == 6 * (repeat[0] * repeat[1] * repeat[2])
+
+
+def test_t8_oom_classifier_matches_only_memory_failures():
+    """OOM is 'characterized', everything else must stay 'fail'."""
+    import performance_suite
+
+    assert performance_suite._is_oom(Exception("CUDA out of memory. Tried to allocate"))
+    assert performance_suite._is_oom(Exception("OOM when allocating tensor"))
+    assert performance_suite._is_oom(Exception("OOM when allocating tensor"))
+    assert not performance_suite._is_oom(Exception("ResourceExhausted: too many open files"))
+    assert not performance_suite._is_oom(Exception("shape mismatch"))
+    assert not performance_suite._is_oom(Exception("nan detected in forces"))
+    assert not performance_suite._is_oom(Exception("boom"))
+    assert not performance_suite._is_oom(Exception("doom"))
+
+
+def test_t8_record_plumbing_writes_schema_valid_results(tmp_path):
+    """A t8 record round-trips through common.result_record/write_result."""
+    import performance_suite
+
+    rec = common.result_record(
+        case_id="t8_sp_scaling_32",
+        test_id="t8_performance",
+        status="pass",
+        engine="test",
+        model_identity="test",
+        model_sha256="0" * 64,
+        task="bulk",
+        head=None,
+        dtype="float64",
+        device=common.device_record("cpu"),
+        input_structure_id="abc",
+        parameters={"natoms": 32, "repeat": [2, 1, 1]},
+        metrics={
+            "natoms": 32,
+            "first_call_seconds": 1.0,
+            "warm_call_median_seconds": 0.5,
+            "atoms_per_second_warm": 64.0,
+            "energy_finite": True,
+        },
+        diagnostics={"reason": None},
+    )
+    path = common.write_result(rec, tmp_path, tag="t8beta")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["test_id"] == "t8_performance"
+    assert payload["status"] == "pass"
+    assert payload["metrics"]["natoms"] == 32
+    # the real suite must keep the same case naming
+    assert performance_suite.SP_SIZES == {32: (2, 1, 1), 128: (2, 2, 2), 512: (4, 4, 2)}
