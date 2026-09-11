@@ -15,10 +15,19 @@ from __future__ import annotations
 import json
 import warnings
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    # ``Traversable`` lives in ``importlib.resources.abc`` only on Python
+    # 3.11+; Python 3.10 exposes it from ``importlib.abc``.  The annotation
+    # below is never evaluated at runtime (``from __future__ import
+    # annotations``), so the ABC is only needed for type checkers.
+    try:  # pragma: no cover - static typing only
+        from importlib.resources.abc import Traversable
+    except ImportError:  # pragma: no cover - Python 3.10 typing fallback
+        from importlib.abc import Traversable
 from importlib.resources import files as resource_files
-from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Literal
 
 IDENTITY_KEYS = (
     "model_type",
@@ -75,13 +84,13 @@ def model_identity(model: dict) -> dict:
 
 
 def _package_evidence_dir() -> Traversable:
-    # Anchor on a real submodule instead of the bare package name: under an
-    # editable install run from the repository root, the top-level ``mlipx``
-    # import can be shadowed by a namespace spec pointing at the project
-    # directory, which would break package-data discovery.  ``files()`` of a
-    # non-package module anchors at that module's containing directory (the
-    # real package) for both editable and wheel installs.
-    return resource_files("mlipx.capabilities").joinpath("data", "validation")
+    # Anchor on the real ``mlipx.data`` package.  ``importlib.resources.files()``
+    # requires Package semantics (``__spec__.submodule_search_locations``) on
+    # Python 3.10/3.11, which a plain module such as ``mlipx.capabilities``
+    # does not satisfy (module anchors are a Python 3.12 addition).  A true
+    # package works on every supported version, for both editable and wheel
+    # installs.
+    return resource_files("mlipx.data").joinpath("validation")
 
 
 def _iter_evidence_documents(

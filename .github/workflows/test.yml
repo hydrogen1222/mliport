@@ -42,3 +42,50 @@ jobs:
       - name: Run real kinisi and GEMDAT integration tests
         run: |
           uv run --python .venv-analysis/bin/python pytest tests/mlipx/mlipx/analysis/test_analysis_backends_integration.py -q
+
+  # RC-FINAL-01 regression: the packaged capability registry must resolve on
+  # every supported Python, not just the runner that happens to build/test.
+  # Capability smoke only -- the heavy analysis matrix stays on its own job.
+  wheel-install-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist ./mlipx
+      - name: Install wheel into a clean pinned interpreter
+        run: |
+          uv venv wheel-clean --python ${{ matrix.python-version }}
+          uv pip install --python wheel-clean/bin/python --no-deps dist/mlipx-*.whl
+      - name: Capability smoke on the installed wheel
+        run: |
+          wheel-clean/bin/python -I - <<'PY'
+          import json
+          import sys
+
+          from importlib.resources import files
+          from mlipx.capabilities import resolve_capabilities
+
+          identities = [
+              json.loads(entry.read_text(encoding="utf-8"))["model_identity"]
+              for entry in files("mlipx.data").joinpath("validation").iterdir()
+              if entry.name.endswith(".json")
+          ]
+          assert len(identities) == 4, identities
+          for identity in identities:
+              cap = resolve_capabilities(identity, ["energy", "forces"])
+              assert cap.energy_gradient_consistency == "validated", identity
+              assert cap.validation_evidence_id, identity
+          mismatch = dict(identities[0])
+          mismatch["model_sha256"] = "0" * 64
+          cap = resolve_capabilities(mismatch, ["energy", "forces"])
+          assert cap.energy_gradient_consistency == "unknown"
+          assert cap.validation_evidence_id is None
+          print("capability wheel smoke ok on", sys.version)
+          PY

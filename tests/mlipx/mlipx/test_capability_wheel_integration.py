@@ -35,6 +35,10 @@ def _assert_hermetic_wheel(wheel: Path) -> None:
         or ".egg-info" in name
     ]
     assert not leaked, f"wheel contains repository artifacts: {leaked[:5]}"
+    # The data directory must be a real package so that
+    # importlib.resources.files("mlipx.data") has Package semantics on
+    # Python 3.10/3.11 (plain-module anchors are a 3.12 addition).
+    assert "mlipx/data/__init__.py" in names
     packaged_evidence = [
         name for name in names if name.startswith("mlipx/data/validation/")
     ]
@@ -102,11 +106,19 @@ def _build_wheel(out_dir: Path) -> Path:
     return wheels[-1]
 
 
-def _create_clean_venv(env_dir: Path, wheel: Path) -> Path:
+def _create_clean_venv(env_dir: Path, wheel: Path, python_version: str) -> Path:
+    """Install the wheel into a venv pinned to an explicit Python version.
+
+    ``uv venv`` without ``--python`` would silently reuse whatever interpreter
+    runs the test suite, so the packaged-evidence contract would only ever be
+    proven for the CI runner's Python. Pinning 3.10/3.11/3.12 keeps the
+    ``importlib.resources`` package-anchor contract under test on every
+    supported version.
+    """
     python = env_dir / "bin" / "python"
     if shutil.which("uv") is not None:
         subprocess.run(
-            ["uv", "venv", "--quiet", str(env_dir)],
+            ["uv", "venv", "--quiet", "--python", python_version, str(env_dir)],
             check=True,
             capture_output=True,
             timeout=300,
@@ -127,6 +139,8 @@ def _create_clean_venv(env_dir: Path, wheel: Path) -> Path:
             timeout=600,
         )
     else:  # pragma: no cover - CI always has uv; local fallback
+        if python_version != f"{sys.version_info.major}.{sys.version_info.minor}":
+            pytest.skip("no uv available: only the running interpreter can be venv'd")
         import venv
 
         venv.create(str(env_dir), with_pip=True)
@@ -153,11 +167,17 @@ def _packaged_registry_identities() -> list[dict]:
 
 
 @pytest.fixture(scope="module")
-def installed_venv(tmp_path_factory):
-    """Build the wheel once and install it into a clean venv outside the repo."""
+def built_wheel(tmp_path_factory):
+    """Build the wheel once; every pinned venv reuses the same artifact."""
     tmp = tmp_path_factory.mktemp("wheel-integration")
-    wheel = _build_wheel(tmp / "dist")
-    return _create_clean_venv(tmp / "clean-venv", wheel)
+    return _build_wheel(tmp / "dist")
+
+
+@pytest.fixture(scope="module", params=["3.10", "3.11", "3.12"])
+def installed_venv(request, tmp_path_factory, built_wheel):
+    """Install the wheel into a clean venv pinned to each supported Python."""
+    tmp = tmp_path_factory.mktemp(f"wheel-integration-{request.param}")
+    return _create_clean_venv(tmp / "clean-venv", built_wheel, request.param)
 
 
 def _run_in_venv(python: Path, snippet: str) -> object:
