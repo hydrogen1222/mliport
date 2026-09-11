@@ -39,6 +39,7 @@ TIER_COMMANDS: dict[str, list[str]] = {
     "t4": ["static_suite.py"],
     "t5": ["neb_suite.py"],
     "t6": ["md_suite.py"],
+    "t7": ["analysis_suite.py"],
 }
 
 #: backend venvs live in the repository root, next to .venv-mace etc.
@@ -128,6 +129,12 @@ def main() -> int:
     parser.add_argument("--dtype", default=None, help="MACE only")
     parser.add_argument("--venv", default=None, help="python executable override")
     parser.add_argument("--tag", default=None)
+    parser.add_argument(
+        "--cases",
+        default=None,
+        help="tier-script case selection forwarded verbatim (t7: md / "
+        "transport / gemdat)",
+    )
     args = parser.parse_args()
 
     python = venv_python(args.engine, args.venv)
@@ -194,6 +201,8 @@ def main() -> int:
                 cmd += ["--dtype", dtype_arg]
             if args.tag:
                 cmd += ["--tag", args.tag]
+            if args.cases:
+                cmd += ["--cases", args.cases]
             print(f"[run_suite] {args.engine}/{tier}: {Path(script).name}")
             proc = subprocess.run(cmd, check=False, env=child_env)  # noqa: S603
             if proc.returncode != 0:
