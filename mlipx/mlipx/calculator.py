@@ -172,12 +172,13 @@ class UMACalculator(BaseMLIPCalculator):
     def _check_gpu_compatibility(self) -> None:
         """Check if this PyTorch build includes CUDA kernels for this GPU.
 
-        PyTorch 2.7+ dropped ``sm_50``/``sm_60`` from its pre-built CUDA wheels,
-        so Pascal GPUs (compute capability 6.x: GTX 10xx, P104-100, P100) no
-        longer have matching kernels and fail with ``no kernel image is
-        available for execution on the device``. These GPUs still work with
-        PyTorch 2.6.x (CUDA 12.4) wheels, which include ``sm_60`` — and
-        ``sm_60`` kernels are binary-compatible with ``sm_61`` devices.
+        PyTorch cu128+ wheels dropped ``sm_50``/``sm_60``, so Maxwell/Pascal
+        GPUs (compute capability 5.x/6.x: GTX 9xx/10xx, P104-100, P100) fail
+        with ``no kernel image is available for execution on the device``.
+        ``sm_60`` kernels are binary-compatible with ``sm_61`` devices. The
+        install advice emitted below is generated from the central install
+        compatibility matrix (``mlipx.install.compatibility`` via
+        ``mlipx.gpu_setup.recommend_torch``), never a hardcoded pin.
         """
         # Treat ``cuda`` and ``cuda:N`` (and the ``gpu`` alias) as GPU devices.
         if not str(self.device).lower().startswith("cuda") and self.device != "gpu":
@@ -200,6 +201,20 @@ class UMACalculator(BaseMLIPCalculator):
             if not arch_supports_device(gpu_cc, arch_list):
                 gpu_name = torch.cuda.get_device_name(idx)
 
+                # RC-07: install advice is generated from the central
+                # compatibility matrix, never a hardcoded version pin.
+                from mlipx.gpu_setup import recommend_torch  # noqa: PLC0415
+
+                recommendation = recommend_torch(major, minor, engine="uma")
+                if recommendation.supported:
+                    matrix_advice = (
+                        "Install a PyTorch build that still ships sm_60 "
+                        "(sm_60 kernels are binary-compatible with sm_61):"
+                        f"\n       uv pip install torch=={recommendation.version} "
+                        f"--index-url {recommendation.index_url}"
+                    )
+                else:
+                    matrix_advice = recommendation.rationale
                 raise RuntimeError(
                     f"\n{'=' * 68}\n"
                     f" GPU NOT SUPPORTED BY THIS PYTORCH BUILD: {gpu_name}\n"
@@ -207,18 +222,16 @@ class UMACalculator(BaseMLIPCalculator):
                     f"  Architecture: {gpu_cc} (CC {major}.{minor})\n"
                     f"  PyTorch kernels: {arch_list}\n\n"
                     f"  This PyTorch build has no kernel compatible with {gpu_cc}.\n"
-                    f"  PyTorch 2.7+ removed sm_50/sm_60 from its pre-built CUDA\n"
-                    f"  wheels, so Pascal GPUs (sm_61: GTX 10xx, P104-100) fail.\n\n"
-                    f"  Options:\n"
-                    f"    1. Install a PyTorch build that still ships sm_60.\n"
-                    f"       sm_60 kernels are binary-compatible with sm_61:\n"
-                    f"       uv pip install torch==2.6.0 "
-                    f"--index-url https://download.pytorch.org/whl/cu124\n"
-                    f"    2. Build PyTorch from source with Pascal kernels:\n"
-                    f'       TORCH_CUDA_ARCH_LIST="6.0;6.1" '
-                    f"python setup.py develop\n"
-                    f"    3. Use a GPU with sm_70+ (Volta or newer)\n"
-                    f"    4. Fall back to CPU: --device cpu\n"
+                    "  PyTorch cu128+ wheels dropped sm_50/sm_60; the install\n"
+                    "  compatibility matrix routes Maxwell/Pascal/Volta through\n"
+                    "  the cu126 legacy channel.\n\n"
+                    "  Options:\n"
+                    f"    1. {matrix_advice}\n"
+                    "    2. Build PyTorch from source with Pascal kernels:\n"
+                    '       TORCH_CUDA_ARCH_LIST="6.0;6.1" '
+                    "python setup.py develop\n"
+                    "    3. Use a GPU with sm_70+ (Volta or newer)\n"
+                    "    4. Fall back to CPU: --device cpu\n"
                     f"{'=' * 68}\n"
                 )
         except RuntimeError:

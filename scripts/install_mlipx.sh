@@ -109,10 +109,46 @@ if [[ "$SOURCE_PROFILE" == "offline" || "$READ_ONLY" -eq 1 ]]; then
         exit 1
     fi
 else
-    # Use an existing runtime to validate the full plan before uv is allowed
-    # to download the target interpreter while creating its environments.
-    UV_PY="$(UV_PYTHON_DOWNLOADS=never uv python find "$PY_SPEC" 2>/dev/null \
-        || { echo "[mlipx] ERROR: preflight requires an existing Python $PY_SPEC interpreter; set MLIPX_INSTALL_PYTHON to a local compatible runtime." >&2; exit 1; })"
+    # RC-06: the planner runtime and the target environment runtime are two
+    # different things. The planner only parses args, validates the
+    # engine x target-Python matrix, and computes the source/device plan; it
+    # may be any local Python 3.10-3.12 with 'packaging'. Only after the full
+    # plan validates is uv allowed to obtain the target interpreter while
+    # creating the environments (normal online mode).
+    UV_PY=""
+    _planner_ok() {
+        "$1" -c 'import sys, packaging.specifiers; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1
+    }
+    if [[ -n "${MLIPX_INSTALL_PYTHON:-}" ]]; then
+        if _planner_ok "$MLIPX_INSTALL_PYTHON"; then
+            UV_PY="$MLIPX_INSTALL_PYTHON"
+        else
+            echo "[mlipx] ERROR: MLIPX_INSTALL_PYTHON must be a local Python 3.10-3.12 with packaging installed." >&2
+            exit 1
+        fi
+    else
+        # Fast path: the target interpreter itself acts as the planner when
+        # it already exists locally (this lookup never downloads anything).
+        UV_PY="$(UV_PYTHON_DOWNLOADS=never uv python find "$PY_SPEC" 2>/dev/null || true)"
+        if [[ -n "$UV_PY" ]] && ! _planner_ok "$UV_PY"; then
+            UV_PY=""
+        fi
+        if [[ -z "$UV_PY" ]]; then
+            # Target absent or unusable as planner: plan with any local
+            # compatible runtime; the plan still targets --python.
+            for CANDIDATE in "$REPO_ROOT/.venv/bin/python" python3.12 python3.11 python3.10 python3 python; do
+                if _planner_ok "$CANDIDATE"; then
+                    UV_PY="$CANDIDATE"
+                    break
+                fi
+            done
+        fi
+        if [[ -z "$UV_PY" ]]; then
+            echo "[mlipx] ERROR: no local Python 3.10-3.12 runtime with packaging found to plan the install; set MLIPX_INSTALL_PYTHON to such an interpreter." >&2
+            exit 1
+        fi
+        echo "[mlipx] Planner runtime: $UV_PY (target environment: Python $TARGET_PYTHON)"
+    fi
 fi
 
 # The planner uses packaging.SpecifierSet. A bare managed interpreter can
