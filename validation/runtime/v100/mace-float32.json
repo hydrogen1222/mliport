@@ -1,142 +1,142 @@
 {
-  "schema": "mlipx.runtime-validation/1",
-  "backend": "mace",
-  "python": "3.12.13",
-  "os": "Linux",
-  "model_sha256": "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638",
-  "task": "bulk",
-  "requested_head": null,
-  "workloads": {
-    "single_point": {
-      "status": "passed",
-      "energy_eV": -16.383541107177734,
-      "max_force_eV_A": 0.47962151012564097,
-      "stress_checked": true
+ "schema": "mlipx.runtime-validation/1",
+ "backend": "mace",
+ "python": "3.12.13",
+ "os": "Linux",
+ "model_sha256": "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638",
+ "task": "bulk",
+ "requested_head": null,
+ "workloads": {
+  "single_point": {
+   "status": "passed",
+   "energy_eV": -16.383541107177734,
+   "max_force_eV_A": 0.47962161610951626,
+   "stress_checked": true
+  },
+  "shared_calculator": {
+   "status": "passed",
+   "absolute_tolerance": 2e-05,
+   "repeat_errors": {
+    "energy_eV": 0.0,
+    "forces_eV_A": 3.8743019104003906e-07,
+    "stress_eV_A3": 6.007030606269836e-08
+   }
+  },
+  "energy_force_consistency": {
+   "status": "passed",
+   "force_atol_eV_A": 0.005,
+   "free_dof_count": 6,
+   "samples": [
+    {
+     "delta_A": 0.0005,
+     "errors_eV_A": [
+      0.00046834349632263184,
+      0.0032975375652313232,
+      0.0014707297086715698,
+      0.0016427626833319664,
+      0.00032336264848709106,
+      3.6697834730148315e-05
+     ],
+     "max_error_eV_A": 0.0032975375652313232
     },
-    "shared_calculator": {
-      "status": "passed",
-      "absolute_tolerance": 2e-05,
-      "repeat_errors": {
-        "energy_eV": 0.0,
-        "forces_eV_A": 3.3527612686157227e-07,
-        "stress_eV_A3": 2.421438694000244e-08
-      }
+    {
+     "delta_A": 0.001,
+     "errors_eV_A": [
+      0.00046834349632263184,
+      0.00043651461601257324,
+      0.0004366189241409302,
+      0.0006890883669257164,
+      0.00032336264848709106,
+      3.6697834730148315e-05
+     ],
+     "max_error_eV_A": 0.0006890883669257164
     },
-    "energy_force_consistency": {
-      "status": "passed",
-      "force_atol_eV_A": 0.005,
-      "free_dof_count": 6,
-      "samples": [
-        {
-          "delta_A": 0.0005,
-          "errors_eV_A": [
-            0.0014390945434570312,
-            0.001390308141708374,
-            0.0004366934299468994,
-            0.0016426481306552887,
-            0.0015839189291000366,
-            3.6656856536865234e-05
-          ],
-          "max_error_eV_A": 0.0016426481306552887
-        },
-        {
-          "delta_A": 0.001,
-          "errors_eV_A": [
-            0.00046825408935546875,
-            0.000436633825302124,
-            0.0005169808864593506,
-            0.0002647005021572113,
-            0.0012771040201187134,
-            0.0009170174598693848
-          ],
-          "max_error_eV_A": 0.0012771040201187134
-        },
-        {
-          "delta_A": 0.002,
-          "errors_eV_A": [
-            8.58306884765625e-06,
-            4.0203332901000977e-05,
-            4.0143728256225586e-05,
-            0.0002121366560459137,
-            0.00015340745449066162,
-            0.00044018030166625977
-          ],
-          "max_error_eV_A": 0.00044018030166625977
-        }
-      ]
-    },
-    "short_md": {
-      "status": "passed",
-      "steps": 10,
-      "frames": 11
-    },
-    "neb": {
-      "status": "passed",
-      "total_images": 5,
-      "converged": true,
-      "saddle_validation": "not_performed"
+    {
+     "delta_A": 0.002,
+     "errors_eV_A": [
+      8.493661880493164e-06,
+      0.00043651461601257324,
+      4.0218234062194824e-05,
+      0.0002645859494805336,
+      0.00015347450971603394,
+      3.6697834730148315e-05
+     ],
+     "max_error_eV_A": 0.00043651461601257324
     }
+   ]
   },
-  "source_commit": "b3612290e412e964d5a77cc713370ed512037687",
-  "source_dirty": false,
-  "runtime": {
-    "actual_device_type": "cuda",
-    "actual_device_logical_index": 0,
-    "model_precision": [
-      "float32"
-    ],
-    "active_head": "default",
-    "inference_mode": null,
-    "gpu_uuid_sha256": "c0c37a4d8178c0b3b6f37d93b2c5f835972fbe611593bf16204793867b4f202a"
+  "short_md": {
+   "status": "passed",
+   "steps": 10,
+   "frames": 11
   },
-  "gpu": {
-    "name": "Tesla V100-SXM2-16GB",
-    "compute_capability": [
-      7,
-      0
-    ],
-    "driver": "580.173.02"
+  "neb": {
+   "status": "passed",
+   "total_images": 5,
+   "converged": true,
+   "saddle_validation": "not_performed"
+  }
+ },
+ "source_commit": "52c1c94e769a636f99ff4e36083415979460f5fe",
+ "source_dirty": false,
+ "runtime": {
+  "actual_device_type": "cuda",
+  "actual_device_logical_index": 0,
+  "model_precision": [
+   "float32"
+  ],
+  "active_head": "default",
+  "inference_mode": null,
+  "gpu_uuid_sha256": "c0c37a4d8178c0b3b6f37d93b2c5f835972fbe611593bf16204793867b4f202a"
+ },
+ "gpu": {
+  "name": "Tesla V100-SXM2-16GB",
+  "compute_capability": [
+   7,
+   0
+  ],
+  "driver": "580.173.02"
+ },
+ "versions": {
+  "torch": "2.8.0+cu126",
+  "mlipx": "2.0.0",
+  "mace": "0.3.16"
+ },
+ "model_identity": {
+  "model_type": "mace",
+  "model_sha256": "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638",
+  "backend_version": "0.3.16",
+  "framework_versions": {
+   "torch": "2.8.0+cu126"
   },
-  "versions": {
-    "torch": "2.6.0+cu124",
-    "mlipx": "2.0.0",
-    "mace": "0.3.16"
-  },
-  "model_identity": {
-    "model_type": "mace",
-    "model_sha256": "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638",
-    "backend_version": "0.3.16",
-    "framework_versions": {
-      "torch": "2.6.0+cu124"
-    },
-    "task": "bulk",
-    "head_effective": "default",
-    "dtype_effective": "float32",
-    "inference_mode": "default",
-    "compile_enabled": null,
-    "actual_device_type": "cuda"
-  },
-  "evidence_id": "v100-mace-75428afe3a1d-float32-cacheTrue",
-  "fixture": {
-    "element": "Cu",
-    "atoms": 4,
-    "cell_A": [
-      3.65,
-      3.65,
-      3.65
-    ],
-    "pbc": [
-      true,
-      true,
-      true
-    ],
-    "initial_displacement_A": [
-      0.07,
-      -0.03,
-      0.02
-    ]
-  },
-  "peak_vram_MiB": 98.3935546875,
-  "status": "passed",
-  "elapsed_seconds": 43.16522972099483
+  "task": "bulk",
+  "head_effective": "default",
+  "dtype_effective": "float32",
+  "inference_mode": "default",
+  "compile_enabled": null,
+  "actual_device_type": "cuda"
+ },
+ "evidence_id": "v100-mace-75428afe3a1d-float32-cacheTrue",
+ "fixture": {
+  "element": "Cu",
+  "atoms": 4,
+  "cell_A": [
+   3.65,
+   3.65,
+   3.65
+  ],
+  "pbc": [
+   true,
+   true,
+   true
+  ],
+  "initial_displacement_A": [
+   0.07,
+   -0.03,
+   0.02
+  ]
+ },
+ "peak_vram_MiB": 98.3935546875,
+ "status": "passed",
+ "elapsed_seconds": 43.95237766299397
 }

@@ -41,6 +41,8 @@ def _assert_hermetic_wheel(wheel: Path) -> None:
     assert sorted(packaged_evidence) == [
         "mlipx/data/validation/dpa-v100.json",
         "mlipx/data/validation/grace-v100.json",
+        "mlipx/data/validation/mace-float32-v100.json",
+        "mlipx/data/validation/mace-v100.json",
     ]
 
 

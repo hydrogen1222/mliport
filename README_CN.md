@@ -119,16 +119,16 @@ uv pip install --no-config --python .venv-grace/bin/python \
 
 > **为什么有两条 CUDA 路线？** Maxwell/Pascal/Volta 必须使用 **cu126 Legacy** 通道：PyTorch 2.8+ 从 cu128 构建中移除了 Maxwell/Pascal，PyTorch 2.11+ 从 cu128+ 中移除了 Volta。Turing+ 使用**现代**通道（torch 2.8–2.10 用 cu128，torch 2.12+ 用 cu130）。Maxwell 标记为实验性，因为 TensorFlow 2.20 官方 wheel 从 sm_60 开始构建。
 
-**各引擎安装级验证状态**（来自 `mlipx/install/compatibility.py`；V100 和 RTX 4090 已经过安装级真机测试。P40 使用修正后的精确 `+cu126` wheel pin，但仍需在修复后重新做模型 smoke test）。这里的 "verified" 只表示该引擎在此 GPU 系列上完成安装并给出了真实模型预测——不代表所有 workload 都已验证。V100 的 workload 级状态见下表。
+**架构兼容性**（来自 `mlipx/install/compatibility.py`；此表只描述安装路线——upstream 包支持、锁定的后端版本、CUDA wheel 通道——*不是* workload 认证）。"needs runtime smoke test" 表示该 GPU 系列的安装契约自洽，但 mlipx 尚未在真机上验证这一确切的 引擎 + framework + GPU 组合；"experimental" 表示 upstream 本身不支持或未测试。安装级 smoke 测试（引擎装好并给出真实模型预测）已在真实的 V100 与 RTX 4090 上运行；workload 级证据目前仅覆盖下表的 V100 runtime。P40 使用修正后的精确 `+cu126` wheel pin，但仍需在修复后重新做模型 smoke test。
 
-| 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | 其他 Turing+ |
-|---|---|---|---|---|---|
-| UMA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
-| MACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
-| DPA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
-| GRACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | 其他 Turing+ | Hopper / Blackwell |
+|---|---|---|---|---|---|---|
+| UMA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| MACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
 
-**Workload 级验证（单张 V100-SXM2-16GB，sm_70，driver 580.173.02）**——单 GPU 上的短真实模型运行、强制超时。脱敏记录位于 [`validation/runtime/v100/`](validation/runtime/v100/)（GPU 仅以 UUID 的 SHA-256 标识）；每个状态一一对应一条记录：
+**Runtime 验证（单张 V100-SXM2-16GB，sm_70，driver 580.173.02）**——单 GPU 上的短真实模型运行、强制超时，每次都针对 installer 生成的**确切** runtime。脱敏记录位于 [`validation/runtime/v100/`](validation/runtime/v100/)（GPU 仅以 UUID 的 SHA-256 标识）；每个状态一一对应一条记录。MACE 记录已在当前 installer 契约（`mace-torch 0.3.16` + `torch 2.8.0+cu126`）上重新验证；早先 torch 2.6.0+cu124 的证据保留在 git 历史中：
 
 | 后端 / 模型 | SP | 短 MD | E–F 梯度 | NEB smoke | GRACE cache | 记录 |
 |---|---|---|---|---|---|---|
@@ -194,8 +194,19 @@ PyPI 包和 PyTorch wheel 分开处理。安装器**不会修改**你的全局
   --output results/hop --images 7 --climb --fmax 0.03
 ```
 
-没有对应验证记录的引擎默认拒绝启动 NEB；显式传入 `--allow-unvalidated-neb`
-方可覆盖。用 `--resume results/hop/checkpoints/latest` 从最新的完整 band
+**注意：**这只是 workflow 语法示例，不是经过验证的默认路径。上文的精确 UMA
+runtime 尚未进入打包的验证 registry（见 runtime 验证表），因此默认的
+fail-closed gate 会拒绝它。要么使用已提升证据的后端运行 NEB——例如 MACE
+（当前 installer 契约）：
+
+```bash
+.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
+  --model mace-mpa-0-medium.model --device cuda \
+  --output results/hop --images 7 --climb --fmax 0.03
+```
+
+要么在该 UMA 命令上显式传入 `--allow-unvalidated-neb` 覆盖。这是实验性覆盖，
+因为该确切的 UMA runtime/模型尚未进入打包的验证 registry。用 `--resume results/hop/checkpoints/latest` 从最新的完整 band
 checkpoint 恢复——模型与全部科学选项都从 checkpoint 恢复（语义见
 [Resume 语义](#resume-语义)）。
 

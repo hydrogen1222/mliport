@@ -121,16 +121,16 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 
 > **Why two CUDA routes?** Maxwell/Pascal/Volta must use the **cu126 Legacy** channel: PyTorch 2.8+ removed Maxwell/Pascal from cu128 builds, and PyTorch 2.11+ removed Volta from cu128+. Turing+ use the **modern** channel (cu128 for torch 2.8–2.10, cu130 for torch 2.12+). Maxwell is Experimental because TensorFlow 2.20 official wheels start at sm_60.
 
-**Per-engine install verification status** (from `mlipx/install/compatibility.py`; V100 and RTX 4090 have been tested on real hardware. P40 uses the corrected exact `+cu126` wheel pin but still needs a post-fix model smoke retest). "Verified" here means the engine installed and produced a real model prediction on that GPU family — not that every workload was exercised. Workload-level statuses for V100 are listed below.
+**Architecture compatibility** (from `mlipx/install/compatibility.py`; this describes the install route only — upstream package support, the pinned backend version, and the CUDA wheel channel — *not* workload certification). "Needs runtime smoke test" means the installer contract is consistent for that GPU family but mlipx has not yet verified that exact engine + framework + GPU combination; "experimental" means upstream itself does not support or test it. Install-route smoke tests (engine installed, real model prediction) have been run on real V100 and RTX 4090 hardware; workload-level evidence exists only for the V100 runtime below. P40 uses the corrected exact `+cu126` wheel pin but still needs a post-fix model smoke retest.
 
-| Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ |
-|---|---|---|---|---|---|
-| UMA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
-| MACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
-| DPA | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
-| GRACE | experimental | needs smoke test | **verified** | **verified** | needs smoke test |
+| Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
+|---|---|---|---|---|---|---|
+| UMA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| MACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
 
-**Workload-level verification (single V100-SXM2-16GB, sm_70, driver 580.173.02)** — short real-model runs with hard timeouts on one GPU. Sanitized records live in [`validation/runtime/v100/`](validation/runtime/v100/) (the GPU is identified only by a SHA-256 of its UUID); each status maps to exactly one record:
+**Runtime validation (single V100-SXM2-16GB, sm_70, driver 580.173.02)** — short real-model runs with hard timeouts on one GPU, each against the *exact* runtime the installer produces. Sanitized records live in [`validation/runtime/v100/`](validation/runtime/v100/) (the GPU is identified only by a SHA-256 of its UUID); each status maps to exactly one record. The MACE records were revalidated on the current installer contract (`mace-torch 0.3.16` + `torch 2.8.0+cu126`); earlier torch 2.6.0+cu124 evidence remains in git history.
 
 | Backend / model | SP | Short MD | E–F gradient | NEB smoke | GRACE cache | Records |
 |---|---|---|---|---|---|---|
@@ -197,8 +197,21 @@ Offline mode also requires the requested Python to be already discoverable by
   --output results/hop --images 7 --climb --fmax 0.03
 ```
 
-Engines without a matching validation record refuse to start a NEB run; pass
-`--allow-unvalidated-neb` to override explicitly. Resume from the latest
+**Note:** this is a workflow syntax example, not a validated default path. The
+exact UMA runtime above is not yet present in the packaged validation registry
+(see the runtime validation table), so the default fail-closed gate refuses it.
+Either run NEB with a backend that has promoted evidence — e.g. MACE with the
+current installer contract:
+
+```bash
+.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
+  --model mace-mpa-0-medium.model --device cuda \
+  --output results/hop --images 7 --climb --fmax 0.03
+```
+
+or pass `--allow-unvalidated-neb` to override explicitly on the UMA command.
+This is an experimental override because that exact UMA runtime/model is not
+yet present in the packaged validation registry. Resume from the latest
 complete-band checkpoint with `--resume results/hop/checkpoints/latest` — the
 model and all scientific options are restored from the checkpoint (see
 [Resume semantics](#resume-semantics)).
@@ -413,10 +426,13 @@ from mlipx.api import run_single_point, run_md, run_neb, calculate_energy
 result = run_single_point("structure.cif", "uma-s-1.pt", task="omat")
 energy = calculate_energy("structure.cif", "uma-s-1.pt", task="omat")
 
+# NEB runs a fail-closed validation gate: use a backend with promoted
+# evidence (e.g. a MACE model), or pass allow_unvalidated_neb=True to
+# override explicitly when this exact runtime is not yet validated.
 neb = run_neb(
     "initial.vasp", "final.vasp", "uma-s-1.pt",
     task="omat", device="cuda:0", output_dir="results/hop",
-    n_intermediate_images=7, climb=True,
+    n_intermediate_images=7, climb=True, allow_unvalidated_neb=True,
 )
 print(neb["converged"], neb["barrier_forward_sampled_eV"])
 ```

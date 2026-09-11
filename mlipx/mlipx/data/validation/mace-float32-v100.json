@@ -1,0 +1,36 @@
+{
+ "schema": "mlipx.capability-evidence/1",
+ "evidence_id": "v100-mace-75428afe3a1d-float32-cacheTrue",
+ "source_record": "validation/runtime/v100/mace-float32.json",
+ "model_identity": {
+  "model_type": "mace",
+  "model_sha256": "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638",
+  "backend_version": "0.3.16",
+  "framework_versions": {
+   "torch": "2.8.0+cu126"
+  },
+  "task": "bulk",
+  "head_effective": "default",
+  "dtype_effective": "float32",
+  "inference_mode": "default",
+  "compile_enabled": null,
+  "actual_device_type": "cuda"
+ },
+ "workloads": {
+  "single_point": {
+   "status": "passed"
+  },
+  "shared_calculator": {
+   "status": "passed"
+  },
+  "energy_force_consistency": {
+   "status": "passed"
+  },
+  "short_md": {
+   "status": "passed"
+  },
+  "neb": {
+   "status": "passed"
+  }
+ }
+}
