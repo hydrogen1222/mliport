@@ -20,6 +20,7 @@ committed.
 | `scripts/invariance.py` | T2 — repeatability floor, permutation/PBC/translation/rotation invariance, A→B→A cache-state check |
 | `scripts/finite_difference.py` | T2-FD — ASE native FD sweep vs analytical forces/stress |
 | `scripts/static_suite.py` | T4 — static properties: single points, relaxations, EOS, elastic constants, phonons/thermo, vacancy, surface, energetics |
+| `scripts/neb_suite.py` | T5 — NEB/CI-NEB: endpoint symmetry, path init, warm-up, CI convergence, resume identity, FD-Hessian saddle verdict, Na3PS4 hop |
 | `scripts/transforms.py` | Rotation/Voigt algebra with hand-verified known answers |
 | `scripts/build_cases.py` | Regenerates/pins `cases/manifests/fixtures.json` |
 | `scripts/omat_subset.py` | OMat24 val-subset acquisition + deterministic selection |
@@ -53,6 +54,18 @@ committed.
 - **Na3PS4 (mp-28782) is a geometry fixture only** — pinned provenance in
   `data_manifest.json`; never compared against Materials Project energies.
 
+- **T5 barrier semantics** — the barrier is the sampled maximum minus the
+  initial endpoint energy; the reverse barrier is reported even when the
+  endpoints are inequivalent, and no fitted saddle value is ever invented
+  (`barrier_status` states what was actually computed).  A bounded budget
+  that runs out is recorded `not_converged`, never extended silently.
+- **T5 saddle verdicts are gated, not claimed** — a CI image is a
+  `validated_first_order_candidate` only when exactly one robust negative
+  FD-Hessian eigenvalue (< -0.01 eV/A^2, i.e. 10x the zero-mode scale)
+  persists at 0.005/0.010/0.020 A displacements, the eigenvalue spread stays
+  within 50% of the mean, and |<v-, tangent>| >= 0.8; otherwise it is
+  `ci_neb_candidate_only`, and two or more robust negative modes fail the
+  record as `bad_saddle_candidate`.
 ## Quickstart (single engine, backend venv)
 
 ```bash
