@@ -138,34 +138,83 @@ def reset_vram_counter() -> None:
 
 
 def device_record(requested: str) -> dict[str, Any]:
-    """Actual GPU identity for the current process (UUID hashed)."""
-    import torch
+    """Actual GPU identity for the current process (UUID hashed).
 
-    idx = 0
-    dev = str(requested)
-    if dev.startswith("cuda:") and dev[5:].isdigit():
-        idx = int(dev[5:])
-    if not torch.cuda.is_available():
+    Reads the identity from the framework that actually runs inference:
+    torch when installed, otherwise tensorflow (GRACE/tensorpotential
+    environments carry no torch).  Never substitutes the requested value
+    for missing runtime evidence.
+    """
+    try:
+        import torch  # noqa: PLC0415
+    except ImportError:
+        torch = None
+
+    if torch is not None:
+        idx = 0
+        dev = str(requested)
+        if dev.startswith("cuda:") and dev[5:].isdigit():
+            idx = int(dev[5:])
+        if not torch.cuda.is_available():
+            return {
+                "requested": requested,
+                "actual": "cpu",
+                "gpu_name": None,
+                "gpu_uuid_hash": None,
+            }
+        props = torch.cuda.get_device_properties(idx)
+        uuid = getattr(props, "uuid", None)
+        uuid_hash = (
+            hashlib.sha256(str(uuid).encode("utf-8")).hexdigest()[:16]
+            if uuid is not None
+            else None
+        )
+        return {
+            "requested": requested,
+            "actual": f"cuda:{idx}",
+            "gpu_name": props.name,
+            "gpu_uuid_hash": uuid_hash,
+        }
+
+    try:
+        import tensorflow as tf  # noqa: PLC0415
+    except ImportError:
         return {
             "requested": requested,
             "actual": "cpu",
             "gpu_name": None,
             "gpu_uuid_hash": None,
         }
-    props = torch.cuda.get_device_properties(idx)
-    uuid = getattr(props, "uuid", None)
+    gpus = tf.config.list_physical_devices("GPU")
+    if not gpus:
+        return {
+            "requested": requested,
+            "actual": "cpu",
+            "gpu_name": None,
+            "gpu_uuid_hash": None,
+        }
+    idx = 0
+    dev = str(requested)
+    if dev.startswith("cuda:") and dev[5:].isdigit():
+        idx = int(dev[5:])
+    idx = min(idx, len(gpus) - 1)
+    try:
+        details = tf.config.experimental.get_device_details(gpus[idx])
+    except (AttributeError, ValueError, RuntimeError):
+        details = {}
+    uuid = details.get("uuid")
     uuid_hash = (
         hashlib.sha256(str(uuid).encode("utf-8")).hexdigest()[:16]
-        if uuid is not None
+        if uuid
         else None
     )
+    name = details.get("device_name")
     return {
         "requested": requested,
         "actual": f"cuda:{idx}",
-        "gpu_name": props.name,
+        "gpu_name": name,
         "gpu_uuid_hash": uuid_hash,
     }
-
 
 def timed(fn: Callable[[], Any], device: str = "cpu") -> tuple[Any, float]:
     """Run ``fn`` once and return ``(result, wall_seconds)`` with GPU sync."""
@@ -307,8 +356,42 @@ def resolve_profile(
     The harness refuses to run when the actual file hash differs from the
     manifest entry (taskbook section 5); a new artifact requires a new
     manifest identity, not silent acceptance.
+
+    Directory artifacts (e.g. extracted GRACE checkpoints) cannot match the
+    manifest hash of the distributed archive; they are verified file-by-file
+    via the profile's ``secondary_hashes`` entries, whose keys are the file
+    names inside the extracted directory (optionally prefixed with
+    ``extracted_`` to distinguish them from archive-level hashes).
     """
     profile = manifest["profiles"][profile_id]
+    model_path = Path(model_path)
+    if model_path.is_dir():
+        secondary = profile.get("secondary_hashes") or {}
+        if not secondary:
+            msg = (
+                f"directory artifact for profile {profile_id!r} has no "
+                "secondary_hashes to verify"
+            )
+            raise RuntimeError(msg)
+        for key, expected in sorted(secondary.items()):
+            rel = key.removeprefix("extracted_")
+            artifact = model_path / rel
+            if not artifact.is_file():
+                msg = (
+                    f"directory artifact for profile {profile_id!r} is "
+                    f"missing expected file {rel!r} ({artifact})"
+                )
+                raise RuntimeError(msg)
+            actual = sha256_file(artifact)
+            if actual != expected:
+                msg = (
+                    f"model hash mismatch for profile {profile_id!r} file "
+                    f"{rel!r}: manifest {expected[:12]}... != actual "
+                    f"{actual[:12]}... ({artifact}). Update the manifest "
+                    "identity deliberately instead."
+                )
+                raise RuntimeError(msg)
+        return profile
     actual = sha256_file(model_path)
     if actual != profile["model_sha256"]:
         msg = (

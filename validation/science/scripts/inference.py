@@ -21,10 +21,10 @@ import math
 import statistics
 import sys
 import traceback
-
-import numpy as np
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # noqa: E402
 
@@ -102,7 +102,7 @@ def _record_for_system(
             "warm_reps": WARM_REPS,
         },
         metrics=metrics,
-        diagnostics={**ctx.diagnostics, "backend_version": ctx.backend_version},
+        diagnostics={**ctx.diagnostics, "backend_version": ctx.backend_version, "framework_version": ctx.framework_version},
         wall_seconds=sum(warm_times) + first_call_s,
         peak_vram=common.peak_vram_mib(),
     )
@@ -116,7 +116,14 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--neighbor-cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="GRACE only: toggle the mlipx neighbor-list cache",
+    )
     parser.add_argument("--head", default=None)
+    parser.add_argument("--tag", default=None, help="filename suffix")
     parser.add_argument("--dtype", default=None, help="MACE only")
     args = parser.parse_args()
 
@@ -134,6 +141,7 @@ def main() -> int:
             device=args.device,
             dtype=args.dtype,
             head=args.head,
+            neighbor_cache=args.neighbor_cache,
         )
     except Exception as exc:  # noqa: BLE001 - record and re-raise as failure
         rec = common.result_record(
@@ -153,7 +161,7 @@ def main() -> int:
             diagnostics={"traceback": traceback.format_exc()},
             exception=f"{type(exc).__name__}: {exc}",
         )
-        common.write_result(rec, out_dir)
+        common.write_result(rec, out_dir, tag=args.tag)
         return 1
 
     for name in fixtures.FIXTURES:
@@ -183,7 +191,7 @@ def main() -> int:
 
     failures = sum(1 for r in records if r["status"] != "pass")
     for rec in records:
-        common.write_result(rec, out_dir)
+        common.write_result(rec, out_dir, tag=args.tag)
         print(
             f"[t1] {rec['engine']} {rec['case_id']}: {rec['status']} "
             f"E={rec['metrics'].get('energy_eV')} "

@@ -80,27 +80,24 @@ def build_engine(
         msg = f"unknown engine {engine!r}; expected one of {_ENGINES}"
         raise ValueError(msg)
 
-    layer: dict[str, Any] = {
-        "model_type": engine,
-        "model_path": str(Path(model_path).resolve()),
-        "device": device,
-    }
-    task = profile.get("task")
-    if engine == "uma":
-        layer["task"] = task or "omat"
-    else:
-        layer["task"] = "bulk"
+    task = (profile.get("task") or "omat") if engine == "uma" else "bulk"
+    kwargs: dict[str, Any] = {}
     if engine == "mace":
-        layer["default_dtype"] = dtype or "float64"
+        kwargs["default_dtype"] = dtype or "float64"
     if head is not None:
-        layer["head"] = head
+        kwargs["head"] = head
     if engine == "grace":
-        layer["neighbor_cache"] = neighbor_cache
+        kwargs["neighbor_cache"] = neighbor_cache
 
-    from mlipx.calculators.factory import CalculatorFactory
+    from mlipx.calculators.factory import CalculatorFactory  # noqa: PLC0415
 
-    factory = CalculatorFactory()
-    wrapper = factory.create(layer)
+    wrapper = CalculatorFactory.create(
+        model_type=engine,
+        model_path=str(Path(model_path).resolve()),
+        device=device,
+        task=task,
+        **kwargs,
+    )
     calculator = wrapper.get_calculator()
 
     dtype_recorded = dtype or "upstream/model-defined"
@@ -112,7 +109,7 @@ def build_engine(
         calculator=calculator,
         device=device,
         dtype=dtype_recorded,
-        task=layer.get("task"),
+        task=task,
         head=head,
         backend_version=common.package_version(_backend_dist(engine)),
         framework_version=_framework_version(engine),

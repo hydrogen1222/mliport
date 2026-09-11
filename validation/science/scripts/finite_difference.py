@@ -32,8 +32,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # noqa: E402
 import common  # noqa: E402
 import engines  # noqa: E402
 import fixtures  # noqa: E402
-from ase.calculators.fd import calculate_numerical_forces  # noqa: E402
-from ase.calculators.fd import calculate_numerical_stress  # noqa: E402
+from ase.calculators.fd import (
+    calculate_numerical_forces,  # noqa: E402
+    calculate_numerical_stress,  # noqa: E402
+)
 
 DISPLACEMENTS_A = (5e-4, 1e-3, 2e-3, 5e-3)
 STRAINS = (1e-4, 3e-4, 1e-3, 2e-3)
@@ -110,7 +112,8 @@ def force_fd_case(
                 atoms, eps=h, iatoms=[iatom], icarts=[icart]
             )
             analytic = forces[iatom, icart]
-            err = float(f_num[iatom, icart] - analytic)
+            # ASE 3.29 returns the selected (iatoms, icarts) sub-block only
+            err = float(f_num[0, 0] - analytic)
             errors.append(err)
             denom = abs(analytic)
             if denom > 1e-6:  # relative error only where denominator meaningful
@@ -248,8 +251,15 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--neighbor-cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="GRACE only: toggle the mlipx neighbor-list cache",
+    )
     parser.add_argument("--head", default=None)
     parser.add_argument("--dtype", default=None, help="MACE only")
+    parser.add_argument("--tag", default=None, help="filename suffix")
     parser.add_argument("--systems", default=",".join(fixtures.INVARIANCE_SYSTEMS))
     parser.add_argument("--displacements", default=",".join(map(str, DISPLACEMENTS_A)))
     parser.add_argument("--strains", default=",".join(map(str, STRAINS)))
@@ -270,6 +280,7 @@ def main() -> int:
             device=args.device,
             dtype=args.dtype,
             head=args.head,
+            neighbor_cache=args.neighbor_cache,
         )
     except Exception as exc:  # noqa: BLE001
         rec = common.result_record(
@@ -289,7 +300,7 @@ def main() -> int:
             diagnostics={"traceback": traceback.format_exc()},
             exception=f"{type(exc).__name__}: {exc}",
         )
-        common.write_result(rec, out_dir)
+        common.write_result(rec, out_dir, tag=args.tag)
         return 1
 
     exit_code = 0
@@ -328,11 +339,11 @@ def main() -> int:
                     metrics=case,
                     diagnostics={
                         **ctx.diagnostics,
-                        "backend_version": ctx.backend_version,
+                        "backend_version": ctx.backend_version, "framework_version": ctx.framework_version,
                     },
                     peak_vram=common.peak_vram_mib(),
                 )
-                common.write_result(record, out_dir)
+                common.write_result(record, out_dir, tag=args.tag)
                 print(
                     f"[t2fd] {ctx.engine} {system}/{key}: {case['status']} "
                     + json.dumps(
@@ -360,7 +371,7 @@ def main() -> int:
                 diagnostics={"traceback": traceback.format_exc()},
                 exception=f"{type(exc).__name__}: {exc}",
             )
-            common.write_result(record, out_dir)
+            common.write_result(record, out_dir, tag=args.tag)
             print(f"[t2fd] {ctx.engine} {system}: ERROR {exc}", file=sys.stderr)
             exit_code = 1
     return exit_code

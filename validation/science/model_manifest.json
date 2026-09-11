@@ -58,13 +58,18 @@
       "task": "bulk",
       "head": null,
       "dtype": "upstream/model-defined",
-      "model_sha256": "7d4246d2c22b45e63ccf1619d003fdce2c4bc3c66dd6a99042969d05ab460862",
+      "model_sha256": "d497af4c7d9ad7a8e8e0f2a825a357cec940904a2579863f4c865515efc4602a",
       "secondary_hashes": {
-        "extracted_checkpoint.data-00000-of-00001": "e5097c6cb6175196410e0efaf72425722d4864d0fc647dfc7d4b61e9a31ebf99"
+        "variables/variables.data-00000-of-00001": "9c3ccf96d9acc9d2eaa53c91464ff5fae9c05ca1e881a2259e1757f1cc34aef5",
+        "variables/variables.index": "3686a193498777d5fb0543f99d1a21032e769d7d11b3ba6c7981e97584340694",
+        "fingerprint.pb": "963bbb54dd668812225a790c61104cb04640274ed7c3a30c7f2bcd9b1548ba2c",
+        "metadata.yaml": "590fece973019a75feeae9b942517fcbfce357b501eabdf5d2a3529ce00c1c7d",
+        "metadata.json": "cec1de4200aec61566e573dd07005efbadeab4897bd717b83c6aff67c8797ae1"
       },
       "source_url": "https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models (checkpoints/GRACE-2L-OMAT-medium-base-checkpoint.tar.gz)",
       "license": "see AMS-ICAMS-RUB/grace-foundation-models model card",
-      "notes": "Base (not finetuned) build. tensorpotential loads the extracted checkpoint directory; the committed hash is of the distributed tar.gz."
+      "notes": "Official exported SavedModel (the format tensorpotential TPCalculator loads). Downloaded via tensorpotential grace_models download from https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models. The raw checkpoint tarball (sha256 7d4246d2...0862 for base / 763b7e56...d0aa for fp64) shares the same upstream release lineage; hashes here pin the loaded artifact files.",
+      "upstream_model_dir": "GRACE-2L-OMAT-medium-base"
     },
     "grace_omat_fp64": {
       "engine": "grace",
@@ -73,13 +78,18 @@
       "task": "bulk",
       "head": null,
       "dtype": "float64",
-      "model_sha256": "763b7e5679c81ea82d39e595e701d0c9f6565064393f705cbe76663c9583d0aa",
+      "model_sha256": "53b945efce37edd040cac3ecee73eacd230900225b9ed2345cce3810205b3643",
       "secondary_hashes": {
-        "extracted_checkpoint.data-00000-of-00001": "b0edbae73335e32b55e8bb64c7f4fe3cac4d5b01ea277dc5db1ac61a0d1231e5"
+        "variables/variables.data-00000-of-00001": "9417eaebc8394869b32c82038010cd831e42e11b8846a8915c444d60e64b0902",
+        "variables/variables.index": "525ccaafde32e899f92d25da25091359e3cb192be77ce40ce34ab0f9b0ed3670",
+        "fingerprint.pb": "85b575c2a53cfc98059d66f2c5c83e76cc0fb11e46be1931f505cb124281608b",
+        "metadata.yaml": "590fece973019a75feeae9b942517fcbfce357b501eabdf5d2a3529ce00c1c7d",
+        "metadata.json": "cec1de4200aec61566e573dd07005efbadeab4897bd717b83c6aff67c8797ae1"
       },
       "source_url": "https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models (checkpoints/GRACE-2L-OMAT-medium-base-fp64-checkpoint.tar.gz)",
       "license": "see AMS-ICAMS-RUB/grace-foundation-models model card",
-      "notes": "fp64 build used for finite-difference derivative checks; results are never mixed with the default-precision profile."
+      "notes": "Official exported SavedModel (the format tensorpotential TPCalculator loads). Downloaded via tensorpotential grace_models download from https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models. The raw checkpoint tarball (sha256 7d4246d2...0862 for base / 763b7e56...d0aa for fp64) shares the same upstream release lineage; hashes here pin the loaded artifact files.",
+      "upstream_model_dir": "GRACE-2L-OMAT-medium-base-fp64"
     }
   }
 }

@@ -31,6 +31,7 @@ import common  # noqa: E402
 import engines  # noqa: E402
 import fixtures  # noqa: E402
 import transforms  # noqa: E402
+
 REPEAT_CALLS = 5
 TOLERANCE_MULTIPLIER = 10.0
 ABS_FLOOR_E = 1e-10  # eV
@@ -269,9 +270,14 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--neighbor-cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="GRACE only: toggle the mlipx neighbor-list cache",
+    )
     parser.add_argument("--head", default=None)
     parser.add_argument("--dtype", default=None, help="MACE only")
-    parser.add_argument("--neighbor-cache", choices=("on", "off"), default="on")
     parser.add_argument("--tag", default=None, help="filename suffix")
     parser.add_argument(
         "--systems", default=",".join(fixtures.INVARIANCE_SYSTEMS)
@@ -291,7 +297,7 @@ def main() -> int:
             device=args.device,
             dtype=args.dtype,
             head=args.head,
-            neighbor_cache=args.neighbor_cache == "on",
+            neighbor_cache=args.neighbor_cache,
         )
     except Exception as exc:  # noqa: BLE001
         rec = common.result_record(
@@ -343,7 +349,7 @@ def main() -> int:
                         "neighbor_cache": args.neighbor_cache,
                     },
                     metrics=metrics,
-                    diagnostics={**ctx.diagnostics, "backend_version": ctx.backend_version},
+                    diagnostics={**ctx.diagnostics, "backend_version": ctx.backend_version, "framework_version": ctx.framework_version},
                     wall_seconds=0.0,
                     peak_vram=common.peak_vram_mib(),
                 )
@@ -352,7 +358,7 @@ def main() -> int:
                     f"[t2] {ctx.engine} {system}/{check_name}: {status} "
                     f"dE={metrics.get('energy_delta_eV', floor.get('energy_spread_eV'))}"
                 )
-                if status != "pass":
+                if status not in ("pass", "characterized"):
                     exit_code = 1
         except Exception as exc:  # noqa: BLE001
             rec = common.result_record(

@@ -14,7 +14,7 @@ Usage::
         --out .validation-work
 
 Engine venv resolution order: ``--venv`` > ``MLIPX_SCIENCE_VENV_<ENGINE>``
-> ``/mnt/hdd500/mlipx/.venv-<engine>``.
+> ``<repo>/.venv-<engine>``.
 """
 
 from __future__ import annotations
@@ -38,7 +38,9 @@ TIER_COMMANDS: dict[str, list[str]] = {
     "t2fd": ["finite_difference.py"],
 }
 
-DEFAULT_VENV_ROOT = "/mnt/hdd500/mlipx"
+#: backend venvs live in the repository root, next to .venv-mace etc.
+DEFAULT_VENV_ROOT = str(Path(__file__).resolve().parents[3])
+
 
 
 def venv_python(engine: str, override: str | None) -> str | None:
@@ -68,6 +70,42 @@ def write_blocked(engine: str, reason: str, out_dir: Path) -> None:
         metrics={},
     )
     common.write_result(rec, out_dir)
+
+
+def is_cuda(device: str) -> bool:
+    d = str(device).lower()
+    return d in {"cuda", "gpu"} or d.startswith("cuda:")
+
+
+def resolve_gpu_uuid(device: str) -> str | None:
+    """Resolve the physical GPU UUID for process-level isolation.
+
+    Backends whose ASE adapter has no per-calculator device (DPA) require
+    CUDA_VISIBLE_DEVICES to be fixed to a single GPU before framework
+    imports (mlipx.devices.require_isolated_visibility).  The orchestrator
+    applies that isolation to every engine uniformly.  Raw UUIDs are used
+    only for the child process environment; records store their hash.
+    """
+    if not is_cuda(device):
+        return None
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=uuid", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    uuids = [u.strip() for u in out.stdout.splitlines() if u.strip()]
+    if not uuids:
+        return None
+    if device.startswith("cuda:"):
+        suffix = device.split(":", 1)[1]
+        idx = int(suffix) if suffix.isdigit() else 0
+        return uuids[idx] if idx < len(uuids) else None
+    return uuids[0]
 
 
 def main() -> int:
@@ -104,7 +142,19 @@ def main() -> int:
     head = args.head or manifest_profile.get("head")
     dtype = args.dtype or manifest_profile.get("dtype")
     dtype_arg = dtype if args.engine == "mace" and dtype in ("float32", "float64") else None
-
+    child_env = os.environ.copy()
+    gpu_uuid = resolve_gpu_uuid(args.device)
+    if gpu_uuid:
+        # process-level device isolation before any framework import
+        child_env["CUDA_VISIBLE_DEVICES"] = gpu_uuid
+    elif is_cuda(args.device) and args.engine == "dpa":
+        write_blocked(
+            args.engine,
+            "cannot resolve a single GPU UUID via nvidia-smi; DPA requires "
+            "process-level CUDA_VISIBLE_DEVICES isolation",
+            out_dir,
+        )
+        return 2
     exit_code = 0
     for tier in [t for t in args.tiers.split(",") if t]:
         scripts = TIER_COMMANDS.get(tier)
@@ -136,7 +186,7 @@ def main() -> int:
             if args.tag:
                 cmd += ["--tag", args.tag]
             print(f"[run_suite] {args.engine}/{tier}: {Path(script).name}")
-            proc = subprocess.run(cmd, check=False)  # noqa: S603
+            proc = subprocess.run(cmd, check=False, env=child_env)  # noqa: S603
             if proc.returncode != 0:
                 exit_code = proc.returncode
     return exit_code
