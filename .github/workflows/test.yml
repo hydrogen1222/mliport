@@ -21,6 +21,12 @@ jobs:
         run: |
           uv venv .venv-dev --python ${{ matrix.python-version }}
           uv pip install --python .venv-dev/bin/python -e './mlipx[dev]'
+      # test_json_writer exercises the JSON encoder's torch-tensor path, so
+      # the full suite needs torch. Use the CPU index; the PyPI linux wheel
+      # drags in the multi-GB CUDA stack the suite never touches.
+      - name: Install CPU torch for the test suite
+        run: |
+          uv pip install --python .venv-dev/bin/python torch --index-url https://download.pytorch.org/whl/cpu
       - name: Run tests
         run: |
           .venv-dev/bin/python -m pytest tests -q
