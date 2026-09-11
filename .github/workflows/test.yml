@@ -23,7 +23,7 @@ jobs:
           uv pip install --python .venv-dev/bin/python -e './mlipx[dev]'
       - name: Run tests
         run: |
-          uv run --python .venv-dev/bin/python pytest tests -q
+          .venv-dev/bin/python -m pytest tests -q
 
   analysis-backends:
     runs-on: ubuntu-latest
@@ -38,10 +38,10 @@ jobs:
           uv pip install --python .venv-analysis/bin/python -e './mlipx[dev,analysis-all]'
       - name: Verify supported backend majors
         run: |
-          uv run --python .venv-analysis/bin/python python -c "import gemdat, kinisi; assert gemdat.__version__.startswith('1.'); assert kinisi.__version__.startswith('2.')"
+          .venv-analysis/bin/python -c "import gemdat, kinisi; assert gemdat.__version__.startswith('1.'); assert kinisi.__version__.startswith('2.')"
       - name: Run real kinisi and GEMDAT integration tests
         run: |
-          uv run --python .venv-analysis/bin/python pytest tests/mlipx/mlipx/analysis/test_analysis_backends_integration.py -q
+          .venv-analysis/bin/python -m pytest tests/mlipx/mlipx/analysis/test_analysis_backends_integration.py -q
 
   # RC-FINAL-01 regression: the packaged capability registry must resolve on
   # every supported Python, not just the runner that happens to build/test.

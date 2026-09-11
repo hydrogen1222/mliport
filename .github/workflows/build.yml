@@ -15,12 +15,8 @@ jobs:
           python-version: "3.12"
       - name: Check repository hygiene
         run: python scripts/check_repository_hygiene.py
-      - name: Install build tooling
-        run: uv pip install --python 3.12 build
       - name: Build wheel and sdist
-        run: |
-          cd mlipx
-          uv run --python 3.12 python -m build
+        run: uv build --wheel --sdist --out-dir mlipx/dist ./mlipx
       - name: Check distribution contents
         run: python scripts/check_repository_hygiene.py mlipx/dist/*
       - name: Install wheel into clean env and smoke test

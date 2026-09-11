@@ -13,9 +13,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - name: Install ruff
-        run: uv pip install --python 3.12 ruff
+      # Pin the ruff version the project actually enforces locally; an
+      # unpinned `uv run ruff` drifts with new releases and fails on renamed
+      # rules (e.g. TCH003 -> TC003) that the 0.5.1 baseline never checks.
       - name: Ruff check
-        run: uv run ruff check mlipx/mlipx tests scripts
+        run: uvx ruff@0.5.1 check mlipx/mlipx tests scripts
       - name: Ruff format check
-        run: uv run ruff format --check mlipx/mlipx tests scripts
+        run: uvx ruff@0.5.1 format --check mlipx/mlipx tests scripts
