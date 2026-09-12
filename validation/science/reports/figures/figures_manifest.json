@@ -1,0 +1,22 @@
+{
+  "schema": "mlipx.beta-figures/1",
+  "evidence_root": ".validation-work",
+  "generated": {
+    "fig04": "fig04_eos.png",
+    "fig05": "fig05_elastic.png",
+    "fig06": "fig06_phonon.png",
+    "fig07": "fig07_vacancy.png",
+    "fig08": "fig08_surface.png",
+    "fig09+10": "fig09_10_neb_profiles.png",
+    "fig11": "fig11_saddle_hessian.png",
+    "fig12": "fig12_nve_drift.png",
+    "fig13": "fig13_nvt_temperature.png",
+    "fig14": "fig14_na3ps4_transport.png",
+    "fig15": "fig15_performance.png"
+  },
+  "skipped": {
+    "fig01": "evidence unavailable",
+    "fig02": "evidence unavailable",
+    "fig03": "OMat24 stress parity not computable: the official validation split carries no reference stress labels (recorded in the T3 record metrics.stress)"
+  }
+}

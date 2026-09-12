@@ -122,9 +122,12 @@ def peak_vram_mib() -> int | None:
     try:
         import tensorflow as tf
 
-        info = tf.config.experimental.get_memory_info("GPU:0")
+        gpus = tf.config.list_logical_devices("GPU")
+        if not gpus:
+            return None  # CPU-only process: no VRAM to report
+        info = tf.config.experimental.get_memory_info(gpus[0].name)
         return int(info["peak"] / 2**20)
-    except (ImportError, RuntimeError, KeyError):
+    except (ImportError, RuntimeError, KeyError, ValueError):
         return None
 
 

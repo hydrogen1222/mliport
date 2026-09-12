@@ -1,127 +1,138 @@
-# mlipx — MLIP eXtended
+# mlipx
 
-**A VASP-style CLI / TUI / Python API for machine-learning interatomic potentials (MLIPs).**
+mlipx runs UMA, MACE, DPA and GRACE machine-learning interatomic
+potentials through one VASP-shaped CLI/TUI/Python workflow for single
+points, relaxation, molecular dynamics, NEB and trajectory analysis.
 
-mlipx wraps four MLIP engines behind one unified interface — **UMA (FAIRChem)** (default), **MACE**, **DPA (DeepMD-kit)**, and **GRACE** — and provides single-point (SP), geometry optimization (OPT), molecular dynamics (MD), batch processing, and validated trajectory analysis with VASP-compatible outputs (OUTCAR, CONTCAR, XDATCAR, OSZICAR).
+Scope and boundary, stated directly:
 
-```
-structure.cif ──▶  MLIP engine (UMA/MACE/DPA/GRACE)  ──▶  energy, forces, stress
-```
+- mlipx evaluates learned potential-energy surfaces (PES). It does not
+  perform DFT electronic-structure calculations.
+- "VASP-shaped" refers to the workflow and output conventions (INCAR-style
+  configuration, OUTCAR/OSZICAR/CONTCAR/XDATCAR files). It describes
+  interface familiarity, not physical equivalence to VASP.
+- Energies, forces and stresses come from the selected model. Their
+  accuracy is the model's accuracy on your chemistry, not mlipx's.
 
----
+License: MIT. Status: beta validation completed on one GPU architecture
+(V100, sm_70) and on CPU; see
+[Validation](#validation) below.
 
-## Supported Engines
+## What it can run
 
-| `--model-type` | Engine | Backend package | Tasks |
-|---|---|---|---|
-| `uma` (default, alias `fairchem`) | UMA — FAIRChem | `fairchem-core` | `omat` / `omol` / `oc20` / `oc25` / `odac` / `omc` |
-| `mace` | MACE | `mace-torch` | `bulk` / `molecule` |
-| `dpa` | DPA — DeepMD-kit | `deepmd-kit` | `bulk` / `molecule` |
-| `grace` | GRACE | `tensorpotential` | `bulk` / `molecule` |
+| Task | Command | Notes |
+|---|---|---|
+| Single point | `mlipx sp` | energy, forces, stress (stress if the model provides it) |
+| Ionic relaxation | `mlipx opt` | fixed cell, FIRE/LBFGS/BFGS |
+| Cell + ionic relaxation | `mlipx opt` | FrechetCellFilter; requires model stress + 3D PBC |
+| NVE MD | `mlipx md` | velocity Verlet |
+| NVT MD | `mlipx md` | Langevin, Bussi, Nosé-Hoover chain |
+| NEB / CI-NEB | `mlipx neb` | fixed cell, IDPP pre-relaxation, two-stage climbing image |
+| Batch | `mlipx batch` | many structures through one model load |
+| Trajectory analysis | `mlipx analyze` | validate, thermo, rdf, rmsd, msd, vacf, spectrum, transport, density, arrhenius, GEMDAT mechanisms |
+| INCAR-driven runs | `mlipx run -i INCAR.mlipx` | the VASP-shaped entry point |
+| Queue | `mlipx queue submit/start`, `mlipx jobs` | background job execution |
 
-Each engine runs in its **own isolated Python environment** because their dependencies conflict (UMA needs `e3nn>=0.5`; MACE pins `e3nn==0.4.4`; DPA pins `torch==2.10`; GRACE uses TensorFlow). Do **not** install all four into one environment.
+Everything ASE can read works as a structure input (POSCAR/CONTCAR, CIF,
+EXTXYZ, ...). Output formats are VASP-compatible text files plus JSON.
 
----
+## What it cannot replace
+
+These require a DFT code or are absent by design:
+
+| Property | Status in mlipx |
+|---|---|
+| Electronic band structure | not available |
+| Density of states | not available |
+| Charge density / Bader / ELF | not available |
+| Born charges | not available |
+| Dielectric response | not available |
+| k-point / ENCUT / SCF convergence | not applicable (no SCF) |
+| NPT molecular dynamics | not implemented |
 
 ## Installation
 
-### One-command installer (recommended)
+The tested path is the installer, which builds one isolated environment
+per backend (the four stacks have mutually exclusive dependencies):
 
 ```bash
-# Clone and install uv (skip if uv already works)
-git clone https://github.com/hydrogen1222/mlipx.git
+git clone https://github.com/hydrogen1222/mlipx
 cd mlipx
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Auto-detect GPU and install all four engines
-./scripts/install_mlipx.sh
+./scripts/install_mlipx.sh --engines mace dpa grace uma --device auto
 ```
 
-Common variants:
+What the installer does:
+
+- Detects the GPU architecture from the driver and pins compatible
+  framework builds per backend (Volta/V100 uses torch 2.8.0+cu126;
+  Turing and newer use cu128 builds).
+- Creates one virtual environment per engine in the repository root
+  (`.venv-mace/`, `.venv-dpa/`, `.venv-grace/`, `.venv-uma/`).
+- Targets Python 3.10-3.12 (selected via `uv`; the default is 3.12).
+- Downloads model checkpoints on first use; `--source` controls wheel
+  sources, and offline/source builds are supported.
+- Requires roughly 10-15 GB of disk for all four backends including
+  torch and model weights.
+- Runs `mlipx doctor` at the end unless `--skip-doctor` is given.
+
+Useful flags: `--dry-run` (print the plan, install nothing),
+`--non-interactive`, `--clean` (rebuild environments), `--python 3.10`.
+
+Then install the mlipx CLI itself into your working environment:
 
 ```bash
-./scripts/install_mlipx.sh --device cpu        # CPU-only machine
-./scripts/install_mlipx.sh --engines uma,mace  # only UMA + MACE
-./scripts/install_mlipx.sh --source china      # numbered China-mirror menu
-./scripts/install_mlipx.sh --source china-ustc --non-interactive  # fixed source
-./scripts/install_mlipx.sh --clean             # rebuild every venv
-./scripts/install_mlipx.sh --dry-run           # preview without installing
+pip install ./mlipx
 ```
 
-If an earlier installation stopped partway, rerun it with `--clean` so the
-partially populated engine environments are rebuilt before verification.
-GPU installations are large: reserve tens of GiB for all four isolated
-environments. GRACE alone typically needs about 6–7 GiB after installation
-and additional temporary space while CUDA wheels are downloaded and extracted.
+<details>
+<summary>Manual installation (per backend)</summary>
 
-Run `./scripts/install_mlipx.sh --help` for all options.
+Each backend environment needs the mlipx package plus the engine's own
+stack. The authoritative version pins live in
+`mlipx/mlipx/install/compatibility.py`; the installer is the only path
+that keeps them consistent with your GPU architecture. If you install
+manually, at minimum verify your torch build against your compute
+capability, then run `mlipx doctor` and confirm every check passes
+before trusting results.
 
-### Manual installation (four environments)
+</details>
 
-If you prefer to install by hand, create one venv per engine:
 
-```bash
-# UMA (default) — installed explicitly like every other engine
-uv venv --python 3.12 .venv
-uv pip install --no-config --python .venv/bin/python \
-  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
-uv pip install --no-config --python .venv/bin/python \
-  -e ./mlipx "fairchem-core==2.21.0"
-.venv/bin/mlipx doctor --engine uma --device auto
+## GPU architecture compatibility
 
-# MACE
-uv venv --python 3.12 .venv-mace
-uv pip install --no-config --python .venv-mace/bin/python \
-  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
-uv pip install --no-config --python .venv-mace/bin/python \
-  -e ./mlipx "e3nn==0.4.4" "mace-torch==0.3.16"
-.venv-mace/bin/mlipx doctor --engine mace --device auto
-
-# DPA / DeepMD
-uv venv --python 3.12 .venv-dpa
-uv pip install --no-config --python .venv-dpa/bin/python \
-  "torch==2.10.0+cu126" --index-url https://download.pytorch.org/whl/cu126
-uv pip install --no-config --python .venv-dpa/bin/python \
-  -e ./mlipx "deepmd-kit==3.1.3"
-.venv-dpa/bin/mlipx doctor --engine dpa --device auto
-
-# GRACE
-uv venv --python 3.12 .venv-grace
-uv pip install --no-config --python .venv-grace/bin/python \
-  -e ./mlipx "tensorflow[and-cuda]==2.20.0" "tensorpotential==0.6.0"
-uv pip install --no-config --python .venv-grace/bin/python \
-  "nvidia-cudnn-cu12==9.3.0.75"
-.venv-grace/bin/mlipx doctor --engine grace --device auto
-```
-
-Use the matching command prefix:
-
-| Engine | Environment | Prefix |
-|---|---|---|
-| UMA | `.venv` | `.venv/bin/mlipx ...` |
-| MACE | `.venv-mace` | `.venv-mace/bin/mlipx ...` |
-| DPA | `.venv-dpa` | `.venv-dpa/bin/mlipx ...` |
-| GRACE | `.venv-grace` | `.venv-grace/bin/mlipx ...` |
-
-### GPU compatibility
-
-The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatically.
+The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel
+automatically.
 
 | GPU family | Examples | Compute capability | CUDA route |
 |---|---|---|---|
-| Maxwell | GTX 960, TITAN X | sm_50/52 | cu126 Legacy (⚠️ experimental) |
-| Pascal | **Tesla P40**, GTX 1080 Ti, P100 | sm_60/61 | cu126 Legacy |
-| Volta | **V100** | sm_70 | cu126 Legacy |
+| Maxwell | GTX 960, TITAN X | sm_50/52 | cu126 Legacy (experimental) |
+| Pascal | Tesla P40, GTX 1080 Ti, P100 | sm_60/61 | cu126 Legacy |
+| Volta | V100 | sm_70 | cu126 Legacy |
 | Turing | RTX 20xx | sm_75 | cu128+ Modern |
-| Ampere | **RTX 3080 Ti**, 30xx | sm_80/86 | cu128+ Modern |
-| Ada | **RTX 4090**, 40xx | sm_89 | cu128+ Modern |
+| Ampere | RTX 3080 Ti, 30xx | sm_80/86 | cu128+ Modern |
+| Ada | RTX 4090, 40xx | sm_89 | cu128+ Modern |
 | Hopper | H100 | sm_90 | cu128+ Modern |
 | Blackwell | RTX 50xx | sm_100/120 | cu128+ Modern |
-| none | CPU only | — | CPU wheels |
+| none | CPU only | - | CPU wheels |
 
-> **Why two CUDA routes?** Maxwell/Pascal/Volta must use the **cu126 Legacy** channel: PyTorch 2.8+ removed Maxwell/Pascal from cu128 builds, and PyTorch 2.11+ removed Volta from cu128+. Turing+ use the **modern** channel (cu128 for torch 2.8–2.10, cu130 for torch 2.12+). Maxwell is Experimental because TensorFlow 2.20 official wheels start at sm_60.
+Why two CUDA routes: Maxwell/Pascal/Volta must use the cu126 legacy
+channel because PyTorch 2.8+ removed Maxwell/Pascal from cu128 builds
+and PyTorch 2.11+ removed Volta from cu128+. Turing and newer use the
+modern channel (cu128 for torch 2.8-2.10, cu130 for torch 2.12+).
+Maxwell is experimental because official TensorFlow 2.20 wheels start
+at sm_60.
 
-**Architecture compatibility** (from `mlipx/install/compatibility.py`; this describes the install route only — upstream package support, the pinned backend version, and the CUDA wheel channel — *not* workload certification). "Needs runtime smoke test" means the installer contract is consistent for that GPU family but mlipx has not yet verified that exact engine + framework + GPU combination; "experimental" means upstream itself does not support or test it. Install-route smoke tests (engine installed, real model prediction) have been run on real V100 and RTX 4090 hardware; workload-level evidence exists only for the V100 runtime below. P40 uses the corrected exact `+cu126` wheel pin but still needs a post-fix model smoke retest.
+**Architecture compatibility** (from `mlipx/install/compatibility.py`; this
+describes the install route only - upstream package support, the pinned
+backend version, and the CUDA wheel channel - *not* workload
+certification). "Needs runtime smoke test" means the installer contract
+is consistent for that GPU family but mlipx has not yet verified that
+exact engine + framework + GPU combination; "experimental" means
+upstream itself does not support or test it. Install-route smoke tests
+(engine installed, real model prediction) have been run on real V100 and
+RTX 4090 hardware; workload-level evidence exists only for the V100
+runtime below. P40 uses the corrected exact `+cu126` wheel pin but still
+needs a post-fix model smoke retest.
 
 | Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
 |---|---|---|---|---|---|---|
@@ -130,7 +141,215 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 | DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
 | GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
 
-**Runtime validation (single V100-SXM2-16GB, sm_70, driver 580.173.02)** — short real-model runs with hard timeouts on one GPU, each against the *exact* runtime the installer produces. Sanitized records live in [`validation/runtime/v100/`](validation/runtime/v100/) (the GPU is identified only by a SHA-256 of its UUID); each status maps to exactly one record. The MACE records were revalidated on the current installer contract (`mace-torch 0.3.16` + `torch 2.8.0+cu126`); earlier torch 2.6.0+cu124 evidence remains in git history.
+## First calculation
+
+With a UMA environment installed and a structure file present:
+
+```bash
+mlipx sp POSCAR --model uma-s-1p2.pt --model-type UMA \
+    --task omat --device cuda --output ./results
+```
+
+This writes `OUTCAR` (energy, forces, stress, model identity, device
+evidence) and a JSON record into `./results`. The same calculation in
+INCAR form:
+
+```bash
+mlipx template -o INCAR.mlipx sp   # then edit MODEL_PATH/TASK/DEVICE
+mlipx run -i INCAR.mlipx
+```
+
+Configuration precedence: explicit CLI flags override the INCAR file,
+which overrides `settings.ini`, which overrides defaults. `mlipx config
+show` prints the fully resolved configuration including where every
+value came from.
+
+## Choosing a model
+
+The four beta-validated profiles, all evaluated on a common OMat24
+subset in the validation suite:
+
+| Backend | Validated profile | Training domain | Task/head | Precision | Stress | Access |
+|---|---|---|---|---|---|---|
+| MACE | `mace-omat-0-medium.model` | OMat24 + MPtrj | bulk | float64 (also float32) | yes | meta-predictions download (CC BY 4.0) |
+| DPA | `DPA-3.1-3M.pt`, branch `Omat24` | OMat24 + MPtrj | `--head Omat24` | upstream-defined | yes | DeepModeling share |
+| GRACE | `GRACE-2L-OMAT-medium-base` | OMat24 | - | upstream-defined (fp32 build) | yes | open download (Intel) |
+| UMA | `uma-s-1p2.pt` | OMat + others, multi-head | `--task omat` | upstream-defined | yes | fairchem, meta download |
+
+These are the *common* profiles used across the whole validation suite.
+Domain-specific checkpoints (e.g. MACE models fitted to a specific
+chemistry, DPA branches other than Omat24) can be loaded the same way,
+but their beta validation coverage is not implied by this table, and
+their benchmark numbers must not be compared to the OMat24-family
+results above.
+
+> Energies from models trained to different reference calculations are
+> not on a common thermodynamic energy scale. Do not mix absolute
+> energies across models, tasks/heads, or reference levels. Relative
+> energies within one model/one task (formation energies against that
+> model's own elemental references, barriers from the same model) are
+> the safe currency.
+
+## Workflows
+
+### Single point
+
+`mlipx sp` runs one structure through the calculator and writes
+energy/forces/stress. NaN/inf energies abort before any output file is
+written.
+
+### Relaxation
+
+`mlipx opt` relaxes ionic positions at fixed cell (FIRE, LBFGS or BFGS).
+With model stress available and a 3D periodic cell, it relaxes cell and
+ions together through ASE's `FrechetCellFilter`. Convergence is reported
+as final fmax plus step counts; the CLI prints both initial and final
+volumes for cell relaxation.
+
+### Molecular dynamics
+
+`mlipx md` supports NVE (velocity Verlet) and NVT with three
+thermostats: Langevin, Bussi stochastic velocity rescaling, and
+Nosé-Hoover chain. Trajectories are written as XDATCAR plus JSON with
+per-frame energies. The integration timestep and the save interval are
+independent; analysis commands read the save interval from trajectory
+metadata, so a save interval that is too coarse silently degrades
+transport analysis rather than corrupting it.
+
+### NEB / CI-NEB
+
+`mlipx neb` computes minimum-energy paths with a fixed cell:
+
+- Endpoints can be validated as-is or pre-relaxed (`--endpoint-policy
+  validate|relax`).
+- Initial path: linear interpolation with periodic-image (winding)
+  handling, or IDPP pre-relaxation.
+- Two-stage climbing image: standard NEB to a force threshold, then
+  CI-NEB to convergence.
+- Checkpoints are written during the run; a restarted run resumes
+  geometry from the checkpoint with endpoint identity preserved.
+- Reported barrier: forward and reverse barrier from the sampled band
+  (`barrier_forward` / `barrier_reverse` in the JSON record).
+
+> A converged CI image is a saddle-point candidate until a Hessian
+> validates it. Use the saddle Hessian diagnostic (one imaginary mode
+> expected along the reaction coordinate) before quoting a transition
+> state.
+
+### Analysis
+
+`mlipx analyze` operates on mlipx trajectories or external ones with an
+explicit coordinate convention (`--positions-convention`). The
+hierarchy for diffusion problems:
+
+1. `msd` — windowed, direction-resolved MSD diagnostic.
+2. `transport` — quantitative tracer diffusion via kinisi
+   (posterior D with credible intervals) and Nernst-Einstein
+   conductivity from ionic charges; requires a fixed cell (NVT/NVE).
+3. `electrolyte` — GEMDAT site mapping, jump mechanisms and percolation
+   as a mechanism-level crosscheck of the transport picture.
+
+Uncertainty semantics: kinisi reports posterior means with 95%
+credible intervals; the Nernst-Einstein conductivity is exact only in
+the dilute, uncorrelated-hopping limit. The Haven ratio between tracer
+and collective transport is not assumed.
+
+## Scientific semantics
+
+- **Energy**: eV, total for the cell as read. Per-atom values are
+  labelled per atom in outputs.
+- **Forces**: eV/Å.
+- **Stress**: ASE Voigt order (`xx, yy, zz, yz, xz, xy`); written in
+  eV/Å³ with a GPa conversion line in OUTCAR.
+- **Task/head identity**: the model's task or head (e.g. UMA `omat`,
+  DPA `Omat24`) selects the reference-energy level inside the model.
+  It is recorded in every output and must not be changed between
+  energies you intend to subtract.
+- **Force-energy consistency**: forces are analytic derivatives of the
+  model energy. The beta suite cross-checks them against finite
+  differences; per-model results are in the validation report.
+- **Stress-energy consistency**: stress is the analytic strain
+  derivative where the model provides it, cross-checked by finite
+  difference in the beta suite.
+- **PBC and winding**: minimum-image conventions are applied with
+  explicit winding handling in NEB interpolation and displacement
+  analysis; analysis commands reject external trajectories whose
+  coordinate convention conflicts with artifact metadata.
+- **Constraints**: ASE constraints (FixAtoms, FixSymmetry) are honored
+  in relaxation and MD; constraint exactness is regression-tested
+  (fixed-atom DOF remain fixed to machine precision).
+- **MD timestep**: you choose it. The beta suite runs a timestep sweep
+  per system (0.25-2.0 fs on Cu) and gates on NVE energy-drift slopes;
+  results in the validation report show which timesteps were stable.
+  There is no global "safe" timestep.
+- **Save interval vs timestep**: analysis operates on saved frames; the
+  saved-frame interval must be short enough to resolve the process you
+  are measuring. `mlipx analyze validate` checks this and reports
+  insufficient sampling rather than returning a number.
+- **Fixed-cell requirement for transport**: kinisi transport analysis
+  requires NVT/NVE trajectories. NPT is not implemented, and analysis
+  of a barostatted trajectory is therefore not offered.
+
+## Validation
+
+The numbers below are rendered from the beta evidence records; they are
+not handwritten. The generated block between the markers is produced by
+`validation/science/scripts/generate_beta_report.py` from
+`validation/science/reports/beta-summary.json`, and a repository test
+fails if the README block drifts from the generator output.
+
+<!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
+Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mlipx integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
+
+| Workflow | MACE | DPA | GRACE | UMA |
+|---|---|---|---|---|
+| Install & doctor (CI software tests) | software_validated* | software_validated* | software_validated* | software_validated* |
+| Single-point inference (4 structures) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) |
+| Energy-forces consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
+| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx8, passx3) | model_characterized (characterizedx4, passx3) |
+| Stress-energy consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
+| Coordinate invariance & cache | model_characterized (characterizedx4, passx20) | model_characterized (characterizedx4, failx18, passx2) | model_characterized (characterizedx8, failx18, passx22) | model_characterized (characterizedx4, failx18, passx2) |
+| Fixed-cell relaxation | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) |
+| Cell relaxation | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) |
+| EOS / bulk modulus | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
+| Elastic constants | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) |
+| Harmonic phonons | software_validated (passx12) | model_characterized (failx1, passx11) | software_validated (passx12) | model_characterized (failx1, passx11) |
+| Harmonic thermodynamics | model_characterized (failx6, passx6) | model_characterized (failx3, passx9) | model_characterized (failx6, passx6) | model_characterized (failx6, passx6) |
+| Vacancy formation energy | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
+| Surface energy | software_validated (passx6) | software_validated (passx6) | software_validated (passx6) | software_validated (passx6) |
+| NEB | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) |
+| Saddle-point Hessian | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) |
+| Short NVE / NVT MD | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) |
+| Transport analysis (demonstration) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) |
+| Mechanism analysis (GEMDAT) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) |
+| Performance (SP/MD scaling) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) |
+
+`*` = CI software test only, no model involved. A cell lists the recorded statuses for that workload; per-workload rows reuse the same evidence tiers, so row counts are not additive. Full per-test tables and limitations: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md). Model identities pinned in `validation/science/model_manifest.json`.
+<!-- END GENERATED -->
+
+What the tiers mean: t1 four-backend inference on the common subset,
+t2 invariance and caching, t2fd finite-difference stress, t3 OMat24
+label comparison, t4 static workflows (relaxation, EOS, elastic,
+phonons, thermo, defects, surfaces), t5 NEB, t6 MD, t7 analysis, t8
+performance. Full per-test tables, including every recorded failure:
+[validation/science/reports/BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
+
+Known limitations recorded by the suite (not hidden): upstream-float32
+builds (DPA, UMA, GRACE-cache-off) show 1e-7..1e-6 eV arithmetic noise
+on coordinate-invariance checks; small-supercell phonons on the 2x2x2
+grid show small imaginary acoustic branches; cohesive and formation
+energies are recorded as unsupported because they need elemental
+reference energies outside the common comparison.
+
+
+**Installer-contract runtime smoke (single V100-SXM2-16GB, sm_70, driver
+580.173.02)** - short real-model runs with hard timeouts on one GPU, each
+against the *exact* runtime the installer produces. Sanitized records
+live in [validation/runtime/v100/](validation/runtime/v100/) (the GPU is
+identified only by a SHA-256 of its UUID); each status maps to exactly
+one record. The MACE records were revalidated on the current installer
+contract (`mace-torch 0.3.16` + `torch 2.8.0+cu126`); earlier torch
+2.6.0+cu124 evidence remains in git history.
 
 | Backend / model | SP | Short MD | E–F gradient | NEB smoke | GRACE cache | Records |
 |---|---|---|---|---|---|---|
@@ -140,560 +359,121 @@ The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel automatica
 | DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](validation/runtime/v100/dpa.json) |
 | GRACE float32 | passed | passed | passed | passed | passed (ON and OFF) | [grace.json](validation/runtime/v100/grace.json), [grace-nocache.json](validation/runtime/v100/grace-nocache.json) |
 
-The NEB smoke is a short 5-image fixed-cell run on a 4-atom Cu cell with `saddle_validation: not_performed` — see [NEB](#nudged-elastic-band-neb) for what that implies.
+The NEB smoke is a short 5-image fixed-cell run on a 4-atom Cu cell with
+`saddle_validation: not_performed` - see [NEB / CI-NEB](#neb--ci-neb) for
+what that implies. This installer smoke evidence predates the beta
+suite; the beta suite is the workload-level evidence base for the
+models as configured in [Choosing a model](#choosing-a-model).
 
-### Download sources
+## DFT-style validation recipes
 
-PyPI packages and PyTorch wheels are handled separately. The installer never
-modifies your global `~/.config/uv/uv.toml`; it uses `UV_NO_CONFIG=1` and
-per-process variables. In a real terminal, `--source china` presents a numbered
-choice of TUNA, Aliyun, USTC, Tencent Cloud, or the official source. China
-profiles all use the Aliyun PyTorch-wheel mirror, and Enter defaults to TUNA.
-CI and piped input never prompt and retain TUNA as the deterministic default;
-`--non-interactive` makes that behavior explicit.
-Offline mode also requires the requested Python to be already discoverable by
-`uv`; the bootstrap will not silently download an interpreter.
+The validation suite contains EOS, elastic-constant, harmonic phonon,
+thermodynamic, defect and surface recipes built on the same calculators
+and ASE. They are beta validation recipes with reproducible scripts
+(`validation/science/scripts/`), not stable CLI commands; the CLI does
+not expose them as first-class subcommands.
 
-| `--source` | PyPI | PyTorch wheels | Use when |
-|---|---|---|---|
-| `auto` → `official` | pypi.org | download.pytorch.org | Default |
-| `official` | pypi.org | download.pytorch.org | Explicit official source |
-| `china` | Interactive; TUNA by default | mirrors.aliyun.com (`--find-links`) | Interactive use in China |
-| `china-aliyun` | mirrors.aliyun.com | mirrors.aliyun.com | Fixed Aliyun source |
-| `china-ustc` | mirrors.ustc.edu.cn | mirrors.aliyun.com | Fixed USTC source |
-| `china-tencent` | mirrors.cloud.tencent.com | mirrors.aliyun.com | Fixed Tencent source |
-| `offline` | cached only | cached only | Air-gapped machine with Python present |
-| `custom` | your env vars | your env vars | Advanced |
+## Outputs and reproducibility
 
----
-
-## Quick Start
-
-### Single-point energy (UMA)
-
-```bash
-.venv/bin/mlipx sp structure.cif --model uma-s-1.pt --task omat --device cpu
-```
-
-### Geometry optimization
-
-```bash
-.venv/bin/mlipx opt structure.cif --model uma-s-1.pt --task omat \
-  --cell-opt --fmax 0.02
-```
-
-### Molecular dynamics
-
-```bash
-.venv/bin/mlipx md structure.cif --model uma-s-1.pt --task omat \
-  --device cuda --steps 10000
-```
-
-### Nudged elastic band (NEB)
-
-```bash
-.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
-  --model uma-s-1.pt --task omat --device cuda \
-  --output results/hop --images 7 --climb --fmax 0.03
-```
-
-**Note:** this is a workflow syntax example, not a validated default path. The
-exact UMA runtime above is not yet present in the packaged validation registry
-(see the runtime validation table), so the default fail-closed gate refuses it.
-Either run NEB with a backend that has promoted evidence — e.g. MACE with the
-current installer contract:
-
-```bash
-.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
-  --model mace-mpa-0-medium.model --device cuda \
-  --output results/hop --images 7 --climb --fmax 0.03
-```
-
-or pass `--allow-unvalidated-neb` to override explicitly on the UMA command.
-This is an experimental override because that exact UMA runtime/model is not
-yet present in the packaged validation registry. Resume from the latest
-complete-band checkpoint with `--resume results/hop/checkpoints/latest` — the
-model and all scientific options are restored from the checkpoint (see
-[Resume semantics](#resume-semantics)).
-
-### Other engines
-
-```bash
-# MACE
-.venv-mace/bin/mlipx sp bulk.cif --model mace.model \
-  --model-type mace --task bulk --head default --device cuda:0
-
-# DPA / DeepMD
-.venv-dpa/bin/mlipx opt bulk.cif --model dpa.pt \
-  --model-type dpa --task bulk --head Domains_SSE_PBE \
-  --device cuda:0 --fmax 0.05
-
-# GRACE (--model points to a SavedModel directory)
-.venv-grace/bin/mlipx sp bulk.cif --model grace_model/ \
-  --model-type grace --task bulk --device cuda:0 \
-  --gpu-memory-limit-mb 6144
-```
-
-### INCAR files (VASP-style)
-
-```bash
-.venv/bin/mlipx template sp          # generate INCAR.sp
-.venv/bin/mlipx run -i INCAR.sp -s structure.cif
-```
-
-Example `INCAR.sp`:
-
-```ini
-CALC_TYPE   = SP
-MODEL_TYPE  = UMA        # or MACE / DPA / GRACE
-MODEL_PATH  = uma-s-1.pt
-TASK        = omat       # UMA: omat/omol/...; others: bulk/molecule
-DEVICE      = cpu
-```
-
-NEB uses the same mechanism — `mlipx template neb` writes `INCAR.neb`
-(`CALCULATION = NEB`) with endpoints, path, endpoint-policy, and convergence
-keywords:
-
-```ini
-CALCULATION          = NEB
-MODEL_TYPE           = UMA
-MODEL_PATH           = uma-s-1.pt
-NEB_INITIAL          = initial.vasp
-NEB_FINAL            = final.vasp
-NEB_IMAGES           = 7
-NEB_INTERPOLATION    = linear   # or idpp
-NEB_CLIMB            = .FALSE.  # .TRUE. enables CI-NEB
-FMAX                 = 0.03
-```
-
-### Batch
-
-```bash
-.venv/bin/mlipx batch structures/ --model uma-s-1.pt \
-  --model-type uma --task omat --device cuda \
-  --calc-type sp --pattern "*.cif" --output batch_results
-```
-
-Each input gets its own output subdirectory; the root gets `batch_summary.json`.
-
----
-
-## Trajectory Analysis
-
-`mlipx analyze` is calculator-independent: you can analyze a trajectory produced by any engine from the UMA `.venv` without loading the model backend.
-
-```bash
-# Validate first (checks time axis, PBC, conventions, eligibility)
-.venv/bin/mlipx analyze results/LGPS-800K validate
-
-# Thermodynamics
-.venv/bin/mlipx analyze results/LGPS-800K thermo
-
-# RDF / coordination
-.venv/bin/mlipx analyze results/LGPS-800K rdf \
-  --center Li --neighbor S --rmax 6 --cn-cutoff 3
-
-# MSD
-.venv/bin/mlipx analyze results/LGPS-800K msd \
-  --mobile Li --axes x,y,z,xyz --drift-reference nonmobile
-
-# Density / VACF / spectrum / Arrhenius
-.venv/bin/mlipx analyze results/LGPS-800K density --mobile Li --spacing 0.25
-.venv/bin/mlipx analyze results/LGPS-800K vacf --species Li
-.venv/bin/mlipx analyze results/LGPS-800K spectrum --species Li --taper one-sided-cosine
-
-# Fit multi-temperature Arrhenius from independent transport results
-# (each value is passed as a separate repeated flag)
-.venv/bin/mlipx analyze RUN arrhenius \
-  --temperature 600 --temperature 700 --temperature 800 \
-  --diffusivity 1e-10 --diffusivity 2e-10 --diffusivity 5e-10 \
-  --diffusivity-std 0.1e-10 --diffusivity-std 0.2e-10 --diffusivity-std 0.5e-10
-```
-
-### Analysis hierarchy: MSD, transport, and electrolyte
-
-The three commands have deliberately different scientific roles:
-
-- `msd` is a diagnostic view: multiple-time-origin MSD, local `alpha`, and
-  native OLS fit-window diagnostics. Its OLS result is explicitly
-  `publication_grade=false` and is not the transport authority.
-- `transport` is the quantitative authority. Kinisi provides tracer
-  `D_tracer`; mlipx derives
-  `sigma_NE_tracer = n (z e)^2 D_tracer/(k_B T)`. With
-  `--collective-conductivity`, kinisi MSCD includes distinct charge
-  correlations and provides `sigma_collective`, from which
-  `D_sigma = sigma_collective k_B T/(n (z e)^2)` is derived. The reported
-  Haven ratio is explicitly `H_R = D_tracer/D_sigma = sigma_NE_tracer/
-  sigma_collective`; the correlation factor is
-  `sigma_collective/sigma_NE_tracer`. `--jump-diffusion` adds MSTD and `D_J`
-  as a total/jump-displacement diagnostic, not tracer diffusion.
-- `electrolyte` is GEMDAT mechanism analysis: density, sites, occupancy,
-  transitions, residence, jumps, collective events, and percolating paths.
-  GEMDAT endpoint/COM diffusivities and Haven ratios are retained only under
-  `diagnostic_crosscheck` (`publication_transport_authority=false`).
-
-Covariance-aware transport uses [kinisi 2.x](https://joss.theoj.org/papers/10.21105/joss.05984). It requires an explicit fit start:
-
-```bash
-.venv/bin/mlipx analyze RUN transport --mobile Li --charge 1 \
-  --drift-reference nonmobile --fit-start-ps 40 \
-  --lag-step-ps 2 --lag-stop-ps 200 --random-seed 0
-
-# LGPS: tracer + collective Einstein conductivity
-mlipx analyze RUN transport \
-  --mobile Li --charge 1 --drift-reference nonmobile \
-  --fit-start-ps 40 --lag-step-ps 2 --lag-stop-ps 200 \
-  --collective-conductivity --random-seed 0
-```
-
-Key scientific rules:
-
-- **Never guess.** `--charge` is required; temperature comes from the run (or `--temperature-K` for external trajectories); `wrapped`/`unwrapped` must describe the actual file.
-- **Fixed-cell only.** Variable-cell transport is unsupported.
-- **Drift correction is explicit:** `none`, `nonmobile`, or `indices`.
-- **`--lag-step-ps` / `--lag-stop-ps`** sparsify kinisi's lag-time grid, not the trajectory frames. They must be used together.
-- **Native MSD OLS diagnostics** require both `--fit-start-ps` and `--fit-stop-ps`; mlipx does not auto-detect a publication fit window. Transport uses its explicit kinisi `--fit-start-ps` and selected lag grid.
-- **Nernst–Einstein tracer conductivity** (`sigma_NE_tracer`) is reported with posterior mean / SD / 95% CI. It is not a total physical uncertainty and not automatically equal to experimental/collective conductivity.
-- `sigma_NE_tracer` ignores distinct ion correlations. `sigma_collective` is a
-  collective Einstein ionic conductivity within the analyzed classical MD
-  trajectory and selected charge model; it is not automatically an
-  experimental bulk/polycrystalline conductivity.
-- Kinisi credible intervals are conditional posterior intervals, not
-  model/finite-size/replica uncertainty. `--collective-system-particles`
-  selects index-ordered kinisi statistical groups, not independent replicas.
-  Haven ratio intervals, when available, are labelled independent-marginal
-  approximations because tracer/collective covariance is not modeled.
-- A safely reconstructed 0.1 ps saved interval can be valid for long-time
-  Einstein/MSCD analysis. It is not dense sampling for short-time VACF or
-  Green–Kubo analysis.
-
-### Electrolyte mechanisms (optional GEMDAT)
-
-GEMDAT is an optional backend for site mapping, jumps, and percolation:
-
-```bash
-python -m pip install -e './mlipx[analysis,electrolyte]'
-.venv/bin/mlipx analyze RUN electrolyte --mobile Li --sites Li_sites.cif \
-  --jump-dimensions 3 --percolation-axes xyz
-```
-
-A site source is mandatory (`--sites` or `--discover-sites-from-density`). GEMDAT endpoint diffusivity is never promoted over the kinisi estimate.
-Explicit CIF sites are the reproducible pathway; density segmentation is
-exploratory and records its resolution/background/peak metadata. GEMDAT
-free-energy path barriers are finite-temperature occupancy-derived quantities,
-not NEB potential-energy migration barriers.
-
-### Outputs & reproducibility
-
-Every analysis task writes under `RUN/analysis/TASK/REQUEST_HASH/`:
+A run directory contains:
 
 ```
-request.json
-provenance.json
-results.json
-task-specific CSV/NPZ
-PNG and SVG when applicable
-diagnostics.json when applicable
+results/
+├── OUTCAR        # energy/forces/stress, model identity, device, versions
+├── OSZICAR       # per-step log (relaxation, MD)
+├── CONTCAR       # final structure (relaxation)
+├── XDATCAR       # trajectory (MD)
+└── *.json        # machine-readable record incl. provenance
 ```
 
-Transport additionally writes `transport_summary.csv`, compressed
-`kinisi_arrays.npz`, and `transport_msd`; collective and jump analyses add
-`transport_mscd` and `transport_mstd`. Electrolyte writes compressed
-`electrolyte_arrays.npz`, summary/transition/jump/percolation CSVs, CIF site
-artifacts, and headless density/free-energy/mechanism plots. The transport
-and electrolyte scientific revisions are part of the cache key, so old
-results are not silently reused after these semantic changes.
+Every record carries: model path + SHA-256, task/head, dtype, device
+(requested vs actual, GPU UUID hash), mlipx/framework versions, git
+commit and scientific suite revision, and the result schema version.
+NEB and MD runs write checkpoints; analysis results are keyed by a
+request hash so identical requests are served from cache and changed
+requests recompute.
 
-The request hash includes the source fingerprint, selection, range, axes, drift definition, scientific parameters, and backend versions. Identical requests are reused unless `--force` is supplied.
+## Python API
 
----
-
-## Interfaces
-
-| Interface | Command | Best for |
-|---|---|---|
-| CLI | `mlipx sp/opt/md/batch/...` | Scripts, HPC, automation |
-| TUI | `mlipx tui` | Interactive exploration |
-| Python API | `from mlipx.api import run_single_point, ...` | Custom workflows |
-| INCAR | `mlipx run -i INCAR` | VASP-style config |
-
-### Python API
+The public surface (`mlipx.api`):
 
 ```python
-from mlipx.api import run_single_point, run_md, run_neb, calculate_energy
+from mlipx.api import calculate_energy, run_single_point
 
-result = run_single_point("structure.cif", "uma-s-1.pt", task="omat")
-energy = calculate_energy("structure.cif", "uma-s-1.pt", task="omat")
-
-# NEB runs a fail-closed validation gate: use a backend with promoted
-# evidence (e.g. a MACE model), or pass allow_unvalidated_neb=True to
-# override explicitly when this exact runtime is not yet validated.
-neb = run_neb(
-    "initial.vasp", "final.vasp", "uma-s-1.pt",
-    task="omat", device="cuda:0", output_dir="results/hop",
-    n_intermediate_images=7, climb=True, allow_unvalidated_neb=True,
-)
-print(neb["converged"], neb["barrier_forward_sampled_eV"])
+energy = calculate_energy("POSCAR", model_path="mace-omat-0-medium.model",
+                          model_type="MACE", device="cpu")
+results = run_single_point("POSCAR", model_path="mace-omat-0-medium.model",
+                           model_type="MACE", output_dir="./results")
 ```
 
----
+Also exported: `run_optimization`, `run_md`, `run_neb`. Every snippet
+above executes in the repository's test suite; snippets that drift from
+the real signatures fail CI.
 
-## INCAR Configuration
+## Configuration precedence
 
-| Category | Key | Default |
-|---|---|---|
-| Calculation | `CALC_TYPE` | — (`SP` / `OPT` / `MD`) |
-| Model | `MODEL_TYPE` | `UMA` |
-| Model | `MODEL_PATH` | — |
-| Model | `TASK` | `omat` (UMA) / `bulk` (others) |
-| Model | `DEVICE` | `cpu` |
-| Model | `HEAD` | — (MACE/DPA multi-task) |
-| Model | `DTYPE` | `float64` (MACE) |
-| Output | `WRITE_OUTCAR` | `.TRUE.` |
-| Output | `WRITE_XDATCAR` | `.TRUE.` |
-| Output | `WRITE_TRAJECTORY` | `.TRUE.` |
-| Output | `WRITE_JSON` | `.TRUE.` |
-| OPT | `FMAX` | `0.05` |
-| OPT | `MAX_STEPS` | `500` |
-| OPT | `OPT_ALGO` | `FIRE` |
-| OPT | `CELL_OPT` | `.FALSE.` |
-| MD | `MD_ENSEMBLE` | `NVT` |
-| MD | `TEMPERATURE` | `300` |
-| MD | `TIMESTEP` | `1.0` |
-| MD | `STEPS` | `1000` |
-| MD | `THERMOSTAT` | `LANGEVIN` |
-| MD | `SAVE_INTERVAL` | `10` |
-| NEB | `NEB_IMAGES` | `7` |
-| NEB | `NEB_CLIMB` | `.FALSE.` |
-| NEB | `NEB_METHOD` | `improvedtangent` |
-| NEB | `NEB_INTERPOLATION` | `linear` |
-| NEB | `NEB_PATH_CONVENTION` | `mic` |
-| NEB | `NEB_SPRING` | `0.1` |
-| NEB | `FMAX` | `0.03` (NEB scope) |
-| NEB | `MAX_STEPS` | `1000` (NEB scope) |
-| NEB | `NEB_PRE_FMAX` / `NEB_PRE_MAX_STEPS` | `0.1` / `300` |
-| NEB | `NEB_MAXSTEP` | `0.1` |
-| NEB | `NEB_ENDPOINT_POLICY` | `validate` |
-| NEB | `NEB_ENDPOINT_FMAX` / `NEB_ENDPOINT_STEPS` | `0.02` / `500` |
-| NEB | `NEB_CHECKPOINT_INTERVAL` | `10` |
-| NEB | `NEB_MIN_DISTANCE` | `0.5` |
-
-See the generated templates (`mlipx template sp/opt/md/neb`) for the full keyword list with comments.
-
----
-
-## Output Files
-
-Each calculation writes a self-contained output directory:
-
-```
-OUTPUT/
-├── OUTCAR                 VASP-like text output
-├── CONTCAR                final structure
-├── XDATCAR                trajectory in VASP layout (if enabled)
-├── mlipx_results.json     machine-readable results
-├── raw/
-│   ├── trajectory.traj    canonical ASE trajectory
-│   └── md.csv             MD time series (if MD)
-└── artifacts.json         provenance / versions / semantics
-```
-
-For high-throughput runs, use `--no-write-outcar --no-write-xdatcar` to skip the VASP interoperability text I/O; the canonical trajectory remains enabled.
-
-## Nudged Elastic Band (NEB)
-
-`mlipx neb` runs a fixed-cell NEB/CI-NEB (`improvedtangent` spring method)
-between two endpoints. Endpoints are validated or relaxed first
-(`NEB_ENDPOINT_POLICY`), the initial band comes from linear or IDPP
-interpolation, and complete bands are checkpointed every `NEB_CHECKPOINT_INTERVAL`
-steps for crash-safe resume.
-
-### Output layout
-
-```
-results/hop/
-├── run_context.json     run/attempt IDs, model identity, resolved options
-├── artifacts.json       status + pointers (checkpoint, result, VASP export)
-├── checkpoints/
-│   ├── step_000003/     complete band: band.traj + checkpoint.json
-│   └── latest           symlink to the newest complete checkpoint
-├── neb_results.json     mlipx.neb-results/2: converged, sampled barriers,
-│                        reaction energy, highest-energy image, max NEB force
-└── vasp_path/           00/POSCAR ... NN/POSCAR export, no MLIP energies
-                         (vasp_path_<attempt>/ after a resume)
-```
-
-### Resume semantics
-
-```text
-geometry resume ≠ strict FIRE optimizer state restart
-```
-
-`--resume results/hop/checkpoints/latest` restores the band geometry, the model
-identity, and every scientific option from the checkpoint, reuses the original
-run ID and output directory, and starts a new attempt. It is a geometry-level
-restart — not a bit-exact optimizer-state reload — so results depend only on
-the restored geometry and options. On resume, endpoints, atom map, and image
-shifts are ignored (the checkpoint's original path identity is authoritative).
-
-### Scientific semantics
-
-- The climbing image is a **candidate** saddle: `converged: true` means the NEB
-  force criterion was met — a Hessian-validated first-order saddle point was
-  *not* verified (`saddle_validation: not_performed`).
-- MLIP barriers are model barriers, not VASP/DFT barriers; compare like with
-  like.
-- Absolute energies from different model tasks, heads, or reference levels must
-  never be mixed — including between the endpoints and the images of one path.
-- Engines without a matching validation record are refused for NEB by default;
-  `--allow-unvalidated-neb` overrides explicitly (fail-closed elsewhere).
-
----
-
-## Background Jobs & Queue
-
-Background jobs are submitted through the queue JSON interface:
-
-```bash
-# 1. Describe tasks in JSON
-cat > tasks.json <<'JSON'
-{
-  "max_concurrent": 1,
-  "tasks": [
-    {
-      "name": "opt-uma-1",
-      "calc_type": "opt",
-      "structure": "/path/a.cif",
-      "model": "/path/uma-s-1.pt",
-      "model_type": "uma",
-      "device": "cuda:0",
-      "options": {"fmax": 0.05}
-    }
-  ]
-}
-JSON
-
-# 2. Submit and start
-.venv/bin/mlipx queue submit tasks.json
-.venv/bin/mlipx queue start            # background scheduler
-.venv/bin/mlipx queue status
-
-# 3. Manage
-.venv/bin/mlipx jobs                   # list running/done/failed
-.venv/bin/mlipx kill <job-id>          # terminate a running job
-.venv/bin/mlipx clean                  # remove completed/failed records
-```
-
-The TUI also has built-in queue controls. Each task may use its own Python environment/engine/model.
-
----
-
-## Resource Control
-
-| Option | Effect |
-|---|---|
-| `--cpu-threads N` | CPU intra-op threads (PyTorch for UMA/MACE/DPA; TF for GRACE) |
-| `--gpu-memory-growth` | GRACE: grow TF GPU memory on demand (default enabled) |
-| `--gpu-memory-limit-mb MIB` | GRACE: hard limit on TF GPU memory |
-| `--inference-mode turbo` | UMA only: fast inference preset |
-| `--activation-checkpointing` | UMA only: save GPU memory |
-| `--dtype float32` | MACE: opt in to float32 for speed (default float64) |
-
----
+CLI flags > INCAR file > `settings.ini` > built-in defaults. Path
+provenance is printed by `mlipx config show`; `mlipx config schema`
+lists every recognized key. The TUI (`mlipx tui`) exposes the same
+configuration space interactively.
 
 ## Troubleshooting
 
-### "no kernel image is available for execution on the device"
+Observed, diagnosable failures:
 
-Your PyTorch build has no kernel for your GPU. Use the cu126 Legacy channel for Maxwell/Pascal/Volta, or the modern channel for Turing+. Run:
+- **Model download/auth fails** (UMA, MACE meta checkpoints): the
+  download requires network access and, for some checkpoints, accepting
+  the license. The error from the downloader is passed through.
+- **Wrong DPA branch**: DPA-3.1-3M is multi-head. Without `--head`/TASK
+  matching the training branch, results are silently from the wrong
+  head. The record's `head` field shows what was used; the installer
+  profile pins `Omat24`.
+- **Model lacks stress**: cell relaxation, elastic recipes and NPT-style
+  analysis require stress. mlipx fails closed with an explicit message
+  instead of fabricating stress.
+- **GPU architecture mismatch** (e.g. Volta with a cu128-only torch
+  build): `mlipx doctor` reports the compute capability and the
+  installer pins the matching build; a manual install that ignores this
+  fails at first kernel launch.
+- **GRACE memory**: the GRACE build is the most memory-hungry of the
+  four on large cells; batch runs should lower `--batch-size` before
+  assuming a bug.
+- **Capability evidence mismatch**: the README tables and the curated
+  capability registry are cross-checked by tests; a runtime contract
+  change without revalidation fails CI rather than shipping stale
+  claims.
+- **Insufficient transport sampling**: `mlipx analyze transport`
+  reports when the trajectory is too short or the save interval too
+  coarse for the fit window; it does not return a number in that case.
 
-```bash
-.venv/bin/mlipx setup     # machine-specific report
-./scripts/install_mlipx.sh --dry-run
-```
+## Limitations
 
-### "No edges found in structure"
+- Learned PES quality is domain-dependent; surfaces, defects and
+  transition states can be out-of-distribution for any model. The beta
+  suite records per-model behavior on a fixed recipe set; it does not
+  certify your chemistry.
+- No electronic structure (see the table above).
+- Absolute energies are not interchangeable across models, tasks/heads
+  or reference levels.
+- Physical transport numbers need much longer trajectories than the
+  beta demonstration runs; the suite labels its transport results
+  `demonstration_not_converged`.
+- No NPT ensemble.
+- Model predictive uncertainty is not implemented.
+- Beta validation covers one GPU architecture (V100, sm_70) and CPU. It
+  does not prove every GPU architecture; use `mlipx doctor` on your
+  hardware before trusting a first run.
 
-Atoms are too far apart (> cutoff), the cell is invalid, or PBC is wrong. Check the input structure and use the correct `--task` (periodic `omat`/`bulk` vs molecular `omol`/`molecule`).
+## Credits
 
-### CUDA out of memory
+- [FAIR-Chem / UMA](https://github.com/facebookresearch/fairchem)
+- [MACE](https://github.com/ACEsuit/mace)
+- [DeePMD-kit / DPA](https://github.com/deepmodeling/deepmd-kit)
+- [GRACE](https://github.com/intel/grace)
+- [ASE](https://wiki.fysik.dtu.dk/ase/)
+- [kinisi](https://github.com/bjmorgan/kinisi)
+- [GEMDAT](https://github.com/GEMDAT-repos/GEMDAT)
+- [OMat24 / Meta](https://ai.meta.com/blog/open-source-climate-modeling/)
 
-Use `--device cpu`, a smaller model, or UMA `--activation-checkpointing`. For GRACE set `--gpu-memory-limit-mb`.
-
-### Installer reports `No space left on device`
-
-Inspect the repository filesystem and uv cache before retrying:
-
-```bash
-df -h . "$(uv cache dir)"
-du -sh "$(uv cache dir)" .venv* 2>/dev/null
-uv cache clean
-```
-
-For an interrupted GRACE install, keep the already verified UMA/MACE/DPA
-environments and rebuild only GRACE. Aim for at least 10–12 GiB free during
-the installation; exact usage depends on wheel versions and uv's link mode.
-
-```bash
-./scripts/install_mlipx.sh --source china --engines grace --clean
-```
-
-If the uv cache is on a small root filesystem but another filesystem has more
-space, set `UV_CACHE_DIR=/larger/path/uv-cache` for the retry. The repository
-filesystem still needs room for the final `.venv-grace` environment.
-
-### MACE environment incompatible
-
-MACE must not share the UMA environment. Use `.venv-mace/bin/mlipx ...` (the installer creates it automatically).
-
-### Atom explosion in MD
-
-Pre-relaxation is on by default for NVT (up to 50 FIRE steps). For NVE it is off; enable it if needed.
-
----
-
-## Development
-
-Use a dedicated dev venv so it never collides with the UMA runtime `.venv`:
-
-```bash
-# 1. Create a dev environment
-uv venv --python 3.12 .venv-dev
-
-# 2. Install mlipx with dev + analysis extras
-uv pip install --python .venv-dev/bin/python -e './mlipx[dev,analysis]'
-
-# 3. Run tests (no heavy ML backend required — backend tests are mocked/skipped)
-.venv-dev/bin/python -m pytest tests -q
-```
-
-UMA is consumed through the external `fairchem-core` dependency. Core code
-lives in `mlipx/mlipx/`; installation/compatibility logic is in
-`mlipx/mlipx/install/`.
-
-Analysis extras (optional): `./mlipx[analysis]` (scipy/matplotlib),
-`./mlipx[transport]` (kinisi), `./mlipx[electrolyte]` (gemdat), or
-`./mlipx[analysis-all]` for all three.
-
-
-## Versioning & revisions
-
-Provenance does not hang off the package version alone. Four independent
-revision axes are recorded in outputs, results, and checkpoints:
-
-- Package version (SemVer, e.g. `2.0.0`), recorded as `mlipx_version`.
-- Result schema revisions (`mlipx.neb-results/2`, `mlipx.runtime-validation/1`,
-  ...).
-- NEB checkpoint schema revision (`mlipx.neb-checkpoint/1`).
-- NEB scientific revision — bumped for changes that alter path preparation,
-  force, or convergence semantics (see `mlipx/mlipx/neb/revisions.py`).
-
-The NEB resume fingerprint pins all of these together (plus model identity and
-path identity). A mismatch in any axis fails resume closed rather than
-silently resuming with changed semantics.
----
-
-## License
-
-MIT License. mlipx builds on [FAIRChem](https://github.com/FAIR-Chem/fairchem) (Copyright © Meta Platforms, Inc. and affiliates), licensed under MIT. See [`LICENSE.md`](LICENSE.md) and [`mlipx/LICENSE`](mlipx/LICENSE).
+This project (`hydrogen1222/mlipx`) is unrelated to the other project
+also named `mlipx` on PyPI.

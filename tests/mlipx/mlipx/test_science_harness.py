@@ -514,6 +514,35 @@ def test_thermo_einstein_crystal_limits():
     assert high["entropy_eV_per_K"] > 0.0
 
 
+def test_thermo_q_grid_normalization_invariant():
+    """Thermal sums must be per unit cell, independent of q-grid density.
+
+    Regression: t4f once summed the (8,8,8) MP grid without the 1/N_q
+    factor, inflating ZPE/Cv/S/F by 512x.
+    """
+    n_modes = 6
+    omega = np.linspace(0.01, 0.06, n_modes)
+    single = static_suite._thermo_from_modes(omega, [300.0])
+    for n_q in (8, 64, 512):
+        gridded = static_suite._thermo_from_modes(
+            np.tile(omega, n_q), [300.0], n_qpoints=n_q
+        )
+        assert gridded["zero_point_energy_eV"] == pytest.approx(
+            single["zero_point_energy_eV"]
+        )
+        ref = single["per_temperature"][0]
+        got = gridded["per_temperature"][0]
+        assert got["cv_eV_per_K"] == pytest.approx(ref["cv_eV_per_K"])
+        assert got["entropy_eV_per_K"] == pytest.approx(
+            ref["entropy_eV_per_K"]
+        )
+        assert got["free_energy_eV"] == pytest.approx(ref["free_energy_eV"])
+        # raw mode/q counts stay unnormalized
+        assert gridded["n_modes"] == n_modes * n_q
+    with pytest.raises(ValueError):
+        static_suite._thermo_from_modes(omega, [300.0], n_qpoints=5)
+
+
 def test_thermo_flags_negative_modes():
     freqs = np.array([0.03, 0.02, 0.01, -0.002])
     out = static_suite._thermo_from_modes(freqs, [300.0])
@@ -676,3 +705,38 @@ def test_t8_record_plumbing_writes_schema_valid_results(tmp_path):
     assert payload["metrics"]["natoms"] == 32
     # the real suite must keep the same case naming
     assert performance_suite.SP_SIZES == {32: (2, 1, 1), 128: (2, 2, 2), 512: (4, 4, 2)}
+
+
+def test_elastic_relaxed_ions_differ_from_clamped():
+    """Relaxed-ion elastic constants must actually relax internal forces.
+
+    Regression: workflow_elastic once discarded the relaxed copy returned
+    by relax_positions, so the "relaxed-ion" t4d records silently
+    duplicated the clamped-ion values (defect found 2026-09-11 while
+    rendering the beta report: clamped == relaxed to 1e-13 GPa for all
+    engines on the diamond fixture, where the internal-strain correction
+    is physically nonzero).
+    """
+    from types import SimpleNamespace
+
+    from ase.calculators.lj import LennardJones
+
+    atoms, _desc = fixtures.build_fixture("si_diamond")
+    ctx = SimpleNamespace(
+        calculator=LennardJones(sigma=3.4, epsilon=0.017),
+        engine="lj",
+        device="cpu",
+    )
+    # precondition: the clamped xy-sheared geometry has nonzero internal
+    # forces, so clamped and relaxed paths genuinely differ here
+    work = static_suite.apply_strain(atoms, "xy", 0.01)
+    work.calc = ctx.calculator
+    assert float(np.abs(work.get_forces()).max()) > 0.01
+
+    clamped = static_suite._cubic_elastic(ctx, atoms, relaxed_ions=False)
+    relaxed = static_suite._cubic_elastic(ctx, atoms, relaxed_ions=True)
+    assert clamped["fit_mode"] == "clamped-ion"
+    assert relaxed["fit_mode"] == "relaxed-ion"
+    # diamond symmetry: only the shear constant couples to the internal
+    # (optical-mode) relaxation; C11/C12 legitimately coincide
+    assert abs(relaxed["C44_GPa"] - clamped["C44_GPa"]) > 1.0

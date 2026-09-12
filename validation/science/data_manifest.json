@@ -57,5 +57,15 @@
       "citation": "A. Jain et al., 'Commentary: The Materials Project: A materials database approach from property predictions to materials design', APL Materials 1, 011002 (2013); The Materials Project (2026), mp-28782, accessed via OPTIMADE API",
       "pinned_in": "validation/science/scripts/fixtures.py (NA3PS4_CELL / NA3PS4_SITES)"
     }
-  ]
+  ],
+  "subset": {
+    "path": "validation/science/data/omat24_subset.extxyz",
+    "sha256": "d6a2ce93ff39995415427e1fb9bf3c45a13061a90125591214ef9b411c1958b2",
+    "structures": 256,
+    "reference_labels": [
+      "energy",
+      "forces"
+    ],
+    "note": "the official OMat24 validation LMDB files do not carry stress labels; stress parity versus DFT is therefore not computable and T3 reports this absence explicitly"
+  }
 }

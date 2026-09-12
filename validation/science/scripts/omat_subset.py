@@ -86,14 +86,25 @@ def extract(tarball: Path, data_dir: Path) -> Path:
 
 
 def read_lmdb_frames(lmdb_dir: Path):
-    from fairchem.core.datasets import AseLMDBDataset
+    from fairchem.core import datasets as _fc_datasets
 
-    lmdb_files = sorted(lmdb_dir.rglob("*.lmdb"))
+    lmdb_files = sorted(
+        list(lmdb_dir.rglob("*.aselmdb")) + list(lmdb_dir.rglob("*.lmdb"))
+    )
     if not lmdb_files:
-        msg = f"no .lmdb files found under {lmdb_dir}"
+        msg = f"no .lmdb/.aselmdb files found under {lmdb_dir}"
         raise RuntimeError(msg)
-    dataset = AseLMDBDataset({"src": str(lmdb_dir), "format": "lmdb"})
-    return dataset
+    if hasattr(_fc_datasets, "AseDBDataset"):  # fairchem-core >= 2
+        return _fc_datasets.AseDBDataset({"src": str(lmdb_dir)})
+    return _fc_datasets.AseLMDBDataset({"src": str(lmdb_dir)})  # fairchem 1.x
+
+
+def _as_atoms(item):
+    """fairchem >= 2 returns AtomicData; older versions return Atoms."""
+    if hasattr(item, "to_ase"):
+        atoms_list = item.to_ase()
+        return atoms_list[0] if isinstance(atoms_list, list) else atoms_list
+    return item
 
 
 def select_stratum(dataset, per_stratum: int) -> list[int]:
@@ -141,7 +152,7 @@ def main() -> int:
         chosen = select_stratum(dataset, args.per_stratum)
         frames = []
         for i in chosen:
-            atoms = dataset[int(i)]
+            atoms = _as_atoms(dataset[int(i)])
             atoms.info["omat24_stratum"] = name
             atoms.info["omat24_index"] = int(i)
             frames.append(atoms)

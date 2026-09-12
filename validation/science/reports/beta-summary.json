@@ -1,0 +1,1176 @@
+{
+  "schema": "mlipx.beta-validation-summary/1",
+  "generated_from": ".validation-work",
+  "code_commit": "293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc",
+  "model_profiles": {
+    "mace": "MACE-OMAT-0 medium (float64)",
+    "dpa": "DPA-3.1-3M (Omat24 head)",
+    "grace": "GRACE-2L-OMAT (fp32, cache on/off)",
+    "uma": "UMA-s 1.2 (OMat task)"
+  },
+  "tiers": {
+    "t1": {
+      "records": 12,
+      "by_status": {
+        "pass": 12
+      }
+    },
+    "t2": {
+      "records": 120,
+      "by_status": {
+        "fail": 54,
+        "pass": 46,
+        "characterized": 20
+      }
+    },
+    "t2fd": {
+      "records": 41,
+      "by_status": {
+        "characterized": 40,
+        "fail": 1
+      }
+    },
+    "t3": {
+      "records": 0,
+      "by_status": {}
+    },
+    "t4": {
+      "records": 312,
+      "by_status": {
+        "pass": 281,
+        "unsupported": 8,
+        "fail": 23
+      }
+    },
+    "t5": {
+      "records": 36,
+      "by_status": {
+        "pass": 32,
+        "characterized": 4
+      }
+    },
+    "t6": {
+      "records": 24,
+      "by_status": {
+        "pass": 21,
+        "characterized": 3
+      }
+    },
+    "t7": {
+      "records": 40,
+      "by_status": {
+        "characterized": 28,
+        "pass": 12
+      }
+    },
+    "t8": {
+      "records": 20,
+      "by_status": {
+        "pass": 20
+      }
+    }
+  },
+  "omat24": {},
+  "support_matrix": {
+    "single_point": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 23,
+        "by_status": {
+          "pass": 23
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 23,
+        "by_status": {
+          "pass": 23
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 23,
+        "by_status": {
+          "pass": 23
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 23,
+        "by_status": {
+          "pass": 23
+        }
+      }
+    },
+    "forces": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 7,
+        "by_status": {
+          "pass": 3,
+          "characterized": 4
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 7,
+        "by_status": {
+          "pass": 3,
+          "characterized": 4
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 11,
+        "by_status": {
+          "pass": 3,
+          "characterized": 8
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 7,
+        "by_status": {
+          "pass": 3,
+          "characterized": 4
+        }
+      }
+    },
+    "stress": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 7,
+        "by_status": {
+          "pass": 3,
+          "characterized": 4
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 7,
+        "by_status": {
+          "pass": 3,
+          "characterized": 4
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 11,
+        "by_status": {
+          "pass": 3,
+          "characterized": 8
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 7,
+        "by_status": {
+          "pass": 3,
+          "characterized": 4
+        }
+      }
+    },
+    "force_energy_consistency": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 4,
+        "by_status": {
+          "characterized": 4
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 4,
+        "by_status": {
+          "characterized": 4
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 8,
+        "by_status": {
+          "characterized": 8
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 4,
+        "by_status": {
+          "characterized": 4
+        }
+      }
+    },
+    "stress_energy_consistency": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 4,
+        "by_status": {
+          "characterized": 4
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 4,
+        "by_status": {
+          "characterized": 4
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 8,
+        "by_status": {
+          "characterized": 8
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 4,
+        "by_status": {
+          "characterized": 4
+        }
+      }
+    },
+    "invariance_caching": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 24,
+        "by_status": {
+          "pass": 20,
+          "characterized": 4
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 24,
+        "by_status": {
+          "fail": 18,
+          "characterized": 4,
+          "pass": 2
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 48,
+        "by_status": {
+          "fail": 18,
+          "pass": 22,
+          "characterized": 8
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 24,
+        "by_status": {
+          "fail": 18,
+          "characterized": 4,
+          "pass": 2
+        }
+      }
+    },
+    "fixed_cell_relax": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 12
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 12
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 12
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 12
+        }
+      }
+    },
+    "cell_relax": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      }
+    },
+    "eos": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      }
+    },
+    "elastic": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 4,
+        "by_status": {
+          "pass": 4
+        }
+      }
+    },
+    "phonon": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 12
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 11,
+          "fail": 1
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 12
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 12,
+        "by_status": {
+          "pass": 11,
+          "fail": 1
+        }
+      }
+    },
+    "thermodynamics": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 12,
+        "by_status": {
+          "fail": 6,
+          "pass": 6
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 12,
+        "by_status": {
+          "fail": 3,
+          "pass": 9
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 12,
+        "by_status": {
+          "fail": 6,
+          "pass": 6
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 12,
+        "by_status": {
+          "fail": 6,
+          "pass": 6
+        }
+      }
+    },
+    "defect": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 3,
+        "by_status": {
+          "pass": 3
+        }
+      }
+    },
+    "surface": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 6
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 6
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 6
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 6
+        }
+      }
+    },
+    "formation_energy": {
+      "mace": {
+        "labels": [
+          "model_characterized",
+          "unsupported"
+        ],
+        "records": 1,
+        "by_status": {
+          "unsupported": 1
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized",
+          "unsupported"
+        ],
+        "records": 1,
+        "by_status": {
+          "unsupported": 1
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized",
+          "unsupported"
+        ],
+        "records": 1,
+        "by_status": {
+          "unsupported": 1
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized",
+          "unsupported"
+        ],
+        "records": 1,
+        "by_status": {
+          "unsupported": 1
+        }
+      }
+    },
+    "neb": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 8,
+        "by_status": {
+          "pass": 7,
+          "characterized": 1
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 8,
+        "by_status": {
+          "pass": 7,
+          "characterized": 1
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 8,
+        "by_status": {
+          "pass": 7,
+          "characterized": 1
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 8,
+        "by_status": {
+          "pass": 7,
+          "characterized": 1
+        }
+      }
+    },
+    "saddle_hessian": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      }
+    },
+    "short_nve": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 1,
+        "by_status": {
+          "pass": 1
+        }
+      }
+    },
+    "short_nvt": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 4,
+          "characterized": 1
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 4,
+          "characterized": 1
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 4,
+          "characterized": 1
+        }
+      }
+    },
+    "transport_demo": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 3,
+          "characterized": 3
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 3,
+          "characterized": 3
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 3,
+          "characterized": 3
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 6,
+        "by_status": {
+          "pass": 3,
+          "characterized": 3
+        }
+      }
+    },
+    "mechanism_analysis": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 3,
+        "by_status": {
+          "characterized": 3
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 3,
+        "by_status": {
+          "characterized": 3
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 3,
+        "by_status": {
+          "characterized": 3
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 3,
+        "by_status": {
+          "characterized": 3
+        }
+      }
+    },
+    "arrhenius": {
+      "mace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 1,
+        "by_status": {
+          "characterized": 1
+        }
+      },
+      "dpa": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 1,
+        "by_status": {
+          "characterized": 1
+        }
+      },
+      "grace": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 1,
+        "by_status": {
+          "characterized": 1
+        }
+      },
+      "uma": {
+        "labels": [
+          "model_characterized"
+        ],
+        "records": 1,
+        "by_status": {
+          "characterized": 1
+        }
+      }
+    },
+    "performance": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
+      }
+    },
+    "install": {
+      "mace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 0,
+        "note": "CI software tests (installer, doctor, runtime validation); no model involved"
+      },
+      "dpa": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 0,
+        "note": "CI software tests (installer, doctor, runtime validation); no model involved"
+      },
+      "grace": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 0,
+        "note": "CI software tests (installer, doctor, runtime validation); no model involved"
+      },
+      "uma": {
+        "labels": [
+          "software_validated"
+        ],
+        "records": 0,
+        "note": "CI software tests (installer, doctor, runtime validation); no model involved"
+      }
+    }
+  },
+  "coverage_table": [
+    {
+      "workflow": "Energy / forces",
+      "mlipx_status": "native",
+      "beta_status": "pass",
+      "evidence": "four-backend inference + OMat24 labels"
+    },
+    {
+      "workflow": "Stress",
+      "mlipx_status": "native when backend supports",
+      "beta_status": "characterized\u00d740, fail\u00d71, pass\u00d712",
+      "evidence": "numerical strain derivative; OMat24 reference stress absent"
+    },
+    {
+      "workflow": "Ionic relaxation",
+      "mlipx_status": "native",
+      "beta_status": "pass",
+      "evidence": "Cu/Si/MgO/Na3PS4"
+    },
+    {
+      "workflow": "Cell relaxation",
+      "mlipx_status": "native when stress + 3D PBC",
+      "beta_status": "pass",
+      "evidence": "FrechetCellFilter cases"
+    },
+    {
+      "workflow": "EOS / bulk modulus",
+      "mlipx_status": "validation recipe",
+      "beta_status": "pass",
+      "evidence": "Cu/Si/MgO"
+    },
+    {
+      "workflow": "Elastic constants",
+      "mlipx_status": "validation recipe",
+      "beta_status": "pass",
+      "evidence": "cubic finite strain, clamped vs relaxed ions"
+    },
+    {
+      "workflow": "Harmonic phonons",
+      "mlipx_status": "validation recipe",
+      "beta_status": "fail\u00d72, pass\u00d746",
+      "evidence": "Cu/Si"
+    },
+    {
+      "workflow": "Vibrational thermodynamics",
+      "mlipx_status": "validation recipe",
+      "beta_status": "fail\u00d721, pass\u00d727",
+      "evidence": "harmonic only, q-averaged"
+    },
+    {
+      "workflow": "Vacancy energy",
+      "mlipx_status": "validation recipe",
+      "beta_status": "pass",
+      "evidence": "Cu finite-size trend"
+    },
+    {
+      "workflow": "Interstitial",
+      "mlipx_status": "characterization",
+      "beta_status": "not_run",
+      "evidence": "optional OOD; not exercised in beta"
+    },
+    {
+      "workflow": "Surface energy",
+      "mlipx_status": "characterization",
+      "beta_status": "pass",
+      "evidence": "Cu(111) convergence"
+    },
+    {
+      "workflow": "Formation energy",
+      "mlipx_status": "conditional",
+      "beta_status": "unsupported\u00d74",
+      "evidence": "only exact OMat references"
+    },
+    {
+      "workflow": "NEB",
+      "mlipx_status": "native",
+      "beta_status": "characterized\u00d74, pass\u00d728",
+      "evidence": "Cu vacancy + Na3PS4"
+    },
+    {
+      "workflow": "CI-NEB",
+      "mlipx_status": "native",
+      "beta_status": "characterized\u00d74, pass\u00d716",
+      "evidence": "same"
+    },
+    {
+      "workflow": "Saddle Hessian",
+      "mlipx_status": "validation recipe",
+      "beta_status": "pass",
+      "evidence": "Cu vacancy candidate"
+    },
+    {
+      "workflow": "NVE MD",
+      "mlipx_status": "native",
+      "beta_status": "pass",
+      "evidence": "timestep convergence"
+    },
+    {
+      "workflow": "NVT MD",
+      "mlipx_status": "native",
+      "beta_status": "characterized\u00d73, pass\u00d79",
+      "evidence": "Langevin/Bussi/NHC"
+    },
+    {
+      "workflow": "NPT MD",
+      "mlipx_status": "unsupported",
+      "beta_status": "not_run",
+      "evidence": "do not claim"
+    },
+    {
+      "workflow": "RDF/MSD/VACF/density",
+      "mlipx_status": "native analysis",
+      "beta_status": "pass",
+      "evidence": "synthetic + real"
+    },
+    {
+      "workflow": "Kinisi transport",
+      "mlipx_status": "native optional analysis",
+      "beta_status": "characterized\u00d712",
+      "evidence": "synthetic + real"
+    },
+    {
+      "workflow": "GEMDAT mechanism",
+      "mlipx_status": "native optional analysis",
+      "beta_status": "characterized\u00d712",
+      "evidence": "real trajectory"
+    },
+    {
+      "workflow": "Arrhenius",
+      "mlipx_status": "native analysis",
+      "beta_status": "characterized\u00d74",
+      "evidence": "synthetic; physical conditional"
+    },
+    {
+      "workflow": "Band structure/DOS",
+      "mlipx_status": "unsupported",
+      "beta_status": "not_run",
+      "evidence": "electronic structure absent"
+    },
+    {
+      "workflow": "Charge/Bader/ELF",
+      "mlipx_status": "unsupported",
+      "beta_status": "not_run",
+      "evidence": "electronic density absent"
+    },
+    {
+      "workflow": "Dielectric/Born/piezo",
+      "mlipx_status": "unsupported",
+      "beta_status": "not_run",
+      "evidence": "electric-field response absent"
+    },
+    {
+      "workflow": "k-point/ENCUT/SCF convergence",
+      "mlipx_status": "DFT-reference-only",
+      "beta_status": "not_run",
+      "evidence": "not an MLIP test"
+    }
+  ],
+  "harness_violations": [],
+  "problems": []
+}

@@ -685,7 +685,11 @@ def _cubic_elastic(ctx, atoms, relaxed_ions: bool) -> dict[str, Any]:
                 work = apply_strain(atoms, kind, sign * delta)
                 work.calc = ctx.calculator
                 if relaxed_ions:
-                    _relaxed, _ = relax_positions(
+                    # relax_positions returns a relaxed COPY; it must be
+                    # propagated or the "relaxed-ion" constants silently
+                    # degenerate to the clamped-ion values (regression:
+                    # test_elastic_relaxed_ions_differ_from_clamped).
+                    work, _ = relax_positions(
                         work, INTERNAL_RELAX_FMAX, 200, "lbfgs"
                     )
                 sp = single_point(ctx, work)
@@ -848,8 +852,19 @@ def workflow_elastic(ctx, args, out_dir) -> int:
 # --------------------------------------------------------------------------
 
 
-def _thermo_from_modes(freqs_ev: np.ndarray, temperatures) -> dict[str, Any]:
+def _thermo_from_modes(
+    freqs_ev: np.ndarray,
+    temperatures,
+    n_qpoints: int | None = None,
+) -> dict[str, Any]:
     """Harmonic thermal sums over a q-grid (phonopy-equivalent formulation).
+
+    ``freqs_ev`` is the (n_qpoints, n_branches) grid of mode energies
+    (any layout; it is ravelled).  Following the phonopy mesh
+    formulation the thermal sums are **q-averaged**: every sum is
+    divided by ``n_qpoints`` so the result is per unit cell of the
+    phonon calculation, independent of grid density.  Callers passing a
+    plain mode list (no grid) may omit ``n_qpoints`` (defaults to 1).
 
     Every mode contributes the standard harmonic expression.  Three
     documented tolerances apply:
@@ -865,10 +880,15 @@ def _thermo_from_modes(freqs_ev: np.ndarray, temperatures) -> dict[str, Any]:
     """
     w = np.asarray(freqs_ev, dtype=float).ravel()
     total_modes = w.size
+    n_q = int(n_qpoints) if n_qpoints else 1
+    if total_modes % n_q != 0:
+        raise ValueError(
+            f"mode count {total_modes} not divisible by n_qpoints {n_q}"
+        )
     tiny = np.abs(w) < 1e-9
     robust_imag = w < -IMAGINARY_TOL_EV
     summed = w > SUM_EXCLUSION_TOL_EV
-    zpe = 0.5 * float(np.sum(np.abs(w)))
+    zpe = 0.5 * float(np.sum(np.abs(w))) / n_q
     out: dict[str, Any] = {
         "n_modes": int(total_modes),
         "n_exactly_zero_modes": int(np.sum(tiny)),
@@ -885,9 +905,9 @@ def _thermo_from_modes(freqs_ev: np.ndarray, temperatures) -> dict[str, Any]:
         cv_per_mode = x * x * efac / (denom * denom)
         s_per_mode = x * efac / denom - np.log(denom)
         f_per_mode = KB_EV_PER_K * temp * np.log(2.0 * np.sinh(x / 2.0))
-        cv = KB_EV_PER_K * float(np.sum(cv_per_mode))
-        s = KB_EV_PER_K * float(np.sum(s_per_mode))
-        f = float(np.sum(f_per_mode))
+        cv = KB_EV_PER_K * float(np.sum(cv_per_mode)) / n_q
+        s = KB_EV_PER_K * float(np.sum(s_per_mode)) / n_q
+        f = float(np.sum(f_per_mode)) / n_q
         out["per_temperature"].append(
             {
                 "T_K": temp,
@@ -1047,7 +1067,11 @@ def workflow_phonon(ctx, args, out_dir) -> int:
                     # T4-F harmonic thermodynamics from the q-grid (same FC)
                     grid = monkhorst_pack(THERMO_DOS_GRID)
                     omega_grid = np.asarray(ph.band_structure(grid), dtype=float)
-                    thermo = _thermo_from_modes(omega_grid, THERMO_TEMPERATURES)
+                    thermo = _thermo_from_modes(
+                        omega_grid,
+                        THERMO_TEMPERATURES,
+                        n_qpoints=len(grid),
+                    )
                     thermo_status = (
                         "fail"
                         if thermo["n_robust_imaginary_modes"] > 0
@@ -1068,7 +1092,7 @@ def workflow_phonon(ctx, args, out_dir) -> int:
                             "supercell": list(sc),
                             "delta_A": delta,
                             "q_grid": list(THERMO_DOS_GRID),
-                            "formulation": "discrete harmonic sum over MP q-grid",
+                            "formulation": "q-averaged harmonic sums over MP q-grid (1/N_q normalized, per phonon unit cell)",
                             "zero_mode_policy": (
                                 "modes below SUM_EXCLUSION_TOL_EV=1e-6 eV excluded ",
                                 "from F/S/Cv sums (log divergence at omega->0); ",

@@ -1,125 +1,126 @@
-# mlipx — MLIP eXtended
+# mlipx
 
-**一个 VASP 风格的 CLI / TUI / Python API，用于机器学习原子间势（MLIP）计算。**
+mlipx 通过同一套 VASP 风格的 CLI/TUI/Python 工作流,运行 UMA、MACE、DPA
+与 GRACE 机器学习原子间势,完成单点能、结构弛豫、分子动力学、NEB 与轨迹
+分析。
 
-mlipx 将四个 MLIP 引擎统一到同一套接口后面——**UMA (FAIRChem)**（默认）、**MACE**、**DPA (DeepMD-kit)**、**GRACE**——支持单点能（SP）、几何优化（OPT）、分子动力学（MD）、批量计算和带验证的轨迹分析，并输出 VASP 兼容文件（OUTCAR、CONTCAR、XDATCAR、OSZICAR）。
+边界需要说清楚:
 
-```
-structure.cif ──▶  MLIP 引擎 (UMA/MACE/DPA/GRACE)  ──▶  能量、力、应力
-```
+- mlipx 计算的是学习得到的势能面(PES),不做 DFT 电子结构计算。
+- "VASP 风格"指的是工作流与输出文件的约定(INCAR 式配置、OUTCAR/
+  OSZICAR/CONTCAR/XDATCAR 等),目的是让熟悉 VASP 的用户上手成本低;
+  这不是与 VASP 的物理等价性。
+- 能量、力、应力全部来自所选模型。结果的精度取决于模型对你的化学体系
+  的适用性,与 mlipx 本身无关。
 
----
+许可证:MIT。状态:beta 验证已在一种 GPU 架构(V100,sm_70)与 CPU 上
+完成,见下方[验证](#验证)一节。
 
-## 支持的引擎
+## 能运行什么
 
-| `--model-type` | 引擎 | 后端包 | Task 取值 |
-|---|---|---|---|
-| `uma`（默认，别名 `fairchem`） | UMA — FAIRChem | `fairchem-core` | `omat` / `omol` / `oc20` / `oc25` / `odac` / `omc` |
-| `mace` | MACE | `mace-torch` | `bulk` / `molecule` |
-| `dpa` | DPA — DeepMD-kit | `deepmd-kit` | `bulk` / `molecule` |
-| `grace` | GRACE | `tensorpotential` | `bulk` / `molecule` |
+| 任务 | 命令 | 说明 |
+|---|---|---|
+| 单点能 | `mlipx sp` | 能量、力、应力(应力取决于模型是否提供) |
+| 离子弛豫 | `mlipx opt` | 固定晶胞,FIRE/LBFGS/BFGS |
+| 晶胞 + 离子弛豫 | `mlipx opt` | FrechetCellFilter;要求模型提供应力且为三维周期体系 |
+| NVE 分子动力学 | `mlipx md` | velocity Verlet |
+| NVT 分子动力学 | `mlipx md` | Langevin、Bussi、Nosé-Hoover 链 |
+| NEB / CI-NEB | `mlipx neb` | 固定晶胞,IDPP 预弛豫,两阶段攀爬图像 |
+| 批量计算 | `mlipx batch` | 一次模型加载处理多个结构 |
+| 轨迹分析 | `mlipx analyze` | validate、thermo、rdf、rmsd、msd、vacf、spectrum、transport、density、arrhenius、GEMDAT 机理分析 |
+| INCAR 驱动 | `mlipx run -i INCAR.mlipx` | VASP 风格入口 |
+| 队列 | `mlipx queue submit/start`、`mlipx jobs` | 后台作业执行 |
 
-每个引擎必须运行在**独立的 Python 环境**中，因为依赖互相冲突（UMA 需要 `e3nn>=0.5`；MACE 固定 `e3nn==0.4.4`；DPA 固定 `torch==2.10`；GRACE 使用 TensorFlow）。**不要**把四个引擎装进同一个环境。
+ASE 能读的结构格式(POSCAR/CONTCAR、CIF、EXTXYZ 等)都可用作输入。
+输出为 VASP 兼容文本文件加 JSON 记录。
 
----
+## 不能替代什么
+
+以下性质需要 DFT 代码,或在 mlipx 中明确缺席:
+
+| 性质 | mlipx 中的状态 |
+|---|---|
+| 电子能带结构 | 不可用 |
+| 态密度 | 不可用 |
+| 电荷密度 / Bader / ELF | 不可用 |
+| Born 有效电荷 | 不可用 |
+| 介电响应 | 不可用 |
+| k 点 / ENCUT / SCF 收敛 | 不适用(无 SCF) |
+| NPT 分子动力学 | 未实现 |
 
 ## 安装
 
-### 一键安装（推荐）
+经过验证的安装路径是安装脚本,它为每个后端建立独立环境(四套依赖互斥,
+无法共用一个环境):
 
 ```bash
-# 克隆并安装 uv（如果已有 uv 可跳过）
-git clone https://github.com/hydrogen1222/mlipx.git
+git clone https://github.com/hydrogen1222/mlipx
 cd mlipx
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 自动检测 GPU 并安装全部四个引擎
-./scripts/install_mlipx.sh
+./scripts/install_mlipx.sh --engines mace dpa grace uma --device auto
 ```
 
-常用变体：
+安装脚本的行为:
+
+- 从驱动读取 GPU 架构,按后端锁定兼容的框架版本(Volta/V100 用
+  torch 2.8.0+cu126;Turing 及更新架构用 cu128 构建)。
+- 在仓库根目录为每个引擎建一个虚拟环境(`.venv-mace/`、`.venv-dpa/`、
+  `.venv-grace/`、`.venv-uma/`)。
+- Python 版本 3.10-3.12(通过 `uv` 选择,默认 3.12)。
+- 模型权重在首次使用时下载;`--source` 控制轮子来源,支持离线与源码
+  构建。
+- 四个后端连同 torch 与模型权重约需 10-15 GB 磁盘。
+- 结束时运行 `mlipx doctor`,除非给出 `--skip-doctor`。
+
+常用参数:`--dry-run`(只打印计划,不安装)、`--non-interactive`、
+`--clean`(重建环境)、`--python 3.10`。
+
+再把 mlipx 本体装进你的工作环境:
 
 ```bash
-./scripts/install_mlipx.sh --device cpu        # 纯 CPU 机器
-./scripts/install_mlipx.sh --engines uma,mace  # 只装 UMA + MACE
-./scripts/install_mlipx.sh --source china      # 交互选择国内镜像（编号 1–5）
-./scripts/install_mlipx.sh --source china-ustc --non-interactive  # 固定源/脚本用法
-./scripts/install_mlipx.sh --clean             # 全部重建
-./scripts/install_mlipx.sh --dry-run           # 预览不安装
+pip install ./mlipx
 ```
 
-如果上一次安装中途停止，请使用 `--clean` 重新运行，让各引擎的残缺环境在验证前完整重建。
-GPU 环境体积很大：安装全部四个隔离环境需要预留数十 GiB。GRACE 安装完成后通常约占
-6–7 GiB，下载和解压 CUDA wheel 时还需要额外的临时空间。
+<details>
+<summary>手动安装(按后端)</summary>
 
-运行 `./scripts/install_mlipx.sh --help` 查看全部参数。
+每个后端环境需要 mlipx 包加引擎自身的依赖栈。权威的版本锁定在
+`mlipx/mlipx/install/compatibility.py`;只有安装脚本会保证这些锁定与
+你的 GPU 架构一致。如果手动安装,至少要核对 torch 构建与算力是否匹配,
+然后运行 `mlipx doctor` 并确认全部检查通过,再开始正式计算。
 
-### 手动安装（四个环境）
+</details>
 
-如果喜欢手动安装，请为每个引擎创建一个 venv：
 
-```bash
-# UMA（默认）——和其他引擎一样显式安装
-uv venv --python 3.12 .venv
-uv pip install --no-config --python .venv/bin/python \
-  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
-uv pip install --no-config --python .venv/bin/python \
-  -e ./mlipx "fairchem-core==2.21.0"
-.venv/bin/mlipx doctor --engine uma --device auto
+## GPU 架构兼容性
 
-# MACE
-uv venv --python 3.12 .venv-mace
-uv pip install --no-config --python .venv-mace/bin/python \
-  "torch==2.8.0+cu126" --index-url https://download.pytorch.org/whl/cu126
-uv pip install --no-config --python .venv-mace/bin/python \
-  -e ./mlipx "e3nn==0.4.4" "mace-torch==0.3.16"
-.venv-mace/bin/mlipx doctor --engine mace --device auto
+安装脚本与 `mlipx setup` 会自动选择正确的 PyTorch/CUDA 轮子通道。
 
-# DPA / DeepMD
-uv venv --python 3.12 .venv-dpa
-uv pip install --no-config --python .venv-dpa/bin/python \
-  "torch==2.10.0+cu126" --index-url https://download.pytorch.org/whl/cu126
-uv pip install --no-config --python .venv-dpa/bin/python \
-  -e ./mlipx "deepmd-kit==3.1.3"
-.venv-dpa/bin/mlipx doctor --engine dpa --device auto
-
-# GRACE
-uv venv --python 3.12 .venv-grace
-uv pip install --no-config --python .venv-grace/bin/python \
-  -e ./mlipx "tensorflow[and-cuda]==2.20.0" "tensorpotential==0.6.0"
-uv pip install --no-config --python .venv-grace/bin/python \
-  "nvidia-cudnn-cu12==9.3.0.75"
-.venv-grace/bin/mlipx doctor --engine grace --device auto
-```
-
-使用对应的命令前缀：
-
-| 引擎 | 环境 | 前缀 |
-|---|---|---|
-| UMA | `.venv` | `.venv/bin/mlipx ...` |
-| MACE | `.venv-mace` | `.venv-mace/bin/mlipx ...` |
-| DPA | `.venv-dpa` | `.venv-dpa/bin/mlipx ...` |
-| GRACE | `.venv-grace` | `.venv-grace/bin/mlipx ...` |
-
-### GPU 兼容性
-
-安装器和 `mlipx setup` 会自动选择正确的 PyTorch/CUDA wheel。
-
-| GPU 系列 | 代表显卡 | 计算能力 | CUDA 路线 |
+| GPU 系列 | 例子 | 算力 | CUDA 路线 |
 |---|---|---|---|
-| Maxwell | GTX 960、TITAN X | sm_50/52 | cu126 Legacy（⚠️ 实验性） |
-| Pascal | **Tesla P40**、GTX 1080 Ti、P100 | sm_60/61 | cu126 Legacy |
-| Volta | **V100** | sm_70 | cu126 Legacy |
+| Maxwell | GTX 960、TITAN X | sm_50/52 | cu126 Legacy(实验性) |
+| Pascal | Tesla P40、GTX 1080 Ti、P100 | sm_60/61 | cu126 Legacy |
+| Volta | V100 | sm_70 | cu126 Legacy |
 | Turing | RTX 20xx | sm_75 | cu128+ Modern |
-| Ampere | **RTX 3080 Ti**、30xx | sm_80/86 | cu128+ Modern |
-| Ada | **RTX 4090**、40xx | sm_89 | cu128+ Modern |
+| Ampere | RTX 3080 Ti、30xx | sm_80/86 | cu128+ Modern |
+| Ada | RTX 4090、40xx | sm_89 | cu128+ Modern |
 | Hopper | H100 | sm_90 | cu128+ Modern |
 | Blackwell | RTX 50xx | sm_100/120 | cu128+ Modern |
-| 无 | 仅 CPU | — | CPU wheels |
+| 无 | 仅 CPU | - | CPU 轮子 |
 
-> **为什么有两条 CUDA 路线？** Maxwell/Pascal/Volta 必须使用 **cu126 Legacy** 通道：PyTorch 2.8+ 从 cu128 构建中移除了 Maxwell/Pascal，PyTorch 2.11+ 从 cu128+ 中移除了 Volta。Turing+ 使用**现代**通道（torch 2.8–2.10 用 cu128，torch 2.12+ 用 cu130）。Maxwell 标记为实验性，因为 TensorFlow 2.20 官方 wheel 从 sm_60 开始构建。
+为什么有两条 CUDA 路线:Maxwell/Pascal/Volta 必须走 cu126 旧通道,因为
+PyTorch 2.8+ 的 cu128 构建已移除 Maxwell/Pascal 支持,PyTorch 2.11+
+则移除了 Volta。Turing 及更新架构走 modern 通道(torch 2.8-2.10 用
+cu128,torch 2.12+ 用 cu130)。Maxwell 标为实验性,因为官方 
+TensorFlow 2.20 轮子从 sm_60 起才有支持。
 
-**架构兼容性**（来自 `mlipx/install/compatibility.py`；此表只描述安装路线——upstream 包支持、锁定的后端版本、CUDA wheel 通道——*不是* workload 认证）。"needs runtime smoke test" 表示该 GPU 系列的安装契约自洽，但 mlipx 尚未在真机上验证这一确切的 引擎 + framework + GPU 组合；"experimental" 表示 upstream 本身不支持或未测试。安装级 smoke 测试（引擎装好并给出真实模型预测）已在真实的 V100 与 RTX 4090 上运行；workload 级证据目前仅覆盖下表的 V100 runtime。P40 使用修正后的精确 `+cu126` wheel pin，但仍需在修复后重新做模型 smoke test。
+**架构兼容性**(来自 `mlipx/install/compatibility.py`;它只描述安装
+路线——上游包支持情况、锁定的后端版本、CUDA 轮子通道——*不是*负载
+级别的认证)。"needs runtime smoke test"表示该 GPU 系列的安装契约
+是自洽的,但 mlipx 尚未在真实的该引擎 + 框架 + GPU 组合上验证;
+"experimental"表示上游本身不支持或不测试该组合。安装路线冒烟测试
+(引擎装好、真实模型预测)已在真实的 V100 与 RTX 4090 硬件上运行;
+负载级证据目前只有下文的 V100 运行时验证。P40 使用了修正后的精确
+`+cu126` 轮子锁定,但仍需要在修复后的版本上做模型冒烟复测。
 
 | 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | 其他 Turing+ | Hopper / Blackwell |
 |---|---|---|---|---|---|---|
@@ -128,533 +129,287 @@ uv pip install --no-config --python .venv-grace/bin/python \
 | DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
 | GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
 
-**Runtime 验证（单张 V100-SXM2-16GB，sm_70，driver 580.173.02）**——单 GPU 上的短真实模型运行、强制超时，每次都针对 installer 生成的**确切** runtime。脱敏记录位于 [`validation/runtime/v100/`](validation/runtime/v100/)（GPU 仅以 UUID 的 SHA-256 标识）；每个状态一一对应一条记录。MACE 记录已在当前 installer 契约（`mace-torch 0.3.16` + `torch 2.8.0+cu126`）上重新验证；早先 torch 2.6.0+cu124 的证据保留在 git 历史中：
+## 第一次计算
 
-| 后端 / 模型 | SP | 短 MD | E–F 梯度 | NEB smoke | GRACE cache | 记录 |
+装好 UMA 环境后,对一个结构文件:
+
+```bash
+mlipx sp POSCAR --model uma-s-1p2.pt --model-type UMA \
+    --task omat --device cuda --output ./results
+```
+
+会在 `./results` 中写出 `OUTCAR`(能量、力、应力、模型身份、设备证据)
+与 JSON 记录。同样的计算用 INCAR 形式:
+
+```bash
+mlipx template -o INCAR.mlipx sp   # 然后编辑 MODEL_PATH/TASK/DEVICE
+mlipx run -i INCAR.mlipx
+```
+
+配置优先级:显式 CLI 参数 > INCAR 文件 > `settings.ini` > 内置默认值。
+`mlipx config show` 会打印完整解析后的配置,并标明每个值来自哪里。
+
+## 选择模型
+
+四个 beta 验证过的常用 profile,全部在同一个 OMat24 子集上完成验证:
+
+| 后端 | 验证 profile | 训练域 | Task/head | 精度 | 应力 | 获取方式 |
 |---|---|---|---|---|---|---|
-| UMA | not run | not run | not run | not run | n/a | [uma.json](validation/runtime/v100/uma.json)（本机无离线 wheelhouse） |
-| MACE float64 | passed | passed | passed | passed | n/a | [mace.json](validation/runtime/v100/mace.json) |
-| MACE float32 | passed | passed | passed | passed | n/a | [mace-float32.json](validation/runtime/v100/mace-float32.json) |
-| DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](validation/runtime/v100/dpa.json) |
-| GRACE float32 | passed | passed | passed | passed | passed（ON 与 OFF） | [grace.json](validation/runtime/v100/grace.json)、[grace-nocache.json](validation/runtime/v100/grace-nocache.json) |
+| MACE | `mace-omat-0-medium.model` | OMat24 + MPtrj | bulk | float64(另有 float32) | 有 | meta 下载(CC BY 4.0) |
+| DPA | `DPA-3.1-3M.pt`,分支 `Omat24` | OMat24 + MPtrj | `--head Omat24` | 上游定义 | 有 | DeepModeling 分享 |
+| GRACE | `GRACE-2L-OMAT-medium-base` | OMat24 | - | 上游定义(fp32 构建) | 有 | Intel 开放下载 |
+| UMA | `uma-s-1p2.pt` | OMat 等多任务头 | `--task omat` | 上游定义 | 有 | fairchem,meta 下载 |
 
-NEB smoke 是 4 原子 Cu 晶胞上的短 5-image 固定晶胞运行（`saddle_validation: not_performed`）——含义见 [过渡态搜索（NEB）](#过渡态搜索neb) 一节。
+这些是整个验证套件共用的 profile。领域专用检查点(例如针对特定化学
+体系拟合的 MACE 模型、Omat24 以外的 DPA 分支)可以按同样方式加载,
+但上表并不意味着这些模型获得了同等的 beta 验证覆盖,也不应把它们的
+基准数字与上表 OMat24 系模型的结果直接比较。
 
-### 下载源
+> 不同参考计算训练出的模型,其能量不在同一热力学能量标度上。不要跨
+> 模型、跨 task/head、跨参考能级混用绝对能量。同一模型同一 task 内的
+> 相对能量(以该模型自身的元素参考能计算的生成能、同一模型给出的
+> 势垒)才是可靠的比较对象。
 
-PyPI 包和 PyTorch wheel 分开处理。安装器**不会修改**你的全局
-`~/.config/uv/uv.toml`，而是使用 `UV_NO_CONFIG=1` 和进程级环境变量。
-在真实终端中使用 `--source china` 会显示编号菜单：清华 TUNA、阿里云、
-中科大 USTC、腾讯云或官方源。国内选项的 PyTorch wheel 均使用阿里云镜像；
-直接回车默认选择清华 TUNA。在 CI、管道等非终端环境中不会弹出提示，默认仍为
-清华 TUNA；也可显式加 `--non-interactive`。
-`offline` 模式还要求本机已有 `uv` 可找到的目标 Python；安装器不会为了创建
-环境而偷偷下载解释器。
+## 工作流
 
-| `--source` | PyPI | PyTorch wheel | 适用场景 |
-|---|---|---|---|
-| `auto` → `official` | pypi.org | download.pytorch.org | 默认 |
-| `official` | pypi.org | download.pytorch.org | 显式使用官方源 |
-| `china` | 交互选择；默认清华 TUNA | mirrors.aliyun.com（`--find-links`） | 中国大陆交互安装 |
-| `china-aliyun` | mirrors.aliyun.com | mirrors.aliyun.com | 固定使用阿里云 |
-| `china-ustc` | mirrors.ustc.edu.cn | mirrors.aliyun.com | 固定使用中科大 |
-| `china-tencent` | mirrors.cloud.tencent.com | mirrors.aliyun.com | 固定使用腾讯云 |
-| `offline` | 仅本地缓存 | 仅本地缓存 | 已有目标 Python 的离线机器 |
-| `custom` | 你的环境变量 | 你的环境变量 | 高级用户 |
+### 单点能
 
----
+`mlipx sp` 把一个结构送入计算器,写出能量/力/应力。能量出现 NaN/inf
+时,在任何输出文件写出之前即中止。
 
-## 快速开始
+### 弛豫
 
-### 单点能（UMA）
-
-```bash
-.venv/bin/mlipx sp structure.cif --model uma-s-1.pt --task omat --device cpu
-```
-
-### 几何优化
-
-```bash
-.venv/bin/mlipx opt structure.cif --model uma-s-1.pt --task omat \
-  --cell-opt --fmax 0.02
-```
+`mlipx opt` 在固定晶胞下弛豫离子位置(FIRE、LBFGS 或 BFGS)。当模型
+提供应力且体系为三维周期时,通过 ASE 的 `FrechetCellFilter` 同时弛豫
+晶胞与离子。输出报告最终 fmax 与步数;晶胞弛豫同时打印初始与最终
+体积。
 
 ### 分子动力学
 
-```bash
-.venv/bin/mlipx md structure.cif --model uma-s-1.pt --task omat \
-  --device cuda --steps 10000
-```
+`mlipx md` 支持 NVE(velocity Verlet)与三种恒温器的 NVT:Langevin、
+Bussi 随机速度重标定、Nosé-Hoover 链。轨迹写为 XDATCAR 加 JSON(含
+每帧能量)。积分步长与保存间隔相互独立;分析命令从轨迹元数据读取
+保存间隔——保存间隔过粗会让传输分析退化,而不是悄悄给出错误结果。
 
-### 过渡态搜索（NEB）
+### NEB / CI-NEB
 
-```bash
-.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
-  --model uma-s-1.pt --task omat --device cuda \
-  --output results/hop --images 7 --climb --fmax 0.03
-```
+`mlipx neb` 在固定晶胞下计算最小能量路径:
 
-**注意：**这只是 workflow 语法示例，不是经过验证的默认路径。上文的精确 UMA
-runtime 尚未进入打包的验证 registry（见 runtime 验证表），因此默认的
-fail-closed gate 会拒绝它。要么使用已提升证据的后端运行 NEB——例如 MACE
-（当前 installer 契约）：
+- 端点可以直接使用或预先弛豫(`--endpoint-policy validate|relax`)。
+- 初始路径:带周期映像(winding)处理的线性插值,或 IDPP 预弛豫。
+- 两阶段攀爬图像:标准 NEB 收敛到力阈值后,切换 CI-NEB 收敛到
+  最终判据。
+- 运行中写检查点;重启时从检查点恢复几何,并保证端点身份不变。
+- 势垒:从采样路径带给出正向与反向势垒(JSON 记录中的
+  `barrier_forward` / `barrier_reverse`)。
 
-```bash
-.venv/bin/mlipx neb --initial initial.vasp --final final.vasp \
-  --model mace-mpa-0-medium.model --device cuda \
-  --output results/hop --images 7 --climb --fmax 0.03
-```
+> 收敛的 CI 图像只是鞍点候选。引用过渡态之前,先用鞍点 Hessian 诊断
+> 验证(沿反应坐标应恰有一个虚频)。
 
-要么在该 UMA 命令上显式传入 `--allow-unvalidated-neb` 覆盖。这是实验性覆盖，
-因为该确切的 UMA runtime/模型尚未进入打包的验证 registry。用 `--resume results/hop/checkpoints/latest` 从最新的完整 band
-checkpoint 恢复——模型与全部科学选项都从 checkpoint 恢复（语义见
-[Resume 语义](#resume-语义)）。
+### 分析
 
-### 其他引擎
+`mlipx analyze` 处理 mlipx 轨迹或外部轨迹(外部轨迹需显式给出坐标
+约定 `--positions-convention`)。扩散问题的层级:
 
-```bash
-# MACE
-.venv-mace/bin/mlipx sp bulk.cif --model mace.model \
-  --model-type mace --task bulk --head default --device cuda:0
+1. `msd` — 窗口化、按方向分解的 MSD 诊断。
+2. `transport` — kinisi 定量示踪扩散(后验 D 与可信区间),以及由
+   离子电荷得到的 Nernst-Einstein 电导率;要求固定晶胞(NVT/NVE)。
+3. `electrolyte` — GEMDAT 位点映射、跳跃机理与逾渗,作为传输图像的
+   机理层面交叉验证。
 
-# DPA / DeepMD
-.venv-dpa/bin/mlipx opt bulk.cif --model dpa.pt \
-  --model-type dpa --task bulk --head Domains_SSE_PBE \
-  --device cuda:0 --fmax 0.05
+不确定度语义:kinisi 给出后验均值与 95% 可信区间;Nernst-Einstein
+电导率只在稀疏、无关联跳跃的极限下才严格成立。示踪扩散与集体传输
+之间的 Haven 比不做任何假定。
 
-# GRACE（--model 指向整个 SavedModel 目录）
-.venv-grace/bin/mlipx sp bulk.cif --model grace_model/ \
-  --model-type grace --task bulk --device cuda:0 \
-  --gpu-memory-limit-mb 6144
-```
+## 科学语义
 
-### INCAR 文件（VASP 风格）
+- **能量**:eV,按输入晶胞的总能量。每原子值在输出中标注为 per atom。
+- **力**:eV/Å。
+- **应力**:ASE Voigt 顺序(`xx, yy, zz, yz, xz, xy`);以 eV/Å³ 写出,
+  OUTCAR 中附 GPa 换算行。
+- **task/head 身份**:模型的 task 或 head(如 UMA 的 `omat`、DPA 的
+  `Omat24`)选择模型内部的参考能级。它记录在每一份输出中;打算做
+  能量减法的计算之间不得更改。
+- **力-能量一致性**:力是模型能量的解析导数。beta 套件用有限差分
+  交叉验证;各模型结果见验证报告。
+- **应力-能量一致性**:模型提供应力时,应力是能量的解析应变导数,
+  beta 套件用有限差分交叉验证。
+- **PBC 与 winding**:最小映像约定在 NEB 插值与位移分析中显式处理
+  周期映像;外部轨迹的坐标约定与工件元数据冲突时,分析命令会拒绝
+  处理。
+- **约束**:ASE 约束(FixAtoms、FixSymmetry)在弛豫与 MD 中生效;
+  约束精确性有回归测试(固定原子的自由度保持到机器精度)。
+- **MD 步长**:由你选择。beta 套件对每个体系做步长扫描(Cu 上
+  0.25-2.0 fs),以 NVE 能量漂移斜率作为判据;验证报告中记录了哪些
+  步长稳定。不存在全局"安全"步长。
+- **保存间隔与步长**:分析只作用于保存的帧。要分辨你测量的过程,
+  保存间隔必须足够密。`mlipx analyze validate` 会检查这一点,采样
+  不足时报告问题而不是给出一个数字。
+- **传输分析的固定晶胞要求**:kinisi 传输分析要求 NVT/NVE 轨迹。
+  NPT 未实现,因此也不提供对恒压轨迹的传输分析。
 
-```bash
-.venv/bin/mlipx template sp          # 生成 INCAR.sp
-.venv/bin/mlipx run -i INCAR.sp -s structure.cif
-```
+## 验证
 
-示例 `INCAR.sp`：
+以下数字由 beta 证据记录渲染生成,不是手写。标记之间的生成块由
+`validation/science/scripts/generate_beta_report.py` 从
+`validation/science/reports/beta-summary.json` 产出;仓库测试会把
+README 中的生成块与生成器输出逐字节比对,漂移即失败。
 
-```ini
-CALC_TYPE   = SP
-MODEL_TYPE  = UMA        # 或 MACE / DPA / GRACE
-MODEL_PATH  = uma-s-1.pt
-TASK        = omat       # UMA: omat/omol/...；其他: bulk/molecule
-DEVICE      = cpu
-```
+<!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
+Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mlipx integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
 
-NEB 使用同样机制——`mlipx template neb` 生成 `INCAR.neb`
-（`CALCULATION = NEB`），包含端点、路径、端点策略与收敛关键字：
+| Workflow | MACE | DPA | GRACE | UMA |
+|---|---|---|---|---|
+| Install & doctor (CI software tests) | software_validated* | software_validated* | software_validated* | software_validated* |
+| Single-point inference (4 structures) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) |
+| Energy-forces consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
+| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx8, passx3) | model_characterized (characterizedx4, passx3) |
+| Stress-energy consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
+| Coordinate invariance & cache | model_characterized (characterizedx4, passx20) | model_characterized (characterizedx4, failx18, passx2) | model_characterized (characterizedx8, failx18, passx22) | model_characterized (characterizedx4, failx18, passx2) |
+| Fixed-cell relaxation | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) |
+| Cell relaxation | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) |
+| EOS / bulk modulus | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
+| Elastic constants | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) |
+| Harmonic phonons | software_validated (passx12) | model_characterized (failx1, passx11) | software_validated (passx12) | model_characterized (failx1, passx11) |
+| Harmonic thermodynamics | model_characterized (failx6, passx6) | model_characterized (failx3, passx9) | model_characterized (failx6, passx6) | model_characterized (failx6, passx6) |
+| Vacancy formation energy | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
+| Surface energy | software_validated (passx6) | software_validated (passx6) | software_validated (passx6) | software_validated (passx6) |
+| NEB | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) |
+| Saddle-point Hessian | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) |
+| Short NVE / NVT MD | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) |
+| Transport analysis (demonstration) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) |
+| Mechanism analysis (GEMDAT) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) |
+| Performance (SP/MD scaling) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) |
 
-```ini
-CALCULATION          = NEB
-MODEL_TYPE           = UMA
-MODEL_PATH           = uma-s-1.pt
-NEB_INITIAL          = initial.vasp
-NEB_FINAL            = final.vasp
-NEB_IMAGES           = 7
-NEB_INTERPOLATION    = linear   # 或 idpp
-NEB_CLIMB            = .FALSE.  # .TRUE. 启用 CI-NEB
-FMAX                 = 0.03
-```
+`*` = CI software test only, no model involved. A cell lists the recorded statuses for that workload; per-workload rows reuse the same evidence tiers, so row counts are not additive. Full per-test tables and limitations: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md). Model identities pinned in `validation/science/model_manifest.json`.
+<!-- END GENERATED -->
 
-### 批量计算
+各 tier 含义:t1 四后端推理(公共子集)、t2 不变性与缓存、t2fd 有限
+差分应力、t3 OMat24 标签对比、t4 静态工作流(弛豫、EOS、弹性、声子、
+热力学、缺陷、表面)、t5 NEB、t6 MD、t7 分析、t8 性能。逐测试表格
+(含每一条记录在案的失败)见
+[validation/science/reports/BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md)。
 
-```bash
-.venv/bin/mlipx batch structures/ --model uma-s-1.pt \
-  --model-type uma --task omat --device cuda \
-  --calc-type sp --pattern "*.cif" --output batch_results
-```
+套件记录在案、不作隐藏的已知局限:上游 float32 构建(DPA、UMA、
+关缓存的 GRACE)在坐标不变性检查上呈现 1e-7..1e-6 eV 的算术噪声;
+2x2x2 小超胞声子在小波矢处出现微小的虚声学支;内聚能与生成能记录为
+unsupported,因为公共比较需要公共参考能级之外的元素参考能。
 
-每个输入结构会得到独立的输出子目录；根目录生成 `batch_summary.json`。
 
----
+**安装契约运行时冒烟验证**(单卡 V100-SXM2-16GB,sm_70,驱动
+580.173.02)——在单块 GPU 上用硬超时运行的真实模型短测试,每一条都
+针对安装脚本产出的*确切*运行时。脱敏记录在
+[validation/runtime/v100/](validation/runtime/v100/)(GPU 仅以 UUID 的
+SHA-256 标识);每个状态对应且仅对应一条记录。MACE 记录已在当前
+安装契约(`mace-torch 0.3.16` + `torch 2.8.0+cu126`)上重新验证;更早
+的 torch 2.6.0+cu124 证据保留在 git 历史中。
 
-## 轨迹分析
+| 后端 / 模型 | SP | 短 MD | E–F 梯度 | NEB 冒烟 | GRACE 缓存 | 记录 |
+|---|---|---|---|---|---|---|
+| UMA | not run | not run | not run | not run | n/a | [uma.json](validation/runtime/v100/uma.json)(该机器无离线 wheelhouse) |
+| MACE float64 | passed | passed | passed | passed | n/a | [mace.json](validation/runtime/v100/mace.json) |
+| MACE float32 | passed | passed | passed | passed | n/a | [mace-float32.json](validation/runtime/v100/mace-float32.json) |
+| DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](validation/runtime/v100/dpa.json) |
+| GRACE float32 | passed | passed | passed | passed | passed(ON 与 OFF) | [grace.json](validation/runtime/v100/grace.json)、[grace-nocache.json](validation/runtime/v100/grace-nocache.json) |
 
-`mlipx analyze` 与计算后端无关：可以在 UMA `.venv` 中分析任意引擎产生的轨迹，而无需加载模型后端。
+NEB 冒烟是 4 原子 Cu 晶胞的 5 图像固定晶胞短测试,
+`saddle_validation: not_performed`——含义见 [NEB / CI-NEB](#neb--ci-neb)
+一节。这份安装冒烟证据早于 beta 套件;beta 套件才是[选择模型](#选择模型)
+中各模型配置的负载级证据来源。
 
-```bash
-# 先验证（检查时间轴、PBC、坐标约定、任务资格）
-.venv/bin/mlipx analyze results/LGPS-800K validate
+## DFT 式验证配方
 
-# 热力学
-.venv/bin/mlipx analyze results/LGPS-800K thermo
+验证套件包含 EOS、弹性常数、谐波声子、热力学、缺陷与表面等配方,
+构建在同一批计算器与 ASE 之上。它们是可复现脚本形式的 beta 验证配方
+(`validation/science/scripts/`),不是稳定 CLI 命令;CLI 没有把它们
+暴露为一级子命令。
 
-# RDF / 配位数
-.venv/bin/mlipx analyze results/LGPS-800K rdf \
-  --center Li --neighbor S --rmax 6 --cn-cutoff 3
+## 输出与可复现性
 
-# MSD
-.venv/bin/mlipx analyze results/LGPS-800K msd \
-  --mobile Li --axes x,y,z,xyz --drift-reference nonmobile
-
-# 密度 / VACF / 速度谱 / Arrhenius
-.venv/bin/mlipx analyze results/LGPS-800K density --mobile Li --spacing 0.25
-.venv/bin/mlipx analyze results/LGPS-800K vacf --species Li
-.venv/bin/mlipx analyze results/LGPS-800K spectrum --species Li --taper one-sided-cosine
-
-# 由多个温度下的独立输运结果拟合 Arrhenius
-# （每个值用重复的 flag 分别传入）
-.venv/bin/mlipx analyze RUN arrhenius \
-  --temperature 600 --temperature 700 --temperature 800 \
-  --diffusivity 1e-10 --diffusivity 2e-10 --diffusivity 5e-10 \
-  --diffusivity-std 0.1e-10 --diffusivity-std 0.2e-10 --diffusivity-std 0.5e-10
-```
-
-### 分析层级：MSD、transport 与 electrolyte
-
-三个命令承担不同职责：
-
-- `msd` 是诊断视图：多时间起点 MSD、局部 `alpha` 和 native OLS 拟合窗口；其 OLS 结果明确标记 `publication_grade=false`，不是定量输运权威。
-- `transport` 是定量输运权威。kinisi 给出示踪 `D_tracer`，并按
-  `sigma_NE_tracer=n(z e)^2D_tracer/(k_B T)` 传播后验。启用
-  `--collective-conductivity` 时，MSCD 包含轨迹中表示的离子相关，得到
-  `sigma_collective`，并推导 `D_sigma=sigma_collective k_B T/(n(z e)^2)`。
-  Haven 比明确为 `H_R=D_tracer/D_sigma=sigma_NE_tracer/sigma_collective`，
-  correlation factor 为 `sigma_collective/sigma_NE_tracer`。可选
-  `--jump-diffusion` 的 MSTD/`D_J` 是总/跳跃位移诊断，不是示踪扩散。
-- `electrolyte` 只做 GEMDAT 机制分析：密度、位点、占据、transition、驻留、跳跃、集体事件和渗流路径。GEMDAT 端点/COM 扩散率和 Haven 只放在 `diagnostic_crosscheck`，并标记 `publication_transport_authority=false`。
-
-协方差感知的输运分析使用 [kinisi 2.x](https://joss.theoj.org/papers/10.21105/joss.05984)。必须显式给出拟合起点：
-
-```bash
-.venv/bin/mlipx analyze RUN transport --mobile Li --charge 1 \
-  --drift-reference nonmobile --fit-start-ps 40 \
-  --lag-step-ps 2 --lag-stop-ps 200 --random-seed 0
-
-# LGPS：示踪 + collective Einstein 电导率
-mlipx analyze RUN transport \
-  --mobile Li --charge 1 --drift-reference nonmobile \
-  --fit-start-ps 40 --lag-step-ps 2 --lag-stop-ps 200 \
-  --collective-conductivity --random-seed 0
-```
-
-关键科学规则：
-
-- **绝不猜测。** `--charge` 必须显式给出；温度来自运行目录（外部轨迹用 `--temperature-K`）；`wrapped`/`unwrapped` 必须描述文件真实情况。
-- **仅支持固定晶胞。** 变晶胞输运不受支持。
-- **漂移校正必须显式选择：** `none`、`nonmobile` 或 `indices`。
-- **`--lag-step-ps` / `--lag-stop-ps`** 只稀疏化 kinisi 的 lag 时间网格，不对轨迹帧降采样；两者必须同时使用。
-- **native MSD OLS 诊断** 只有在同时给出 `--fit-start-ps` 和 `--fit-stop-ps` 时才产生；mlipx 不会自动判断 publication 拟合窗口。transport 使用显式 kinisi `--fit-start-ps` 与选定 lag 网格。
-- **Nernst–Einstein 示踪电导率**（`sigma_NE_tracer`）会报告后验均值 / 标准差 / 95% 后验可信区间。它不是总物理不确定性，也不自动等于实验或集体电导率。
-- `sigma_NE_tracer` 忽略 distinct 离子相关；`sigma_collective` 是所分析经典 MD 轨迹与所选电荷模型内的 collective Einstein 离子电导率，不自动等于实验块体/多晶电导率。
-- kinisi CrI 是条件后验区间，不包含模型、有限尺寸或 replica 不确定性；`--collective-system-particles` 是按索引分组的统计参数，不是独立 MD replica。Haven 区间若可给出，会明确标注为独立边际后验近似，因为没有建模示踪/集体协方差。
-- 安全完成 PBC 重构的 0.1 ps 保存间隔可用于长时 Einstein/MSCD 分析；它不能替代短时 VACF 或 Green–Kubo 所需的密集采样。
-
-### 电解质机制分析（可选 GEMDAT）
-
-GEMDAT 是可选的后端，用于位点映射、跳跃和渗流分析：
-
-```bash
-python -m pip install -e './mlipx[analysis,electrolyte]'
-.venv/bin/mlipx analyze RUN electrolyte --mobile Li --sites Li_sites.cif \
-  --jump-dimensions 3 --percolation-axes xyz
-```
-
-位点来源是必须的（`--sites` 或 `--discover-sites-from-density`）。GEMDAT 的扩散系数不会被提升为优于 kinisi 的估计。
-显式 CIF 位点是可复现路径；密度分割是探索性的，并记录 resolution/background/峰数等元数据。GEMDAT 自由能路径 barrier 是有限温度占据推导量，不是 NEB 势能迁移 barrier。
-
-### 输出与复现
-
-每个分析任务写入 `RUN/analysis/TASK/REQUEST_HASH/`：
+一次运行的目录内容:
 
 ```
-request.json
-provenance.json
-results.json
-task-specific CSV/NPZ
-PNG and SVG when applicable
-diagnostics.json when applicable
+results/
+├── OUTCAR        # 能量/力/应力、模型身份、设备、版本
+├── OSZICAR       # 逐步日志(弛豫、MD)
+├── CONTCAR       # 最终结构(弛豫)
+├── XDATCAR       # 轨迹(MD)
+└── *.json        # 机器可读记录,含溯源信息
 ```
 
-Transport 另外生成 `transport_summary.csv`、压缩的 `kinisi_arrays.npz` 和
-`transport_msd`；启用 collective/jump 时分别增加 `transport_mscd` 与
-`transport_mstd`。Electrolyte 生成压缩 `electrolyte_arrays.npz`、汇总/transition/
-jump/percolation CSV、CIF 位点产物以及无 GUI 的密度/自由能/机制图。transport
-与 electrolyte 的 scientific revision 会进入缓存键，语义变化后不会静默复用旧结果。
+每条记录携带:模型路径与 SHA-256、task/head、dtype、设备(请求值与
+实际值、GPU UUID 哈希)、mlipx 与框架版本、git commit 与科学套件
+修订号、结果 schema 版本。NEB 与 MD 写检查点;分析结果按请求哈希
+缓存,相同请求直接命中,请求变化即重算。
 
-请求哈希包含源指纹、选择、范围、坐标轴、漂移定义、科学参数和后端版本。相同请求会被复用，除非使用 `--force`。
+## Python API
 
----
-
-## 接口
-
-| 接口 | 命令 | 适用场景 |
-|---|---|---|
-| CLI | `mlipx sp/opt/md/batch/...` | 脚本、HPC、自动化 |
-| TUI | `mlipx tui` | 交互式探索 |
-| Python API | `from mlipx.api import run_single_point, ...` | 自定义工作流 |
-| INCAR | `mlipx run -i INCAR` | VASP 风格配置 |
-
-### Python API
+公开接口(`mlipx.api`):
 
 ```python
-from mlipx.api import run_single_point, run_md, run_neb, calculate_energy
+from mlipx.api import calculate_energy, run_single_point
 
-result = run_single_point("structure.cif", "uma-s-1.pt", task="omat")
-energy = calculate_energy("structure.cif", "uma-s-1.pt", task="omat")
-
-neb = run_neb(
-    "initial.vasp", "final.vasp", "uma-s-1.pt",
-    task="omat", device="cuda:0", output_dir="results/hop",
-    n_intermediate_images=7, climb=True,
-)
-print(neb["converged"], neb["barrier_forward_sampled_eV"])
+energy = calculate_energy("POSCAR", model_path="mace-omat-0-medium.model",
+                          model_type="MACE", device="cpu")
+results = run_single_point("POSCAR", model_path="mace-omat-0-medium.model",
+                           model_type="MACE", output_dir="./results")
 ```
 
----
+另有 `run_optimization`、`run_md`、`run_neb`。以上代码片段都在仓库
+测试套件中执行;片段与真实签名漂移会让 CI 失败。
 
-## INCAR 配置
+## 配置优先级
 
-| 类别 | 键 | 默认值 |
-|---|---|---|
-| 计算 | `CALC_TYPE` | —（`SP` / `OPT` / `MD`） |
-| 模型 | `MODEL_TYPE` | `UMA` |
-| 模型 | `MODEL_PATH` | — |
-| 模型 | `TASK` | `omat`（UMA）/ `bulk`（其他） |
-| 模型 | `DEVICE` | `cpu` |
-| 模型 | `HEAD` | —（MACE/DPA 多任务） |
-| 模型 | `DTYPE` | `float64`（MACE） |
-| 输出 | `WRITE_OUTCAR` | `.TRUE.` |
-| 输出 | `WRITE_XDATCAR` | `.TRUE.` |
-| 输出 | `WRITE_TRAJECTORY` | `.TRUE.` |
-| 输出 | `WRITE_JSON` | `.TRUE.` |
-| 优化 | `FMAX` | `0.05` |
-| 优化 | `MAX_STEPS` | `500` |
-| 优化 | `OPT_ALGO` | `FIRE` |
-| 优化 | `CELL_OPT` | `.FALSE.` |
-| MD | `MD_ENSEMBLE` | `NVT` |
-| MD | `TEMPERATURE` | `300` |
-| MD | `TIMESTEP` | `1.0` |
-| MD | `STEPS` | `1000` |
-| MD | `THERMOSTAT` | `LANGEVIN` |
-| MD | `SAVE_INTERVAL` | `10` |
-| NEB | `NEB_IMAGES` | `7` |
-| NEB | `NEB_CLIMB` | `.FALSE.` |
-| NEB | `NEB_METHOD` | `improvedtangent` |
-| NEB | `NEB_INTERPOLATION` | `linear` |
-| NEB | `NEB_PATH_CONVENTION` | `mic` |
-| NEB | `NEB_SPRING` | `0.1` |
-| NEB | `FMAX` | `0.03`（NEB 作用域） |
-| NEB | `MAX_STEPS` | `1000`（NEB 作用域） |
-| NEB | `NEB_PRE_FMAX` / `NEB_PRE_MAX_STEPS` | `0.1` / `300` |
-| NEB | `NEB_MAXSTEP` | `0.1` |
-| NEB | `NEB_ENDPOINT_POLICY` | `validate` |
-| NEB | `NEB_ENDPOINT_FMAX` / `NEB_ENDPOINT_STEPS` | `0.02` / `500` |
-| NEB | `NEB_CHECKPOINT_INTERVAL` | `10` |
-| NEB | `NEB_MIN_DISTANCE` | `0.5` |
+CLI 参数 > INCAR 文件 > `settings.ini` > 内置默认值。`mlipx config
+show` 打印每个值的来源路径;`mlipx config schema` 列出全部可识别的
+键。TUI(`mlipx tui`)以交互方式暴露同一配置空间。
 
-完整的带注释关键字列表见 `mlipx template sp/opt/md/neb` 生成的模板。
+## 故障排查
 
----
+以下为实际观察到、可诊断的失败:
 
-## 输出文件
+- **模型下载/鉴权失败**(UMA、MACE 的 meta 检查点):下载需要网络,
+  部分检查点需要先接受许可协议。下载器的错误信息会原样透传。
+- **DPA 分支用错**:DPA-3.1-3M 是多头的。`--head`/TASK 与训练分支
+  不匹配时,结果会静默地来自错误的头。记录中的 `head` 字段显示实际
+  使用的分支;安装 profile 锁定 `Omat24`。
+- **模型不提供应力**:晶胞弛豫、弹性配方等都需要应力。mlipx 以显式
+  报错的方式 fail closed,不会伪造应力。
+- **GPU 架构不匹配**(例如 Volta 卡装了仅含 cu128 内核的 torch
+  构建):`mlipx doctor` 会报告算力版本,安装脚本据此锁定对应构建;
+  忽略此事的手动安装会在第一次内核启动时失败。
+- **GRACE 显存**:四个后端中 GRACE 在大晶胞下最耗显存;批量计算先
+  调低 `--batch-size`,再怀疑是 bug。
+- **能力证据不一致**:README 表格与策划的能力注册表由测试交叉校验;
+  运行时契约变更若未重新验证,CI 会失败,而不是让过时的声明随包
+  发布。
+- **传输采样不足**:轨迹太短或保存间隔太粗时,`mlipx analyze
+  transport` 会报告问题,而不是返回一个数字。
 
-每次计算会生成自包含的输出目录：
+## 局限
 
-```
-OUTPUT/
-├── OUTCAR                 VASP 风格文本输出
-├── CONTCAR                最终结构
-├── XDATCAR                VASP 轨迹（若开启）
-├── mlipx_results.json     机器可读结果
-├── raw/
-│   ├── trajectory.traj    标准 ASE 轨迹
-│   └── md.csv             MD 时间序列（若为 MD）
-└── artifacts.json         provenance / 版本 / 语义
-```
+- 学习型 PES 的质量依赖训练域。表面、缺陷与过渡态对任何模型都可能
+  是分布外数据。beta 套件记录的是固定配方集上各模型的行为,不构成
+  对你的化学体系的认证。
+- 无电子结构(见上表)。
+- 绝对能量不可跨模型、跨 task/head、跨参考能级混用。
+- 物理可信的传输数值需要远长于 beta 演示运行的轨迹;套件将其标注为
+  `demonstration_not_converged`。
+- 无 NPT 系综。
+- 未实现模型预测不确定度。
+- beta 验证覆盖一种 GPU 架构(V100,sm_70)与 CPU。它不证明所有
+  GPU 架构都可用;在你的硬件上,请先运行 `mlipx doctor` 再信任首次
+  计算结果。
 
-高通量场景下可使用 `--no-write-outcar --no-write-xdatcar` 跳过 VASP 互操作文本输出；标准轨迹仍然保留。
+## 致谢
 
-## 过渡态搜索（NEB）
+- [FAIR-Chem / UMA](https://github.com/facebookresearch/fairchem)
+- [MACE](https://github.com/ACEsuit/mace)
+- [DeePMD-kit / DPA](https://github.com/deepmodeling/deepmd-kit)
+- [GRACE](https://github.com/intel/grace)
+- [ASE](https://wiki.fysik.dtu.dk/ase/)
+- [kinisi](https://github.com/bjmorgan/kinisi)
+- [GEMDAT](https://github.com/GEMDAT-repos/GEMDAT)
+- [OMat24 / Meta](https://ai.meta.com/blog/open-source-climate-modeling/)
 
-`mlipx neb` 在两个端点之间运行固定晶胞 NEB/CI-NEB（`improvedtangent` 弹簧
-方法）。端点会先被验证或弛豫（`NEB_ENDPOINT_POLICY`），初始 band 由 linear 或
-IDPP 插值生成，每 `NEB_CHECKPOINT_INTERVAL` 步写入一个完整 band checkpoint，
-支持崩溃后恢复。
-
-### 输出布局
-
-```
-results/hop/
-├── run_context.json     run/attempt ID、模型身份、解析后的选项
-├── artifacts.json       状态与指针（checkpoint、结果、VASP 导出）
-├── checkpoints/
-│   ├── step_000003/     完整 band：band.traj + checkpoint.json
-│   └── latest           指向最新完整 checkpoint 的软链
-├── neb_results.json     mlipx.neb-results/2：converged、采样势垒、
-│                        反应能、最高能量 image、最大 NEB 力
-└── vasp_path/           00/POSCAR ... NN/POSCAR 导出，不含 MLIP 能量
-                         （resume 后为 vasp_path_<attempt>/）
-```
-
-### Resume 语义
-
-```text
-几何恢复 ≠ 严格的 FIRE 优化器状态重启
-```
-
-`--resume results/hop/checkpoints/latest` 从 checkpoint 恢复 band 几何、模型
-身份与全部科学选项，复用原 run ID 与输出目录，并开始新的 attempt。它是
-几何层面的重启——不是逐比特一致的优化器状态重载——结果只取决于恢复的
-几何与选项。resume 时不接受端点、atom map 与 image shifts（checkpoint 的
-原始路径身份是唯一权威）。
-
-### 科学语义
-
-- climbing image 只是**候选**鞍点：`converged: true` 表示满足 NEB 力判据——
-  并不表示已用 Hessian 验证过一阶鞍点（`saddle_validation: not_performed`）。
-- MLIP 势垒是模型势垒，不是 VASP/DFT 势垒；对比时务必同类比较。
-- 不同模型任务、head 或参考能级的绝对能量绝不能混用——包括同一条路径的
-  端点与 image 之间。
-- 没有对应验证记录的引擎默认拒绝 NEB；`--allow-unvalidated-neb` 显式覆盖
-  （其余场景 fail-closed）。
-
----
-
-## 后台任务与队列
-
-后台任务通过队列 JSON 接口提交：
-
-```bash
-# 1. 用 JSON 描述任务
-cat > tasks.json <<'JSON'
-{
-  "max_concurrent": 1,
-  "tasks": [
-    {
-      "name": "opt-uma-1",
-      "calc_type": "opt",
-      "structure": "/path/a.cif",
-      "model": "/path/uma-s-1.pt",
-      "model_type": "uma",
-      "device": "cuda:0",
-      "options": {"fmax": 0.05}
-    }
-  ]
-}
-JSON
-
-# 2. 提交并启动
-.venv/bin/mlipx queue submit tasks.json
-.venv/bin/mlipx queue start            # 后台调度器
-.venv/bin/mlipx queue status
-
-# 3. 管理
-.venv/bin/mlipx jobs                   # 查看运行中/完成/失败任务
-.venv/bin/mlipx kill <job-id>          # 终止运行中任务
-.venv/bin/mlipx clean                  # 清理已完成/失败记录
-```
-
-每个任务可以使用自己的 Python 环境 / 引擎 / 模型。TUI 也内置队列控制。
-
----
-
-## 资源控制
-
-| 选项 | 作用 |
-|---|---|
-| `--cpu-threads N` | CPU 线程数（UMA/MACE/DPA 用 PyTorch；GRACE 用 TF） |
-| `--gpu-memory-growth` | GRACE：按需增长 TF GPU 显存（默认开启） |
-| `--gpu-memory-limit-mb MIB` | GRACE：TF GPU 显存硬上限 |
-| `--inference-mode turbo` | 仅 UMA：快速推理预设 |
-| `--activation-checkpointing` | 仅 UMA：节省显存 |
-| `--dtype float32` | MACE：选择 float32 提速（默认 float64） |
-
----
-
-## 故障排除
-
-### "no kernel image is available for execution on the device"
-
-你的 PyTorch 构建没有对应 GPU 的内核。Maxwell/Pascal/Volta 使用 cu126 Legacy 通道；Turing+ 使用现代通道。运行：
-
-```bash
-.venv/bin/mlipx setup     # 本机报告
-./scripts/install_mlipx.sh --dry-run
-```
-
-### "No edges found in structure"（未找到边）
-
-原子间距离超过截断、晶胞无效或 PBC 设置错误。检查输入结构并使用正确的 `--task`（周期体系 `omat`/`bulk`；分子体系 `omol`/`molecule`）。
-
-### CUDA 显存不足
-
-使用 `--device cpu`、更小的模型，或 UMA `--activation-checkpointing`。GRACE 设置 `--gpu-memory-limit-mb`。
-
-### 安装器报告 `No space left on device`
-
-重试前先检查仓库所在文件系统和 uv 缓存：
-
-```bash
-df -h . "$(uv cache dir)"
-du -sh "$(uv cache dir)" .venv* 2>/dev/null
-uv cache clean
-```
-
-如果中断在 GRACE 安装阶段，应保留已经验证通过的 UMA/MACE/DPA，只重建 GRACE。
-安装期间建议至少留出 10–12 GiB；实际占用会随 wheel 版本和 uv 链接模式变化。
-
-```bash
-./scripts/install_mlipx.sh --source china --engines grace --clean
-```
-
-如果 uv 缓存位于空间较小的根分区，而另一文件系统空间充足，可在重试时设置
-`UV_CACHE_DIR=/larger/path/uv-cache`。仓库所在文件系统仍需容纳最终的
-`.venv-grace` 环境。
-
-### MACE 环境不兼容
-
-MACE 不能与 UMA 共用环境。使用 `.venv-mace/bin/mlipx ...`（安装器会自动创建）。
-
-### MD 原子爆炸
-
-NVT 默认预弛豫（最多 50 步 FIRE）；NVE 默认关闭，需要时手动开启。
-
----
-
-## 开发
-
-使用独立的开发环境，避免与 UMA 运行时 `.venv` 冲突：
-
-```bash
-# 1. 创建开发环境
-uv venv --python 3.12 .venv-dev
-
-# 2. 安装 mlipx（含 dev + analysis extras）
-uv pip install --python .venv-dev/bin/python -e './mlipx[dev,analysis]'
-
-# 3. 运行测试（无需安装重型 ML 后端——backend 测试会 mock/跳过）
-.venv-dev/bin/python -m pytest tests -q
-```
-
-UMA 通过外部 `fairchem-core` 依赖提供。核心代码位于 `mlipx/mlipx/`；
-安装/兼容性逻辑位于 `mlipx/mlipx/install/`。
-
-分析 extras（可选）：`./mlipx[analysis]`（scipy/matplotlib）、
-`./mlipx[transport]`（kinisi）、`./mlipx[electrolyte]`（gemdat），或
-`./mlipx[analysis-all]` 一次性安装三者。
-
-## 版本与 revision 策略
-
-provenance 不应只挂在包版本上。输出、结果与 checkpoint 中记录了四条互相
-独立的 revision 轴：
-
-- 包版本（SemVer，例如 `2.0.0`），记录为 `mlipx_version`。
-- 结果 schema revision（`mlipx.neb-results/2`、`mlipx.runtime-validation/1`、
-  ...）。
-- NEB checkpoint schema revision（`mlipx.neb-checkpoint/1`）。
-- NEB 科学 revision——凡改变路径准备、力或收敛语义的变更都要递增（见
-  `mlipx/mlipx/neb/revisions.py`）。
-
-NEB resume 指纹会把上述全部（加上模型身份与路径身份）绑在一起；任何一轴
-不匹配都会让 resume 直接失败，而不是带着被改变的语义静默续算。
-
----
-
-## 许可证
-
-MIT License。mlipx 基于 [FAIRChem](https://github.com/FAIR-Chem/fairchem)（Copyright © Meta Platforms, Inc. and affiliates），MIT 许可。详见 [`LICENSE.md`](LICENSE.md) 和 [`mlipx/LICENSE`](mlipx/LICENSE)。
+本项目(`hydrogen1222/mlipx`)与 PyPI 上另一个同名 `mlipx` 项目无关。

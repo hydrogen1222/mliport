@@ -19,6 +19,7 @@ committed.
 | `scripts/inference.py` | T1 — first-call/warm-call timings, E/F/stress, VRAM |
 | `scripts/invariance.py` | T2 — repeatability floor, permutation/PBC/translation/rotation invariance, A→B→A cache-state check |
 | `scripts/finite_difference.py` | T2-FD — ASE native FD sweep vs analytical forces/stress |
+| `scripts/omat_eval.py` | T3 — common OMat24 held-out accuracy on the pinned 256-structure validation subset (seed 20260911, 4 strata): energy/atom MAE-RMSE-median-p95, force component MAE/RMSE + cosine statistics + error-vs-magnitude strata, stress parity only if reference labels exist (official val LMDB carries none). Per-structure errors exported to CSV for figures |
 | `scripts/static_suite.py` | T4 — static properties: single points, relaxations, EOS, elastic constants, phonons/thermo, vacancy, surface, energetics |
 | `scripts/neb_suite.py` | T5 — NEB/CI-NEB: endpoint symmetry, path init, warm-up, CI convergence, resume identity, FD-Hessian saddle verdict, Na3PS4 hop |
 | `scripts/md_suite.py` | T6 — MD: NVE timestep drift sweep, NVT Langevin seed reproducibility, Bussi/CSVR + FixAtoms, Nose-Hoover chain with rejection matrix, constraint exactness/DOF, force-safety abort |

@@ -52,6 +52,8 @@ def load_records(results_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
     records: list[dict[str, Any]] = []
     problems: list[str] = []
     for path in sorted(results_dir.rglob("*.json")):
+        if "attic" in path.parts:
+            continue  # archived/superseded records are not live evidence
         try:
             rec = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
