@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from typing import Any
 
 
@@ -85,13 +86,14 @@ def plot_msd(result: dict[str, Any], output_stem: str | Path) -> list[Path]:
         axis.plot(result["lag_time_ps"], values, label=f"MSD {axes}")
     axis.set_xlabel("Lag time (ps)")
     axis.set_ylabel("MSD (A^2)")
-    _apply_msd_fit_window(axis, result)
+    _mark_msd_fit_window(axis, result)
     axis.legend()
     axis.grid(alpha=0.25)
     return _save(fig, output_stem)
 
 
-def _apply_msd_fit_window(axis, result: dict[str, Any]) -> None:
+def _mark_msd_fit_window(axis, result: dict[str, Any]) -> None:
+    """Shade the diagnostic fit window; never crop the data to it."""
     window = result.get("fit_window_ps")
     if window is None:
         return
@@ -99,16 +101,82 @@ def _apply_msd_fit_window(axis, result: dict[str, Any]) -> None:
     stop = float(window["stop"])
     if not np.isfinite([start, stop]).all() or start < 0 or stop <= start:
         raise ValueError("Invalid MSD fit window in plot result")
-    axis.set_xlim(start, stop)
+    axis.axvspan(
+        start,
+        stop,
+        color="tab:orange",
+        alpha=0.10,
+        label="diagnostic fit window",
+    )
 
 
-def plot_msd_alpha(result: dict[str, Any], output_stem: str | Path) -> list[Path]:
-    """Plot the local log-log MSD exponent for each requested direction."""
+def _finite_alpha_bounds(arrays: Iterable[Any]) -> tuple[float, float] | None:
+    values = [
+        np.asarray(array, dtype=float).ravel() for array in arrays if array is not None
+    ]
+    finite = (
+        np.concatenate([value[np.isfinite(value)] for value in values])
+        if values
+        else None
+    )
+    if finite is None or not finite.size:
+        return None
+    low, high = float(np.min(finite)), float(np.max(finite))
+    if high <= low:
+        low, high = low - 0.1, high + 0.1
+    pad = 0.05 * (high - low)
+    return low - pad, high + pad
+
+
+def plot_msd_alpha(
+    result: dict[str, Any],
+    output_stem: str | Path,
+    *,
+    log_x: bool = False,
+    focus_band: tuple[float, float] | None = None,
+) -> list[Path]:
+    """Plot raw + local log-log MSD exponents with explicit support.
+
+    The default view keeps the complete data range; ``focus_band`` (for
+    example ``(0.0, 2.0)``) only clips the *view* and annotates how many
+    points fall outside -- the exported arrays are never cropped (review
+    AL-02).  Window support and time-origin counts are shown in a support
+    panel because neither is an independent-sample count (review AL-04).
+    """
 
     plt = _pyplot()
-    fig, axis = plt.subplots(figsize=(7, 4.5))
-    for axes, values in result["log_log_alpha_by_axes"].items():
-        axis.plot(result["lag_time_ps"], values, label=f"alpha {axes}")
+    lag = np.asarray(result["lag_time_ps"], dtype=float)
+    estimates = result.get("alpha_estimates_by_axes")
+    raw_by_axes = result.get("log_log_alpha_by_axes", {})
+    fig, (axis, support_axis) = plt.subplots(
+        2,
+        1,
+        figsize=(7, 6.0),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.2, 1.0]},
+    )
+
+    # Raw pointwise derivatives stay visible as faint lines: they are the
+    # un-smoothed signal, not the basis of the regime claim.
+    for axes, values in raw_by_axes.items():
+        axis.plot(
+            lag,
+            np.asarray(values, dtype=float),
+            color="tab:gray",
+            alpha=0.30,
+            linewidth=0.8,
+            label=f"raw alpha {axes}",
+        )
+    support_values = []
+    if estimates:
+        for axes, estimate in estimates.items():
+            local = np.asarray(estimate["alpha_local"], dtype=float)
+            axis.plot(lag, local, linewidth=1.6, label=f"alpha {axes}")
+            support_values.append(np.asarray(estimate["window_support_points"], float))
+    else:  # legacy result files: the raw series is the only estimate available
+        for axes, values in raw_by_axes.items():
+            axis.plot(lag, np.asarray(values, float), label=f"alpha {axes}")
+
     axis.axhline(
         1.0,
         color="black",
@@ -117,12 +185,57 @@ def plot_msd_alpha(result: dict[str, Any], output_stem: str | Path) -> list[Path
         alpha=0.6,
         label="normal diffusion (alpha = 1)",
     )
-    axis.set_xlabel("Lag time (ps)")
     axis.set_ylabel("Local exponent alpha = d ln(MSD) / d ln(t)")
-    _apply_msd_fit_window(axis, result)
-    axis.set_ylim(0.0, 2.0)
-    axis.set_yticks(np.arange(0.0, 2.1, 0.5))
-    axis.legend()
+    _mark_msd_fit_window(axis, result)
+
+    if focus_band is not None:
+        low, high = (float(focus_band[0]), float(focus_band[1]))
+        if not (np.isfinite([low, high]).all() and high > low):
+            raise ValueError("focus_band must be a finite increasing pair")
+        arrays = list(raw_by_axes.values())
+        if estimates:
+            arrays.extend(estimate["alpha_local"] for estimate in estimates.values())
+        finite = np.concatenate(
+            [
+                np.asarray(array, float).ravel()[
+                    np.isfinite(np.asarray(array, float).ravel())
+                ]
+                for array in arrays
+            ]
+        )
+        outside = int(np.count_nonzero((finite < low) | (finite > high)))
+        axis.set_ylim(low, high)
+        axis.set_title(
+            f"focused view [{low:g}, {high:g}]: {outside} of {finite.size} finite "
+            "alpha points outside this band (values are not cropped in the data)"
+        )
+    else:
+        bounds = _finite_alpha_bounds(
+            list(raw_by_axes.values())
+            + ([est["alpha_local"] for est in estimates.values()] if estimates else [])
+        )
+        if bounds is not None:
+            axis.set_ylim(*bounds)
+    if log_x:
+        axis.set_xscale("log")
+
+    if result.get("time_origin_counts") is not None:
+        counts = np.asarray(result["time_origin_counts"], dtype=float)
+        support_axis.plot(
+            lag,
+            counts,
+            color="tab:blue",
+            label="time origins (not independent samples)",
+        )
+        support_values.append(counts)
+    for values in support_values:
+        if np.asarray(values).shape == lag.shape:
+            support_axis.plot(lag, values, alpha=0.8)
+    support_axis.set_xlabel("Lag time (ps)")
+    support_axis.set_ylabel("support counts")
+    support_axis.grid(alpha=0.25)
+    support_axis.legend(fontsize="small")
+    axis.legend(fontsize="small")
     axis.grid(alpha=0.25)
     return _save(fig, output_stem)
 

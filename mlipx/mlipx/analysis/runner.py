@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 # Analysis output revisions are part of the request/cache identity. Bump the
 # changed scientific tasks while deliberately leaving the native MSD revision
 # untouched.
-_TASK_OUTPUT_REVISIONS = {"msd": 5, "transport": 4, "electrolyte": 3}
-_TASK_SCIENTIFIC_REVISIONS = {"transport": 4, "electrolyte": 3}
+_TASK_OUTPUT_REVISIONS = {"msd": 6, "transport": 5, "electrolyte": 3}
+_TASK_SCIENTIFIC_REVISIONS = {"transport": 5, "electrolyte": 3}
 
 
 def _canonical_npy_sha256(array: np.ndarray) -> str:
@@ -659,6 +659,10 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
         from mlipx.analysis.msd import calculate_msd
         from mlipx.analysis.plots import plot_msd, plot_msd_alpha
 
+        plot_options = {
+            "log_x": bool(parameters.pop("alpha_log_x", False)),
+            "focus_band": parameters.pop("alpha_focus_band", None) or None,
+        }
         result = calculate_msd(dataset, **parameters)
         columns = {
             "lag_time_ps": result["lag_time_ps"],
@@ -669,7 +673,11 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
         }
         for axes, values in result["msd_by_axes_A2"].items():
             columns[f"msd_{axes}_A2"] = values
+            # historical raw pointwise derivative (compatibility)
             columns[f"alpha_{axes}"] = result["log_log_alpha_by_axes"][axes]
+            estimate = result["alpha_estimates_by_axes"][axes]
+            columns[f"alpha_local_{axes}"] = estimate["alpha_local"]
+            columns[f"alpha_valid_{axes}"] = estimate["alpha_valid"].astype(float)
         _write_columns(output_dir / "msd.csv", columns)
         fits = list(result["diagnostic_linear_diffusion_fits"].values())
         if fits:
@@ -707,6 +715,8 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
             {
                 "unwrap": result["unwrap_diagnostics"],
                 "fits": result["diagnostic_linear_diffusion_fits"],
+                "alpha_estimator_version": result["alpha_estimator_version"],
+                "alpha_diagnostics": result["alpha_diagnostics_by_axes"],
             },
         )
         artifacts.extend(("msd.csv", "diagnostics.json"))
@@ -714,7 +724,8 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
             artifacts.append("diffusion_fits.csv")
         artifacts.extend(path.name for path in plot_msd(result, output_dir / "msd"))
         artifacts.extend(
-            path.name for path in plot_msd_alpha(result, output_dir / "alpha")
+            path.name
+            for path in plot_msd_alpha(result, output_dir / "alpha", **plot_options)
         )
         return result, artifacts
     if task == "density":

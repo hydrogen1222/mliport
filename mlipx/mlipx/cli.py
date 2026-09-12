@@ -1013,6 +1013,65 @@ Examples:
     msd_parser.add_argument("--method", choices=["fft", "direct"], default="fft")
     msd_parser.add_argument("--fit-start-ps", type=float, default=None)
     msd_parser.add_argument("--fit-stop-ps", type=float, default=None)
+    msd_parser.add_argument(
+        "--alpha-window-decades",
+        type=float,
+        default=None,
+        help=(
+            "Full width (base-10 decades) of the local log-log regression "
+            "window for the MSD exponent; default 0.25. Recorded in the result."
+        ),
+    )
+    msd_parser.add_argument(
+        "--alpha-min-points",
+        type=int,
+        default=None,
+        help="Minimum points inside a local alpha window (default 5).",
+    )
+    msd_parser.add_argument(
+        "--alpha-min-origins",
+        type=int,
+        default=None,
+        help=(
+            "Minimum time origins before an alpha point is reported as "
+            "sufficient information (default 8; origins are not independent "
+            "samples)."
+        ),
+    )
+    msd_parser.add_argument(
+        "--alpha-consistency-band",
+        type=float,
+        default=None,
+        help=(
+            "Half-band around alpha=1 accepted as consistent with diffusion "
+            "(default 0.2); outside it the point is not_diffusive."
+        ),
+    )
+    msd_parser.add_argument(
+        "--alpha-max-lag-ps",
+        type=float,
+        default=None,
+        help=(
+            "Ignore lag times above this value for the alpha estimator (and "
+            "record it in the result); raw MSD data are unaffected."
+        ),
+    )
+    msd_parser.add_argument(
+        "--alpha-log-x",
+        action="store_true",
+        help="Plot the alpha figure with a logarithmic lag-time axis.",
+    )
+    msd_parser.add_argument(
+        "--alpha-focus-band",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+        help=(
+            "Focused alpha view (view only): the exported values are never "
+            "cropped and the figure annotates how many points fall outside."
+        ),
+    )
 
     transport_parser = analyze_sub.add_parser(
         "transport", help="kinisi tracer diffusion and NE conductivity"

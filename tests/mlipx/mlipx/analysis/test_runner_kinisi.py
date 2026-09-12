@@ -145,7 +145,7 @@ def test_analysis_runner_msd_defaults_to_production(tmp_path) -> None:
     assert len(outcome["results"]["lag_time_ps"]) == 4
     output = run / "analysis" / "msd" / outcome["analysis_id"]
     request = json.loads((output / "request.json").read_text(encoding="utf-8"))
-    assert request["task_output_revision"] == 5
+    assert request["task_output_revision"] == 6
     assert (output / "msd.csv").is_file()
     assert (output / "msd.png").is_file()
     assert (output / "msd.svg").is_file()
@@ -210,7 +210,7 @@ def test_transport_analysis_id_includes_lag_parameters_and_revision(
     provenance = json.loads(
         (first_output / "provenance.json").read_text(encoding="utf-8")
     )
-    assert request["task_output_revision"] == 4
+    assert request["task_output_revision"] == 5
     assert provenance["parameters"]["lag_step_ps"] == 1.0
     assert provenance["transport"]["lag_grid"]["requested_step_ps"] == 1.0
     reused = run_analysis(
@@ -1520,3 +1520,53 @@ def test_long_msd_analysis_exports_arrays_and_round_trips(tmp_path) -> None:
         array = load_stored_array(reference, output)
         assert array.shape == tuple(reference["shape"])
         assert str(array.dtype) == reference["dtype"]
+
+
+def test_cli_alpha_parameters_enter_request_and_result(tmp_path, capsys) -> None:
+    """CLI and TUI share one implementation: the flags land in the request."""
+    run = tmp_path / "short-run"
+    _write_short_run(run)
+    assert (
+        main(
+            [
+                "analyze",
+                str(run),
+                "msd",
+                "--mobile",
+                "Li",
+                "--alpha-window-decades",
+                "0.3",
+                "--alpha-min-origins",
+                "3",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    requests = list((run / "analysis" / "msd").glob("*/request.json"))
+    assert len(requests) == 1
+    request = json.loads(requests[0].read_text(encoding="utf-8"))
+    assert request["parameters"]["alpha_window_decades"] == pytest.approx(0.3)
+    assert request["parameters"]["alpha_min_origins"] == 3
+    result = json.loads(
+        (requests[0].parent / "results.json").read_text(encoding="utf-8")
+    )
+    estimate = result["results"]["alpha_estimates_by_axes"]["xyz"]
+    assert estimate["log_window_width_decades"] == pytest.approx(0.3)
+    assert estimate["parameters"]["min_origins"] == 3
+    # a different alpha window is a different request/cache identity
+    assert (
+        main(
+            [
+                "analyze",
+                str(run),
+                "msd",
+                "--mobile",
+                "Li",
+                "--alpha-window-decades",
+                "0.4",
+            ]
+        )
+        == 0
+    )
+    assert len(list((run / "analysis" / "msd").glob("*/request.json"))) == 2

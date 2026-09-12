@@ -15,20 +15,28 @@ class _NamedTable:
         return self._columns[key]
 
 
-def test_plot_msd_alpha_has_all_axes_and_normal_diffusion_reference(
+def test_plot_msd_alpha_shows_full_range_raw_local_and_support(
     tmp_path, monkeypatch
 ) -> None:
     pytest.importorskip("matplotlib")
     lag_time_ps = np.asarray([0.0, 20.0, 100.0, 180.0, 200.0])
     requested_axes = ("x", "y", "z", "xy", "xyz")
+    raw = np.asarray([np.nan, 0.8, 1.0, 2.4, 1.1])
+    local = np.asarray([np.nan, np.nan, 1.0, 2.4, -0.3])
     result = {
         "lag_time_ps": lag_time_ps,
         "fit_window_ps": {"start": 20.0, "stop": 180.0},
+        "time_origin_counts": np.asarray([5.0, 4.0, 3.0, 2.0, 1.0]),
         "msd_by_axes_A2": {
             axes: np.asarray([0.0, 1.0, 4.0, 7.0, 8.0]) for axes in requested_axes
         },
-        "log_log_alpha_by_axes": {
-            axes: np.asarray([np.nan, 0.8, 1.0, 1.2, 1.1]) for axes in requested_axes
+        "log_log_alpha_by_axes": {axes: raw.copy() for axes in requested_axes},
+        "alpha_estimates_by_axes": {
+            axes: {
+                "alpha_local": local.copy(),
+                "window_support_points": np.asarray([0, 0, 4, 4, 3]),
+            }
+            for axes in requested_axes
         },
     }
     saved = {}
@@ -41,22 +49,69 @@ def test_plot_msd_alpha_has_all_axes_and_normal_diffusion_reference(
     monkeypatch.setattr(plots, "_save", capture_figure)
     assert plots.plot_msd_alpha(result, tmp_path / "alpha") == []
 
-    alpha_axis = saved["figure"].axes[0]
-    lines = alpha_axis.lines
-    assert [line.get_label() for line in lines[:-1]] == [
-        f"alpha {axes}" for axes in requested_axes
-    ]
-    assert lines[-1].get_label() == "normal diffusion (alpha = 1)"
-    np.testing.assert_allclose(lines[-1].get_ydata(), [1.0, 1.0])
-    np.testing.assert_allclose(alpha_axis.get_xlim(), [20.0, 180.0])
-    np.testing.assert_allclose(alpha_axis.get_ylim(), [0.0, 2.0])
-    np.testing.assert_allclose(alpha_axis.get_yticks(), [0.0, 0.5, 1.0, 1.5, 2.0])
-    assert saved["output_stem"] == tmp_path / "alpha"
+    figure = saved["figure"]
+    alpha_axis = figure.axes[0]
+    labels = [line.get_label() for line in alpha_axis.lines]
+    assert all(f"raw alpha {axes}" in labels for axes in requested_axes)
+    assert all(f"alpha {axes}" in labels for axes in requested_axes)
+    assert labels[-1] == "normal diffusion (alpha = 1)"
+
+    # the default view keeps the complete data range (AL-02): 2.4 and -0.3
+    # must be visible instead of being clipped to 0-2
+    y_low, y_high = alpha_axis.get_ylim()
+    assert y_low < -0.3 and y_high > 2.4
+    # the fit window is shaded, not used to crop the axis
+    x_low, x_high = alpha_axis.get_xlim()
+    assert x_low <= 0.0 and x_high >= 200.0
+    spans = [patch for patch in alpha_axis.patches if patch.get_width() > 0]
+    assert spans, "the diagnostic fit window must be shaded"
+
+    # support panel: time origins and window support counts
+    support_axis = figure.axes[1]
+    support_labels = [line.get_label() for line in support_axis.lines]
+    assert any("not independent samples" in label for label in support_labels)
+    assert len(support_axis.lines) >= 2
+    plots._pyplot().close(figure)
+
+    # explicit focus band clips only the VIEW and annotates the count
+    assert (
+        plots.plot_msd_alpha(result, tmp_path / "alpha_focus", focus_band=(0.0, 2.0))
+        == []
+    )
+    focused = saved["figure"].axes[0]
+    assert focused.get_ylim() == (0.0, 2.0)
+    assert "outside this band" in focused.get_title()
+    # the data arrays are untouched by the focused view
+    np.testing.assert_array_equal(
+        result["alpha_estimates_by_axes"]["x"]["alpha_local"], local
+    )
     plots._pyplot().close(saved["figure"])
 
-    assert plots.plot_msd(result, tmp_path / "msd") == []
-    np.testing.assert_allclose(saved["figure"].axes[0].get_xlim(), [20.0, 180.0])
-    assert saved["output_stem"] == tmp_path / "msd"
+    # log-x toggle only changes display
+    assert plots.plot_msd_alpha(result, tmp_path / "alpha_log", log_x=True) == []
+    assert saved["figure"].axes[0].get_xscale() == "log"
+    plots._pyplot().close(saved["figure"])
+
+
+def test_plot_msd_alpha_accepts_legacy_result_without_estimates(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("matplotlib")
+    result = {
+        "lag_time_ps": np.asarray([0.0, 1.0, 2.0]),
+        "fit_window_ps": None,
+        "msd_by_axes_A2": {"xyz": np.asarray([0.0, 1.0, 2.0])},
+        "log_log_alpha_by_axes": {"xyz": np.asarray([np.nan, 1.0, 1.0])},
+    }
+    saved = {}
+
+    def capture_figure(fig, output_stem):
+        saved["figure"] = fig
+        return []
+
+    monkeypatch.setattr(plots, "_save", capture_figure)
+    assert plots.plot_msd_alpha(result, tmp_path / "legacy") == []
+    assert saved["figure"].axes[0].lines
     plots._pyplot().close(saved["figure"])
 
 
