@@ -11,9 +11,12 @@ Forces: central energy differences via
 species, force magnitude and Cartesian direction (deterministic selection).
 Stress: ``ase.calculators.fd.calculate_numerical_stress`` (ASE Voigt order
 xx,yy,zz,yz,xz,xy), normal and shear components reported separately.  The
-acceptance question is whether a stable convergence region exists -- error
-falling to the measured floor for at least one displacement/strain value and
-staying bounded for neighbours -- not the best isolated delta.
+acceptance question is whether a *stable convergence region* exists: at
+least two ADJACENT displacement/strain values whose per-component error
+stays within the bound implied by the total-energy noise over that scale
+(``max(1e-3, 10 * eps_dtype*|E|/(2h))`` for forces, the analogous
+``noise/(V*eps)`` for stress).  A single lucky point is never a region, and
+no single best scale is selected (review R11).
 """
 
 from __future__ import annotations
@@ -42,6 +45,354 @@ STRAINS = (1e-4, 3e-4, 1e-3, 2e-3)
 MAX_FORCE_DOFS = 8
 VOIGT_NORMAL = (0, 1, 2)
 VOIGT_SHEAR = (3, 4, 5)
+
+#: Absolute acceptance bound for the per-component FD error relative to the
+#: analytic derivative (eV/A for forces, eV/A^3 for stress).  A NEB/phonon
+#: consumer needs the analytic first derivative to about this accuracy.
+ABSOLUTE_FD_FORCE_BOUND_EV_A = 1e-3
+ABSOLUTE_FD_STRESS_BOUND_EV_A3 = 1e-3
+#: How far above the energy-noise-implied error scale a scale may sit before
+#: it stops being explainable by total-energy resolution.
+NOISE_SCALE_MULTIPLIER = 10.0
+#: A stable region requires at least this many ADJACENT scales to qualify;
+#: a single lucky point is never a region (review R11).
+MIN_ADJACENT_SCALES = 2
+#: Two adjacent noise-explained scales count as a noise-limited plateau only
+#: when their errors agree within this factor (guards against a lucky point
+#: next to a wildly different neighbour).
+NOISE_PLATEAU_FACTOR = 10.0
+FLOAT32_EPS = float(np.finfo(np.float32).eps)
+FLOAT64_EPS = float(np.finfo(np.float64).eps)
+
+
+def energy_cancellation_floor_eV(
+    total_energy_eV: float,
+    dtype: str | None,
+    measured_floor_eV: float | None = None,
+) -> float:
+    """Total-energy resolution floor in eV (documented units and basis).
+
+    A total energy stored in float32 with magnitude |E| is resolved only to
+    ``eps32 * |E|`` (~1e-4 eV for a 1 keV cell), and a central difference
+    over displacement h turns that into a force error of roughly
+    ``eps32 * |E| / (2h)``.  A measured repeatability floor, when available,
+    is combined conservatively (larger wins); unknown precision contributes
+    nothing beyond the measured floor.
+    """
+    kind = str(dtype or "")
+    if "float32" in kind:
+        machine = FLOAT32_EPS
+    elif "float64" in kind:
+        machine = FLOAT64_EPS
+    else:
+        machine = 0.0
+    cancellation = machine * abs(float(total_energy_eV))
+    if measured_floor_eV is not None and np.isfinite(measured_floor_eV):
+        return max(cancellation, max(0.0, float(measured_floor_eV)))
+    return cancellation
+
+
+def _adjacent_pairs(indices: list[int]) -> list[list[int]]:
+    """Consecutive index pairs from a sorted list."""
+    return [[a, b] for a, b in zip(indices, indices[1:], strict=False) if b == a + 1]
+
+
+def _region_report(
+    entries: list[dict[str, Any]],
+    strict_bound: float,
+    *,
+    noise_scale_key: str,
+) -> dict[str, Any]:
+    """Whole-sweep region verdict: never a single minimum (review R11).
+
+    Two admissible region kinds:
+
+    * *measured* -- at least two ADJACENT scales whose max component error
+      is within the absolute accuracy bound the consumer needs;
+    * *noise-limited* -- no measured region exists, but at least two ADJACENT
+      scales stay within the total-energy-noise-implied error scale and are
+      mutually consistent (a plateau within ``NOISE_PLATEAU_FACTOR``).  That
+      is an unresolved measurement, reported as ``insufficient_sampling``,
+      never as a pass and never as a backend failure.
+
+    Anything else fails.  A lone lucky point can satisfy neither definition
+    because both require an adjacent partner with comparable quality.
+    """
+    measured_idx = [
+        i for i, m in enumerate(entries) if m["max_abs_error"] <= strict_bound
+    ]
+    noise_idx = [
+        i
+        for i, m in enumerate(entries)
+        if m["noise_limited"] and m["noise_explained"]
+    ]
+    adjacent_measured = _adjacent_pairs(measured_idx)
+    adjacent_noise = []
+    for a, b in _adjacent_pairs(noise_idx):
+        ea, eb = entries[a]["max_abs_error"], entries[b]["max_abs_error"]
+        hi, lo = max(ea, eb), max(min(ea, eb), 1e-30)
+        if hi <= NOISE_PLATEAU_FACTOR * lo:
+            adjacent_noise.append([a, b])
+
+    errors = [m["max_abs_error"] for m in entries]
+    status = "fail"
+    kind = None
+    if adjacent_measured:
+        status = "characterized"
+        a, b = adjacent_measured[0]
+        kind = "plateau" if errors[b] >= 0.5 * errors[a] else "convergence"
+    elif adjacent_noise:
+        status = "insufficient_sampling"
+        kind = "noise_limited_plateau"
+    return {
+        "status": status,
+        "min_adjacent_scales": MIN_ADJACENT_SCALES,
+        "bound": strict_bound,
+        "noise_plateau_factor": NOISE_PLATEAU_FACTOR,
+        "noise_scale_key": noise_scale_key,
+        "n_qualifying_scales": len(measured_idx),
+        "qualifying_scales": [entries[i]["scale"] for i in measured_idx],
+        "adjacent_qualifying_pairs": [
+            [entries[a]["scale"], entries[b]["scale"]] for a, b in adjacent_measured
+        ],
+        "adjacent_noise_limited_pairs": [
+            [entries[a]["scale"], entries[b]["scale"]] for a, b in adjacent_noise
+        ],
+        "stable_region_found": status != "fail",
+        "stable_region_kind": kind,
+        "per_scale_qualified": [
+            {
+                "scale": m["scale"],
+                "qualifies": m["qualifies"],
+                "noise_limited": m["noise_limited"],
+                "noise_explained": m["noise_explained"],
+                "bound": strict_bound,
+                "noise_scale": m[noise_scale_key],
+            }
+            for m in entries
+        ],
+        "max_abs_error_by_scale": errors,
+        "biased_scales": [
+            m["scale"] for m in entries if not m["noise_explained"] and not m["qualifies"]
+        ],
+    }
+
+
+def _stress_is_unsupported(exc: Exception) -> bool:
+    """Only a genuine 'property not available' is 'unsupported' (R11).
+
+    A backend execution failure (CUDA error, OOM, shape mismatch, ...) must
+    never be relabelled as an unsupported property.
+    """
+    from ase.calculators.calculator import PropertyNotImplementedError
+
+    if isinstance(exc, (PropertyNotImplementedError, NotImplementedError)):
+        return True
+    text = str(exc).lower()
+    return "not implemented" in text or "not supported" in text
+
+
+def force_fd_case(
+    ctx: engines.EngineContext,
+    system: str,
+    atoms,
+    displacements: tuple[float, ...],
+    device: str,
+    measured_energy_floor_eV: float | None = None,
+) -> dict[str, Any]:
+    atoms.calc = ctx.calculator
+    energy = float(atoms.get_potential_energy())
+    forces = np.asarray(atoms.get_forces(), dtype=float)
+    dofs = select_force_dofs(atoms, forces, MAX_FORCE_DOFS)
+    atoms_positions0 = atoms.positions.copy()
+
+    noise_floor = energy_cancellation_floor_eV(
+        energy, ctx.dtype, measured_energy_floor_eV
+    )
+
+    per_disp: list[dict[str, Any]] = []
+    for h in displacements:
+        errors: list[float] = []
+        rel_errors: list[float] = []
+        for iatom, icart in dofs:
+            f_num = calculate_numerical_forces(
+                atoms, eps=h, iatoms=[iatom], icarts=[icart]
+            )
+            analytic = forces[iatom, icart]
+            # ASE 3.29 returns the selected (iatoms, icarts) sub-block only
+            err = float(f_num[0, 0] - analytic)
+            errors.append(err)
+            denom = abs(analytic)
+            if denom > 1e-6:  # relative error only where denominator meaningful
+                rel_errors.append(abs(err) / denom)
+            atoms.positions[:] = atoms_positions0
+        max_abs = float(np.max(np.abs(errors)))
+        noise_scale = noise_floor / (2.0 * h) if h > 0 else float("inf")
+        per_disp.append(
+            {
+                "displacement_A": h,
+                "scale": h,
+                "max_abs_error_eV_A": max_abs,
+                "max_abs_error": max_abs,
+                "rms_error_eV_A": float(np.sqrt(np.mean(np.square(errors)))),
+                "max_rel_error": (float(np.max(rel_errors)) if rel_errors else None),
+                "mean_abs_error_eV_A": float(np.mean(np.abs(errors))),
+                "noise_force_scale_eV_A": noise_scale,
+                "noise_limited": bool(noise_scale > ABSOLUTE_FD_FORCE_BOUND_EV_A),
+                "noise_explained": bool(max_abs <= NOISE_SCALE_MULTIPLIER * noise_scale),
+                "bound": ABSOLUTE_FD_FORCE_BOUND_EV_A,
+                "qualifies": bool(max_abs <= ABSOLUTE_FD_FORCE_BOUND_EV_A),
+            }
+        )
+        atoms.positions[:] = atoms_positions0
+
+    region = _region_report(
+        per_disp,
+        ABSOLUTE_FD_FORCE_BOUND_EV_A,
+        noise_scale_key="noise_force_scale_eV_A",
+    )
+    acceptance = {
+        "stable_region_bound_eV_A": ABSOLUTE_FD_FORCE_BOUND_EV_A,
+        "noise_scale_multiplier": NOISE_SCALE_MULTIPLIER,
+        "noise_plateau_factor": NOISE_PLATEAU_FACTOR,
+        "energy_noise_floor_eV": noise_floor,
+        "rule": (
+            "measured region: >= 2 ADJACENT displacements with max |FD - "
+            "analytic| <= 1e-3 eV/A. If none exists, >= 2 adjacent "
+            "displacements may still be a noise-limited plateau when "
+            "error <= 10 * noise_floor/(2h) at both and the two errors agree "
+            "within 10x -- reported as insufficient_sampling, not a pass. "
+            "An isolated qualifying point is never a region and no single "
+            "best displacement is selected."
+        ),
+    }
+    return {
+        "acceptance": acceptance,
+        "case_id": f"t2fd_{system}",
+        "test_id": "t2_force_fd",
+        "status": region["status"],
+        "energy_eV": energy,
+        "dofs": [
+            {
+                "atom": int(i),
+                "component": int(c),
+                "analytic_force_eV_A": float(forces[i, c]),
+            }
+            for i, c in dofs
+        ],
+        "per_displacement": per_disp,
+        "region": region,
+    }
+
+
+def stress_fd_case(
+    ctx: engines.EngineContext,
+    system: str,
+    atoms,
+    strains: tuple[float, ...],
+    device: str,
+    measured_energy_floor_eV: float | None = None,
+) -> dict[str, Any]:
+    atoms.calc = ctx.calculator
+    try:
+        stress = np.asarray(atoms.get_stress(), dtype=float)
+    except Exception as exc:  # noqa: BLE001 - classified below
+        if _stress_is_unsupported(exc):
+            return {
+                "case_id": f"t2fd_{system}",
+                "test_id": "t2_stress_fd",
+                "status": "unsupported",
+                "reason": f"model profile does not provide stress: {exc}",
+            }
+        # A real backend failure must surface as an execution failure, not
+        # as an unsupported property (review R11).
+        msg = f"stress evaluation failed: {type(exc).__name__}: {exc}"
+        raise RuntimeError(msg) from exc
+    if not np.all(np.isfinite(stress)):
+        raise ValueError("analytic stress contains NaN or Inf")
+    energy = float(atoms.get_potential_energy())
+    cell0 = atoms.cell.array.copy()
+    positions0 = atoms.positions.copy()
+    volume = atoms.get_volume()
+    noise_floor = energy_cancellation_floor_eV(
+        energy, ctx.dtype, measured_energy_floor_eV
+    )
+
+    per_strain: list[dict[str, Any]] = []
+    for eps in strains:
+        num = calculate_numerical_stress(atoms, eps=eps, voigt=True)
+        errors = num - stress
+        atoms.set_cell(cell0, scale_atoms=False)
+        atoms.positions[:] = positions0
+        normal_max = float(np.max(np.abs(errors[list(VOIGT_NORMAL)])))
+        shear_max = float(np.max(np.abs(errors[list(VOIGT_SHEAR)])))
+        noise_scale = noise_floor / (volume * eps) if eps > 0 else float("inf")
+        entry = {
+            "strain_eps": eps,
+            "scale": eps,
+            "normal": {
+                "max_abs_error_eV_A3": normal_max,
+                "mae_eV_A3": float(np.mean(np.abs(errors[list(VOIGT_NORMAL)]))),
+                "mae_GPa": float(
+                    np.mean(np.abs(errors[list(VOIGT_NORMAL)])) * common.EV_A3_TO_GPA
+                ),
+            },
+            "shear": {
+                "max_abs_error_eV_A3": shear_max,
+                "mae_eV_A3": float(np.mean(np.abs(errors[list(VOIGT_SHEAR)]))),
+                "mae_GPa": float(
+                    np.mean(np.abs(errors[list(VOIGT_SHEAR)])) * common.EV_A3_TO_GPA
+                ),
+            },
+            "noise_stress_scale_eV_A3": noise_scale,
+            "noise_limited": bool(noise_scale > ABSOLUTE_FD_STRESS_BOUND_EV_A3),
+            "noise_explained": bool(
+                max(normal_max, shear_max) <= NOISE_SCALE_MULTIPLIER * noise_scale
+            ),
+            "bound": ABSOLUTE_FD_STRESS_BOUND_EV_A3,
+            "max_abs_error": max(normal_max, shear_max),
+            "qualifies": bool(
+                normal_max <= ABSOLUTE_FD_STRESS_BOUND_EV_A3
+                and shear_max <= ABSOLUTE_FD_STRESS_BOUND_EV_A3
+            ),
+            "analytic_stress_voigt_eV_A3": stress.tolist(),
+            "numerical_stress_voigt_eV_A3": num.tolist(),
+            "volume_A3": volume,
+        }
+        per_strain.append(entry)
+        atoms.set_cell(cell0, scale_atoms=False)
+        atoms.positions[:] = positions0
+
+    region = _region_report(
+        per_strain,
+        ABSOLUTE_FD_STRESS_BOUND_EV_A3,
+        noise_scale_key="noise_stress_scale_eV_A3",
+    )
+    acceptance = {
+        "stable_region_bound_eV_A3": ABSOLUTE_FD_STRESS_BOUND_EV_A3,
+        "noise_scale_multiplier": NOISE_SCALE_MULTIPLIER,
+        "noise_plateau_factor": NOISE_PLATEAU_FACTOR,
+        "energy_noise_floor_eV": noise_floor,
+        "note": (
+            "normal and shear components are judged separately; ASE Voigt order"
+            " xx,yy,zz,yz,xz,xy; no manual pressure sign flip applied. A strain"
+            " qualifies when both components satisfy max |FD - analytic| <="
+            " 1e-3 eV/A^3 and at least two ADJACENT qualifying strains are"
+            " required. A noise-limited plateau (error <= 10 * noise_floor/"
+            "(V*eps) at two adjacent strains, agreeing within 10x) is reported"
+            " as insufficient_sampling, never as a pass."
+        ),
+    }
+    return {
+        "acceptance": acceptance,
+        "case_id": f"t2fd_{system}",
+        "test_id": "t2_stress_fd",
+        "status": region["status"],
+        "analytic_stress_voigt_eV_A3": stress.tolist(),
+        "analytic_stress_voigt_GPa": (stress * common.EV_A3_TO_GPA).tolist(),
+        "per_strain": per_strain,
+        "region": region,
+    }
 
 
 def select_force_dofs(
@@ -90,159 +441,6 @@ def select_force_dofs(
     return chosen[:max_dofs]
 
 
-def force_fd_case(
-    ctx: engines.EngineContext,
-    system: str,
-    atoms,
-    displacements: tuple[float, ...],
-    device: str,
-) -> dict[str, Any]:
-    atoms.calc = ctx.calculator
-    energy = float(atoms.get_potential_energy())
-    forces = np.asarray(atoms.get_forces(), dtype=float)
-    dofs = select_force_dofs(atoms, forces, MAX_FORCE_DOFS)
-    atoms_positions0 = atoms.positions.copy()
-
-    per_disp: list[dict[str, Any]] = []
-    for h in displacements:
-        errors: list[float] = []
-        rel_errors: list[float] = []
-        for iatom, icart in dofs:
-            f_num = calculate_numerical_forces(
-                atoms, eps=h, iatoms=[iatom], icarts=[icart]
-            )
-            analytic = forces[iatom, icart]
-            # ASE 3.29 returns the selected (iatoms, icarts) sub-block only
-            err = float(f_num[0, 0] - analytic)
-            errors.append(err)
-            denom = abs(analytic)
-            if denom > 1e-6:  # relative error only where denominator meaningful
-                rel_errors.append(abs(err) / denom)
-            atoms.positions[:] = atoms_positions0
-        per_disp.append(
-            {
-                "displacement_A": h,
-                "max_abs_error_eV_A": float(np.max(np.abs(errors))),
-                "rms_error_eV_A": float(np.sqrt(np.mean(np.square(errors)))),
-                "max_rel_error": (
-                    float(np.max(rel_errors)) if rel_errors else None
-                ),
-                "mean_abs_error_eV_A": float(np.mean(np.abs(errors))),
-            }
-        )
-        atoms.positions[:] = atoms_positions0
-
-    acceptance = {
-        "stable_region_bound_eV_A": 1e-3,
-        "rule": (
-            "a displacement regime counts as converged when the max absolute"
-            " component error falls under the documented bound; absence of any"
-            " such regime is a fail for conservative NEB/phonon use"
-        ),
-    }
-    has_region = any(
-        m["max_abs_error_eV_A"] <= 10.0 * max(m["rms_error_eV_A"], 1e-12)
-        and m["max_abs_error_eV_A"] < 1e-3
-        for m in per_disp
-    )
-    return {
-        "acceptance": acceptance,
-        "case_id": f"t2fd_{system}",
-        "test_id": "t2_force_fd",
-        "status": "characterized" if has_region else "fail",
-        "energy_eV": energy,
-        "dofs": [
-            {"atom": int(i), "component": int(c), "analytic_force_eV_A": float(forces[i, c])}
-            for i, c in dofs
-        ],
-        "per_displacement": per_disp,
-    }
-
-
-def stress_fd_case(
-    ctx: engines.EngineContext,
-    system: str,
-    atoms,
-    strains: tuple[float, ...],
-    device: str,
-) -> dict[str, Any]:
-    atoms.calc = ctx.calculator
-    try:
-        stress = np.asarray(atoms.get_stress(), dtype=float)
-    except Exception as exc:  # noqa: BLE001
-        return {
-            "case_id": f"t2fd_{system}",
-            "test_id": "t2_stress_fd",
-            "status": "unsupported",
-            "reason": f"model profile does not provide stress: {exc}",
-        }
-    cell0 = atoms.cell.array.copy()
-    positions0 = atoms.positions.copy()
-    volume = atoms.get_volume()
-
-    per_strain: list[dict[str, Any]] = []
-    for eps in strains:
-        num = calculate_numerical_stress(atoms, eps=eps, voigt=True)
-        errors = num - stress
-        atoms.set_cell(cell0, scale_atoms=False)
-        atoms.positions[:] = positions0
-        entry = {
-            "strain_eps": eps,
-            "normal": {
-                "max_abs_error_eV_A3": float(
-                    np.max(np.abs(errors[list(VOIGT_NORMAL)]))
-                ),
-                "mae_eV_A3": float(
-                    np.mean(np.abs(errors[list(VOIGT_NORMAL)]))
-                ),
-                "mae_GPa": float(
-                    np.mean(np.abs(errors[list(VOIGT_NORMAL)]))
-                    * common.EV_A3_TO_GPA
-                ),
-            },
-            "shear": {
-                "max_abs_error_eV_A3": float(
-                    np.max(np.abs(errors[list(VOIGT_SHEAR)]))
-                ),
-                "mae_eV_A3": float(
-                    np.mean(np.abs(errors[list(VOIGT_SHEAR)]))
-                ),
-                "mae_GPa": float(
-                    np.mean(np.abs(errors[list(VOIGT_SHEAR)]))
-                    * common.EV_A3_TO_GPA
-                ),
-            },
-            "analytic_stress_voigt_eV_A3": stress.tolist(),
-            "numerical_stress_voigt_eV_A3": num.tolist(),
-            "volume_A3": volume,
-        }
-        per_strain.append(entry)
-        atoms.set_cell(cell0, scale_atoms=False)
-        atoms.positions[:] = positions0
-
-    acceptance = {
-        "stable_region_bound_eV_A3": 1e-3,
-        "note": (
-            "normal and shear components are judged separately; ASE Voigt order"
-            " xx,yy,zz,yz,xz,xy; no manual pressure sign flip applied"
-        ),
-    }
-    has_region = any(
-        m["normal"]["max_abs_error_eV_A3"] < 1e-3
-        and m["shear"]["max_abs_error_eV_A3"] < 1e-3
-        for m in per_strain
-    )
-    return {
-        "acceptance": acceptance,
-        "case_id": f"t2fd_{system}",
-        "test_id": "t2_stress_fd",
-        "status": "characterized" if has_region else "fail",
-        "analytic_stress_voigt_eV_A3": stress.tolist(),
-        "analytic_stress_voigt_GPa": (stress * common.EV_A3_TO_GPA).tolist(),
-        "per_strain": per_strain,
-    }
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", required=True, choices=engines._ENGINES)
@@ -263,6 +461,16 @@ def main() -> int:
     parser.add_argument("--systems", default=",".join(fixtures.INVARIANCE_SYSTEMS))
     parser.add_argument("--displacements", default=",".join(map(str, DISPLACEMENTS_A)))
     parser.add_argument("--strains", default=",".join(map(str, STRAINS)))
+    parser.add_argument(
+        "--energy-noise-floor-eV",
+        type=float,
+        default=None,
+        help=(
+            "measured total-energy repeatability floor (eV); combined with "
+            "the dtype cancellation scale eps*|E| to derive the noise-implied "
+            "FD error bound per scale"
+        ),
+    )
     args = parser.parse_args()
 
     manifest = common.load_model_manifest(args.manifest)
@@ -312,10 +520,22 @@ def main() -> int:
         )
         try:
             payload = {
-                "force": force_fd_case(ctx, system, atoms, disps, args.device),
+                "force": force_fd_case(
+                    ctx,
+                    system,
+                    atoms,
+                    disps,
+                    args.device,
+                    measured_energy_floor_eV=args.energy_noise_floor_eV,
+                ),
             }
             payload["stress"] = stress_fd_case(
-                ctx, system, atoms, strains, args.device
+                ctx,
+                system,
+                atoms,
+                strains,
+                args.device,
+                measured_energy_floor_eV=args.energy_noise_floor_eV,
             )
             for key, case in payload.items():
                 device = common.device_record(args.device)
@@ -335,6 +555,8 @@ def main() -> int:
                         "displacements_A": disps,
                         "strains": strains,
                         "method": "ase.calculators.fd central differences",
+                        "energy_noise_floor_eV": args.energy_noise_floor_eV,
+                        "noise_scale_multiplier": NOISE_SCALE_MULTIPLIER,
                     },
                     metrics=case,
                     diagnostics={

@@ -17,6 +17,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from ase import Atoms
+from ase.calculators.calculator import Calculator, all_changes
 from ase.calculators.emt import EMT
 from ase.calculators.fd import calculate_numerical_forces, calculate_numerical_stress
 
@@ -668,6 +670,146 @@ def test_emt_analytical_matches_fd_stress():
         assert np.abs(fd - stress).max() < 1e-5
 
 
+def _fd_ctx(calculator, dtype="float64"):
+    import engines as engines_mod
+
+    return engines_mod.EngineContext(
+        engine="mace",
+        profile_id="fd-toy",
+        profile={
+            "model_sha256": "c" * 64,
+            "upstream_model_id": "fd-toy",
+            "identity": "fd toy",
+        },
+        wrapper=None,
+        calculator=calculator,
+        device="cpu",
+        dtype=dtype,
+        task="bulk",
+        head=None,
+        backend_version="toy",
+        framework_version="toy",
+    )
+
+
+def _patch_numerical_forces(monkeypatch, errors_by_h):
+    """Return analytic + prescribed error per displacement (no backend)."""
+
+    def fake(atoms, eps=1e-3, iatoms=None, icarts=None):
+        analytic = np.asarray(atoms.get_forces(), dtype=float)
+        i, c = iatoms[0], icarts[0]
+        return np.array([[float(analytic[i, c]) + errors_by_h[float(eps)]]])
+
+    monkeypatch.setattr(finite_difference, "calculate_numerical_forces", fake)
+
+
+def test_fd_isolated_good_point_is_not_a_stable_region(monkeypatch):
+    """R11 red case: errors [0.5, 0.0005, 0.5, 0.5] must not be 'characterized'."""
+    atoms, _ = fixtures.build_extra("cu_distorted")
+    atoms.calc = EMT()
+    ctx = _fd_ctx(atoms.calc)
+    disps = (5e-4, 1e-3, 2e-3, 5e-3)
+    _patch_numerical_forces(
+        monkeypatch, dict(zip(disps, (0.5, 5e-4, 0.5, 0.5), strict=False))
+    )
+    case = finite_difference.force_fd_case(ctx, "cu", atoms, disps, "cpu")
+    assert case["status"] == "fail"
+    assert case["region"]["stable_region_found"] is False
+    assert case["region"]["n_qualifying_scales"] == 1
+    assert case["region"]["adjacent_qualifying_pairs"] == []
+    # the full sweep is preserved -- no single "best" displacement is selected
+    assert len(case["per_displacement"]) == 4
+    assert [
+        entry["max_abs_error_eV_A"] for entry in case["per_displacement"]
+    ] == pytest.approx([0.5, 5e-4, 0.5, 0.5], rel=1e-9, abs=1e-15)
+    assert case["region"]["biased_scales"] == [5e-4, 2e-3, 5e-3]
+
+
+def test_fd_adjacent_good_points_form_a_region(monkeypatch):
+    atoms, _ = fixtures.build_extra("cu_distorted")
+    atoms.calc = EMT()
+    ctx = _fd_ctx(atoms.calc)
+    disps = (5e-4, 1e-3, 2e-3, 5e-3)
+    _patch_numerical_forces(
+        monkeypatch, dict(zip(disps, (0.5, 5e-4, 4e-4, 0.5), strict=False))
+    )
+    case = finite_difference.force_fd_case(ctx, "cu", atoms, disps, "cpu")
+    assert case["status"] == "characterized"
+    assert case["region"]["stable_region_found"] is True
+    assert case["region"]["adjacent_qualifying_pairs"] == [[1e-3, 2e-3]]
+    assert case["region"]["stable_region_kind"] in {"plateau", "convergence"}
+
+
+def test_fd_float32_cancellation_is_classified_not_hidden(monkeypatch):
+    """A float32 total energy cannot resolve 1e-3 eV/A at tiny displacements.
+
+    The scale ``eps32*|E|/(2h)`` is recorded and the sweep becomes
+    ``insufficient_sampling`` instead of a false pass or a false backend
+    failure.
+    """
+
+    class _LargeEnergyCalculator(EMT):
+        def get_potential_energy(self, atoms=None, **_kwargs):
+            return 1.0e4
+
+    atoms, _ = fixtures.build_extra("cu_distorted")
+    calc = _LargeEnergyCalculator()
+    atoms.calc = calc
+    ctx = _fd_ctx(calc, dtype="float32")
+    disps = (5e-4, 1e-3)
+    errs = (1.0, 1.1)
+    _patch_numerical_forces(monkeypatch, dict(zip(disps, errs, strict=False)))
+    case = finite_difference.force_fd_case(ctx, "cu", atoms, disps, "cpu")
+    expected_floor = finite_difference.FLOAT32_EPS * 1.0e4
+    assert case["acceptance"]["energy_noise_floor_eV"] == pytest.approx(
+        expected_floor, rel=1e-12
+    )
+    first = case["per_displacement"][0]
+    assert first["noise_force_scale_eV_A"] == pytest.approx(expected_floor / (2 * 5e-4))
+    assert first["noise_limited"] is True
+    assert first["qualifies"] is False
+    assert case["status"] == "insufficient_sampling"
+    assert case["region"]["stable_region_kind"] == "noise_limited_plateau"
+
+
+def test_fd_known_wrong_forces_fail_closed(monkeypatch):
+    """A constant 0.1 eV/A force error is not explained by any noise scale."""
+    atoms, _ = fixtures.build_extra("cu_distorted")
+    atoms.calc = EMT()
+    ctx = _fd_ctx(atoms.calc)
+    disps = (5e-4, 1e-3, 2e-3, 5e-3)
+    _patch_numerical_forces(monkeypatch, dict.fromkeys(disps, 0.1))
+    case = finite_difference.force_fd_case(ctx, "cu", atoms, disps, "cpu")
+    assert case["status"] == "fail"
+    assert case["region"]["biased_scales"] == list(disps)
+
+
+def test_fd_stress_distinguishes_unsupported_from_backend_failure(monkeypatch):
+    from ase.calculators.calculator import PropertyNotImplementedError
+
+    class _NoStress(EMT):
+        def get_stress(self, *args, **kwargs):
+            raise PropertyNotImplementedError("no stress")
+
+    atoms, _ = fixtures.build_extra("cu_distorted")
+    atoms.calc = _NoStress()
+    case = finite_difference.stress_fd_case(
+        _fd_ctx(atoms.calc), "cu", atoms, (1e-3, 2e-3), "cpu"
+    )
+    assert case["status"] == "unsupported"
+
+    class _BrokenStress(EMT):
+        def get_stress(self, *args, **kwargs):
+            raise RuntimeError("CUDA error: device-side assert triggered")
+
+    broken_atoms, _ = fixtures.build_extra("cu_distorted")
+    broken_atoms.calc = _BrokenStress()
+    with pytest.raises(RuntimeError, match="stress evaluation failed"):
+        finite_difference.stress_fd_case(
+            _fd_ctx(broken_atoms.calc), "cu", broken_atoms, (1e-3, 2e-3), "cpu"
+        )
+
+
 def test_fd_dof_selection_deterministic_and_capped():
     atoms, _, forces, _ = _cu_distorted_emt()
     a = finite_difference.select_force_dofs(
@@ -717,6 +859,96 @@ def test_floor_policy_values_documented():
     )
 
 
+# --------------------------------------------------------------------------
+# R02: repeated-inference floors must be real backend calls
+# --------------------------------------------------------------------------
+
+
+class _CountingNoiseCalculator(Calculator):
+    """ASE calculator with a real call counter and optional known noise.
+
+    ``calculate`` is the genuine inference entry point: the counter only
+    advances when the backend is actually executed, so the test can prove
+    that a repeatability floor came from real calls.
+    """
+
+    implemented_properties = ["energy", "forces", "stress"]  # noqa: RUF012
+
+    def __init__(self, noise: float = 0.0, seed: int = 20260912):
+        super().__init__()
+        self.calls = 0
+        self.noise = float(noise)
+        self._rng = np.random.default_rng(seed)
+
+    def calculate(self, atoms=None, properties=("energy",), system_changes=all_changes):
+        super().calculate(atoms, properties, system_changes)
+        self.calls += 1
+        pos = np.asarray(atoms.positions, dtype=float)
+        self.results = {
+            "energy": float(0.5 * np.sum(pos**2)) + self.noise * self._rng.normal(),
+            "forces": -pos + self.noise * self._rng.normal(size=pos.shape),
+            "stress": np.zeros(6) + self.noise * self._rng.normal(size=6),
+        }
+
+
+def _counting_atoms(noise):
+    atoms = Atoms(
+        "H2",
+        positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+        cell=[10.0, 10.0, 10.0],
+        pbc=True,
+    )
+    calc = _CountingNoiseCalculator(noise=noise)
+    atoms.calc = calc
+    return atoms, calc
+
+
+def test_ase_result_cache_would_hide_repeat_inference():
+    """Red case: without cache invalidation the loop measures nothing."""
+    atoms, calc = _counting_atoms(noise=1e-3)
+    atoms.get_potential_energy()
+    atoms.get_forces()
+    after_first = calc.calls
+    assert after_first == 1
+    for _ in range(5):
+        atoms.get_potential_energy()
+        atoms.get_forces()
+    assert calc.calls == after_first, "ASE cache hit means no new inference"
+
+
+def test_inference_probe_forces_and_counts_real_calls():
+    atoms, calc = _counting_atoms(noise=1e-3)
+    with common.InferenceProbe(atoms) as probe:
+        probe.run()
+        warmup = probe.calls
+        for _ in range(4):
+            probe.run()
+        assert probe.calls == 5
+        assert calc.calls == 5, "calculator counter agrees with the probe"
+        assert probe.wrapped_calculate is True
+    assert warmup == 1
+    # the wrapper is removed again
+    assert not hasattr(calc, "__dict__") or "calculate" not in calc.__dict__
+
+
+def test_measure_floor_counts_calls_and_detects_noise():
+    atoms, calc = _counting_atoms(noise=0.0)
+    deterministic = invariance.measure_floor(atoms, "cpu")
+    expected_calls = invariance.REPEAT_CALLS + 1  # warm-up + repetitions
+    assert calc.calls == expected_calls
+    assert deterministic["real_calculate_calls"] == expected_calls
+    assert deterministic["warmup_calculate_calls"] == 1
+    assert deterministic["calculate_call_count_verified"] is True
+    assert deterministic["energy_spread_eV"] == pytest.approx(0.0, abs=0.0)
+    assert deterministic["force_component_spread_eV_A"] == pytest.approx(0.0, abs=0.0)
+
+    noisy_atoms, noisy_calc = _counting_atoms(noise=1e-3)
+    noisy = invariance.measure_floor(noisy_atoms, "cpu")
+    assert noisy_calc.calls == expected_calls
+    assert noisy["energy_spread_eV"] > 0.0
+    assert noisy["force_component_spread_eV_A"] > 0.0
+
+
 def test_tolerance_uses_measured_floor():
     # measured floor above the absolute floor must win (x multiplier)
     assert invariance._tol(5e-9, 1e-9) == pytest.approx(5e-8)
@@ -758,7 +990,7 @@ class _CubicHookeCalculator:
         )
 
         class _Calc(Calculator):
-            implemented_properties = ["energy", "forces", "stress"]  # noqa: RUF012
+            implemented_properties = ["energy", "forces", "stress"]  # noqa: RUF012  # noqa: RUF012
 
             def calculate(
                 self, atoms, properties=("energy",), system_changes=all_changes
@@ -1034,6 +1266,76 @@ def test_t8_oom_classifier_matches_only_memory_failures():
     assert not performance_suite._is_oom(Exception("nan detected in forces"))
     assert not performance_suite._is_oom(Exception("boom"))
     assert not performance_suite._is_oom(Exception("doom"))
+
+
+class _HarmonicCountingCalculator(Calculator):
+    """E = 0.5 * sum(r^2), F = -r; records every energy it really computed."""
+
+    implemented_properties = ["energy", "forces"]  # noqa: RUF012
+
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+        self.energies: list[float] = []
+
+    def calculate(self, atoms=None, properties=("energy",), system_changes=all_changes):
+        super().calculate(atoms, properties, system_changes)
+        self.calls += 1
+        pos = np.asarray(atoms.positions, dtype=float)
+        energy = float(0.5 * np.sum(pos**2))
+        self.energies.append(energy)
+        self.results = {"energy": energy, "forces": -pos}
+
+
+def test_t8_observables_are_measured_on_restored_pristine_structure():
+    """R10 red case: the timed sample used a perturbed structure, forces did not.
+
+    The reported energy must belong to the same (pristine, hash-recorded)
+    structure as the forces, while the timing loop still uses perturbations
+    to defeat the ASE result cache.
+    """
+    from types import SimpleNamespace
+
+    import engines as engines_mod
+    import performance_suite
+
+    ref, _repeat = performance_suite._build_supercell(32)
+    pristine_energy = float(0.5 * np.sum(np.asarray(ref.positions, dtype=float) ** 2))
+    calc = _HarmonicCountingCalculator()
+    ctx = engines_mod.EngineContext(
+        engine="mace",
+        profile_id="t8-toy",
+        profile={
+            "model_sha256": "b" * 64,
+            "upstream_model_id": "t8-toy",
+            "identity": "t8 toy",
+        },
+        wrapper=None,
+        calculator=calc,
+        device="cpu",
+        dtype="float64",
+        task="bulk",
+        head=None,
+        backend_version="toy",
+        framework_version="toy",
+    )
+    rec = performance_suite._sp_record(ctx, 32, "cpu", SimpleNamespace())
+    metrics = rec["metrics"]
+    assert metrics["energy_eV"] == pytest.approx(pristine_energy, abs=1e-9)
+    assert (
+        metrics["observable_structure_id"] == rec["input_structure_id"]
+    ), "energy/forces and the recorded structure hash must share one identity"
+    assert metrics["observable_inference_calls"] == 1
+    assert metrics["timing_samples_perturb_geometry"] is True
+    assert metrics["observable_structure_restored"] is True
+    # every timing sample plus the observable performed a real backend call,
+    # so timing can never be a cache lookup
+    assert calc.calls == 1 + performance_suite.WARM_REPS + 1
+    # the reported energy is the pristine sample; the timed ones were perturbed
+    assert calc.energies[-1] == pytest.approx(pristine_energy, abs=1e-9)
+    assert any(
+        abs(energy - pristine_energy) > 1e-12 for energy in calc.energies[:-1]
+    ), "timing samples must actually perturb the geometry"
 
 
 def test_t8_record_plumbing_writes_schema_valid_results(tmp_path):

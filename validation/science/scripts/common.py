@@ -389,6 +389,93 @@ def device_record(requested: str) -> dict[str, Any]:
     }
 
 
+class InferenceProbe:
+    """Force one real backend inference per repetition and count the calls.
+
+    ASE caches results on the calculator: ``Atoms.get_potential_energy()``
+    or ``get_forces()`` on unchanged coordinates is a cache hit and performs
+    no new inference, so a repeatability loop built on them measures nothing
+    (review R02).  The probe clears ``calculator.results`` before every
+    repetition and evaluates through the calculator's own ASE ``calculate``
+    entry point, which forces a real backend evaluation without perturbing
+    any coordinate.  It wraps that entry point (when the calculator permits
+    instance attributes) so the number of real calls is recorded and a cache
+    hit cannot masquerade as a zero-noise floor.
+
+    Backend-internal caches (e.g. the GRACE neighbour list) are *not*
+    invalidated here -- that is the backend's own, separately recorded
+    setting, and this class never claims otherwise.
+    """
+
+    def __init__(self, atoms: Atoms) -> None:
+        if getattr(atoms, "calc", None) is None:
+            msg = "InferenceProbe requires an attached calculator"
+            raise ValueError(msg)
+        self.atoms = atoms
+        self.calculator = atoms.calc
+        self.calls = 0
+        self.wrapped_calculate = False
+        self._original_calculate: Any = None
+        self._had_instance_calculate = False
+
+    def _counting_calculate(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls += 1
+        return self._original_calculate(*args, **kwargs)
+
+    def start(self) -> InferenceProbe:
+        calculate = getattr(self.calculator, "calculate", None)
+        if callable(calculate):
+            namespace = getattr(self.calculator, "__dict__", None)
+            self._had_instance_calculate = isinstance(namespace, dict) and (
+                "calculate" in namespace
+            )
+            try:
+                self.calculator.calculate = self._counting_calculate
+            except (AttributeError, TypeError):
+                # Slotted/immutable calculator: fall back to counting our own
+                # evaluations, and report that the count is not verified.
+                self.wrapped_calculate = False
+            else:
+                self._original_calculate = calculate
+                self.wrapped_calculate = True
+        return self
+
+    def stop(self) -> None:
+        if self.wrapped_calculate and self._original_calculate is not None:
+            try:
+                if self._had_instance_calculate:
+                    self.calculator.calculate = self._original_calculate
+                else:
+                    del self.calculator.calculate
+            except (AttributeError, TypeError):  # pragma: no cover - defensive
+                pass
+            self.wrapped_calculate = False
+            self._original_calculate = None
+
+    def __enter__(self) -> InferenceProbe:
+        return self.start()
+
+    def __exit__(self, *exc_info: Any) -> None:
+        self.stop()
+
+    def run(self) -> tuple[float, np.ndarray, np.ndarray | None]:
+        """Perform exactly one real inference and return copied observables."""
+        import numpy as np
+
+        results = getattr(self.calculator, "results", None)
+        if isinstance(results, dict):
+            results.clear()
+        energy = float(self.atoms.get_potential_energy())
+        forces = np.array(self.atoms.get_forces(), dtype=float, copy=True)
+        try:
+            stress = np.array(self.atoms.get_stress(), dtype=float, copy=True)
+        except Exception:  # noqa: BLE001 - stress may be unsupported
+            stress = None
+        if not self.wrapped_calculate:
+            self.calls += 1
+        return energy, forces, stress
+
+
 def timed(fn: Callable[[], Any], device: str = "cpu") -> tuple[Any, float]:
     """Run ``fn`` once and return ``(result, wall_seconds)`` with GPU sync."""
     synchronize(device)

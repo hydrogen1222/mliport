@@ -196,17 +196,37 @@ def na3ps4_vacancy_pair() -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
-def _repeat_floor(ctx, atoms) -> dict[str, float]:
-    """Measured in-process repeatability floor for the symmetry gate."""
+def _repeat_floor(ctx, atoms) -> dict[str, Any]:
+    """Measured in-process repeatability floor for the symmetry gate.
+
+    Real inference is forced through :class:`common.InferenceProbe`; calling
+    ``get_potential_energy()`` repeatedly on unchanged coordinates would be
+    an ASE cache hit and report a fake zero floor (review R02).
+    """
     work = atoms.copy()
     work.calc = ctx.calculator
-    energies = [float(work.get_potential_energy()) for _ in range(3)]
-    forces = [np.asarray(work.get_forces(), dtype=float) for _ in range(3)]
+    with common.InferenceProbe(work) as probe:
+        probe.run()  # warm-up, counted separately
+        warmup_calls = probe.calls
+        energies: list[float] = []
+        forces: list[np.ndarray] = []
+        for _ in range(3):
+            energy, force, _stress = probe.run()
+            energies.append(energy)
+            forces.append(force)
+        calls = probe.calls
+        verified = probe.wrapped_calculate
     return {
-        "energy_floor_eV": float(max(abs(energies[i] - energies[0]) for i in (1, 2))),
+        "energy_floor_eV": float(max(abs(e - energies[0]) for e in energies[1:])),
         "force_floor_eV_A": float(
-            max(np.abs(forces[i] - forces[0]).max() for i in (1, 2))
+            max(np.abs(f - forces[0]).max() for f in forces[1:])
         ),
+        "repeat_calls_requested": 3,
+        "warmup_calculate_calls": int(warmup_calls),
+        "real_calculate_calls": int(calls),
+        "calculate_call_count_verified": bool(verified),
+        "ase_result_cache_invalidated_per_repeat": True,
+        "backend_internal_caches_invalidated": False,
     }
 
 
@@ -290,6 +310,47 @@ def _run_product_neb(ctx, resolved, run_dir, init, fin):
     return payload
 
 
+_MODEL_IDENTITY_FIELDS = (
+    "model_type",
+    "model_sha256",
+    "task",
+    "head_requested",
+    "head_effective",
+    "dtype_requested",
+    "inference_mode",
+)
+
+
+def model_identity_check(ctx, payload) -> dict[str, Any]:
+    """Prove the Hessian calculator is the model that produced the band.
+
+    The product result carries a ``model`` identity record; the suite only
+    certifies a saddle when the engine, artifact hash, task/head all match
+    the context whose calculator is used for the FD Hessian (review R01).
+    """
+    model = payload.get("model") if isinstance(payload, dict) else None
+    if not isinstance(model, dict):
+        return {
+            "ok": False,
+            "reason": "NEB payload carries no model identity record",
+            "checks": {},
+            "record": None,
+        }
+    checks: dict[str, bool] = {
+        "model_type": model.get("model_type") == ctx.engine,
+        "model_sha256": model.get("model_sha256") == ctx.model_sha256,
+    }
+    if ctx.task is not None:
+        checks["task"] = model.get("task") == ctx.task
+    if ctx.head is not None:
+        checks["head_effective"] = model.get("head_effective") == ctx.head
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+        "record": {k: model.get(k) for k in _MODEL_IDENTITY_FIELDS},
+    }
+
+
 # --------------------------------------------------------------------------
 # band / saddle analysis helpers
 # --------------------------------------------------------------------------
@@ -364,26 +425,68 @@ def band_tangent_unit(images, energies_eV, ci: int) -> np.ndarray:
     return flat / n
 
 
-def fd_hessian(atoms, delta: float) -> np.ndarray:
-    """Central finite-difference positional Hessian (eV/A^2), 3N x 3N.
+def fd_hessian(atoms, delta: float, dof_indices=None) -> np.ndarray:
+    """Central finite-difference positional Hessian (eV/A^2).
 
     H[i, j] = d2E/dx_i dx_j = -(F_i(+d_j) - F_i(-d_j)) / (2 delta).
-    The calculator is attached once; positions are restored afterwards.
+
+    Only the rows/columns listed in ``dof_indices`` (flattened 0..3N-1) are
+    evaluated; the default is all 3N coordinates.  Constrained systems must
+    pass their active DOFs so that frozen atoms are neither displaced nor
+    entered into the eigen decomposition (review R01).  The calculator is
+    attached once; positions are restored afterwards.
     """
     n = len(atoms)
     work = atoms.copy()
     work.calc = atoms.calc
-    hessian = np.zeros((3 * n, 3 * n))
-    for c in range(3 * n):
-        atom, comp = divmod(c, 3)
+    if dof_indices is None:
+        dof_indices = np.arange(3 * n)
+    dof_indices = np.asarray(dof_indices, dtype=int)
+    hessian = np.zeros((len(dof_indices), len(dof_indices)))
+    for col, c in enumerate(dof_indices):
+        atom, comp = divmod(int(c), 3)
         p0 = work.positions[atom, comp]
         work.positions[atom, comp] = p0 + delta
         f_plus = np.asarray(work.get_forces(), dtype=float).ravel()
         work.positions[atom, comp] = p0 - delta
         f_minus = np.asarray(work.get_forces(), dtype=float).ravel()
         work.positions[atom, comp] = p0
-        hessian[:, c] = -(f_plus - f_minus) / (2.0 * delta)
+        hessian[:, col] = -(f_plus[dof_indices] - f_minus[dof_indices]) / (2.0 * delta)
     return 0.5 * (hessian + hessian.T)
+
+
+def active_dof_indices(atoms) -> np.ndarray:
+    """Flattened DOF indices not pinned by positional constraints.
+
+    ``FixAtoms`` (and any constraint exposing ``get_indices``) removes all
+    three components of the constrained atoms.  Rigid translation zero modes
+    are *not* removed here: they are physical for an unconstrained periodic
+    band and are reported separately as zero-like modes.
+    """
+    fixed: set[int] = set()
+    for constraint in getattr(atoms, "constraints", ()) or ():
+        get_indices = getattr(constraint, "get_indices", None)
+        if callable(get_indices):
+            fixed.update(int(i) for i in get_indices())
+    mask = np.ones(3 * len(atoms), dtype=bool)
+    for atom in fixed:
+        mask[3 * atom : 3 * atom + 3] = False
+    return np.flatnonzero(mask)
+
+
+def active_force_fmax(atoms) -> float:
+    """Max raw (constraint-free) force norm on atoms that are not fixed."""
+    forces = np.asarray(atoms.get_forces(apply_constraint=False), dtype=float)
+    if not np.all(np.isfinite(forces)):
+        raise ValueError("candidate force snapshot contains NaN or Inf")
+    fixed: set[int] = set()
+    for constraint in getattr(atoms, "constraints", ()) or ():
+        get_indices = getattr(constraint, "get_indices", None)
+        if callable(get_indices):
+            fixed.update(int(i) for i in get_indices())
+    norms = np.linalg.norm(forces, axis=1)
+    active = [norm for i, norm in enumerate(norms) if i not in fixed]
+    return float(max(active)) if active else 0.0
 
 
 def negative_mode_analysis(evals: np.ndarray) -> dict[str, Any]:
@@ -404,46 +507,183 @@ def negative_mode_analysis(evals: np.ndarray) -> dict[str, Any]:
     }
 
 
-def saddle_verdict(per_delta: list[dict], overlap: float) -> dict[str, Any]:
-    """Section 26 decision: one robust negative mode persisting at every
-    displacement amplitude with substantial overlap with the band tangent
-    supports ``validated_first_order_candidate``; anything less is
-    ``ci_neb_candidate_only``; two or more robust negative modes is a bad
-    candidate and fails.
+#: Verdicts that must be recorded as ``fail`` by the caller: the candidate
+#: is not merely unvalidated, the input/data contradict each other.
+SADDLE_FAIL_VERDICTS = frozenset(
+    {
+        "bad_saddle_candidate",
+        "invalid_nonfinite_inputs",
+        "model_identity_mismatch",
+        "not_stationary",
+        "stationarity_not_measured",
+        "band_not_converged",
+        "band_convergence_not_measured",
+        "no_hessian_scales",
+    }
+)
+
+
+def saddle_verdict(
+    per_delta: list[dict[str, Any]],
+    *,
+    ci_converged: bool,
+    physical_fmax_eV_A: float | None,
+    band_fmax_eV_A: float | None,
+    finite: bool = True,
+    model_identity_ok: bool = True,
+    fmax_tol_eV_A: float = CI_FMAX,
+    tangent_overlap_min: float = TANGENT_OVERLAP_MIN,
+) -> dict[str, Any]:
+    """Decide whether a CI-NEB image is a validated first-order saddle.
+
+    Certification is deliberately ordered (review R01): a negative Hessian
+    curvature is *not* evidence of a stationary point, so the decision first
+    requires finite observables, a consistent model identity, CI-NEB
+    convergence, a small physical gradient on the active DOFs and whole-band
+    convergence; only then is one robust negative mode required to persist
+    at *every* displacement scale with an aligned tangent and a consistent
+    eigenvector.  An unconverged structure may still export its Hessian, but
+    the verdict can only be ``nonstationary_characterization``.
+
+    ``per_delta`` entries are the outputs of :func:`negative_mode_analysis`
+    extended with ``tangent_overlap`` and ``mode_overlap_vs_first``; all
+    scales are kept in the record (never just the last one).
     """
-    n_modes = [d["n_robust_negative_modes"] for d in per_delta]
-    lam = np.array([d["min_eigenvalue_eV_A2"] for d in per_delta])
-    persist = all(n == 1 for n in n_modes)
+    rejection_reasons: list[str] = []
+
+    n_modes = [int(d.get("n_robust_negative_modes", 0)) for d in per_delta]
+    lam = np.array(
+        [float(d["min_eigenvalue_eV_A2"]) for d in per_delta], dtype=float
+    )
+    overlaps = [d.get("tangent_overlap") for d in per_delta]
+    mode_overlaps = [d.get("mode_overlap_vs_first") for d in per_delta]
+
+    hessian_verdict = None
+    persist = bool(n_modes) and all(n == 1 for n in n_modes)
     any_robust = any(n >= 1 for n in n_modes)
-    mean = float(np.mean(lam))
-    spread_ok = mean < 0 and (
+    mean = float(np.mean(lam)) if len(lam) else float("nan")
+    spread_ok = bool(len(lam)) and mean < 0 and (
         float(np.max(lam) - np.min(lam)) <= NEG_STABILITY_FRACTION * abs(mean)
     )
-    if any(n >= 2 for n in n_modes):
-        verdict = "bad_saddle_candidate"
-    elif not any_robust:
-        verdict = "no_robust_negative_mode"
-    elif persist and spread_ok and overlap >= TANGENT_OVERLAP_MIN:
-        verdict = "validated_first_order_candidate"
+    overlap_ok = bool(overlaps) and all(
+        o is not None and float(o) >= tangent_overlap_min for o in overlaps
+    )
+    mode_consistent = bool(mode_overlaps) and all(
+        o is not None and float(o) >= tangent_overlap_min for o in mode_overlaps
+    )
+
+    if not finite:
+        verdict = "invalid_nonfinite_inputs"
+        rejection_reasons.append("non-finite energy/force/Hessian input")
+    elif not model_identity_ok:
+        verdict = "model_identity_mismatch"
+        rejection_reasons.append(
+            "Hessian calculator identity differs from the CI-NEB band model"
+        )
+    elif not ci_converged:
+        verdict = "nonstationary_characterization"
+        rejection_reasons.append(
+            "CI-NEB did not converge; Hessian exported as non-stationary "
+            "characterization only"
+        )
+    elif physical_fmax_eV_A is None or not np.isfinite(physical_fmax_eV_A):
+        verdict = "stationarity_not_measured"
+        rejection_reasons.append("active-DOF physical gradient was not measured")
+    elif physical_fmax_eV_A > fmax_tol_eV_A:
+        verdict = "not_stationary"
+        rejection_reasons.append(
+            f"active-DOF physical force {physical_fmax_eV_A:.6g} eV/A exceeds "
+            f"{fmax_tol_eV_A:g} eV/A: negative curvature at a non-stationary "
+            "point is not a first-order saddle"
+        )
+    elif band_fmax_eV_A is None or not np.isfinite(band_fmax_eV_A):
+        verdict = "band_convergence_not_measured"
+        rejection_reasons.append("whole-band force was not measured")
+    elif band_fmax_eV_A > fmax_tol_eV_A:
+        verdict = "band_not_converged"
+        rejection_reasons.append(
+            f"whole-band max force {band_fmax_eV_A:.6g} eV/A exceeds "
+            f"{fmax_tol_eV_A:g} eV/A"
+        )
+    elif not per_delta:
+        verdict = "no_hessian_scales"
+        rejection_reasons.append("no displacement scale produced a Hessian")
     else:
-        # robust negative mode exists but is not persistent/aligned enough:
-        # the CI-NEB image remains only a candidate
-        verdict = "ci_neb_candidate_only"
+        if any(n >= 2 for n in n_modes):
+            hessian_verdict = "bad_saddle_candidate"
+            rejection_reasons.append("two or more robust negative modes")
+        elif not any_robust:
+            hessian_verdict = "no_robust_negative_mode"
+            rejection_reasons.append("no robust negative mode at any scale")
+        else:
+            if not persist:
+                rejection_reasons.append(
+                    "negative-mode count is not exactly one at every scale"
+                )
+            if not spread_ok:
+                rejection_reasons.append(
+                    "negative eigenvalue is not stable across displacement scales"
+                )
+            if not overlap_ok:
+                rejection_reasons.append(
+                    "tangent overlap below threshold at some displacement scale"
+                )
+            if not mode_consistent:
+                rejection_reasons.append(
+                    "negative eigenvector changes between displacement scales"
+                )
+            hessian_verdict = (
+                "validated_first_order_candidate"
+                if persist and spread_ok and overlap_ok and mode_consistent
+                else "ci_neb_candidate_only"
+            )
+        verdict = hessian_verdict
+
     spread_ratio = (
-        float(np.max(lam) - np.min(lam)) / abs(mean) if mean != 0 else float("inf")
+        float(np.max(lam) - np.min(lam)) / abs(mean)
+        if len(lam) and np.isfinite(mean) and mean != 0.0
+        else None
+    )
+    min_overlap = (
+        float(min(float(o) for o in overlaps)) if overlaps and all(
+            o is not None for o in overlaps
+        ) else None
     )
     return {
         "saddle_validation": verdict,
+        "validated": verdict == "validated_first_order_candidate",
+        "rejection_reasons": rejection_reasons,
+        "ci_converged": bool(ci_converged),
+        "physical_fmax_eV_A": (
+            None if physical_fmax_eV_A is None else float(physical_fmax_eV_A)
+        ),
+        "band_fmax_eV_A": None if band_fmax_eV_A is None else float(band_fmax_eV_A),
+        "fmax_tol_eV_A": float(fmax_tol_eV_A),
+        "finite_inputs": bool(finite),
+        "model_identity_ok": bool(model_identity_ok),
         "negative_mode_persists": bool(persist),
         "n_persistent_negative_deltas": int(sum(1 for n in n_modes if n == 1)),
         "n_deltas": len(n_modes),
-        "min_eigenvalue_eV_A2": float(lam.min()),
-        "mean_negative_eigenvalue_eV_A2": mean,
+        "min_eigenvalue_eV_A2": float(lam.min()) if len(lam) else None,
+        "mean_negative_eigenvalue_eV_A2": (
+            mean if len(lam) and np.isfinite(mean) else None
+        ),
         "min_eigenvalue_spread_ok": bool(spread_ok),
         "spread_ratio": spread_ratio,
         "spread_tolerance": NEG_STABILITY_FRACTION,
-        "tangent_overlap": float(overlap),
-        "tangent_overlap_threshold": TANGENT_OVERLAP_MIN,
+        "tangent_overlap": min_overlap,
+        "tangent_overlap_threshold": float(tangent_overlap_min),
+        "per_delta_tangent_overlap": [
+            None if o is None else float(o) for o in overlaps
+        ],
+        "min_mode_overlap_vs_first": (
+            float(min(float(o) for o in mode_overlaps))
+            if mode_overlaps and all(o is not None for o in mode_overlaps)
+            else None
+        ),
+        "per_delta_mode_overlap_vs_first": [
+            None if o is None else float(o) for o in mode_overlaps
+        ],
     }
 
 
@@ -905,7 +1145,14 @@ def workflow_resume_identity(ctx, args, out_dir) -> int:
 
 
 def workflow_saddle_hessian(ctx, args, out_dir) -> int:
-    """t5h: section 26 FD-Hessian saddle check on the CI-NEB reference image."""
+    """t5h: section 26 FD-Hessian saddle check on the CI-NEB reference image.
+
+    Certification requires finite observables, a matching model identity,
+    CI-NEB convergence, a small active-DOF physical gradient, whole-band
+    convergence and one robust negative mode that persists at every
+    displacement scale (review R01).  An unconverged band may still export
+    its Hessian, but only as ``nonstationary_characterization``.
+    """
     state = _STATE.setdefault((ctx.engine, ctx.profile_id), {})
     ref = state.get("ci_neb5")
     t0 = time.perf_counter()
@@ -928,7 +1175,7 @@ def workflow_saddle_hessian(ctx, args, out_dir) -> int:
         from mlipx.neb.io import load_checkpoint
 
         _, images = load_checkpoint(payload["latest_checkpoint"])
-        energies = payload["energies_eV"]
+        energies = np.asarray(payload["energies_eV"], dtype=float)
         ci = payload["climbing_image_index"]
         if ci is None:
             ci = int(payload["highest_energy_image_index"])
@@ -936,19 +1183,49 @@ def workflow_saddle_hessian(ctx, args, out_dir) -> int:
             raise ValueError("peak image is an endpoint; no internal saddle sampled")
         ci_image = images[ci].copy()
         ci_image.calc = ctx.calculator
-        tangent = band_tangent_unit(images, energies, ci)
+        dof = active_dof_indices(ci_image)
+        if len(dof) == 0:
+            raise ValueError("every DOF is constrained; no active Hessian exists")
+        tangent_full = band_tangent_unit(images, energies.tolist(), ci)
+        tangent = tangent_full[dof]
+        tangent_norm = float(np.linalg.norm(tangent))
+        if tangent_norm == 0.0:
+            raise ValueError("band tangent has no component on the active DOFs")
+        tangent = tangent / tangent_norm
+        active_fmax = active_force_fmax(ci_image)
+        finite = bool(np.all(np.isfinite(energies))) and bool(np.isfinite(active_fmax))
+        identity = model_identity_check(ctx, payload)
         per_delta = []
-        overlap = None
+        first_mode = None
         for delta in SADDLE_DELTAS:
-            hessian = fd_hessian(ci_image, delta)
+            hessian = fd_hessian(ci_image, delta, dof)
+            if not np.all(np.isfinite(hessian)):
+                raise ValueError(f"FD Hessian at delta={delta} A contains NaN or Inf")
             evals, vecs = np.linalg.eigh(hessian)
-            per_delta.append(negative_mode_analysis(evals))
-            overlap = abs(float(np.dot(vecs[:, 0], tangent)))
-        verdict = saddle_verdict(per_delta, overlap)
-        if verdict["saddle_validation"] == "bad_saddle_candidate":
-            status = "fail"
-        elif verdict["saddle_validation"] == "validated_first_order_candidate":
+            entry = negative_mode_analysis(evals)
+            entry["delta_A"] = float(delta)
+            entry["n_active_dof"] = int(len(dof))
+            entry["tangent_overlap"] = abs(float(np.dot(vecs[:, 0], tangent)))
+            if first_mode is None:
+                first_mode = vecs[:, 0]
+                entry["mode_overlap_vs_first"] = 1.0
+            else:
+                entry["mode_overlap_vs_first"] = abs(
+                    float(np.dot(vecs[:, 0], first_mode))
+                )
+            per_delta.append(entry)
+        verdict = saddle_verdict(
+            per_delta,
+            ci_converged=bool(payload["converged"]),
+            physical_fmax_eV_A=active_fmax,
+            band_fmax_eV_A=payload.get("max_neb_force_eV_A"),
+            finite=finite,
+            model_identity_ok=identity["ok"],
+        )
+        if verdict["validated"]:
             status = "pass"
+        elif verdict["saddle_validation"] in SADDLE_FAIL_VERDICTS:
+            status = "fail"
         else:
             status = "characterized"
         metrics = {
@@ -958,7 +1235,10 @@ def workflow_saddle_hessian(ctx, args, out_dir) -> int:
             "deltas_A": list(SADDLE_DELTAS),
             "zero_scale_eV_A2": ZERO_SCALE_EV_A2,
             "robust_negative_threshold_eV_A2": NEG_ROBUST_EV_A2,
-            "hessian_size": "full positional (3N x 3N)",
+            "n_active_dof": int(len(dof)),
+            "n_fixed_atoms": int((3 * len(ci_image) - len(dof)) // 3),
+            "active_physical_fmax_eV_A": active_fmax,
+            "model_identity": identity,
             **verdict,
             "per_delta": per_delta,
         }
@@ -975,10 +1255,15 @@ def workflow_saddle_hessian(ctx, args, out_dir) -> int:
         input_atoms=None,
         parameters={
             "deltas_A": list(SADDLE_DELTAS),
-            "method": "central FD Hessian, full 3N, eigen decomposition",
+            "method": "central FD Hessian on active DOFs, eigen decomposition",
             "criteria": (
-                "exactly one eigenvalue < -1e-2 eV/A^2 (10x zero-mode scale) "
-                "at every delta; spread <= 50% of |mean|; |<v,tangent>| >= 0.8"
+                "finite inputs; model identity match; CI-NEB converged; "
+                f"active-DOF physical fmax <= {CI_FMAX:g} eV/A; whole-band "
+                f"fmax <= {CI_FMAX:g} eV/A; exactly one eigenvalue < "
+                f"{NEG_ROBUST_EV_A2:g} eV/A^2 at every delta; spread <= 50% "
+                "of |mean|; tangent and eigenvector overlap >= 0.8 at every "
+                "delta. An unconverged band can only be a non-stationary "
+                "characterization."
             ),
         },
         metrics=metrics,

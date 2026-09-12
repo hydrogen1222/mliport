@@ -143,11 +143,28 @@ def test_band_tangent_matches_ase_improved_tangent():
         neb_suite.band_tangent_unit(images, [0.0, 1.0, 2.0], 2)
 
 
-def _robust_case(value_eV_A2: float) -> dict:
+def _robust_case(
+    value_eV_A2: float, *, overlap: float = 0.95, mode_overlap: float = 0.99
+) -> dict:
     return {
         "n_robust_negative_modes": 1 if value_eV_A2 < neb_suite.NEG_ROBUST_EV_A2 else 0,
         "min_eigenvalue_eV_A2": value_eV_A2,
+        "tangent_overlap": overlap,
+        "mode_overlap_vs_first": mode_overlap,
     }
+
+
+def _stationary(**overrides):
+    """Keyword inputs for a converged, stationary, finite band."""
+    kwargs = {
+        "ci_converged": True,
+        "physical_fmax_eV_A": 1e-4,
+        "band_fmax_eV_A": 1e-4,
+        "finite": True,
+        "model_identity_ok": True,
+    }
+    kwargs.update(overrides)
+    return kwargs
 
 
 def test_saddle_verdict_known_answers():
@@ -156,26 +173,117 @@ def test_saddle_verdict_known_answers():
         _robust_case(-0.55),
         _robust_case(-0.6),
     ]
-    good = neb_suite.saddle_verdict(persistent, 0.95)
+    good = neb_suite.saddle_verdict(persistent, **_stationary())
     assert good["saddle_validation"] == "validated_first_order_candidate"
+    assert good["validated"] is True
     assert good["n_persistent_negative_deltas"] == 3
     assert good["min_eigenvalue_eV_A2"] == pytest.approx(-0.6)
     assert good["spread_ratio"] == pytest.approx(0.1 / 0.55)
+    assert good["tangent_overlap"] == pytest.approx(0.95)
+    assert good["min_mode_overlap_vs_first"] == pytest.approx(0.99)
     # weak tangent overlap disqualifies the first-order claim
-    weak = neb_suite.saddle_verdict(persistent, 0.3)
+    weak = neb_suite.saddle_verdict(
+        [_robust_case(-0.5, overlap=0.3)] * 3, **_stationary()
+    )
     assert weak["saddle_validation"] == "ci_neb_candidate_only"
+    assert weak["validated"] is False
+    assert "tangent overlap" in " ".join(weak["rejection_reasons"])
     # two robust negative modes => bad saddle
-    two_mode = [{"n_robust_negative_modes": 2, "min_eigenvalue_eV_A2": -0.5}] * 3
-    bad = neb_suite.saddle_verdict(two_mode, 0.95)
+    two_mode = [
+        {
+            "n_robust_negative_modes": 2,
+            "min_eigenvalue_eV_A2": -0.5,
+            "tangent_overlap": 0.95,
+            "mode_overlap_vs_first": 0.99,
+        }
+    ] * 3
+    bad = neb_suite.saddle_verdict(two_mode, **_stationary())
     assert bad["saddle_validation"] == "bad_saddle_candidate"
     # nothing robust
-    none = neb_suite.saddle_verdict([_robust_case(1e-5)] * 3, 0.95)
+    none = neb_suite.saddle_verdict([_robust_case(1e-5)] * 3, **_stationary())
     assert none["saddle_validation"] == "no_robust_negative_mode"
+    assert none["validated"] is False
     # non-persistence across deltas
     non_persistent = [_robust_case(-0.5), _robust_case(1e-5), _robust_case(-0.5)]
     assert (
-        neb_suite.saddle_verdict(non_persistent, 0.95)["saddle_validation"]
+        neb_suite.saddle_verdict(non_persistent, **_stationary())["saddle_validation"]
         == "ci_neb_candidate_only"
+    )
+    # a failure at one scale is never overridden by later good scales
+    late_bad = [_robust_case(-0.5), _robust_case(-0.55), _robust_case(-0.6)]
+    late_bad[-1]["n_robust_negative_modes"] = 2
+    assert (
+        neb_suite.saddle_verdict(late_bad, **_stationary())["saddle_validation"]
+        == "bad_saddle_candidate"
+    )
+    late_bad[-1]["n_robust_negative_modes"] = 0
+    assert (
+        neb_suite.saddle_verdict(late_bad, **_stationary())["saddle_validation"]
+        == "ci_neb_candidate_only"
+    )
+    # eigenvector rotation between deltas is a scale inconsistency
+    rotated = [
+        _robust_case(-0.5, mode_overlap=0.99),
+        _robust_case(-0.5, mode_overlap=0.1),
+        _robust_case(-0.5, mode_overlap=0.99),
+    ]
+    verdict = neb_suite.saddle_verdict(rotated, **_stationary())
+    assert verdict["saddle_validation"] == "ci_neb_candidate_only"
+    assert "eigenvector" in " ".join(verdict["rejection_reasons"])
+
+
+def test_saddle_verdict_rejects_non_stationary_negative_curvature():
+    """R01 red case: negative curvature at x=0.3 of E=(x^2-1)^2+y^2+z^2.
+
+    gradient 4x(x^2-1) = -1.092 eV/A at x=0.3 and Hxx = 12x^2-4 = -2.92,
+    so exactly one robust negative mode exists -- and none of that makes the
+    point a stationarity-validated saddle.
+    """
+    nonstationary = [_robust_case(-2.92)] * 3
+    # CI-NEB never converged: may export the Hessian, but only as a
+    # non-stationary characterization, never as a validated saddle.
+    verdict = neb_suite.saddle_verdict(
+        nonstationary,
+        **_stationary(
+            ci_converged=False,
+            physical_fmax_eV_A=1.092,
+            band_fmax_eV_A=0.5,
+        ),
+    )
+    assert verdict["saddle_validation"] == "nonstationary_characterization"
+    assert verdict["validated"] is False
+    assert "nonstationary_characterization" not in neb_suite.SADDLE_FAIL_VERDICTS
+    # Even if the converged flag were claimed, the physical gradient rejects.
+    lying = neb_suite.saddle_verdict(
+        nonstationary,
+        **_stationary(physical_fmax_eV_A=1.092, band_fmax_eV_A=0.5),
+    )
+    assert lying["saddle_validation"] == "not_stationary"
+    assert lying["validated"] is False
+    assert "not_stationary" in neb_suite.SADDLE_FAIL_VERDICTS
+    # whole-band non-convergence also blocks certification
+    band_bad = neb_suite.saddle_verdict(
+        nonstationary, **_stationary(band_fmax_eV_A=0.2)
+    )
+    assert band_bad["saddle_validation"] == "band_not_converged"
+    # missing/NaN observables are fail-closed
+    assert (
+        neb_suite.saddle_verdict(nonstationary, **_stationary(finite=False))[
+            "saddle_validation"
+        ]
+        == "invalid_nonfinite_inputs"
+    )
+    assert (
+        neb_suite.saddle_verdict(nonstationary, **_stationary(model_identity_ok=False))[
+            "saddle_validation"
+        ]
+        == "model_identity_mismatch"
+    )
+    assert (
+        neb_suite.saddle_verdict(nonstationary, **_stationary(physical_fmax_eV_A=None))[
+            "saddle_validation"
+        ]
+        == "stationarity_not_measured"
     )
 
 
@@ -299,19 +407,244 @@ def test_emt_ci_neb_end_to_end_barrier_and_saddle(emt):
     assert final_band is not None and len(final_band) == 5
     ci_image = final_band[ci].copy()
     ci_image.calc = emt
-    tangent = neb_suite.band_tangent_unit(final_band, energies.tolist(), ci)
+    dof = neb_suite.active_dof_indices(ci_image)
+    tangent = neb_suite.band_tangent_unit(final_band, energies.tolist(), ci)[dof]
+    tangent = tangent / np.linalg.norm(tangent)
     per_delta = []
-    overlap = None
+    first_mode = None
     for delta in neb_suite.SADDLE_DELTAS:
-        hessian = neb_suite.fd_hessian(ci_image, delta)
+        hessian = neb_suite.fd_hessian(ci_image, delta, dof)
         evals, vecs = np.linalg.eigh(hessian)
-        per_delta.append(neb_suite.negative_mode_analysis(evals))
-        overlap = abs(float(np.dot(vecs[:, 0], tangent)))
-    verdict = neb_suite.saddle_verdict(per_delta, overlap)
+        entry = neb_suite.negative_mode_analysis(evals)
+        entry["tangent_overlap"] = abs(float(np.dot(vecs[:, 0], tangent)))
+        if first_mode is None:
+            first_mode = vecs[:, 0]
+            entry["mode_overlap_vs_first"] = 1.0
+        else:
+            entry["mode_overlap_vs_first"] = abs(float(np.dot(vecs[:, 0], first_mode)))
+        per_delta.append(entry)
+    verdict = neb_suite.saddle_verdict(
+        per_delta,
+        ci_converged=result.converged,
+        physical_fmax_eV_A=result.climbing_physical_fmax_eV_A,
+        band_fmax_eV_A=result.max_neb_force_eV_A,
+        finite=True,
+        model_identity_ok=True,
+    )
     assert verdict["saddle_validation"] in {
         "validated_first_order_candidate",
         "ci_neb_candidate_only",
     }, verdict
+    # no failure at any scale may be overridden by a later one
+    assert verdict["n_deltas"] == len(neb_suite.SADDLE_DELTAS)
+
+
+# ---------------------------------------------------------------------------
+# R01: the real workflow must reject a non-stationary negative-curvature point
+# ---------------------------------------------------------------------------
+
+
+class _DoubleWellCalculator:
+    """Analytic E = sum_i [(x_i^2 - 1)^2 + y_i^2 + z_i^2] (eV, Angstrom).
+
+    At x=0 the point is the true first-order saddle between x=+-1
+    (Hxx = -4, force 0).  At x=0.3 the gradient is 4x(x^2-1) = -1.092 eV/A
+    and Hxx = -2.92: one robust negative mode at a *non-stationary* point.
+    """
+
+    def get_potential_energy(self, atoms=None, **_kwargs):
+        pos = np.asarray(
+            (self._atoms if atoms is None else atoms).positions, dtype=float
+        )
+        return float(
+            np.sum((pos[:, 0] ** 2 - 1.0) ** 2 + pos[:, 1] ** 2 + pos[:, 2] ** 2)
+        )
+
+    def get_forces(self, atoms=None, **_kwargs):
+        pos = np.asarray(
+            (self._atoms if atoms is None else atoms).positions, dtype=float
+        )
+        forces = np.zeros_like(pos)
+        forces[:, 0] = -4.0 * pos[:, 0] * (pos[:, 0] ** 2 - 1.0)
+        forces[:, 1] = -2.0 * pos[:, 1]
+        forces[:, 2] = -2.0 * pos[:, 2]
+        return forces
+
+
+def _double_well_band(x_values):
+    images = []
+    for x in x_values:
+        atoms = Atoms("H", positions=[[x, 0.0, 0.0]], cell=[20.0, 20.0, 20.0], pbc=True)
+        atoms.calc = _DoubleWellCalculator()
+        images.append(atoms)
+    return images
+
+
+def _write_band_checkpoint(tmp_path, images):
+    from mlipx.neb.io import NEBCheckpointStore
+
+    store = NEBCheckpointStore(tmp_path / "neb_run")
+    return store.write(
+        images,
+        run_id="run-r01",
+        attempt_id="attempt-r01",
+        stage="ci_neb",
+        stage_step=1,
+        resume_fingerprint={"schema": "mlipx.neb-resume-fingerprint/1"},
+        resume_fingerprint_sha256="0" * 64,
+        resolved_config={"calc_type": "neb"},
+    )
+
+
+def _saddle_workflow_ctx(canonical_calc):
+    from types import SimpleNamespace
+
+    engines_mod = importlib.import_module("engines")
+    return (
+        engines_mod.EngineContext(
+            engine="mace",
+            profile_id="r01-toy",
+            profile={
+                "model_sha256": "a" * 64,
+                "upstream_model_id": "r01-toy",
+                "identity": "R01 analytic toy",
+            },
+            wrapper=None,
+            calculator=canonical_calc,
+            device="cpu",
+            dtype="float64",
+            task="bulk",
+            head=None,
+            backend_version="toy",
+            framework_version="toy",
+        ),
+        SimpleNamespace(out=None, tag=None),
+    )
+
+
+def _run_saddle_workflow(tmp_path, *, x_values, ci_converged, two_atoms=False):
+    import json
+
+    if two_atoms:
+        images = []
+        for x in x_values:
+            atoms = Atoms(
+                "H2",
+                positions=[[x, 0.0, 0.0], [x, 0.0, 0.0]],
+                cell=[20.0, 20.0, 20.0],
+                pbc=True,
+            )
+            atoms.calc = _DoubleWellCalculator()
+            images.append(atoms)
+    else:
+        images = _double_well_band(x_values)
+    checkpoint = _write_band_checkpoint(tmp_path, images)
+    ci_calc = _DoubleWellCalculator()
+    ci_image = images[2].copy()
+    ci_image.calc = ci_calc
+    payload = {
+        "converged": bool(ci_converged),
+        "climbing_image_index": 2,
+        "energies_eV": [float(img.get_potential_energy()) for img in images],
+        "max_neb_force_eV_A": 1e-4 if ci_converged else 0.5,
+        "barrier_forward_sampled_eV": 1.0,
+        "model": {
+            "model_type": "mace",
+            "model_sha256": "a" * 64,
+            "task": "bulk",
+            "head_effective": None,
+            "dtype_requested": "float64",
+            "inference_mode": "ase",
+        },
+        "latest_checkpoint": str(checkpoint),
+    }
+    ctx, args = _saddle_workflow_ctx(ci_calc)
+    args.out = tmp_path / "records"
+    neb_suite._STATE[(ctx.engine, ctx.profile_id)] = {"ci_neb5": {"payload": payload}}
+    code = neb_suite.workflow_saddle_hessian(ctx, args, args.out)
+    written = sorted((tmp_path / "records").glob("*.json"))
+    assert written, "the workflow must always publish its verdict"
+    rec = json.loads(written[-1].read_text(encoding="utf-8"))
+    return code, rec
+
+
+def test_workflow_saddle_hessian_validates_true_saddle(tmp_path):
+    code, rec = _run_saddle_workflow(
+        tmp_path, x_values=[-1.0, -0.5, 0.0, 0.5, 1.0], ci_converged=True
+    )
+    assert code == 0
+    assert rec["status"] == "pass"
+    metrics = rec["metrics"]
+    assert metrics["saddle_validation"] == "validated_first_order_candidate"
+    assert metrics["validated"] is True
+    assert metrics["active_physical_fmax_eV_A"] == pytest.approx(0.0, abs=1e-12)
+    assert metrics["n_active_dof"] == 3
+    assert len(metrics["per_delta"]) == 3
+    # every displacement scale is preserved, not just the last overlap
+    assert len(metrics["per_delta_tangent_overlap"]) == 3
+    assert all(
+        o == pytest.approx(1.0, abs=1e-6) for o in metrics["per_delta_tangent_overlap"]
+    )
+
+
+def test_workflow_saddle_hessian_rejects_nonstationary_point(tmp_path):
+    """x=0.3: one robust negative mode at force 1.092 eV/A must not certify."""
+    code, rec = _run_saddle_workflow(
+        tmp_path, x_values=[-1.0, -0.5, 0.3, 0.5, 1.0], ci_converged=False
+    )
+    assert code == 0  # characterization is a completed workflow ...
+    assert rec["status"] == "characterized"  # ... but never a pass
+    metrics = rec["metrics"]
+    assert metrics["saddle_validation"] == "nonstationary_characterization"
+    assert metrics["validated"] is False
+    assert metrics["ci_converged"] is False
+    # the Hessian is still exported with its negative curvature
+    assert metrics["min_eigenvalue_eV_A2"] < neb_suite.NEG_ROBUST_EV_A2
+    assert metrics["active_physical_fmax_eV_A"] == pytest.approx(1.092, abs=1e-6)
+
+    # same point, but with the convergence flag claimed: fail closed
+    code2, rec2 = _run_saddle_workflow(
+        tmp_path / "claimed", x_values=[-1.0, -0.5, 0.3, 0.5, 1.0], ci_converged=True
+    )
+    assert code2 == 1
+    assert rec2["status"] == "fail"
+    assert rec2["metrics"]["saddle_validation"] == "not_stationary"
+    assert rec2["metrics"]["validated"] is False
+
+
+def test_workflow_saddle_hessian_rejects_two_negative_modes(tmp_path):
+    code, rec = _run_saddle_workflow(
+        tmp_path,
+        x_values=[-1.0, -0.5, 0.0, 0.5, 1.0],
+        ci_converged=True,
+        two_atoms=True,
+    )
+    assert code == 1
+    assert rec["status"] == "fail"
+    assert rec["metrics"]["saddle_validation"] == "bad_saddle_candidate"
+
+
+def test_active_dof_helpers_exclude_fixed_atoms():
+    from ase.constraints import FixAtoms
+
+    atoms = Atoms(
+        "H2",
+        positions=[[5.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        cell=[20.0, 20.0, 20.0],
+        pbc=True,
+    )
+    atoms.set_constraint(FixAtoms(indices=[1]))
+    dof = neb_suite.active_dof_indices(atoms)
+    assert dof.tolist() == [0, 1, 2]
+
+    class _FixedForceCalculator:
+        def get_forces(self, atoms=None, **_kwargs):
+            # the frozen atom carries a huge unrelaxed force; it must not
+            # enter the active-DOF stationarity gate
+            return np.array([[0.001, 0.0, 0.0], [99.0, 0.0, 0.0]])
+
+    atoms.calc = _FixedForceCalculator()
+    assert neb_suite.active_force_fmax(atoms) == pytest.approx(0.001)
 
 
 def test_emt_neb_budget_not_converged_is_recorded(emt):

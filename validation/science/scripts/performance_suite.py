@@ -99,6 +99,8 @@ def _sp_record(
     # identical positions would hit the ASE calculator result cache and
     # "measure" a dictionary lookup (~0.2 ms) instead of model inference.
     # 0.01 A keeps the neighbour topology realistic (steady-state latency).
+    # These are TIMING samples only -- the reported E/F/stress are measured
+    # separately on the restored pristine structure (review R10).
     rng = np.random.default_rng(20260911)
     pristine_positions = atoms.positions.copy()
 
@@ -109,7 +111,19 @@ def _sp_record(
         return float(atoms.get_potential_energy())
 
     try:
-        energy, first_call_s = common.timed(_energy, device)
+        _timing_energy, first_call_s = common.timed(_energy, device)
+        warm_times: list[float] = []
+        for _ in range(WARM_REPS):
+            _, warm_s = common.timed(_energy, device)
+            warm_times.append(warm_s)
+
+        # Timing is over. Restore the pinned geometry and take the reported
+        # observables from a real inference on *that* structure, so energy,
+        # forces, stress and the recorded structure hash are one identity.
+        atoms.positions = pristine_positions
+        with common.InferenceProbe(atoms) as probe:
+            (energy, forces, stress), observable_s = common.timed(probe.run, device)
+            observable_calls = probe.calls
     except Exception as exc:  # noqa: BLE001 - classified below
         if _is_oom(exc):
             return common.result_record(
@@ -133,24 +147,31 @@ def _sp_record(
                 },
             )
         raise
-    warm_times: list[float] = []
-    for _ in range(WARM_REPS):
-        _, warm_s = common.timed(_energy, device)
-        warm_times.append(warm_s)
-
-    atoms.positions = pristine_positions
-    forces = atoms.get_forces()
-    finite = bool(np.isfinite(forces).all()) and np.isfinite(energy)
+    finite = (
+        bool(np.isfinite(forces).all())
+        and np.isfinite(energy)
+        and (stress is None or bool(np.isfinite(stress).all()))
+    )
     throughput = natoms / statistics.median(warm_times)
     metrics = {
         "natoms": natoms,
         "energy_eV": energy,
+        "forces_max_abs_eV_A": float(np.abs(forces).max()) if len(atoms) else 0.0,
+        "stress_supported": stress is not None,
         "first_call_seconds": round(first_call_s, 4),
         "warm_call_median_seconds": round(statistics.median(warm_times), 4),
         "warm_call_spread_seconds": round(max(warm_times) - min(warm_times), 4),
         "atoms_per_second_warm": round(throughput, 1),
         "energy_finite": bool(finite),
+        "timing_perturbation_scale_A": 0.01,
+        "timing_samples_perturb_geometry": True,
+        "observable_structure_restored": True,
+        "observable_structure_id": common.structure_id(atoms),
+        "observable_inference_calls": int(observable_calls),
+        "observable_seconds": round(observable_s, 4),
     }
+    if stress is not None:
+        metrics["stress_max_abs_eV_A3"] = float(np.abs(stress).max())
     return common.result_record(
         case_id=f"t8_sp_scaling_{natoms}",
         test_id="t8_performance",
@@ -163,10 +184,15 @@ def _sp_record(
         dtype=ctx.dtype,
         device=common.device_record(device),
         input_structure_id=common.structure_id(atoms),
-        parameters={"natoms": natoms, "repeat": list(repeat), "warm_reps": WARM_REPS},
+        parameters={
+            "natoms": natoms,
+            "repeat": list(repeat),
+            "warm_reps": WARM_REPS,
+            "timing_perturbation_scale_A": 0.01,
+        },
         metrics=metrics,
         diagnostics={**ctx.diagnostics},
-        wall_seconds=first_call_s + sum(warm_times),
+        wall_seconds=first_call_s + sum(warm_times) + observable_s,
         peak_vram=common.peak_vram_mib(),
     )
 

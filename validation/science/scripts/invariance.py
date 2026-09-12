@@ -73,26 +73,40 @@ def _full_eval(atoms) -> tuple[float, np.ndarray, np.ndarray | None]:
     return energy, forces, stress
 
 
-def measure_floor(atoms, device: str) -> dict[str, float]:
-    """Section 11.1: repeated identical inference after a warm-up call."""
-    _full_eval(atoms)  # warm-up
-    energies, forces_list, stresses = [], [], []
-    for _ in range(REPEAT_CALLS):
-        e, f, s = common.timed(lambda: _full_eval(atoms), device)[0]
-        energies.append(e)
-        forces_list.append(f)
-        if s is not None:
-            stresses.append(s)
-    floor = {
-        "energy_spread_eV": float(np.ptp(energies)),
-        "force_component_spread_eV_A": float(
-            max(np.ptp(np.stack([f.ravel() for f in forces_list]), axis=0))
-        ),
-    }
-    if stresses:
-        floor["stress_component_spread_eV_A3"] = float(
-            max(np.ptp(np.stack([s.ravel() for s in stresses]), axis=0))
-        )
+def measure_floor(atoms, device: str) -> dict[str, Any]:
+    """Section 11.1: repeated identical inference after a warm-up call.
+
+    Repetitions are forced through :class:`common.InferenceProbe`: the ASE
+    result cache is invalidated before every call and the number of real
+    ``calculate`` calls is recorded, so a cache hit can never be reported as
+    a zero-noise floor (review R02).  Coordinates are never perturbed.
+    """
+    with common.InferenceProbe(atoms) as probe:
+        probe.run()  # warm-up, counted separately
+        warmup_calls = probe.calls
+        energies, forces_list, stresses = [], [], []
+        for _ in range(REPEAT_CALLS):
+            (e, f, s), _seconds = common.timed(probe.run, device)
+            energies.append(e)
+            forces_list.append(f)
+            if s is not None:
+                stresses.append(s)
+        floor: dict[str, Any] = {
+            "energy_spread_eV": float(np.ptp(energies)),
+            "force_component_spread_eV_A": float(
+                max(np.ptp(np.stack([f.ravel() for f in forces_list]), axis=0))
+            ),
+            "repeat_calls_requested": REPEAT_CALLS,
+            "warmup_calculate_calls": int(warmup_calls),
+            "real_calculate_calls": int(probe.calls),
+            "calculate_call_count_verified": bool(probe.wrapped_calculate),
+            "ase_result_cache_invalidated_per_repeat": True,
+            "backend_internal_caches_invalidated": False,
+        }
+        if stresses:
+            floor["stress_component_spread_eV_A3"] = float(
+                max(np.ptp(np.stack([s.ravel() for s in stresses]), axis=0))
+            )
     return floor
 
 
