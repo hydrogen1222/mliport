@@ -1,6 +1,6 @@
 # mlipx beta 科学验证报告
 
-由 `.validation-work` 下的证据记录生成；对应提交 `7f41cb4365d8787e093943553b0f04a193aafee4`。本文档全部表格由 `validation/science/scripts/generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成并 diff，不要手工编辑。
+由 `.validation-work` 下的证据记录生成；证据对应提交 `05e548c41f8e863f0121702d2c8cc3c60ca8add0, 293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc, 38abb85d87c92799b9b370758c9f920b4e982cbc, 7b22280d5eb723a0a9edde0ebf8d925bf410a341, 7cfce9f908feedcc64e790d6eb893fe3b02b6e5d, b79f0d0c7947ccada2cd60b384a2701060e7d2f2, c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f, e08ab41788ee17aa2dc924271230ae21ad01c4e8`。本文档全部表格由 `validation/science/scripts/generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成并 diff，不要手工编辑。
 
 模型身份与产物哈希固定在 `validation/science/model_manifest.json`；OMat24 评估子集见 `validation/science/data/`（种子 20260911）。
 

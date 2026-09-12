@@ -469,13 +469,12 @@ def readme_validation_snippet(
 # ------------------------------------------------------------ md sections
 
 
-def md_provenance(root: Path, out_dir: Path) -> str:
-    commit = git_commit()
+def md_provenance(root: Path, out_dir: Path, commits: str) -> str:
     lines = [
         "# mlipx beta scientific validation report",
         "",
-        f"Generated from evidence records under `{root}`; commit "
-        f"`{commit}`. Every table in this document is rendered from "
+        f"Generated from evidence records under `{root}`; evidence "
+        f"commits: `{commits}`. Every table in this document is rendered from "
         "result JSON by `validation/science/scripts/"
         "generate_beta_report.py`; regenerate and diff instead of "
         "editing.",
@@ -1279,6 +1278,28 @@ def md_limitations() -> str:
 """
 
 
+def evidence_commits(tiers: dict[str, list[dict[str, Any]]]) -> str:
+    """Git commits carried by the evidence records themselves.
+
+    Deriving this from the records (instead of stamping the current HEAD)
+    keeps report regeneration byte-stable: the report is a pure function of
+    the evidence records, so ``git diff --exit-code`` after regeneration
+    actually holds. String-typed to stay coherent with the shared
+    ``mlipx.beta-validation-summary/1`` schema id.
+    """
+    commits = sorted(
+        {
+            str(r.get("git_commit"))
+            for records in tiers.values()
+            for r in records
+            if r.get("git_commit")
+        }
+    )
+    if not commits:
+        return "unknown"
+    return ", ".join(commits)
+
+
 def _summary_json(root: Path, out_dir: Path,
                   tiers: dict[str, list], matrix: dict,
                   coverage: list) -> dict[str, Any]:
@@ -1304,7 +1325,7 @@ def _summary_json(root: Path, out_dir: Path,
     return {
         "schema": "mlipx.beta-validation-summary/1",
         "generated_from": str(root),
-        "code_commit": git_commit(),
+        "code_commit": evidence_commits(tiers),
         "model_profiles": {
             eng: ENGINE_LABELS[eng] for eng in ENGINE_ORDER
         },
@@ -1344,7 +1365,7 @@ def main() -> int:
     )
 
     sections_en = [
-        md_provenance(root, out),
+        md_provenance(root, out, summary["code_commit"]),
         md_t1(tiers["t1"]),
         md_t2(tiers["t2"]),
         md_t2fd(tiers["t2fd"]),
@@ -1368,7 +1389,7 @@ def main() -> int:
     sections_cn = [
         "# mlipx beta 科学验证报告",
         "",
-        f"由 `{root}` 下的证据记录生成；对应提交 `{git_commit()}`。"
+        f"由 `{root}` 下的证据记录生成；证据对应提交 `{summary['code_commit']}`。"
         "本文档全部表格由 `validation/science/scripts/"
         "generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成"
         "并 diff，不要手工编辑。",
