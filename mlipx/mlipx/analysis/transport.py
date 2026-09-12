@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 from ase import Atoms
@@ -149,12 +149,15 @@ def _resolve_kinisi_lag_grid(
     lag_step_ps: float | None = None,
     lag_stop_ps: float | None = None,
     native_lag_guard: int = DEFAULT_MAX_NATIVE_KINISI_LAG_POINTS,
+    covariance_memory_limit_bytes: int | None = None,
 ) -> dict[str, Any]:
     """Resolve a kinisi lag grid without importing kinisi or scipp.
 
     Custom grids are represented by integer offsets on the saved-frame time
     axis.  Omitting both custom parameters preserves kinisi's native ``dt``
-    behavior, subject to the explicit resource guard.
+    behavior.  Both the native and the custom paths are checked against
+    ``covariance_memory_limit_bytes`` because the covariance-aware fit is
+    quadratic in the number of lag points (review custom-lag guard).
     """
 
     if not np.isfinite(frame_interval_fs) or frame_interval_fs <= 0:
@@ -182,12 +185,20 @@ def _resolve_kinisi_lag_grid(
         int(np.floor(total_duration_ps / interval_ps + _FRAME_OFFSET_ATOL)),
     )
     if lag_step_ps is None and lag_stop_ps is None:
-        if estimated_native_lag_points > native_lag_guard:
+        native_covariance_bytes = _kinisi_covariance_peak_bytes(
+            estimated_native_lag_points
+        )
+        if estimated_native_lag_points > native_lag_guard or (
+            covariance_memory_limit_bytes is not None
+            and native_covariance_bytes > covariance_memory_limit_bytes
+        ):
             raise ValueError(
                 f"kinisi's default lag grid would contain ~"
                 f"{estimated_native_lag_points} lag points for a "
                 f"{total_duration_ps:g} ps trajectory sampled every "
-                f"{interval_ps:g} ps.\n\n"
+                f"{interval_ps:g} ps (~"
+                f"{native_covariance_bytes / 1024**3:.2f} GiB covariance)."
+                "\n\n"
                 "This is too large for mlipx's guarded transport path "
                 "because kinisi performs covariance-aware analysis over the "
                 "lag grid.\n\n"
@@ -208,6 +219,7 @@ def _resolve_kinisi_lag_grid(
             "fit_start_inserted": None,
             "is_uniform_grid": None,
             "estimated_n_lag_points": estimated_native_lag_points,
+            "estimated_covariance_peak_bytes": native_covariance_bytes,
             "frame_interval_ps": interval_ps,
         }
 
@@ -266,6 +278,19 @@ def _resolve_kinisi_lag_grid(
     lag_indices = np.unique(lag_indices)
     if not len(lag_indices):
         raise ValueError("The custom lag grid contains no positive lag points")
+    custom_covariance_bytes = _kinisi_covariance_peak_bytes(len(lag_indices))
+    if (
+        covariance_memory_limit_bytes is not None
+        and custom_covariance_bytes > covariance_memory_limit_bytes
+    ):
+        raise ValueError(
+            f"The custom lag grid contains {len(lag_indices)} points; the "
+            "covariance-aware kinisi fit needs at least "
+            f"{custom_covariance_bytes / 1024**3:.2f} GiB for its "
+            f"({len(lag_indices)} x {len(lag_indices)}) float64 covariance "
+            "alone. Reduce --lag-stop-ps or increase --lag-step-ps, or raise "
+            "--parser-memory-limit-gib only after confirming available RAM."
+        )
     lag_times_fs = lag_indices.astype(float) * frame_interval_fs
     actual_stop_ps = float(lag_times_fs[-1] / 1000.0)
     is_uniform = not fit_start_inserted
@@ -283,8 +308,25 @@ def _resolve_kinisi_lag_grid(
         "fit_start_inserted": fit_start_inserted,
         "is_uniform_grid": is_uniform,
         "estimated_n_lag_points": estimated_native_lag_points,
+        "estimated_covariance_peak_bytes": custom_covariance_bytes,
         "frame_interval_ps": interval_ps,
     }
+
+
+class _KinisiFrames(NamedTuple):
+    """Mobile-only kinisi input plus the exact continuous positions.
+
+    ``frames`` are wrapped ASE frames (what kinisi would parse itself);
+    ``continuous_positions_A`` are the same atoms before wrapping, i.e. the
+    exact drift-corrected displacement history that mlipx validated.  The
+    exact array is injected into kinisi so its own 8-image reconstruction
+    can never silently disagree with it (review R05).
+    """
+
+    frames: list[Atoms]
+    local_mobile: np.ndarray
+    reference: np.ndarray
+    continuous_positions_A: np.ndarray
 
 
 def _kinisi_frames_and_indices(
@@ -293,7 +335,7 @@ def _kinisi_frames_and_indices(
     mobile: np.ndarray,
     drift_reference: str,
     drift_indices: Iterable[int] | None,
-):
+) -> _KinisiFrames:
     """Build mobile-only frames with explicit unweighted drift correction.
 
     kinisi corrects drift by subtracting the unweighted mean displacement of
@@ -301,7 +343,9 @@ def _kinisi_frames_and_indices(
     parser creates several ``time × atoms × 8`` arrays.  Apply the identical
     mean-displacement definition once, validate that the corrected mobile
     steps remain minimum-image reconstructible, and pass only mobile atoms to
-    kinisi so its automatic complement is empty.
+    kinisi so its automatic complement is empty.  The exact continuous
+    positions are returned alongside the wrapped frames so the analyzer
+    adapter can inject them directly.
     """
     corrected, reference = _production_positions_with_drift(
         dataset,
@@ -321,7 +365,112 @@ def _kinisi_frames_and_indices(
         atoms.wrap()
         frames.append(atoms)
     local_mobile = np.arange(len(mobile), dtype=int)
-    return frames, local_mobile, reference
+    return _KinisiFrames(
+        frames=frames,
+        local_mobile=local_mobile,
+        reference=reference,
+        continuous_positions_A=np.asarray(corrected[:, mobile], dtype=float),
+    )
+
+
+def _exact_displacement_parser(
+    *,
+    sc: Any,
+    ASEParser: Any,
+    frames: list[Atoms],
+    continuous_positions_A: np.ndarray,
+    local_mobile: np.ndarray,
+    time_step_fs: float,
+    step_skip: int,
+    dt_values_fs: np.ndarray | None,
+    dimensions: str,
+) -> Any:
+    """Build a kinisi parser that consumes mlipx's exact displacements.
+
+    kinisi's ``ASEParser`` wraps every frame into fractional coordinates and
+    reconstructs each saved-frame displacement with an eight-image heuristic
+    that is *not* the minimum-image displacement for large steps in strongly
+    skewed cells (review R05).  We keep kinisi's time grid, indices, volume
+    and drift semantics but supply the exact cumulative displacement from the
+    continuous positions mlipx already validated.
+    """
+    positions = np.asarray(continuous_positions_A, dtype=float)
+    n_frames = len(frames)
+    n_particles = len(local_mobile)
+    if positions.shape != (n_frames, n_particles, 3):
+        raise ValueError(
+            "exact kinisi positions must have shape "
+            f"({n_frames}, {n_particles}, 3), got {positions.shape}"
+        )
+    # kinisi's ASEParser inserts a duplicate of the first frame before
+    # computing displacements (its ``obs`` axis has one entry per saved frame,
+    # starting with the zero displacement).  Mirror that convention exactly so
+    # the array we inject has the shape kinisi's fit expects.
+    positions = np.concatenate([positions[:1], positions], axis=0)
+    steps = np.diff(positions, axis=0)
+    exact_disp = (
+        np.cumsum(steps, axis=0)
+        if steps.size
+        else np.zeros((0, n_particles, 3), dtype=float)
+    )
+
+    class _ExactDisplacementASEParser(ASEParser):  # type: ignore[misc, valid-type]
+        """ASEParser whose displacement array is supplied, not reconstructed."""
+
+        def orthorhombic_calculate_displacements(self, coords, lattice):
+            return sc.array(
+                dims=["obs", "particle", "dimension"],
+                values=np.array(exact_disp, dtype=float, copy=True),
+                unit=lattice.unit,
+            )
+
+        # kinisi dispatches between the two names; both must return the same
+        # exact array so the cell shape cannot change the science.
+        non_orthorhombic_calculate_displacements = orthorhombic_calculate_displacements
+
+    kwargs: dict[str, Any] = {
+        "atoms": frames,
+        "specie": None,
+        "time_step": sc.scalar(float(time_step_fs), unit="fs"),
+        "step_skip": sc.scalar(int(step_skip), unit="dimensionless"),
+        "dimension": dimensions,
+        "progress": False,
+        "specie_indices": sc.array(
+            dims=["particle"],
+            values=np.asarray(local_mobile, dtype=int),
+            unit="dimensionless",
+        ),
+    }
+    if dt_values_fs is not None:
+        kwargs["dt"] = sc.array(
+            dims=["time interval"],
+            values=np.asarray(dt_values_fs, dtype=float),
+            unit="fs",
+        )
+    parser = _ExactDisplacementASEParser(**kwargs)
+
+    # Verify the array the backend will actually use BEFORE any expensive fit.
+    used = np.asarray(parser.displacements.to(unit="angstrom").values, dtype=float)
+    reference = exact_disp[:, np.asarray(parser.indices.values, dtype=int), :]
+    if used.shape != reference.shape:
+        raise UnsupportedAnalysisError(
+            "kinisi displacement-array shape changed: the exact mlipx "
+            f"positions give {reference.shape}, the parser exposes {used.shape}."
+        )
+    max_difference = float(np.max(np.abs(used - reference))) if used.size else 0.0
+    if max_difference > _KINISI_RECONSTRUCTION_ATOL_A:
+        raise UnsupportedAnalysisError(
+            "kinisi is not consuming the exact mlipx displacements; refusing "
+            f"transport (max difference {max_difference:g} A). Lock kinisi to "
+            "a tested 2.x version or report this adapter mismatch."
+        )
+    parser._mlipx_exact_displacement_audit = {
+        "backend_displacements_source": "mlipx exact continuous positions",
+        "backend_displacement_verified": True,
+        "backend_displacement_max_abs_difference_A": max_difference,
+        "backend_displacement_checked_before_fit": True,
+    }
+    return parser
 
 
 def _production_positions_with_drift(
@@ -395,20 +544,121 @@ def _kinisi_parser_peak_bytes(*, nframes: int, natoms: int, triclinic: bool) -> 
     return int(points * 128)
 
 
+def _kinisi_covariance_peak_bytes(n_lag_points: int) -> int:
+    """Peak bytes of the covariance-aware lag fit (review custom-lag guard).
+
+    kinisi builds at least one ``n_lag x n_lag`` float64 array (the
+    displacement covariance) and needs temporaries for its factorisation, so
+    the estimate is ``2 * 8 * n_lag**2`` bytes.  20000 custom lags alone are
+    3.2 GiB for a single matrix; no entry point may allocate that silently.
+    """
+    n = max(0, int(n_lag_points))
+    return int(2 * 8 * n * n)
+
+
+def _build_kinisi_analyzer(
+    *,
+    sc: Any,
+    analyzer_cls: Any,
+    frames: list[Atoms],
+    continuous_positions_A: np.ndarray,
+    local_mobile: np.ndarray,
+    time_step_fs: float,
+    step_skip: int,
+    dt_values_fs: np.ndarray | None,
+    dimensions: str,
+    from_ase_kwargs: dict[str, Any],
+    allow_exact_adapter: bool,
+    dg_kind: str = "msd",
+    system_particles: int = 1,
+    ionic_charge: Any = None,
+) -> tuple[Any, dict[str, Any]]:
+    """Construct a kinisi analyzer on exact displacements when possible.
+
+    Real kinisi 2.x exposes ``ASEParser``/``calculate_msd``: the exact adapter
+    is used and its displacement array is verified before the fit.  A
+    third-party/plugin backend without that surface falls back to
+    ``from_ase`` and records ``exact_displacement_adapter: false`` so the
+    provenance can never claim exactness it did not have.
+    """
+    use_exact_adapter = bool(allow_exact_adapter)
+    if use_exact_adapter:
+        # Only real kinisi analyzer classes are rebuilt on the exact parser.
+        # Lightweight test/plugin fakes that only implement ``from_ase`` keep
+        # the legacy path and are reported as adapter=false, so provenance
+        # never claims exactness a fake never had.
+        try:
+            from kinisi.analyzer import Analyzer as _KinisiAnalyzerBase  # noqa: PLC0415
+            from kinisi.ase import ASEParser  # noqa: PLC0415
+            from kinisi.displacement import (  # noqa: PLC0415
+                calculate_msd,
+                calculate_mstd,
+            )
+        except ImportError:
+            use_exact_adapter = False
+        else:
+            use_exact_adapter = isinstance(analyzer_cls, type) and issubclass(
+                analyzer_cls, _KinisiAnalyzerBase
+            )
+    if not use_exact_adapter:
+        ASEParser = None
+        calculate_msd = None
+        calculate_mstd = None
+
+    if ASEParser is not None:
+        parser = _exact_displacement_parser(
+            sc=sc,
+            ASEParser=ASEParser,
+            frames=frames,
+            continuous_positions_A=continuous_positions_A,
+            local_mobile=local_mobile,
+            time_step_fs=time_step_fs,
+            step_skip=step_skip,
+            dt_values_fs=dt_values_fs,
+            dimensions=dimensions,
+        )
+        analyzer = analyzer_cls(parser)
+        # kinisi's analyzer methods read ``self.dg``; every real analyzer class
+        # needs the displacement DataGroup just as its ``from_ase`` would set
+        # it (MSD for diffusion, mean-squared *total* displacement with or
+        # without the ionic charge for conductivity/jump analysis).
+        if dg_kind == "msd":
+            analyzer._dg = calculate_msd(parser, progress=False)
+        else:
+            analyzer._dg = calculate_mstd(
+                parser, system_particles, ionic_charge, progress=False
+            )
+        audit = dict(parser._mlipx_exact_displacement_audit)
+        audit["exact_displacement_adapter"] = True
+        return analyzer, audit
+
+    analyzer = analyzer_cls.from_ase(**from_ase_kwargs)
+    return analyzer, {
+        "backend_displacements_source": (
+            "kinisi ASEParser reconstruction (exact adapter unavailable)"
+        ),
+        "backend_displacement_verified": False,
+        "backend_displacement_max_abs_difference_A": None,
+        "backend_displacement_checked_before_fit": False,
+        "exact_displacement_adapter": False,
+    }
+
+
 def _validate_kinisi_periodic_reconstruction(
     dataset: TrajectoryDataset,
     unwrap_diagnostics: dict[str, Any],
 ) -> dict[str, Any]:
     """Record kinisi backend position semantics; fail closed on image loss.
 
-    kinisi's ASE backend reconstructs displacements from wrapped/scaled
-    periodic coordinates, so exact unwrapped image counters are never
-    consumed directly.  For an unwrapped source we verify that the periodic
-    minimum-image reconstruction of every saved-frame displacement equals the
-    exact displacement; otherwise exact image history would be lost and
-    transport must be refused.  Wrapped sources carry no exact image counter,
-    so only the heuristic unwrap safety ratio (applied by the caller) is
-    available and the reconstruction equivalence is reported as null.
+    mlipx validates the continuous positions it will inject into the kinisi
+    adapter: for an unwrapped source every saved-frame displacement must
+    equal its periodic minimum-image reconstruction, otherwise the exact
+    image history itself is ambiguous and transport is refused.  Wrapped
+    sources carry no exact image counter, so the heuristic unwrap safety
+    ratio (applied by the caller) plus the step-vs-MIC check on the
+    reconstructed positions gate the analysis.  The adapter then verifies
+    the displacement array kinisi actually consumes before any expensive
+    fit; that audit is merged into this record.
     """
 
     convention = dataset.positions_convention
@@ -441,7 +691,8 @@ def _validate_kinisi_periodic_reconstruction(
             )
         return {
             "source_positions_convention": "unwrapped",
-            "backend_input": "periodic ASE frames",
+            "backend_input": "exact continuous positions",
+            "backend_input_frames_wrapped_for_kinisi": True,
             "backend_reconstruction": "kinisi periodic displacement reconstruction",
             "exact_unwrapped_preserved_directly": False,
             "exact_unwrapped_reconstruction_equivalent": True,
@@ -455,7 +706,10 @@ def _validate_kinisi_periodic_reconstruction(
         )
     return {
         "source_positions_convention": "wrapped",
-        "backend_input": "wrapped/scaled periodic coordinates",
+        "backend_input": (
+            "wrapped frames plus mlipx MIC-reconstructed continuous positions"
+        ),
+        "backend_input_frames_wrapped_for_kinisi": True,
         "backend_reconstruction": "kinisi periodic displacement reconstruction",
         "exact_unwrapped_preserved_directly": False,
         "exact_unwrapped_reconstruction_equivalent": None,
@@ -584,13 +838,7 @@ def kinisi_transport(
     require_analysis(dataset, "transport")
     view = dataset.analysis_view(include_equilibration=False)
     total_duration_ps = (view.times_fs[-1] - view.times_fs[0]) / 1000.0
-    lag_grid = _resolve_kinisi_lag_grid(
-        frame_interval_fs=view.frame_interval_fs,
-        total_duration_ps=float(total_duration_ps),
-        fit_start_ps=float(fit_start_ps),
-        lag_step_ps=lag_step_ps,
-        lag_stop_ps=lag_stop_ps,
-    )
+    parser_limit_bytes = int(parser_memory_limit_gib * 1024**3)
     mobile = view.select(mobile_species)
     cell_matrix = np.asarray(view.cells[0], dtype=float)
     # Match kinisi 2.x's actual parser dispatch: it calls a cell
@@ -601,7 +849,6 @@ def kinisi_transport(
         natoms=len(mobile),
         triclinic=triclinic,
     )
-    parser_limit_bytes = int(parser_memory_limit_gib * 1024**3)
     if parser_peak_bytes > parser_limit_bytes:
         raise UnsupportedAnalysisError(
             "Estimated kinisi trajectory-parser peak memory is "
@@ -611,6 +858,16 @@ def kinisi_transport(
             "--parser-memory-limit-gib only after confirming available RAM, "
             "or analyze a shorter production window."
         )
+    # Both the native and the custom lag grids are checked against the same
+    # memory budget before any covariance allocation (review custom-lag guard).
+    lag_grid = _resolve_kinisi_lag_grid(
+        frame_interval_fs=view.frame_interval_fs,
+        total_duration_ps=float(total_duration_ps),
+        fit_start_ps=float(fit_start_ps),
+        lag_step_ps=lag_step_ps,
+        lag_stop_ps=lag_stop_ps,
+        covariance_memory_limit_bytes=parser_limit_bytes,
+    )
     _, unwrap_diagnostics = unwrap_positions(view)
     if (
         view.positions_convention == "wrapped"
@@ -647,12 +904,15 @@ def kinisi_transport(
         raise OptionalDependencyError(
             "The installed kinisi adapter does not provide JumpDiffusionAnalyzer"
         )
-    frames, local_mobile, reference = _kinisi_frames_and_indices(
+    kinisi_frames = _kinisi_frames_and_indices(
         view,
         mobile=mobile,
         drift_reference=drift_reference,
         drift_indices=drift_indices,
     )
+    frames = kinisi_frames.frames
+    local_mobile = kinisi_frames.local_mobile
+    reference = kinisi_frames.reference
     if (
         view.md_timestep_fs is not None
         and view.frame_stride_steps is not None
@@ -687,7 +947,26 @@ def kinisi_transport(
     indices_variable = sc.array(
         dims=["particle"], values=local_mobile, unit="dimensionless"
     )
-    analyzer = DiffusionAnalyzer.from_ase(**common, specie_indices=indices_variable)
+    analyzer, displacement_audit = _build_kinisi_analyzer(
+        sc=sc,
+        analyzer_cls=DiffusionAnalyzer,
+        frames=frames,
+        continuous_positions_A=kinisi_frames.continuous_positions_A,
+        local_mobile=local_mobile,
+        time_step_fs=kinisi_time_step_fs,
+        step_skip=kinisi_step_skip,
+        dt_values_fs=(
+            None if lag_grid["mode"] != "custom" else lag_grid["lag_times_fs"]
+        ),
+        dimensions=dimensions,
+        from_ase_kwargs={
+            **common,
+            "specie_indices": indices_variable,
+        },
+        allow_exact_adapter=True,
+        dg_kind="msd",
+    )
+    position_semantics.update(displacement_audit)
     start_dt = sc.scalar(fit_start_ps * 1000.0, unit="fs")
     mcmc = {
         "n_samples": n_samples,
@@ -829,11 +1108,28 @@ def kinisi_transport(
         },
     }
     if collective_conductivity:
-        conductivity = ConductivityAnalyzer.from_ase(
-            **common,
-            ionic_charge=float(ionic_charge_e) * sc.Unit("e"),
-            species_indices=indices_variable,
+        conductivity, collective_displacement_audit = _build_kinisi_analyzer(
+            sc=sc,
+            analyzer_cls=ConductivityAnalyzer,
+            frames=frames,
+            continuous_positions_A=kinisi_frames.continuous_positions_A,
+            local_mobile=local_mobile,
+            time_step_fs=kinisi_time_step_fs,
+            step_skip=kinisi_step_skip,
+            dt_values_fs=(
+                None if lag_grid["mode"] != "custom" else lag_grid["lag_times_fs"]
+            ),
+            dimensions=dimensions,
+            from_ase_kwargs={
+                **common,
+                "ionic_charge": float(ionic_charge_e) * sc.Unit("e"),
+                "species_indices": indices_variable,
+                "system_particles": collective_system_particles,
+            },
+            allow_exact_adapter=collective_system_particles == 1,
+            dg_kind="mstd",
             system_particles=collective_system_particles,
+            ionic_charge=float(ionic_charge_e) * sc.Unit("e"),
         )
         conductivity.conductivity(
             start_dt,
@@ -994,9 +1290,25 @@ def kinisi_transport(
                 "uncertainty_semantics": "omitted: invalid collective posterior",
             }
     if jump_diffusion:
-        jump = JumpDiffusionAnalyzer.from_ase(
-            **common,
-            specie_indices=indices_variable,
+        jump, _jump_displacement_audit = _build_kinisi_analyzer(
+            sc=sc,
+            analyzer_cls=JumpDiffusionAnalyzer,
+            frames=frames,
+            continuous_positions_A=kinisi_frames.continuous_positions_A,
+            local_mobile=local_mobile,
+            time_step_fs=kinisi_time_step_fs,
+            step_skip=kinisi_step_skip,
+            dt_values_fs=(
+                None if lag_grid["mode"] != "custom" else lag_grid["lag_times_fs"]
+            ),
+            dimensions=dimensions,
+            from_ase_kwargs={
+                **common,
+                "specie_indices": indices_variable,
+                "system_particles": collective_system_particles,
+            },
+            allow_exact_adapter=collective_system_particles == 1,
+            dg_kind="mstd",
             system_particles=collective_system_particles,
         )
         jump.jump_diffusion(

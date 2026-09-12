@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
+import os
 import platform
+import shutil
 import traceback
+import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -29,40 +34,218 @@ _TASK_OUTPUT_REVISIONS = {"msd": 5, "transport": 4, "electrolyte": 3}
 _TASK_SCIENTIFIC_REVISIONS = {"transport": 4, "electrolyte": 3}
 
 
-def _jsonable(value: Any, *, array_limit: int = 2000) -> Any:
+def _canonical_npy_sha256(array: np.ndarray) -> str:
+    """Deterministic content hash of an array (npy bytes, no zip timestamps)."""
+    buffer = io.BytesIO()
+    np.save(buffer, np.ascontiguousarray(array), allow_pickle=False)
+    return hashlib.sha256(buffer.getvalue()).hexdigest()
+
+
+def _store_array(array: np.ndarray, *, base_dir: Path, key: str) -> dict[str, Any]:
+    """Write one oversized array to NPZ and return its JSON reference.
+
+    The contract is explicit: ``path`` (relative), ``shape``, ``dtype`` and a
+    content ``sha256`` are all recorded, and :func:`load_stored_array` reads
+    the exact same array back (review array-export contract).
+    """
+    arr = np.ascontiguousarray(array)
+    digest = _canonical_npy_sha256(arr)
+    relative = Path("arrays") / f"{digest[:16]}.npz"
+    target = base_dir / relative
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f".tmp-{digest[:16]}-{uuid.uuid4().hex[:8]}.npz")
+        try:
+            np.savez(tmp, array=arr)
+            os.replace(tmp, target)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
+    return {
+        "stored_separately": True,
+        "format": "npz",
+        "key": "array",
+        "path": relative.as_posix(),
+        "shape": list(arr.shape),
+        "dtype": str(arr.dtype),
+        "sha256": digest,
+        "sha256_covers": "canonical npy bytes",
+        "source_key": key,
+    }
+
+
+def load_stored_array(reference: dict[str, Any], base_dir: Path) -> np.ndarray:
+    """Round-trip loader for a ``stored_separately`` array reference."""
+    base = Path(base_dir).expanduser().resolve()
+    try:
+        path = (base / str(reference["path"])).resolve()
+    except KeyError as exc:
+        raise ValueError("array reference has no path") from exc
+    if base != path and base not in path.parents:
+        raise ValueError(f"array path escapes the analysis directory: {path}")
+    if not path.is_file():
+        raise FileNotFoundError(f"stored array is missing: {path}")
+    with np.load(path, allow_pickle=False) as data:
+        key = str(reference.get("key", "array"))
+        if key not in data:
+            raise ValueError(f"stored array {path} has no key {key!r}")
+        array = np.asarray(data[key])
+    expected_shape = reference.get("shape")
+    if expected_shape is not None and list(array.shape) != list(expected_shape):
+        raise ValueError(
+            f"stored array shape {list(array.shape)} does not match the "
+            f"reference {expected_shape}"
+        )
+    expected_digest = reference.get("sha256")
+    if expected_digest is not None and _canonical_npy_sha256(array) != expected_digest:
+        raise ValueError(f"stored array content hash mismatch for {path}")
+    return array
+
+
+def _jsonable(
+    value: Any,
+    *,
+    array_limit: int = 2000,
+    array_store: Path | None = None,
+    key_prefix: str = "array",
+) -> Any:
     if isinstance(value, np.ndarray):
         if value.size <= array_limit:
-            return _jsonable(value.tolist(), array_limit=array_limit)
-        return {
-            "stored_separately": True,
-            "shape": list(value.shape),
-            "dtype": str(value.dtype),
-        }
+            return _jsonable(
+                value.tolist(),
+                array_limit=array_limit,
+                array_store=array_store,
+                key_prefix=key_prefix,
+            )
+        if array_store is None:
+            return {
+                "stored_separately": False,
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+                "note": "array exceeds the inline limit and no store was available",
+            }
+        return _store_array(value, base_dir=array_store, key=key_prefix)
     if isinstance(value, np.generic):
-        return _jsonable(value.item(), array_limit=array_limit)
+        return _jsonable(
+            value.item(),
+            array_limit=array_limit,
+            array_store=array_store,
+            key_prefix=key_prefix,
+        )
     if isinstance(value, float) and not np.isfinite(value):
         return None
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, dict):
         return {
-            str(key): _jsonable(item, array_limit=array_limit)
+            str(key): _jsonable(
+                item,
+                array_limit=array_limit,
+                array_store=array_store,
+                key_prefix=f"{key_prefix}.{key}",
+            )
             for key, item in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return [_jsonable(item, array_limit=array_limit) for item in value]
+        return [
+            _jsonable(
+                item,
+                array_limit=array_limit,
+                array_store=array_store,
+                key_prefix=f"{key_prefix}[{index}]",
+            )
+            for index, item in enumerate(value)
+        ]
     return value
 
 
 def _write_json(path: Path, value: Any) -> None:
-    path.write_text(
-        json.dumps(_jsonable(value), indent=2, sort_keys=True, allow_nan=False) + "\n",
-        encoding="utf-8",
+    """Atomically publish one JSON document (temp file + os.replace)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        json.dumps(
+            _jsonable(value, array_store=path.parent),
+            indent=2,
+            sort_keys=True,
+            allow_nan=False,
+        )
+        + "\n"
     )
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}-{uuid.uuid4().hex[:8]}")
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _read_json_safe(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+#: Sidecar files the loader actually consumes; their content identity is part
+#: of the analysis fingerprint (review R06: metadata-only changes must
+#: invalidate a cached result).
+_RUN_METADATA_FILES = (
+    "artifacts.json",
+    "resolved_config.json",
+    "run.json",
+    "mlipx_results.json",
+    "neb_results.json",
+    "run_context.json",
+    "raw/md.csv",
+    "md.csv",
+)
+
+
+def _run_dir_for(source: Path) -> Path | None:
+    """Directory whose sidecar metadata belongs to this trajectory, if any."""
+    if source.is_dir():
+        return source
+    parent = source.parent
+    if parent.name in {"raw", "vasp"}:
+        return parent.parent
+    if any((parent / name).is_file() for name in _RUN_METADATA_FILES):
+        return parent
+    return None
+
+
+def _file_identity(path: Path) -> dict[str, Any]:
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        return {"path": str(path), "exists": False, "error": str(exc)}
+    return {
+        "path": str(path),
+        "exists": True,
+        "size_bytes": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+        "sha256": _sha256_file(path),
+    }
 
 
 def source_fingerprint(path: Path) -> dict[str, Any]:
+    """Content identity of the trajectory plus every analysis-relevant sidecar.
+
+    Path/size/mtime alone let a same-size metadata edit (or an in-place
+    rewrite that preserves mtime granularity) reuse a stale result; the
+    streamed SHA-256 and the sidecar hashes make the identity content-based
+    (review R06).
+    """
     resolved = path.expanduser().resolve()
+    run_dir = _run_dir_for(resolved)
     if resolved.is_dir():
         for candidate in (
             resolved / "raw" / "trajectory.traj",
@@ -76,12 +259,21 @@ def source_fingerprint(path: Path) -> dict[str, Any]:
     if not resolved.exists():
         return {"path": str(resolved), "exists": False}
     stat = resolved.stat()
-    return {
+    fingerprint: dict[str, Any] = {
         "path": str(resolved),
         "size_bytes": int(stat.st_size),
         "mtime_ns": int(stat.st_mtime_ns),
-        "method": "path+size+mtime (no full-content scan)",
+        "sha256": _sha256_file(resolved),
+        "method": "path+size+mtime+sha256 plus sidecar content hashes",
     }
+    metadata: dict[str, Any] = {}
+    if run_dir is not None:
+        for name in _RUN_METADATA_FILES:
+            candidate = run_dir / name
+            if candidate.is_file():
+                metadata[name] = _file_identity(candidate)
+    fingerprint["run_metadata"] = metadata
+    return fingerprint
 
 
 def _versions() -> dict[str, str]:
@@ -121,31 +313,106 @@ def _output_root(source: Path) -> Path:
     return resolved.parent / "analysis"
 
 
+@contextmanager
+def _index_lock(root: Path):
+    """Serialise read-modify-write of index.json across processes."""
+    lock_path = root / ".index.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        locked = False
+        if os.name != "nt":  # pragma: no cover - POSIX CI hosts
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            locked = True
+        try:
+            yield
+        finally:
+            if locked:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _update_index(root: Path, analysis_id: str, record: dict[str, Any]) -> None:
     index_path = root / "index.json"
+    with _index_lock(root):
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            index = {"schema": "mlipx.analysis-index/2", "jobs": {}}
+        index.setdefault("jobs", {})[analysis_id] = _jsonable(record)
+        _write_json(index_path, index)
+
+
+def _new_attempt_id() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    return f"{stamp}-{uuid.uuid4().hex[:8]}"
+
+
+def _publish_attempt(
+    output_dir: Path, attempt_id: str, documents: dict[str, Any]
+) -> Path:
+    """Atomically publish an immutable attempt directory and move the pointer.
+
+    The attempt is fully written under a hidden temporary directory and then
+    renamed into place, so a concurrent reader can only ever observe a
+    complete attempt (review R06).
+    """
+    attempts_dir = output_dir / "attempts"
+    attempts_dir.mkdir(parents=True, exist_ok=True)
+    final = attempts_dir / attempt_id
+    tmp = attempts_dir / f".tmp-{attempt_id}"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    tmp.mkdir(parents=True)
     try:
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        index = {"schema": "mlipx.analysis-index/2", "jobs": {}}
-    index.setdefault("jobs", {})[analysis_id] = _jsonable(record)
-    _write_json(index_path, index)
+        for name, document in documents.items():
+            _write_json(tmp / name, document)
+        os.replace(tmp, final)
+    except OSError:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    _write_json(
+        attempts_dir / "latest.json",
+        {
+            "schema": "mlipx.analysis-attempt-pointer/1",
+            "attempt_id": attempt_id,
+            "status": documents["attempt.json"]["status"],
+            "finished_at": documents["attempt.json"]["finished_at"],
+        },
+    )
+    return final
 
 
 def _write_columns(path: Path, columns: dict[str, Any]) -> None:
-    usable = {
-        key: np.asarray(value)
-        for key, value in columns.items()
-        if np.asarray(value).ndim == 1
-    }
-    if not usable:
-        return
-    lengths = {len(value) for value in usable.values()}
-    if len(lengths) != 1:
-        raise ValueError(f"CSV columns for {path.name} have unequal lengths")
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(usable)
-        writer.writerows(zip(*usable.values(), strict=True))
+    """Write 1-D columns to CSV and every higher-rank array to NPZ + JSON.
+
+    A 2-D coordinate array can never be represented faithfully by a flat CSV
+    column, so it is stored through the same NPZ contract as oversized JSON
+    arrays and referenced from ``<name>.arrays.json`` (review array export).
+    """
+    arrays = {key: np.asarray(value) for key, value in columns.items()}
+    usable = {key: value for key, value in arrays.items() if value.ndim == 1}
+    extra = {key: value for key, value in arrays.items() if value.ndim != 1}
+    if usable:
+        lengths = {len(value) for value in usable.values()}
+        if len(lengths) != 1:
+            raise ValueError(f"CSV columns for {path.name} have unequal lengths")
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(usable)
+            writer.writerows(zip(*usable.values(), strict=True))
+    if extra:
+        manifest = {
+            "schema": "mlipx.analysis-array-manifest/1",
+            "source": path.name,
+            "arrays": {
+                key: _store_array(value, base_dir=path.parent, key=key)
+                for key, value in extra.items()
+            },
+        }
+        _write_json(path.with_name(f"{path.name}.arrays.json"), manifest)
 
 
 def _write_transport_summary(path: Path, result: dict[str, Any]) -> None:
@@ -695,7 +962,13 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
 
 
 def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
-    """Run one analysis job and persist its complete reproducibility record."""
+    """Run one analysis job and persist its complete reproducibility record.
+
+    Cache identity is content-based (trajectory SHA-256 plus every sidecar the
+    loader consumes) and every attempt is published as an immutable record;
+    a failed attempt replaces the published result with a failure document so
+    an older success can never be returned as the current answer (review R06).
+    """
 
     fingerprint = source_fingerprint(request.source_path)
     canonical_request = {
@@ -715,11 +988,25 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
     analysis_id = _analysis_id(canonical_request)
     root = _output_root(request.source_path)
     output_dir = root / request.task / analysis_id
+    attempts_dir = output_dir / "attempts"
     root.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    attempts_dir.mkdir(parents=True, exist_ok=True)
     existing = output_dir / "results.json"
+
     if existing.is_file() and not request.force:
-        value = json.loads(existing.read_text(encoding="utf-8"))
-        if value.get("status") == "success":
+        value = _read_json_safe(existing)
+        pointer = _read_json_safe(attempts_dir / "latest.json")
+        if (
+            isinstance(value, dict)
+            and value.get("status") == "success"
+            and value.get("analysis_id") == analysis_id
+            and value.get("source_fingerprint") == fingerprint
+            and isinstance(pointer, dict)
+            and pointer.get("status") == "success"
+        ):
+            # Cache hit: the published result names exactly this request and
+            # fingerprint, and the latest attempt is the success that produced it.
             return {
                 "analysis_id": analysis_id,
                 "output_dir": str(output_dir),
@@ -727,13 +1014,26 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
                 "reused": True,
                 "results": value.get("results"),
             }
-    output_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(output_dir / "request.json", canonical_request)
+        # A stale/unverifiable published document must be recomputed, never
+        # reused: fall through to a fresh attempt.
+
+    attempt_id = _new_attempt_id()
+    started_at = datetime.now(timezone.utc).isoformat()
+    # Preserve whatever was published before as an immutable attempt artefact
+    # instead of leaving it in place as a fake success (review R06).
+    if existing.is_file():
+        _write_json(
+            attempts_dir / f"previous-results-{attempt_id}.json",
+            _read_json_safe(existing),
+        )
+        existing.unlink(missing_ok=True)
+
     provenance = {
         "schema": "mlipx.analysis-provenance/2",
         "analysis_id": analysis_id,
         "request_hash": analysis_id,
-        "analysis_timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "attempt_id": attempt_id,
+        "analysis_timestamp_utc": started_at,
         "python_version": platform.python_version(),
         "platform": platform.platform(),
         "packages": _versions(),
@@ -745,14 +1045,17 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
         provenance["task_scientific_revision"] = _TASK_SCIENTIFIC_REVISIONS[
             request.task
         ]
+    _write_json(output_dir / "request.json", canonical_request)
     _write_json(output_dir / "provenance.json", provenance)
     record = {
         "analysis_id": analysis_id,
         "task": request.task,
         "status": "running",
         "path": str(output_dir.relative_to(root)),
+        "attempt_id": attempt_id,
     }
     _update_index(root, analysis_id, record)
+
     try:
         result, artifacts = _dispatch(request, output_dir)
         if request.task == "transport":
@@ -784,15 +1087,40 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
                 "percolation_axes": summary.get("percolation_axes"),
             }
             _write_json(output_dir / "provenance.json", provenance)
+        finished_at = datetime.now(timezone.utc).isoformat()
         payload = {
             "schema": "mlipx.analysis-results/2",
             "analysis_id": analysis_id,
+            "attempt_id": attempt_id,
             "status": "success",
             "task": request.task,
+            "source_fingerprint": fingerprint,
             "results": result,
             "artifacts": sorted(set(artifacts)),
+            "finished_at": finished_at,
         }
-        _write_json(output_dir / "results.json", payload)
+        _write_json(existing, payload)
+        _publish_attempt(
+            output_dir,
+            attempt_id,
+            {
+                "attempt.json": {
+                    "schema": "mlipx.analysis-attempt/1",
+                    "attempt_id": attempt_id,
+                    "analysis_id": analysis_id,
+                    "task": request.task,
+                    "status": "success",
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "source_fingerprint": fingerprint,
+                    "artifacts": payload["artifacts"],
+                    "error": None,
+                },
+                "request.json": canonical_request,
+                "provenance.json": provenance,
+                "results.json": payload,
+            },
+        )
         record.update(status="success", artifacts=payload["artifacts"])
         _update_index(root, analysis_id, record)
         return {
@@ -800,23 +1128,110 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
             "output_dir": str(output_dir),
             "status": "success",
             "reused": False,
-            "results": _jsonable(result),
+            "results": _jsonable(result, array_store=output_dir),
         }
+    except KeyboardInterrupt as exc:
+        _publish_failed_attempt(
+            output_dir,
+            attempts_dir,
+            existing,
+            canonical_request,
+            analysis_id,
+            attempt_id,
+            request,
+            fingerprint,
+            started_at,
+            status="cancelled",
+            exc=exc,
+        )
+        record.update(status="cancelled", error=str(exc))
+        _update_index(root, analysis_id, record)
+        raise
     except Exception as exc:
         status = (
             "unsupported"
             if isinstance(exc, (InvalidTrajectoryError, UnsupportedAnalysisError))
             else "failed"
         )
-        error = {
-            "schema": "mlipx.analysis-error/2",
-            "analysis_id": analysis_id,
-            "status": status,
-            "exception_type": type(exc).__name__,
-            "message": str(exc),
-            "traceback": traceback.format_exc(),
-        }
-        _write_json(output_dir / "error.json", error)
-        record.update(status=status, error=error["message"])
+        _publish_failed_attempt(
+            output_dir,
+            attempts_dir,
+            existing,
+            canonical_request,
+            analysis_id,
+            attempt_id,
+            request,
+            fingerprint,
+            started_at,
+            status=status,
+            exc=exc,
+        )
+        record.update(status=status, error=str(exc))
         _update_index(root, analysis_id, record)
         raise
+
+
+def _publish_failed_attempt(
+    output_dir: Path,
+    attempts_dir: Path,
+    results_path: Path,
+    canonical_request: dict[str, Any],
+    analysis_id: str,
+    attempt_id: str,
+    request: AnalysisRequest,
+    fingerprint: dict[str, Any],
+    started_at: str,
+    *,
+    status: str,
+    exc: BaseException,
+) -> None:
+    """Replace the published result with the failure and keep the attempt.
+
+    The old success (if any) was already preserved as a ``previous-results``
+    artefact, so a later non-force call can never resurrect it (review R06).
+    """
+    finished_at = datetime.now(timezone.utc).isoformat()
+    error = {
+        "schema": "mlipx.analysis-error/2",
+        "analysis_id": analysis_id,
+        "attempt_id": attempt_id,
+        "status": status,
+        "exception_type": type(exc).__name__,
+        "message": str(exc),
+        "traceback": traceback.format_exc(),
+        "finished_at": finished_at,
+    }
+    failure = {
+        "schema": "mlipx.analysis-results/2",
+        "analysis_id": analysis_id,
+        "attempt_id": attempt_id,
+        "status": status,
+        "task": request.task,
+        "source_fingerprint": fingerprint,
+        "results": None,
+        "artifacts": [],
+        "error": error["message"],
+        "finished_at": finished_at,
+    }
+    _write_json(results_path, failure)
+    _write_json(output_dir / "error.json", error)
+    _publish_attempt(
+        output_dir,
+        attempt_id,
+        {
+            "attempt.json": {
+                "schema": "mlipx.analysis-attempt/1",
+                "attempt_id": attempt_id,
+                "analysis_id": analysis_id,
+                "task": request.task,
+                "status": status,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "source_fingerprint": fingerprint,
+                "artifacts": [],
+                "error": error["message"],
+            },
+            "request.json": canonical_request,
+            "error.json": error,
+        },
+    )

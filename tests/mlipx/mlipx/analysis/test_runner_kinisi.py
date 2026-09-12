@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import csv
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
@@ -13,10 +14,11 @@ from ase.io.trajectory import Trajectory
 import mlipx.analysis.runner as runner_module
 import mlipx.analysis.transport as transport_module
 from mlipx.analysis import TrajectoryDataset
-from mlipx.analysis.runner import run_analysis
+from mlipx.analysis.runner import run_analysis, source_fingerprint
 from mlipx.analysis.schema import AnalysisRequest
 from mlipx.analysis.transport import (
     DEFAULT_MAX_NATIVE_KINISI_LAG_POINTS,
+    _exact_displacement_parser,
     _kinisi_frames_and_indices,
     _kinisi_parser_peak_bytes,
     _resolve_kinisi_lag_grid,
@@ -584,12 +586,15 @@ def test_mobile_only_precorrected_parser_matches_kinisi_framework_drift() -> Non
         positions_convention="unwrapped",
     )
     mobile = dataset.select("Li")
-    compact_frames, local_mobile, reference = _kinisi_frames_and_indices(
+    kinisi_frames = _kinisi_frames_and_indices(
         dataset,
         mobile=mobile,
         drift_reference="nonmobile",
         drift_indices=None,
     )
+    compact_frames = kinisi_frames.frames
+    local_mobile = kinisi_frames.local_mobile
+    reference = kinisi_frames.reference
     common = {
         "time_step": sc.scalar(1.0, unit="fs"),
         "step_skip": sc.scalar(1, unit="dimensionless"),
@@ -1084,3 +1089,434 @@ def test_cli_transport_summary_prints_posterior_and_fit_window(
     assert "40 - 200 ps" in out
     assert "Kinisi lag grid" in out
     assert "Nernst-Einstein" in out
+
+
+# ---------------------------------------------------------------------------
+# R05: exact-displacement adapter and custom-lag resource guard
+# ---------------------------------------------------------------------------
+
+
+def _kinisi_msd_reference(displacements: np.ndarray, lag: int) -> float:
+    """kinisi's raw MSD convention for one particle (edge samples included)."""
+    disp = np.asarray(displacements, dtype=float)
+    samples = np.concatenate([disp[lag - 1 : lag], disp[lag:] - disp[:-lag]], axis=0)
+    return float(np.mean(np.sum(samples**2, axis=-1)))
+
+
+def test_exact_parser_replaces_kinisi_skew_cell_misfold() -> None:
+    """Review R05 counterexample: cell [[4,0,0],[12,4,0],[0,0,4]].
+
+    kinisi's ASEParser turns the exact step (0, 1.8, 0) A into (4, 1.8, 0) A
+    because it folds wrapped fractional coordinates image-by-image; the exact
+    adapter must inject the real displacement instead.
+    """
+    sc = pytest.importorskip("scipp")
+    pytest.importorskip("kinisi.analyze")
+    from kinisi.ase import ASEParser
+
+    cell = [[4.0, 0.0, 0.0], [12.0, 4.0, 0.0], [0.0, 0.0, 4.0]]
+    continuous = np.array([[[0.0, 0.0, 0.0]], [[0.0, 1.8, 0.0]], [[0.0, 3.6, 0.0]]])
+    frames = [
+        Atoms("Li", positions=position[0:1], cell=cell, pbc=True)
+        for position in continuous
+    ]
+    indices = sc.array(dims=["particle"], values=[0], unit="dimensionless")
+    plain = ASEParser(
+        atoms=frames,
+        specie=None,
+        time_step=sc.scalar(1.0, unit="fs"),
+        step_skip=sc.scalar(1, unit="dimensionless"),
+        dimension="xyz",
+        specie_indices=indices,
+        progress=False,
+    )
+    misfolded = np.asarray(plain.displacements.to(unit="angstrom").values)[:, 0, :]
+    # the reviewer's measured kinisi reconstruction
+    np.testing.assert_allclose(misfolded[1], [4.0, 1.8, 0.0], atol=1e-12)
+
+    exact_parser = _exact_displacement_parser(
+        sc=sc,
+        ASEParser=ASEParser,
+        frames=frames,
+        continuous_positions_A=continuous,
+        local_mobile=np.array([0]),
+        time_step_fs=1.0,
+        step_skip=1,
+        dt_values_fs=None,
+        dimensions="xyz",
+    )
+    used = np.asarray(exact_parser.displacements.to(unit="angstrom").values)[:, 0, :]
+    np.testing.assert_allclose(
+        used, [[0.0, 0.0, 0.0], [0.0, 1.8, 0.0], [0.0, 3.6, 0.0]], atol=1e-12
+    )
+    audit = exact_parser._mlipx_exact_displacement_audit
+    assert audit["backend_displacement_verified"] is True
+    assert audit["backend_displacement_max_abs_difference_A"] <= 1e-12
+
+    # deterministic raw MSD: kinisi's own calculate_msd on the exact parser
+    from kinisi.displacement import calculate_msd
+
+    msd_group = calculate_msd(exact_parser, progress=False)
+    msd_values = np.asarray(msd_group["da"].to(unit="angstrom^2").values)
+    np.testing.assert_allclose(
+        msd_values,
+        [_kinisi_msd_reference(continuous[:, 0, :], lag) for lag in (1, 2)],
+        rtol=1e-12,
+    )
+
+
+def _skew_unwrapped_dataset() -> TrajectoryDataset:
+    """Single Li walking +1.8 A/frame along y in a strongly skewed cell."""
+    n_frames = 30
+    cell = np.array([[6.0, 0.0, 0.0], [6.0, 6.0, 0.0], [0.0, 0.0, 6.0]])
+    positions = np.zeros((n_frames, 2, 3), dtype=float)
+    positions[:, 1, 0] = 0.0  # S framework atom stays at the origin
+    positions[:, 0, 1] = 1.8 * np.arange(n_frames, dtype=float)
+    frames = [Atoms("LiS", positions=frame, cell=cell, pbc=True) for frame in positions]
+    return TrajectoryDataset.from_frames(
+        frames,
+        times_fs=np.arange(n_frames, dtype=float) * 10.0,
+        positions_convention="unwrapped",
+    )
+
+
+def test_kinisi_transport_uses_exact_displacements_on_skew_cell() -> None:
+    """The fitted MSD must follow the exact steps, not kinisi's misfold."""
+    pytest.importorskip("scipp")
+    pytest.importorskip("kinisi.analyze")
+    dataset = _skew_unwrapped_dataset()
+    result = kinisi_transport(
+        dataset,
+        mobile_species="Li",
+        ionic_charge_e=1,
+        fit_start_ps=0.0,
+        lag_step_ps=0.05,
+        lag_stop_ps=0.2,
+        temperature_K=600.0,
+        n_samples=10,
+        n_walkers=16,
+        n_burn=10,
+        n_thin=1,
+    )
+    semantics = result["kinisi_position_semantics"]
+    assert semantics["exact_displacement_adapter"] is True
+    assert semantics["backend_displacement_verified"] is True
+
+    lag_frames = np.rint(np.asarray(result["lag_time_ps"]) * 100.0).astype(int)
+    walk = np.concatenate(
+        [np.zeros((1, 3)), np.cumsum(np.tile([0.0, 1.8, 0.0], (29, 1)), axis=0)]
+    )
+    exact_msd = np.array([_kinisi_msd_reference(walk, int(lag)) for lag in lag_frames])
+    reported = np.asarray(result["kinisi_msd_A2"], dtype=float)
+    np.testing.assert_allclose(reported, exact_msd, rtol=1e-9)
+    # the image misfold would shift the walk by 6 A per lag; that MSD is
+    # an order of magnitude larger than anything the exact walk can give
+    misfolded_msd = exact_msd + (6.0 * lag_frames) ** 2
+    assert np.all(reported < 0.5 * misfolded_msd)
+
+
+def test_custom_lag_grid_guard_refuses_20000_points() -> None:
+    """Review: 20000 custom lags imply a 3.2 GiB covariance matrix alone."""
+    with pytest.raises(ValueError, match="covariance"):
+        _resolve_kinisi_lag_grid(
+            frame_interval_fs=1.0,
+            total_duration_ps=20.0,
+            fit_start_ps=0.0,
+            lag_step_ps=0.001,
+            lag_stop_ps=20.0,
+            covariance_memory_limit_bytes=4 * 1024**3,
+        )
+    # a coarse grid with the same limit is accepted
+    accepted = _resolve_kinisi_lag_grid(
+        frame_interval_fs=1.0,
+        total_duration_ps=20.0,
+        fit_start_ps=0.0,
+        lag_step_ps=1.0,
+        lag_stop_ps=20.0,
+        covariance_memory_limit_bytes=4 * 1024**3,
+    )
+    assert accepted["n_lag_points"] == 20
+    assert accepted["estimated_covariance_peak_bytes"] < 4 * 1024**3
+
+
+def test_custom_lag_guard_runs_before_kinisi_import(monkeypatch) -> None:
+    dataset = _synthetic_transport_dataset()
+    monkeypatch.setattr(
+        transport_module,
+        "_require_kinisi",
+        lambda: pytest.fail("kinisi must not be imported for a guarded custom grid"),
+    )
+    with pytest.raises(ValueError, match="covariance"):
+        kinisi_transport(
+            dataset,
+            mobile_species="Li",
+            ionic_charge_e=1,
+            fit_start_ps=0.05,
+            lag_step_ps=0.002,
+            lag_stop_ps=0.2,
+            temperature_K=600.0,
+            parser_memory_limit_gib=4.7e-5,
+        )
+
+
+# ---------------------------------------------------------------------------
+# R06: content-based cache identity and transactional attempts
+# ---------------------------------------------------------------------------
+
+
+def test_analysis_fingerprint_hashes_sidecar_content_not_only_stat(tmp_path) -> None:
+    run = tmp_path / "run"
+    _write_short_run(run)
+    first = source_fingerprint(run)
+    artifacts = run / "artifacts.json"
+    text = artifacts.read_text(encoding="utf-8")
+    modified = text.replace('"status": "completed"', '"status": "cancelled"')
+    assert modified != text and len(modified) == len(text), "same-size edit"
+    artifacts.write_text(modified, encoding="utf-8")
+    second = source_fingerprint(run)
+    assert (
+        first["run_metadata"]["artifacts.json"]["sha256"]
+        != second["run_metadata"]["artifacts.json"]["sha256"]
+    )
+    # the trajectory itself is content-hashed too
+    assert first["sha256"] == second["sha256"]
+    assert first["sha256"] and len(first["sha256"]) == 64
+
+
+def test_sidecar_change_invalidates_cached_analysis(tmp_path) -> None:
+    run = tmp_path / "run"
+    _write_short_run(run)
+    first = run_analysis(AnalysisRequest("validate", str(run)))
+    assert first["reused"] is False
+    cached = run_analysis(AnalysisRequest("validate", str(run)))
+    assert cached["reused"] is True
+
+    md_csv = run / "raw" / "md.csv"
+    text = md_csv.read_text(encoding="utf-8")
+    md_csv.write_text(text.replace(",600,", ",601,"), encoding="utf-8")
+    second = run_analysis(AnalysisRequest("validate", str(run)))
+    assert second["analysis_id"] != first["analysis_id"]
+    assert second["reused"] is False
+
+
+def test_forced_failure_cannot_be_masked_by_old_success(tmp_path, monkeypatch) -> None:
+    """Review R06 red case: fail(force) then recall must never return success."""
+    run = tmp_path / "run"
+    _write_short_run(run)
+    first = run_analysis(AnalysisRequest("validate", str(run)))
+    output = Path(first["output_dir"])
+    assert json.loads((output / "results.json").read_text())["status"] == "success"
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("backend failed")
+
+    monkeypatch.setattr(runner_module, "_dispatch", boom)
+    with pytest.raises(RuntimeError, match="backend failed"):
+        run_analysis(AnalysisRequest("validate", str(run), force=True))
+
+    published = json.loads((output / "results.json").read_text(encoding="utf-8"))
+    assert published["status"] == "failed"
+    pointer = json.loads((output / "attempts" / "latest.json").read_text())
+    assert pointer["status"] == "failed"
+    # the old success is preserved as an immutable attempt artefact
+    preserved = sorted((output / "attempts").glob("previous-results-*.json"))
+    assert preserved, "previous published result must be preserved"
+    assert json.loads(preserved[-1].read_text())["status"] == "success"
+
+    # Still failing: a non-force recall must not resurrect the old success.
+    with pytest.raises(RuntimeError, match="backend failed"):
+        run_analysis(AnalysisRequest("validate", str(run)))
+
+    # Once the backend works again the run recomputes and publishes fresh.
+    monkeypatch.undo()
+    recovered = run_analysis(AnalysisRequest("validate", str(run)))
+    assert recovered["status"] == "success"
+    assert recovered["reused"] is False
+
+
+def test_keyboard_interrupt_leaves_cancelled_attempt_not_success(
+    tmp_path, monkeypatch
+) -> None:
+    run = tmp_path / "run"
+    _write_short_run(run)
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner_module, "_dispatch", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        run_analysis(AnalysisRequest("validate", str(run)))
+    output_dirs = list((run / "analysis" / "validate").glob("*/results.json"))
+    assert output_dirs, "a cancelled attempt must still publish an outcome"
+    published = json.loads(output_dirs[0].read_text(encoding="utf-8"))
+    assert published["status"] == "cancelled"
+    pointer = json.loads(
+        (output_dirs[0].parent / "attempts" / "latest.json").read_text()
+    )
+    assert pointer["status"] == "cancelled"
+
+
+def test_tampered_published_result_is_recomputed_not_reused(tmp_path) -> None:
+    run = tmp_path / "run"
+    _write_short_run(run)
+    first = run_analysis(AnalysisRequest("validate", str(run)))
+    output = Path(first["output_dir"])
+    payload = json.loads((output / "results.json").read_text(encoding="utf-8"))
+    payload["source_fingerprint"] = {"path": "tampered", "exists": True}
+    (output / "results.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    second = run_analysis(AnalysisRequest("validate", str(run)))
+    assert second["reused"] is False
+    assert second["status"] == "success"
+
+
+def test_concurrent_identical_analyses_publish_complete_documents(tmp_path) -> None:
+    run = tmp_path / "run"
+    _write_short_run(run)
+
+    def _one(_index: int) -> str:
+        try:
+            return run_analysis(AnalysisRequest("validate", str(run)))["status"]
+        except Exception as exc:  # noqa: BLE001 - reported to the assertion
+            return type(exc).__name__
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(_one, range(2)))
+    assert outcomes == ["success", "success"], outcomes
+
+    outputs = list((run / "analysis" / "validate").glob("*/results.json"))
+    assert len(outputs) == 1
+    published = json.loads(outputs[0].read_text(encoding="utf-8"))
+    assert published["status"] == "success"
+    attempts = sorted((outputs[0].parent / "attempts").glob("*/attempt.json"))
+    assert attempts, "attempt records must exist"
+    for attempt in attempts:
+        assert json.loads(attempt.read_text())["status"] == "success"
+    pointer = json.loads((outputs[0].parent / "attempts" / "latest.json").read_text())
+    assert pointer["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# R06/array export: stored-separately arrays must round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_oversized_json_arrays_round_trip_through_npz(tmp_path) -> None:
+    from mlipx.analysis.runner import _write_json, load_stored_array
+
+    big = np.linspace(0.0, 1.0, 5000).reshape(2500, 2)
+    document = {"results": {"big": big, "small": np.arange(4)}}
+    path = tmp_path / "results.json"
+    _write_json(path, document)
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    reference = loaded["results"]["big"]
+    assert reference["stored_separately"] is True
+    assert reference["format"] == "npz"
+    assert reference["shape"] == [2500, 2]
+    assert reference["dtype"] == "float64"
+    assert len(reference["sha256"]) == 64
+    npz_path = tmp_path / reference["path"]
+    assert npz_path.is_file()
+    # small arrays stay inline
+    assert loaded["results"]["small"] == [0, 1, 2, 3]
+
+    roundtrip = load_stored_array(reference, tmp_path)
+    np.testing.assert_array_equal(roundtrip, big)
+
+    # tampering with the stored content is detected
+    with np.load(npz_path, allow_pickle=False) as data:
+        stored = np.asarray(data["array"])
+    np.savez(npz_path, array=stored + 1.0)
+    with pytest.raises(ValueError, match="hash mismatch"):
+        load_stored_array(reference, tmp_path)
+
+    # path traversal is refused
+    with pytest.raises(ValueError, match="escapes"):
+        load_stored_array({"path": "../escape.npz"}, tmp_path)
+    with pytest.raises(ValueError, match="no path"):
+        load_stored_array({}, tmp_path)
+
+
+def test_write_columns_stores_2d_arrays_in_npz(tmp_path) -> None:
+    from mlipx.analysis.runner import _write_columns, load_stored_array
+
+    coordinates = np.arange(30.0).reshape(10, 3)
+    csv_path = tmp_path / "coordinates.csv"
+    _write_columns(
+        csv_path,
+        {"time_fs": np.arange(10.0), "coordinates": coordinates},
+    )
+    csv_lines = csv_path.read_text(encoding="utf-8").strip().splitlines()
+    assert csv_lines[0].startswith("time_fs")
+    assert "coordinates" not in csv_lines[0], "2-D data must not be flattened"
+    manifest = json.loads(csv_path.with_name("coordinates.csv.arrays.json").read_text())
+    reference = manifest["arrays"]["coordinates"]
+    assert reference["shape"] == [10, 3]
+    np.testing.assert_array_equal(load_stored_array(reference, tmp_path), coordinates)
+
+
+def test_long_msd_analysis_exports_arrays_and_round_trips(tmp_path) -> None:
+    run = tmp_path / "long-run"
+    raw = run / "raw"
+    raw.mkdir(parents=True)
+    n_frames = 2100
+    with Trajectory(raw / "trajectory.traj", "w") as writer:
+        for index in range(n_frames):
+            atoms = Atoms(
+                "LiS",
+                positions=[[0.1 * index, 0.0, 0.0], [5.0, 5.0, 5.0]],
+                cell=[20.0, 20.0, 20.0],
+                pbc=True,
+            )
+            atoms.info["mlipx_step"] = index
+            atoms.info["mlipx_time_fs"] = float(index * 10.0)
+            atoms.info["mlipx_phase"] = "production"
+            writer.write(atoms)
+    (run / "artifacts.json").write_text(
+        json.dumps(
+            {
+                "schema": "mlipx.md-artifacts/2",
+                "status": "completed",
+                "trajectory": {
+                    "md_timestep_fs": 10.0,
+                    "frame_stride_steps": 1,
+                    "frame_interval_fs": 10.0,
+                    "positions_convention": "unwrapped",
+                },
+            }
+        )
+    )
+    (run / "resolved_config.json").write_text(
+        json.dumps({"run_options": {"ensemble": "NVE", "temperature": 600}})
+    )
+    from mlipx.analysis.runner import load_stored_array
+
+    result = run_analysis(
+        AnalysisRequest(
+            "msd",
+            str(run),
+            parameters={"mobile_species": "Li"},
+        )
+    )
+    output = Path(result["output_dir"])
+    published = json.loads((output / "results.json").read_text(encoding="utf-8"))
+
+    references: list[dict[str, Any]] = []
+
+    def collect(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("stored_separately") is True:
+                references.append(node)
+            else:
+                for item in node.values():
+                    collect(item)
+        elif isinstance(node, list):
+            for item in node:
+                collect(item)
+
+    collect(published["results"])
+    assert references, "the >2000-element MSD arrays must be stored separately"
+    for reference in references[:3]:
+        array = load_stored_array(reference, output)
+        assert array.shape == tuple(reference["shape"])
+        assert str(array.dtype) == reference["dtype"]
