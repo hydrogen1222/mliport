@@ -1,6 +1,6 @@
 # mlipx beta scientific validation report
 
-Generated from evidence records under `.validation-work`; commit `7b22280d5eb723a0a9edde0ebf8d925bf410a341`. Every table in this document is rendered from result JSON by `validation/science/scripts/generate_beta_report.py`; regenerate and diff instead of editing.
+Generated from evidence records under `.validation-work`; commit `7f41cb4365d8787e093943553b0f04a193aafee4`. Every table in this document is rendered from result JSON by `validation/science/scripts/generate_beta_report.py`; regenerate and diff instead of editing.
 
 Model identities and artifact hashes are pinned in `validation/science/model_manifest.json`; the OMat24 evaluation subset in `validation/science/data/` (seed 20260911).
 

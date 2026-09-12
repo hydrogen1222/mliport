@@ -23,4 +23,6 @@ Validation status per backend, rendered from the beta evidence records (`beta-su
 | Mechanism analysis (GEMDAT) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) |
 | Performance (SP/MD scaling) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) |
 
+Held-out OMat24 accuracy (E/atom MAE over 256 structures, no elemental offsets fitted): MACE (float64) 0.0172 eV; DPA 0.0184 eV; GRACE 0.0143 eV; UMA 0.0108 eV. Stress parity is not computable: the official OMat24 validation split carries no reference stress labels.
+
 `*` = CI software test only, no model involved. A cell lists the recorded statuses for that workload; per-workload rows reuse the same evidence tiers, so row counts are not additive. Full per-test tables and limitations: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md). Model identities pinned in `validation/science/model_manifest.json`.

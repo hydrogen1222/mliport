@@ -1,7 +1,7 @@
 {
   "schema": "mlipx.beta-validation-summary/1",
   "generated_from": ".validation-work",
-  "code_commit": "7b22280d5eb723a0a9edde0ebf8d925bf410a341",
+  "code_commit": "7f41cb4365d8787e093943553b0f04a193aafee4",
   "model_profiles": {
     "mace": "MACE-OMAT-0 medium (float64)",
     "dpa": "DPA-3.1-3M (Omat24 head)",

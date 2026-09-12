@@ -355,7 +355,40 @@ def build_coverage_table(tiers: dict[str, list]) -> list[dict[str, str]]:
 # ---------------------------------------------------------- README snippet
 
 
-def readme_validation_snippet(matrix: dict[str, Any]) -> str:
+def t3_accuracy_line(t3_records: list[dict[str, Any]]) -> str:
+    """One machine-rendered sentence with the held-out OMat24 E/atom MAE."""
+    engines = ("mace", "dpa", "grace", "uma")
+    by_engine: dict[str, dict[str, Any]] = {}
+    for r in t3_records:
+        by_engine.setdefault(str(r.get("engine")), r)
+    if not by_engine:
+        return "Held-out OMat24 accuracy: not run on this evidence set."
+    parts = []
+    for eng in engines:
+        rec = by_engine.get(eng)
+        if rec is None:
+            parts.append(f"{eng.upper()}: not run")
+            continue
+        mae = rec.get("metrics", {}).get("energy_per_atom_eV", {}).get("mae")
+        if mae is None:
+            parts.append(f"{eng.upper()}: no energy metric")
+        else:
+            dtype = rec.get("dtype") or ""
+            suffix = f" ({dtype})" if dtype and "float" in str(dtype) else ""
+            parts.append(f"{eng.upper()}{suffix} {mae:.4f} eV")
+    n = by_engine.get("mace", {}).get("metrics", {}).get("n_structures")
+    return (
+        "Held-out OMat24 accuracy (E/atom MAE"
+        + (f" over {n} structures" if n is not None else "")
+        + ", no elemental offsets fitted): " + "; ".join(parts)
+        + ". Stress parity is not computable: the official OMat24 validation"
+        " split carries no reference stress labels."
+    )
+
+
+def readme_validation_snippet(
+    matrix: dict[str, Any], t3_records: list[dict[str, Any]],
+) -> str:
     """Generated validation block embedded in both READMEs (section 41.9).
 
     The block is machine-rendered from the support matrix; the README sync
@@ -420,6 +453,8 @@ def readme_validation_snippet(matrix: dict[str, Any]) -> str:
             cells.append(text)
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
     lines += [
+        "",
+        t3_accuracy_line(t3_records),
         "",
         "`*` = CI software test only, no model involved. A cell lists the "
         "recorded statuses for that workload; per-workload rows reuse the "
@@ -1326,7 +1361,8 @@ def main() -> int:
         "\n".join(sections_en), encoding="utf-8"
     )
     (out / "README_VALIDATION.md").write_text(
-        readme_validation_snippet(matrix) + "\n", encoding="utf-8"
+        readme_validation_snippet(matrix, tiers.get("t3", [])) + "\n",
+        encoding="utf-8"
     )
 
     sections_cn = [
