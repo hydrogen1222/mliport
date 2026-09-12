@@ -1,17 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "mlipx.beta-validation-result/1",
+  "$id": "mlipx.beta-validation-result/2",
   "title": "mlipx beta scientific validation result record",
+  "description": "Version 2 adds explicit identity: profile_id (engine x artifact x dtype x task/head x inference mode x device class x commit x suite revision), record_id (deterministic identity of the intended computation) and run_id (one execution attempt). Records are immutable; write_result never overwrites a different record with the same case/test/engine tag.",
   "type": "object",
   "required": [
     "schema", "suite_revision", "git_commit", "case_id", "test_id",
     "status", "engine", "model_identity", "model_sha256", "task", "head",
     "dtype", "python", "mlipx_version", "backend_version",
     "framework_version", "device", "input_structure_id", "parameters",
-    "metrics", "diagnostics", "wall_seconds", "peak_vram_mib", "exception"
+    "metrics", "diagnostics", "wall_seconds", "peak_vram_mib", "exception",
+    "profile_id", "record_id", "run_id", "inference_mode", "seed"
   ],
   "properties": {
-    "schema": { "const": "mlipx.beta-validation-result/1" },
+    "schema": { "const": "mlipx.beta-validation-result/2" },
     "suite_revision": { "type": "integer", "minimum": 1 },
     "git_commit": { "type": "string" },
     "case_id": { "type": "string" },
@@ -22,10 +24,17 @@
     },
     "engine": { "enum": ["uma", "mace", "dpa", "grace"] },
     "model_identity": { "type": "string" },
-    "model_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "model_sha256": {
+      "description": "sha256 of the exact model artifact; the literal \"n/a\" is allowed only for records where no model was ever loaded (blocked provisioning)",
+      "type": "string",
+      "pattern": "^([a-f0-9]{64}|n/a)$"
+    },
     "task": { "type": ["string", "null"] },
     "head": { "type": ["string", "null"] },
-    "dtype": { "type": "string" },
+    "dtype": {
+      "enum": ["float16", "float32", "float64", "native",
+               "upstream/model-defined", "engine-defined", "n/a"]
+    },
     "python": { "type": "string" },
     "mlipx_version": { "type": "string" },
     "backend_version": { "type": ["string", "null"] },
@@ -52,6 +61,31 @@
     "diagnostics": { "type": "object" },
     "wall_seconds": { "type": "number", "minimum": 0 },
     "peak_vram_mib": { "type": ["integer", "null"] },
-    "exception": { "type": ["string", "null"] }
+    "exception": { "type": ["string", "null"] },
+    "profile_id": {
+      "description": "engine-<dtype>-<digest>: records with different values here are never aggregated together",
+      "type": "string",
+      "pattern": "^[a-z0-9]+-[a-z0-9.-]+-[0-9a-f]{10}$"
+    },
+    "record_id": {
+      "description": "deterministic sha256 (truncated) of the intended computation: profile, case, test, input structure, parameters, seed, suite revision",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "run_id": {
+      "description": "one execution attempt of a record_id",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "inference_mode": { "type": ["string", "null"] },
+    "seed": { "type": ["integer", "string", "null"] },
+    "campaign_id": {
+      "description": "optional grouping of attempts that belong to one validation campaign",
+      "type": ["string", "null"]
+    },
+    "migrated_from": {
+      "description": "set when the aggregator imported a record written under an older schema version",
+      "type": "string"
+    }
   }
 }

@@ -106,6 +106,20 @@ python validation/science/scripts/aggregate.py \
   --out .validation-work/summary.json
 ```
 
+The aggregator validates every declared result record against the committed
+versioned JSON Schema plus semantic identity checks, aggregates per
+**profile** (engine × artifact hash × dtype × task/head × inference mode ×
+device class × commit × seed) so a float32 failure can never be hidden by a
+float64 pass, and keeps every run of the same computation visible.  Legacy
+`mlipx.beta-validation-result/1` records are migrated in memory, so existing
+raw evidence can be re-aggregated without rerunning any model.  Exit codes:
+`0` clean, `1` harness violation (calculator identity outside the allowed
+wrappers), `2` import problem, `3` no records, `4` `--expect-complete` was
+requested and a declared engine produced no evidence.  New records declare
+`profile_id` / `record_id` / `run_id`; `common.write_result` never
+overwrites a different record under the same name — it publishes an
+explicitly versioned `...__run-<id>.json` sibling instead.
+
 CPU-only regression tests (no backend needed):
 
 ```bash

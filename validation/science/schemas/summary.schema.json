@@ -1,41 +1,73 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "mlipx.beta-validation-summary/1",
+  "$id": "mlipx.beta-validation-summary/2",
   "title": "mlipx beta scientific validation summary",
+  "description": "Version 2 aggregates per profile identity instead of per engine, keeps every run of the same computation visible, seeds the support matrix from the declared model manifest (missing evidence is 'not_run', never pass) and carries an explicit import exit contract.",
   "type": "object",
   "required": [
     "schema", "suite_revision", "generated_at", "code_commit",
-    "model_manifest_suite_revision", "model_profiles", "record_counts",
-    "support_matrix", "cases", "environment", "problems", "harness_violations"
+    "model_manifest_suite_revision", "model_profiles", "profiles",
+    "record_counts", "support_matrix", "cases", "environment",
+    "problems", "harness_violations", "import_summary", "expected_matrix"
   ],
   "properties": {
-    "schema": { "const": "mlipx.beta-summary/1" },
+    "schema": { "const": "mlipx.beta-validation-summary/2" },
     "suite_revision": { "type": "integer", "minimum": 1 },
     "generated_at": { "type": "string" },
     "code_commit": { "type": "string" },
     "model_manifest_suite_revision": { "type": ["integer", "null"] },
     "model_profiles": { "type": ["object", "null"] },
+    "profiles": {
+      "description": "observed profile identities (profile_id -> full identity); never merged across artifact hash, dtype, task/head, inference mode, device class, commit or suite revision",
+      "type": "object"
+    },
     "record_counts": {
       "type": "object",
       "required": ["total", "by_status"],
       "properties": {
         "total": { "type": "integer", "minimum": 0 },
-        "by_status": { "type": "object" }
+        "by_status": { "type": "object" },
+        "by_profile": { "type": "object" }
       }
     },
     "support_matrix": {
-      "description": "engine x property support as OBSERVED from t1 records; 'not_run' and 'unsupported' are distinct states",
+      "description": "engine x property support as OBSERVED from t1 records, seeded with the declared manifest engines; 'not_run' and 'unsupported' are distinct states and statuses never regress to pass because of file ordering",
       "type": "object"
     },
-    "cases": { "type": "object" },
+    "cases": {
+      "description": "case_id -> test_id -> profile_id -> {status, runs[]}; every run stays visible",
+      "type": "object"
+    },
     "environment": { "type": "object" },
     "problems": {
-      "description": "records that failed structural validation; never dropped silently",
+      "description": "records that failed structural/semantic validation; never dropped silently",
       "type": "array"
     },
     "harness_violations": {
       "description": "calculator identity outside the allowed mlipx wrapper modules (taskbook section 47); non-empty means the suite is compromised",
       "type": "array"
+    },
+    "import_summary": {
+      "description": "counts behind the aggregator exit code",
+      "type": "object",
+      "required": ["records", "migrated_records", "ancillary_files", "problems"],
+      "properties": {
+        "records": { "type": "integer", "minimum": 0 },
+        "migrated_records": { "type": "integer", "minimum": 0 },
+        "ancillary_files": { "type": "integer", "minimum": 0 },
+        "problems": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "expected_matrix": {
+      "description": "declared evidence (from the model manifest) versus observed engines; missing_engines non-empty means incomplete evidence",
+      "type": "object",
+      "required": ["engines", "observed_engines", "missing_engines", "complete"],
+      "properties": {
+        "engines": { "type": "array" },
+        "observed_engines": { "type": "array" },
+        "missing_engines": { "type": "array" },
+        "complete": { "type": "boolean" }
+      }
     }
   }
 }

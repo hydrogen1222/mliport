@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import platform
+import sys
 import time
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -27,10 +28,23 @@ if TYPE_CHECKING:
     from ase import Atoms
 
 BETA_VALIDATION_SUITE_REVISION = 1
-RESULT_SCHEMA = "mlipx.beta-validation-result/1"
-SUMMARY_SCHEMA = "mlipx.beta-validation-summary/1"
+RESULT_SCHEMA_V1 = "mlipx.beta-validation-result/1"
+RESULT_SCHEMA = "mlipx.beta-validation-result/2"
+RESULT_SCHEMAS = (RESULT_SCHEMA_V1, RESULT_SCHEMA)
+SUMMARY_SCHEMA_V1 = "mlipx.beta-validation-summary/1"
+SUMMARY_SCHEMA = "mlipx.beta-validation-summary/2"
 MODEL_MANIFEST_SCHEMA = "mlipx.beta-model-manifest/1"
 DATA_MANIFEST_SCHEMA = "mlipx.beta-data-manifest/1"
+
+#: Fields that describe *when* a record was produced rather than *what* was
+#: computed.  They never participate in the overwrite decision, so repeated
+#: deterministic runs are recognised as the same evidence.
+VOLATILE_RECORD_FIELDS = (
+    "run_id",
+    "wall_seconds",
+    "peak_vram_mib",
+    "generated_at",
+)
 
 # Status vocabulary (taskbook section 3).  ``blocked`` is an execution state,
 # the rest are result states.
@@ -88,6 +102,145 @@ def package_version(dist: str) -> str:
         return _pkg_version(dist)
     except PackageNotFoundError:
         return "not-installed"
+
+
+def _canonical_json(payload: Any) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def device_class(device: Any) -> str:
+    """Coarse device class used in profile identity (never the raw UUID)."""
+    if not isinstance(device, dict):
+        return "unknown"
+    actual = device.get("actual")
+    if not actual:
+        return "unknown"
+    actual = str(actual)
+    if actual == "cpu":
+        return "cpu"
+    if actual.startswith("cuda"):
+        return "cuda"
+    return actual
+
+
+def seed_from(record: dict[str, Any]) -> Any:
+    """Best-effort seed identity: top-level field, else common parameter keys."""
+    if record.get("seed") is not None:
+        return record["seed"]
+    params = record.get("parameters")
+    if isinstance(params, dict):
+        for key in ("seed", "random_seed", "rng_seed", "nvt_seed", "md_seed"):
+            if params.get(key) is not None:
+                return params[key]
+    return None
+
+
+def profile_identity(record: dict[str, Any]) -> dict[str, Any]:
+    """Full identity of the model/profile that produced a record.
+
+    Two records belong to the same profile only when every component below
+    matches; anything else (artifact hash, dtype, task/head, inference mode,
+    device class, code commit, seed) is a different evidence identity and
+    must never be aggregated together (review R03).
+    """
+    return {
+        "engine": record.get("engine"),
+        "model_identity": record.get("model_identity"),
+        "model_sha256": record.get("model_sha256"),
+        "dtype": record.get("dtype"),
+        "task": record.get("task"),
+        "head": record.get("head"),
+        "inference_mode": record.get("inference_mode"),
+        "device_class": device_class(record.get("device")),
+        "git_commit": record.get("git_commit"),
+        "seed": seed_from(record),
+    }
+
+
+def profile_id_for(record: dict[str, Any]) -> str:
+    """Human-readable, stable profile id: ``<engine>-<dtype>-<digest>``."""
+    identity = profile_identity(record)
+    digest = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
+    engine = str(record.get("engine", "unknown"))
+    dtype = str(record.get("dtype", "unknown"))
+    dtype = dtype.replace("/", "-").replace(" ", "-").lower()
+    return f"{engine}-{dtype}-{digest[:10]}"
+
+
+def record_id_for(record: dict[str, Any]) -> str:
+    """Deterministic identity of the *intended computation*.
+
+    Deliberately excludes measured values and timing: the same case on the
+    same profile with the same parameters is the same record identity even
+    when it is executed twice (each execution gets a fresh ``run_id``).
+    """
+    payload = {
+        "profile_id": record.get("profile_id") or profile_id_for(record),
+        "case_id": record.get("case_id"),
+        "test_id": record.get("test_id"),
+        "input_structure_id": record.get("input_structure_id"),
+        "parameters": record.get("parameters"),
+        "seed": seed_from(record),
+        "schema": RESULT_SCHEMA,
+    }
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()[:32]
+
+
+def new_run_id() -> str:
+    """A fresh execution-attempt id (32 hex chars)."""
+    import uuid
+
+    return uuid.uuid4().hex
+
+
+def migrate_record(record: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Explicitly migrate an older-schema record to the current schema.
+
+    Returns ``(record, note)`` where ``note`` is a human-readable description
+    of the migration (or ``None`` when the record already is current).  Old
+    files are never rewritten: migration happens in the aggregator, so the
+    original evidence stays byte-identical on disk.
+    """
+    if not isinstance(record, dict):
+        msg = "migrate_record expects a JSON object"
+        raise TypeError(msg)
+    schema = record.get("schema")
+    if schema == RESULT_SCHEMA:
+        return record, None
+    if schema != RESULT_SCHEMA_V1:
+        msg = f"cannot migrate unknown result schema {schema!r}"
+        raise ValueError(msg)
+    migrated = dict(record)
+    migrated["schema"] = RESULT_SCHEMA
+    migrated["inference_mode"] = record.get("inference_mode")
+    migrated["seed"] = seed_from(record)
+    migrated["profile_id"] = profile_id_for(migrated)
+    migrated["record_id"] = record_id_for(migrated)
+    # Legacy records have no attempt id; derive a stable one from the record
+    # content so re-aggregating the same file is idempotent.
+    migrated["run_id"] = hashlib.sha256(
+        _canonical_json(
+            {
+                "legacy_schema": RESULT_SCHEMA_V1,
+                "profile_id": migrated["profile_id"],
+                "record_id": migrated["record_id"],
+                "wall_seconds": record.get("wall_seconds"),
+            }
+        ).encode("utf-8")
+    ).hexdigest()[:32]
+    migrated["migrated_from"] = RESULT_SCHEMA_V1
+    return migrated, f"migrated {RESULT_SCHEMA_V1} -> {RESULT_SCHEMA}"
+
+
+def record_fingerprint(record: dict[str, Any]) -> str:
+    """Content fingerprint used to decide whether a write is a real conflict.
+
+    Volatile execution metadata (run id, wall time, VRAM) is excluded so a
+    deterministic repeat of the same computation is recognised as the same
+    evidence rather than as a conflicting record.
+    """
+    payload = {k: v for k, v in record.items() if k not in VOLATILE_RECORD_FIELDS}
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 def synchronize(device: str) -> None:
@@ -281,8 +434,19 @@ def result_record(
     wall_seconds: float = 0.0,
     peak_vram: int | None = None,
     exception: str | None = None,
+    inference_mode: str | None = None,
+    seed: Any = None,
+    run_id: str | None = None,
+    campaign_id: str | None = None,
 ) -> dict[str, Any]:
-    """Build one ``mlipx.beta-validation-result/1`` record."""
+    """Build one ``mlipx.beta-validation-result/2`` record.
+
+    Identity is explicit and additive: ``profile_id`` names the model
+    profile, ``record_id`` the intended computation and ``run_id`` this
+    execution attempt.  ``campaign_id`` (env ``MLIPX_VALIDATION_CAMPAIGN``)
+    groups attempts that belong to one validation campaign when the caller
+    provides one.
+    """
     if status not in STATUSES:
         msg = f"invalid status {status!r}; must be one of {STATUSES}"
         raise ValueError(msg)
@@ -290,6 +454,8 @@ def result_record(
         mlipx_version = package_version("mlipx")
     except Exception:  # noqa: BLE001 - version probe must never abort a run
         mlipx_version = "unknown"
+    resolved_seed = seed if seed is not None else seed_from({"parameters": parameters})
+    resolved_campaign = campaign_id or os.environ.get("MLIPX_VALIDATION_CAMPAIGN")
     record: dict[str, Any] = {
         "schema": RESULT_SCHEMA,
         "suite_revision": BETA_VALIDATION_SUITE_REVISION,
@@ -315,7 +481,13 @@ def result_record(
         "wall_seconds": round(wall_seconds, 3),
         "peak_vram_mib": peak_vram,
         "exception": exception,
+        "inference_mode": inference_mode,
+        "seed": resolved_seed,
+        "campaign_id": resolved_campaign,
     }
+    record["profile_id"] = profile_id_for(record)
+    record["record_id"] = record_id_for(record)
+    record["run_id"] = run_id or new_run_id()
     return record
 
 
@@ -335,10 +507,46 @@ def _git_commit() -> str:
     return out.stdout.strip()
 
 
+class ResultCollisionError(RuntimeError):
+    """A different record already occupies the target result path."""
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def record_json(record: dict[str, Any]) -> str:
+    """Serialise a record, refusing to emit NaN/Infinity as JSON numbers."""
+    try:
+        return json.dumps(record, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    except ValueError as exc:
+        msg = f"refusing to write a result record with non-finite numbers: {exc}"
+        raise ValueError(msg) from exc
+
+
 def write_result(
-    record: dict[str, Any], out_dir: str | Path, tag: str | None = None
+    record: dict[str, Any],
+    out_dir: str | Path,
+    tag: str | None = None,
+    *,
+    version_on_collision: bool = True,
 ) -> Path:
-    """Write one result record as JSON under ``out_dir``."""
+    """Write one result record as JSON under ``out_dir``.
+
+    Existing records are immutable: when a *different* record would land on
+    an occupied name (same case/test/engine/dtype/tag), the new attempt is
+    published as an explicitly versioned ``...__run-<id>.json`` sibling and
+    the conflict is reported on stderr.  Identical content is written only
+    once, so deterministic reruns do not multiply files.
+    """
+    if record.get("schema") != RESULT_SCHEMA:
+        msg = (
+            f"write_result only writes {RESULT_SCHEMA} records; got "
+            f"{record.get('schema')!r} (migrate legacy records first)"
+        )
+        raise ValueError(msg)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     name = f"{record['case_id']}__{record['test_id']}__{record['engine']}"
@@ -351,10 +559,46 @@ def write_result(
     # separator would otherwise make the record unwritable (or misplace it).
     name = name.replace("/", "_").replace(os.sep, "_")
     path = out / f"{name}.json"
-    path.write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    return path
+    payload = record_json(record)
+    if not path.exists():
+        _atomic_write_text(path, payload)
+        return path
+
+    existing_text = path.read_text(encoding="utf-8")
+    if existing_text == payload:
+        return path
+    try:
+        existing = json.loads(existing_text)
+    except json.JSONDecodeError:
+        existing = None
+    if isinstance(existing, dict) and record_fingerprint(
+        existing
+    ) == record_fingerprint(record):
+        return path
+    if not version_on_collision:
+        msg = (
+            f"result collision at {path}: a different record already exists "
+            f"(existing record_id={existing.get('record_id') if isinstance(existing, dict) else 'unreadable'}); "
+            f"refusing to overwrite"
+        )
+        raise ResultCollisionError(msg)
+
+    run = str(record.get("run_id") or new_run_id())[:8]
+    for _ in range(8):
+        versioned = out / f"{name}__run-{run}.json"
+        if not versioned.exists():
+            _atomic_write_text(versioned, payload)
+            print(
+                f"[mlipx-validation] result collision at {path.name}: kept the "
+                f"existing record and published this attempt as {versioned.name}",
+                file=sys.stderr,
+            )
+            return versioned
+        if versioned.read_text(encoding="utf-8") == payload:
+            return versioned
+        run = new_run_id()[:8]
+    msg = f"could not publish a versioned result next to {path} after 8 attempts"
+    raise ResultCollisionError(msg)
 
 
 def load_model_manifest(path: str | Path) -> dict[str, Any]:

@@ -29,6 +29,7 @@ import common  # noqa: E402
 import finite_difference  # noqa: E402
 import fixtures  # noqa: E402
 import invariance  # noqa: E402
+import schema_check  # noqa: E402
 import transforms  # noqa: E402
 
 MANIFEST = REPO / "validation" / "science" / "model_manifest.json"
@@ -245,9 +246,9 @@ def test_aggregate_flags_foreign_wrapper(tmp_path):
     foreign = _raw_record(wrapper="some.silent.emt.fallback")
     path = tmp_path / "bad.json"
     path.write_text(json.dumps(foreign))
-    records, problems = aggregate.load_records(tmp_path)
-    assert not problems
-    violations = aggregate.harness_violations(records)
+    loaded = aggregate.load_records(tmp_path)
+    assert not loaded.problems
+    violations = aggregate.harness_violations(loaded.records)
     assert violations and "some.silent.emt.fallback" in violations[0]
 
     # every mlipx wrapper module must be whitelisted -- keeps the test honest
@@ -272,6 +273,369 @@ def test_support_matrix_distinguishes_unsupported_and_not_run():
     assert matrix["mace"]["stress"]["status"] == "unsupported"  # observed absence
     # an engine with no t1 record must be absent from the matrix (= not run)
     assert "dpa" not in matrix
+    # declared engines are seeded as not_run, never as pass
+    seeded = aggregate.support_matrix([rec_full], expected_engines=("dpa", "mace"))
+    assert seeded["dpa"]["energy"]["status"] == "not_run"
+    assert seeded["mace"]["energy"]["status"] == "pass"
+
+
+# --------------------------------------------------------------------------
+# R03/R04: import identity, strict schema validation, order independence
+# --------------------------------------------------------------------------
+
+
+def _write_json(tmp_path, name, payload_text):
+    path = tmp_path / name
+    path.write_text(payload_text, encoding="utf-8")
+    return path
+
+
+def test_load_records_rejects_non_object_json(tmp_path):
+    _write_json(tmp_path, "list.json", '[{"schema": "mlipx.beta-validation-result/2"}]')
+    _write_json(tmp_path, "scalar.json", "42")
+    loaded = aggregate.load_records(tmp_path)
+    assert loaded.records == []
+    assert len(loaded.problems) == 2
+    assert all("not a JSON object" in p for p in loaded.problems)
+
+
+def test_load_records_rejects_missing_required_fields(tmp_path):
+    rec = _raw_record()
+    del rec["metrics"]
+    _write_json(tmp_path, "missing.json", json.dumps(rec))
+    loaded = aggregate.load_records(tmp_path)
+    assert loaded.records == []
+    assert any("metrics" in p for p in loaded.problems)
+
+
+def test_load_records_rejects_invalid_enums(tmp_path):
+    bad_engine = _raw_record()
+    bad_engine["engine"] = "fake-engine"
+    bad_status = _raw_record()
+    bad_status["status"] = "probably-fine"
+    _write_json(tmp_path, "engine.json", json.dumps(bad_engine))
+    _write_json(tmp_path, "status.json", json.dumps(bad_status))
+    loaded = aggregate.load_records(tmp_path)
+    assert loaded.records == []
+    assert any("fake-engine" in p for p in loaded.problems)
+    assert any("probably-fine" in p for p in loaded.problems)
+
+
+def test_load_records_rejects_bad_model_hash_and_device(tmp_path):
+    bad_hash = _raw_record()
+    bad_hash["model_sha256"] = "not-a-hash"
+    bad_device = _raw_record()
+    bad_device["device"] = {}
+    _write_json(tmp_path, "hash.json", json.dumps(bad_hash))
+    _write_json(tmp_path, "device.json", json.dumps(bad_device))
+    loaded = aggregate.load_records(tmp_path)
+    assert loaded.records == []
+    assert any("model_sha256" in p for p in loaded.problems)
+    assert any("requested" in p for p in loaded.problems)
+
+
+def test_load_records_rejects_nan_and_infinity(tmp_path):
+    # NaN/Infinity literals are not valid JSON numbers ...
+    rec = _record()
+    nan_text = json.dumps(rec).replace('"wall_seconds": 0.0', '"wall_seconds": NaN')
+    assert "NaN" in nan_text
+    _write_json(tmp_path, "nan.json", nan_text)
+    # ... and a huge exponent decodes to inf, caught by the semantic walk.
+    rec_inf = _record()
+    inf_text = json.dumps(rec_inf).replace(
+        '"metrics": {}', '"metrics": {"energy_eV": 1e999}'
+    )
+    assert "1e999" in inf_text
+    _write_json(tmp_path, "inf.json", inf_text)
+    loaded = aggregate.load_records(tmp_path)
+    assert loaded.records == []
+    assert any("non-finite" in p for p in loaded.problems)
+    assert any("$.metrics.energy_eV" in p for p in loaded.problems)
+
+
+def test_load_records_rejects_corrupt_json_and_unknown_schema(tmp_path):
+    _write_json(tmp_path, "corrupt.json", "{not json at all")
+    unknown = _raw_record()
+    unknown["schema"] = "mlipx.beta-validation-result/99"
+    _write_json(tmp_path, "unknown.json", json.dumps(unknown))
+    loaded = aggregate.load_records(tmp_path)
+    assert loaded.records == []
+    assert any("unreadable JSON" in p for p in loaded.problems)
+    assert any("unknown result schema" in p for p in loaded.problems)
+
+
+def test_load_records_skips_ancillary_json_by_schema(tmp_path):
+    summary_like = {
+        "schema": common.SUMMARY_SCHEMA,
+        "record_counts": {"total": 0, "by_status": {}},
+    }
+    manifest_like = {"schema": common.MODEL_MANIFEST_SCHEMA, "profiles": {}}
+    _write_json(tmp_path, "summary.json", json.dumps(summary_like))
+    _write_json(tmp_path, "manifest.json", json.dumps(manifest_like))
+    good = _raw_record()
+    _write_json(tmp_path, "record.json", json.dumps(good))
+    loaded = aggregate.load_records(tmp_path)
+    assert len(loaded.records) == 1
+    assert loaded.problems == []
+    assert loaded.ancillary_files == 2
+
+
+def test_load_records_migrates_v1_and_marks_it(tmp_path):
+    legacy = _record()
+    for key in (
+        "profile_id",
+        "record_id",
+        "run_id",
+        "inference_mode",
+        "seed",
+    ):
+        legacy.pop(key)
+    legacy["schema"] = common.RESULT_SCHEMA_V1
+    legacy["parameters"] = {"seed": 7}
+    _write_json(tmp_path, "legacy.json", json.dumps(legacy))
+    loaded = aggregate.load_records(tmp_path)
+    assert loaded.problems == []
+    assert len(loaded.records) == 1
+    assert loaded.migrated_records == 1
+    rec = loaded.records[0]
+    assert rec["schema"] == common.RESULT_SCHEMA
+    assert rec["migrated_from"] == common.RESULT_SCHEMA_V1
+    assert rec["seed"] == 7
+    assert len(rec["profile_id"]) > 0 and len(rec["record_id"]) == 32
+    # migration is idempotent when the same legacy file is re-aggregated
+    loaded_again = aggregate.load_records(tmp_path)
+    assert loaded_again.records[0]["record_id"] == rec["record_id"]
+    assert loaded_again.records[0]["run_id"] == rec["run_id"]
+
+
+def _t1_record(*, dtype, status, wrapper="mlipx.calculators.mace_calc"):
+    rec = _raw_record(wrapper=wrapper)
+    rec["test_id"] = "t1_real_inference"
+    rec["case_id"] = "t1_case"
+    rec["dtype"] = dtype
+    rec["status"] = status
+    rec["metrics"] = {
+        "energy_eV": -1.0,
+        "forces_max_abs_eV_A": 0.1,
+        "stress_supported": False,
+    }
+    rec["profile_id"] = common.profile_id_for(rec)
+    rec["record_id"] = common.record_id_for(rec)
+    return rec
+
+
+def test_aggregate_keeps_float32_fail_visible_next_to_float64_pass(tmp_path):
+    fail32 = _t1_record(dtype="float32", status="fail")
+    fail32["exception"] = "float32 overflow"
+    pass64 = _t1_record(dtype="float64", status="pass")
+    pass64["metrics"] = dict(pass64["metrics"], energy_eV=-1.0000001)
+    _write_json(tmp_path, "a_fail32.json", json.dumps(fail32))
+    _write_json(tmp_path, "b_pass64.json", json.dumps(pass64))
+    summary = aggregate.build_summary(tmp_path, None)
+
+    buckets = summary["cases"]["t1_case"]["t1_real_inference"]
+    assert len(buckets) == 2, "one bucket per profile identity"
+    by_status = {b["status"] for b in buckets.values()}
+    assert by_status == {"fail", "pass"}
+    matrix = summary["support_matrix"]["mace"]["energy"]
+    assert matrix["status"] == "fail", "worst status must win"
+    assert set(matrix["by_profile"].values()) == {"fail", "pass"}
+    # dtype is part of the profile identity, so the two never merge
+    assert len({pid.split("-")[1] for pid in buckets}) == 2
+
+
+def _summary_without_paths(summary):
+    """Deterministic projection: drop the file path each run was read from."""
+    import copy
+
+    stripped = copy.deepcopy(summary)
+    for tests in stripped["cases"].values():
+        for buckets in tests.values():
+            for bucket in buckets.values():
+                for run in bucket["runs"]:
+                    run.pop("path", None)
+                bucket["runs"].sort(key=lambda r: r["run_id"])
+    return stripped["cases"]
+
+
+def test_aggregate_is_order_independent(tmp_path):
+    records = [
+        _t1_record(dtype="float32", status="fail"),
+        _t1_record(dtype="float64", status="pass"),
+    ]
+    records[0]["exception"] = "float32 overflow"
+    dir_a = tmp_path / "a"
+    dir_b = tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    for i, rec in enumerate(records):
+        _write_json(dir_a, f"{i}_record.json", json.dumps(rec))
+    for i, rec in enumerate(reversed(records)):
+        _write_json(dir_b, f"{i}_other_name.json", json.dumps(rec))
+    summary_a = aggregate.build_summary(dir_a, None)
+    summary_b = aggregate.build_summary(dir_b, None)
+    for key in ("cases", "support_matrix", "record_counts", "profiles"):
+        a = _summary_without_paths(summary_a) if key == "cases" else summary_a[key]
+        b = _summary_without_paths(summary_b) if key == "cases" else summary_b[key]
+        assert a == b, f"{key} depends on file order"
+
+
+def test_aggregate_expected_matrix_marks_missing_engines(tmp_path):
+    rec = _t1_record(dtype="float64", status="pass")
+    _write_json(tmp_path, "mace.json", json.dumps(rec))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema": common.MODEL_MANIFEST_SCHEMA,
+                "suite_revision": 1,
+                "profiles": {
+                    "mace": {"engine": "mace", "model_sha256": "a" * 64},
+                    "uma": {"engine": "uma", "model_sha256": "b" * 64},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    summary = aggregate.build_summary(tmp_path, manifest)
+    assert summary["expected_matrix"]["missing_engines"] == ["uma"]
+    assert summary["support_matrix"]["uma"]["energy"]["status"] == "not_run"
+    assert aggregate.exit_code(summary, expect_complete=False) == aggregate.EXIT_OK
+    assert (
+        aggregate.exit_code(summary, expect_complete=True) == aggregate.EXIT_INCOMPLETE
+    )
+
+
+def test_aggregate_exit_contract(tmp_path):
+    clean = aggregate.build_summary(tmp_path, None)
+    assert clean["record_counts"]["total"] == 0
+    assert (
+        aggregate.exit_code(clean, expect_complete=False) == aggregate.EXIT_NO_RECORDS
+    )
+
+    violating = _raw_record(wrapper="some.silent.emt.fallback")
+    _write_json(tmp_path, "foreign.json", json.dumps(violating))
+    summary = aggregate.build_summary(tmp_path, None)
+    assert summary["harness_violations"]
+    assert (
+        aggregate.exit_code(summary, expect_complete=False)
+        == aggregate.EXIT_HARNESS_VIOLATION
+    )
+
+
+def test_aggregate_main_exit_code_for_bad_import(tmp_path, monkeypatch):
+    bad = _raw_record()
+    bad["engine"] = "fake-engine"
+    _write_json(tmp_path, "bad.json", json.dumps(bad))
+    out = tmp_path / "summary.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "aggregate",
+            "--results",
+            str(tmp_path),
+            "--out",
+            str(out),
+        ],
+    )
+    assert aggregate.main() == aggregate.EXIT_IMPORT_PROBLEM
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["problems"], "bad imports must stay visible in the summary"
+
+
+def test_write_result_refuses_to_overwrite_different_record(tmp_path):
+    first = _record()
+    path = common.write_result(first, tmp_path)
+    assert path.name == "t_case__t_test__mace-float64.json"
+
+    second = _record()
+    second["parameters"] = {"fixture": "different"}
+    second["profile_id"] = common.profile_id_for(second)
+    second["record_id"] = common.record_id_for(second)
+    with pytest.raises(common.ResultCollisionError, match="collision"):
+        common.write_result(second, tmp_path, version_on_collision=False)
+
+    versioned = common.write_result(second, tmp_path)
+    assert versioned != path
+    assert versioned.name.startswith("t_case__t_test__mace-float64__run-")
+    original = json.loads(path.read_text(encoding="utf-8"))
+    assert original["parameters"] == {}, "the old record must stay untouched"
+    assert json.loads(versioned.read_text(encoding="utf-8"))["parameters"] == {
+        "fixture": "different"
+    }
+
+
+def test_write_result_is_idempotent_for_identical_content(tmp_path):
+    rec = _record()
+    first = common.write_result(rec, tmp_path)
+    second = common.write_result(rec, tmp_path)
+    assert first == second
+    assert len(list(tmp_path.glob("*.json"))) == 1
+
+
+def test_profile_identity_separates_model_identity():
+    base = _record()
+    other_dtype = _record(dtype="float32")
+    other_head = _record(head="Omat24")
+    other_commit = _record()
+    other_commit["git_commit"] = "deadbeef" * 5
+    assert common.profile_id_for(base) != common.profile_id_for(other_dtype)
+    assert common.profile_id_for(base) != common.profile_id_for(other_head)
+    assert common.profile_id_for(base) != common.profile_id_for(other_commit)
+
+
+def test_blocked_provisioning_record_is_valid_but_not_a_model_result():
+    """run_suite's blocked path has no model at all: 'n/a' is explicit, not a hash."""
+    rec = common.result_record(
+        case_id="orchestrator",
+        test_id="engine_provisioning",
+        status="blocked",
+        engine="uma",
+        model_identity="uma",
+        model_sha256="n/a",
+        task=None,
+        head=None,
+        dtype="n/a",
+        device={
+            "requested": "cuda:0",
+            "actual": None,
+            "gpu_name": None,
+            "gpu_uuid_hash": None,
+        },
+        input_structure_id=None,
+        parameters={"reason": "venv missing"},
+        metrics={},
+    )
+    schema = schema_check.load_schema(
+        REPO / "validation" / "science" / "schemas" / "result.schema.json"
+    )
+    assert schema_check.validate(rec, schema) == []
+    # but an arbitrary bogus hash is still rejected
+    rec["model_sha256"] = "definitely-a-model"
+    assert schema_check.validate(rec, schema)
+
+
+def test_committed_schemas_are_executable_and_strict():
+    for name in (
+        "result.schema.json",
+        "result-v1.schema.json",
+        "summary.schema.json",
+        "summary-v1.schema.json",
+    ):
+        schema_check.load_schema(REPO / "validation" / "science" / "schemas" / name)
+    schema = schema_check.load_schema(
+        REPO / "validation" / "science" / "schemas" / "result.schema.json"
+    )
+    assert schema["$id"] == common.RESULT_SCHEMA
+    assert schema_check.validate(_record(), schema) == []
+    bad = _record()
+    bad["model_sha256"] = "nope"
+    assert schema_check.validate(bad, schema)
+
+    # unsupported keywords must fail loudly, not be ignored
+    with pytest.raises(schema_check.SchemaError, match="unsupported"):
+        schema_check.validate({}, {"type": "object", "oneOf": [{"type": "object"}]})
 
 
 # --------------------------------------------------------------------------
