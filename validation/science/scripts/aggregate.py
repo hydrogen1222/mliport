@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -168,7 +168,7 @@ def build_summary(results_dir: Path, manifest_path: Path) -> dict[str, Any]:
     return {
         "schema": common.SUMMARY_SCHEMA,
         "suite_revision": common.BETA_VALIDATION_SUITE_REVISION,
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "code_commit": common._git_commit(),
         "model_manifest_suite_revision": (
             manifest.get("suite_revision") if manifest else None
