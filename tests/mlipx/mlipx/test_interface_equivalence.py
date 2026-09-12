@@ -89,6 +89,7 @@ def _identity_projection(engine: EngineConfig) -> dict:
         "settings": dict(engine.settings),
     }
 
+
 def _md_options() -> dict[str, object]:
     return {
         "ensemble": "NVT",
@@ -356,6 +357,8 @@ def assert_equivalent(engine_a: EngineConfig, engine_b: EngineConfig) -> None:
             f"{field}: {value_a!r} != {value_b!r} "
             f"(a run_options={reference['run_options']})"
         )
+
+
 # ---------------------------------------------------------------------------
 # equivalence: sp / opt / md / neb
 # ---------------------------------------------------------------------------
@@ -416,9 +419,7 @@ def test_neb_mapping_and_checkpoint_policy_resolve_identically(
     tmp_path: Path,
 ) -> None:
     """NEB mapping/winding/checkpoint policy survive interface translation."""
-    _engine, resolved = _resolve_via_api_with_resolved(
-        tmp_path, "neb", _neb_options()
-    )
+    _engine, resolved = _resolve_via_api_with_resolved(tmp_path, "neb", _neb_options())
     run_options = resolved.run_options
     assert run_options["n_intermediate_images"] == 3
     assert run_options["climb"] is True

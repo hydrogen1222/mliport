@@ -142,7 +142,12 @@ def test_ps_fs_conversion_is_exact_fs_to_ps():
 
 def test_variable_cell_is_ineligible_for_transport():
     frames = [
-        Atoms("Na2", positions=[[1, 1, 1], [3, 1, 1]], cell=[10 + 0.1 * k, 10, 10], pbc=True)
+        Atoms(
+            "Na2",
+            positions=[[1, 1, 1], [3, 1, 1]],
+            cell=[10 + 0.1 * k, 10, 10],
+            pbc=True,
+        )
         for k in range(10)
     ]
     dataset = _dataset(frames, np.arange(10) * 10.0)
@@ -160,8 +165,12 @@ def _thermo_dataset(n_frames, energies_eV, dt_fs=20.0):
 
     frames = []
     for energy in energies_eV:
-        atoms = Atoms("Na2", positions=[[1, 1, 1], [3, 1, 1]], cell=[10, 10, 10], pbc=True)
-        atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=np.zeros((2, 3)))
+        atoms = Atoms(
+            "Na2", positions=[[1, 1, 1], [3, 1, 1]], cell=[10, 10, 10], pbc=True
+        )
+        atoms.calc = SinglePointCalculator(
+            atoms, energy=energy, forces=np.zeros((2, 3))
+        )
         frames.append(atoms)
     return _dataset(frames, np.arange(len(frames)) * dt_fs)
 
@@ -234,12 +243,20 @@ def test_rdf_rocksalt_first_shell_coordination_exact():
 def test_rdf_species_selection_excludes_same_species_shells():
     dataset = _rocksalt_dataset()
     na_na = radial_distribution(
-        dataset, center_species="Na", neighbor_species="Na", r_max_A=3.0, cn_cutoff_A=3.0
+        dataset,
+        center_species="Na",
+        neighbor_species="Na",
+        r_max_A=3.0,
+        cn_cutoff_A=3.0,
     )
     # First Na-Na shell sits at a*sqrt(2)/2 = 3.54 A: zero Na neighbors at 3.0 A.
     assert na_na["coordination_number_at_cutoff"] == pytest.approx(0.0, abs=1e-9)
     na_na_wide = radial_distribution(
-        dataset, center_species="Na", neighbor_species="Na", r_max_A=3.7, cn_cutoff_A=3.7
+        dataset,
+        center_species="Na",
+        neighbor_species="Na",
+        r_max_A=3.7,
+        cn_cutoff_A=3.7,
     )
     assert na_na_wide["coordination_number_at_cutoff"] == pytest.approx(12.0, abs=1e-9)
 
@@ -305,7 +322,9 @@ def test_rmsd_rigid_fractional_translation_is_exact():
     dataset = _dataset(frames, np.arange(4) * 10.0)
     result = periodic_rmsd_rmsf(dataset)
     expected = float(np.sqrt(0.3**2 + 0.2**2 + 0.1**2))
-    assert result["periodic_displacement_rmsd_A"][-1] == pytest.approx(expected, abs=1e-10)
+    assert result["periodic_displacement_rmsd_A"][-1] == pytest.approx(
+        expected, abs=1e-10
+    )
 
 
 def test_rmsd_wrapped_boundary_crossing_uses_minimum_image():
@@ -342,7 +361,9 @@ def test_msd_brownian_random_walk_recovers_known_diffusion():
         for k in range(n_frames)
     ]
     dataset = _dataset(frames, np.arange(n_frames) * dt_fs, convention="unwrapped")
-    result = calculate_msd(dataset, mobile_species="Na", fit_start_ps=20.0, fit_stop_ps=190.0)
+    result = calculate_msd(
+        dataset, mobile_species="Na", fit_start_ps=20.0, fit_stop_ps=190.0
+    )
     fit = result["diagnostic_linear_diffusion_fits"]["xyz"]
     assert fit["publication_grade"] is False
     assert fit["fit_start_ps"] == pytest.approx(20.0)
@@ -375,7 +396,9 @@ def test_msd_fft_and_direct_methods_agree():
     assert set(fft["msd_by_axes_A2"]) == set(direct["msd_by_axes_A2"])
     assert "xyz" in fft["msd_by_axes_A2"]
     for axes, a in fft["msd_by_axes_A2"].items():
-        assert np.allclose(a[1:], direct["msd_by_axes_A2"][axes][1:], rtol=1e-10, atol=1e-10)
+        assert np.allclose(
+            a[1:], direct["msd_by_axes_A2"][axes][1:], rtol=1e-10, atol=1e-10
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +406,9 @@ def test_msd_fft_and_direct_methods_agree():
 # ---------------------------------------------------------------------------
 
 
-def _cosine_velocity_dataset(n_frames=200, dt_fs=5.0, amplitude_a_fs=0.01, freq_thz=2.0):
+def _cosine_velocity_dataset(
+    n_frames=200, dt_fs=5.0, amplitude_a_fs=0.01, freq_thz=2.0
+):
     """v(t) = A cos(2 pi f t) on every Cartesian axis (f in THz)."""
     t_fs = np.arange(n_frames) * dt_fs
     velocity = amplitude_a_fs * np.cos(2.0 * np.pi * freq_thz * t_fs * 1.0e-3)
@@ -417,10 +442,7 @@ def test_vacf_cosine_sequence_analytic_and_normalized_convention():
     v = dataset.velocities[:, :, :]
     n = v.shape[0]
     expected_def = np.array(
-        [
-            float(np.mean(np.sum(v[: n - lag] * v[lag:], axis=2)))
-            for lag in range(n)
-        ]
+        [float(np.mean(np.sum(v[: n - lag] * v[lag:], axis=2))) for lag in range(n)]
     )
     assert np.allclose(vacf_raw, expected_def, rtol=1e-10, atol=1e-14)
     # Sinusoidal structure: first zero crossing at T/4 = 125 fs (frame 25),
@@ -461,7 +483,9 @@ def test_spectrum_peak_frequency_and_axis_conventions():
     assert peak == pytest.approx(freq_thz, abs=0.5 * (1000.0 / (n_frames * dt_fs)))
     # Frequency axis: cm^-1 == THz * (1e10 cm/m) * 1e-12 s/ps ... conversion
     # consistency per saved axis.
-    assert spectrum["frequency_cm^-1"] == pytest.approx(frequencies * 33.3564095, rel=1e-5)
+    assert spectrum["frequency_cm^-1"] == pytest.approx(
+        frequencies * 33.3564095, rel=1e-5
+    )
     assert vacf["nyquist_THz"] == pytest.approx(0.5 * 1000.0 / dt_fs)
     assert spectrum["normalization"] == "normalized_area"
     # Exact sinusoid has no negative-time VACF content beyond numerical noise.
@@ -488,13 +512,18 @@ def test_spectrum_taper_changes_windowed_vacf_envelope():
 
 
 def test_density_map_known_periodic_sites_normalization():
-    sites = np.array([[10.0, 10.0, 10.0], [40.0, 40.0, 40.0], [10.0, 40.0, 10.0], [40.0, 10.0, 40.0]])
+    sites = np.array(
+        [[10.0, 10.0, 10.0], [40.0, 40.0, 40.0], [10.0, 40.0, 10.0], [40.0, 10.0, 40.0]]
+    )
     n_frames = 4
     frames = [
-        Atoms("Na4", positions=sites, cell=[50, 50, 50], pbc=True) for _ in range(n_frames)
+        Atoms("Na4", positions=sites, cell=[50, 50, 50], pbc=True)
+        for _ in range(n_frames)
     ]
     dataset = _dataset(frames, np.arange(n_frames) * 10.0)
-    result = density_map(dataset, mobile_species="Na", spacing_A=2.0, smoothing_sigma_A=None)
+    result = density_map(
+        dataset, mobile_species="Na", spacing_A=2.0, smoothing_sigma_A=None
+    )
     counts = result["counts_per_voxel"]
     assert counts.shape == (25, 25, 25)
     # Total integrated occupancy == frames x selected atoms.
@@ -522,7 +551,9 @@ def test_density_map_triclinic_cell_is_handled():
         atoms.wrap()
         frames.append(atoms)
     dataset = _dataset(frames, np.arange(3) * 10.0)
-    result = density_map(dataset, mobile_species="Na", spacing_A=2.0, smoothing_sigma_A=None)
+    result = density_map(
+        dataset, mobile_species="Na", spacing_A=2.0, smoothing_sigma_A=None
+    )
     assert int(result["counts_per_voxel"].sum()) == 3 * 2
 
 
@@ -544,8 +575,11 @@ def test_nernst_einstein_tracer_formula_exact():
         temperature_K=temperature,
         ionic_charge_e=charge_e,
     )
-    expected = density_m3 * (charge_e * constants.e) ** 2 * d_m2_s / (
-        constants.k * temperature
+    expected = (
+        density_m3
+        * (charge_e * constants.e) ** 2
+        * d_m2_s
+        / (constants.k * temperature)
     )
     assert result["sigma_NE_tracer_S_m"] == pytest.approx(expected, rel=1e-12)
     assert result["sigma_NE_tracer_S_cm"] == pytest.approx(expected * 0.01, rel=1e-12)
@@ -559,7 +593,9 @@ def test_nernst_einstein_tracer_formula_exact():
         )
 
 
-def _brownian_dataset(n_particles=30, n_frames=300, dt_fs=1000.0, d_m2_s=1.0e-8, cell=60.0):
+def _brownian_dataset(
+    n_particles=30, n_frames=300, dt_fs=1000.0, d_m2_s=1.0e-8, cell=60.0
+):
     rng = np.random.default_rng(7)
     d_a2_fs = d_m2_s * 1.0e5
     step_std = np.sqrt(2.0 * d_a2_fs * dt_fs)
@@ -593,8 +629,10 @@ def test_kinisi_transport_brownian_known_diffusion_and_ne_consistency():
     assert semantics["exact_unwrapped_reconstruction_equivalent"] is True
     assert semantics["maximum_exact_vs_mic_difference_A"] < 1e-9
     posterior = result["tracer_diffusion"]["D_posterior_m2_s"]
-    mean_d = float(posterior["mean"]) if isinstance(posterior, dict) else float(
-        np.mean(result["D_tracer_samples_m2_s"])
+    mean_d = (
+        float(posterior["mean"])
+        if isinstance(posterior, dict)
+        else float(np.mean(result["D_tracer_samples_m2_s"]))
     )
     assert mean_d == pytest.approx(1.0e-8, rel=0.25)
     # sigma_NE must be the documented n (z e)^2 D / (k_B T) of the posterior
@@ -672,6 +710,7 @@ def _site_hopping_dataset(n_frames=600, jitter=0.3, seed=3):
 
 @pytest.fixture()
 def known_sites_poscar(tmp_path: Path) -> Path:
+    pytest.importorskip("pymatgen")
     from pymatgen.core import Lattice, Structure
 
     structure = Structure(
@@ -698,7 +737,9 @@ def test_gemdat_recovers_exact_injected_jump_events(known_sites_poscar: Path):
     assert summary["frame_interval_fs"] == pytest.approx(100.0)
     events = result.tables["transition_events"]
     assert len(events) == len(hops)
-    for (_, row), (frame, particle, site_from, site_to) in zip(events.iterrows(), hops, strict=True):
+    for (_, row), (frame, particle, site_from, site_to) in zip(
+        events.iterrows(), hops, strict=True
+    ):
         assert int(row["atom index"]) == particle
         assert int(row["start site"]) == site_from
         assert int(row["destination site"]) == site_to
@@ -718,7 +759,9 @@ def test_gemdat_refuses_unsafe_wrapped_unwrap(known_sites_poscar: Path):
     positions = np.tile(_SITES_8[:4], (n_frames, 1, 1)).astype(float)
     positions += rng.normal(0.0, 0.3, positions.shape)
     positions[30:, 0] = (
-        _SITES_8[6] + np.array([0.0, 9.0, 9.0]) + rng.normal(0.0, 0.3, (n_frames - 30, 3))
+        _SITES_8[6]
+        + np.array([0.0, 9.0, 9.0])
+        + rng.normal(0.0, 0.3, (n_frames - 30, 3))
     )
     frames = [
         Atoms("Na4", positions=positions[k], cell=[50, 50, 50], pbc=True)
@@ -748,7 +791,9 @@ def test_arrhenius_noiseless_recovery_exact():
     ea_true = 0.30
     temperatures = np.array([500.0, 600.0, 700.0, 800.0])
     diffusivities = d0_true * np.exp(-ea_true / (k_eV_per_K * temperatures))
-    result = fit_arrhenius(temperatures_K=temperatures, diffusivities_m2_s=diffusivities)
+    result = fit_arrhenius(
+        temperatures_K=temperatures, diffusivities_m2_s=diffusivities
+    )
     assert result["activation_energy_eV"] == pytest.approx(ea_true, rel=1e-6)
     assert result["preexponential_factor_m2_s"] == pytest.approx(d0_true, rel=1e-4)
     assert result["r_squared"] > 1.0 - 1e-9
@@ -779,7 +824,9 @@ def test_arrhenius_noisy_fit_with_supplied_uncertainty():
 def test_arrhenius_two_temperature_fit_warns_no_goodness_of_fit():
     temperatures = [500.0, 600.0]
     diffusivities = [1.0e-9, 2.2e-9]
-    result = fit_arrhenius(temperatures_K=temperatures, diffusivities_m2_s=diffusivities)
+    result = fit_arrhenius(
+        temperatures_K=temperatures, diffusivities_m2_s=diffusivities
+    )
     warnings = result["warnings"]
     assert any("two temperatures" in warning.lower() for warning in warnings)
     # A physical Ea claim requires >= 3 temperatures: the two-point line is

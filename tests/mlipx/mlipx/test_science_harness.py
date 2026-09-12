@@ -533,9 +533,7 @@ def test_thermo_q_grid_normalization_invariant():
         ref = single["per_temperature"][0]
         got = gridded["per_temperature"][0]
         assert got["cv_eV_per_K"] == pytest.approx(ref["cv_eV_per_K"])
-        assert got["entropy_eV_per_K"] == pytest.approx(
-            ref["entropy_eV_per_K"]
-        )
+        assert got["entropy_eV_per_K"] == pytest.approx(ref["entropy_eV_per_K"])
         assert got["free_energy_eV"] == pytest.approx(ref["free_energy_eV"])
         # raw mode/q counts stay unnormalized
         assert gridded["n_modes"] == n_modes * n_q
@@ -665,7 +663,9 @@ def test_t8_oom_classifier_matches_only_memory_failures():
     assert performance_suite._is_oom(Exception("CUDA out of memory. Tried to allocate"))
     assert performance_suite._is_oom(Exception("OOM when allocating tensor"))
     assert performance_suite._is_oom(Exception("OOM when allocating tensor"))
-    assert not performance_suite._is_oom(Exception("ResourceExhausted: too many open files"))
+    assert not performance_suite._is_oom(
+        Exception("ResourceExhausted: too many open files")
+    )
     assert not performance_suite._is_oom(Exception("shape mismatch"))
     assert not performance_suite._is_oom(Exception("nan detected in forces"))
     assert not performance_suite._is_oom(Exception("boom"))

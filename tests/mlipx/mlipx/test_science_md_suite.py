@@ -155,19 +155,33 @@ def test_parse_md_csv_reads_product_header():
     from mlipx.runners.md_output import MD_CSV_HEADER
 
     rows = [
-        {"step": "0", "time_fs": "0.0", "potential_energy_eV": "-1.0",
-         "kinetic_energy_eV": "1.2", "total_energy_eV": "0.2",
-         "temperature_K": "300", "max_force_raw_eV_A": "0.1",
-         "max_force_applied_eV_A": "0.05"},
-        {"step": "10", "time_fs": "10.0", "potential_energy_eV": "-1.1",
-         "kinetic_energy_eV": "1.3", "total_energy_eV": "0.2",
-         "temperature_K": "310", "max_force_raw_eV_A": "0.2",
-         "max_force_applied_eV_A": "0.06"},
+        {
+            "step": "0",
+            "time_fs": "0.0",
+            "potential_energy_eV": "-1.0",
+            "kinetic_energy_eV": "1.2",
+            "total_energy_eV": "0.2",
+            "temperature_K": "300",
+            "max_force_raw_eV_A": "0.1",
+            "max_force_applied_eV_A": "0.05",
+        },
+        {
+            "step": "10",
+            "time_fs": "10.0",
+            "potential_energy_eV": "-1.1",
+            "kinetic_energy_eV": "1.3",
+            "total_energy_eV": "0.2",
+            "temperature_K": "310",
+            "max_force_raw_eV_A": "0.2",
+            "max_force_applied_eV_A": "0.06",
+        },
     ]
     # write with the product header contract, then parse
     import tempfile
 
-    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as fh:
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".csv", delete=False, newline=""
+    ) as fh:
         writer = _csv.DictWriter(fh, fieldnames=MD_CSV_HEADER)
         writer.writeheader()
         for row in rows:
@@ -201,8 +215,12 @@ def test_product_rejects_nhc_with_constraints_and_com_removal(emt, tmp_path):
     atoms = md_suite.cu32()
     fixed = md_suite._fixed_layer_indices(atoms)
     cases = [
-        ("nhc_fixatoms", "nhc", "none", md_suite._atoms_with(
-            md_suite.cu32(), FixAtoms(indices=fixed))),
+        (
+            "nhc_fixatoms",
+            "nhc",
+            "none",
+            md_suite._atoms_with(md_suite.cu32(), FixAtoms(indices=fixed)),
+        ),
         ("nhc_auto_com", "nhc", "auto", md_suite.cu32()),
         ("nhc_com_constraint", "nhc", "constraint", md_suite.cu32()),
     ]
@@ -282,7 +300,9 @@ def test_t6b_langevin_same_seed_reproducibility(ctx, args):
     # EMT on CPU is deterministic: the two seeded runs must agree bitwise
     assert rec["status"] == "pass"
     m = rec["metrics"]
-    assert m["same_seed_max_energy_delta_eV"] == pytest.approx(0.0, abs=md_suite.REPRO_MAX_DELTA_EV)
+    assert m["same_seed_max_energy_delta_eV"] == pytest.approx(
+        0.0, abs=md_suite.REPRO_MAX_DELTA_EV
+    )
     assert m["all_finite"] is True
     assert m["seed_recorded"] == md_suite.MD_SEED
     prov = m["thermostat_metadata"]
@@ -349,7 +369,9 @@ def test_t6e_constraint_exactness_and_dof(ctx, args):
     assert rec["status"] == "pass"
     m = rec["metrics"]
     # fixed atoms stay fixed exactly (bitwise) across every saved frame
-    assert m["fixatoms_max_position_deviation_A"] == pytest.approx(0.0, abs=md_suite.EXACTNESS_TOL_A)
+    assert m["fixatoms_max_position_deviation_A"] == pytest.approx(
+        0.0, abs=md_suite.EXACTNESS_TOL_A
+    )
     # COM projector holds to float64 roundoff
     assert m["com_max_drift_A"] <= md_suite.COM_DRIFT_TOL_A
     assert m["fixatoms_dof"] == m["fixatoms_dof_expected"] == 3 * 32 - 3 * 8

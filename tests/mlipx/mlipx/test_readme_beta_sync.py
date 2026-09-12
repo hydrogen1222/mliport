@@ -37,15 +37,9 @@ END_MARKER = "<!-- END GENERATED -->"
 
 READMES = (REPO_ROOT / "README.md", REPO_ROOT / "README_CN.md")
 GENERATED_SNIPPET = (
-    REPO_ROOT
-    / "validation"
-    / "science"
-    / "reports"
-    / "README_VALIDATION.md"
+    REPO_ROOT / "validation" / "science" / "reports" / "README_VALIDATION.md"
 )
-BETA_SUMMARY = (
-    REPO_ROOT / "validation" / "science" / "reports" / "beta-summary.json"
-)
+BETA_SUMMARY = REPO_ROOT / "validation" / "science" / "reports" / "beta-summary.json"
 PYPROJECT = REPO_ROOT / "mlipx" / "pyproject.toml"
 
 
@@ -84,9 +78,7 @@ def test_readme_claims_match_pyproject_python_range() -> None:
     assert lower and upper, f"unexpected requires-python form: {spec}"
     upper_parts = [int(p) for p in upper.group(1).split(".")]
     last_supported = upper_parts[:-1] + [upper_parts[-1] - 1]
-    claimed_range = (
-        f"{lower.group(1)}-" + ".".join(str(p) for p in last_supported)
-    )
+    claimed_range = f"{lower.group(1)}-" + ".".join(str(p) for p in last_supported)
     for readme in READMES:
         assert claimed_range in _readme_text(readme), readme
 
@@ -161,6 +153,7 @@ def test_readme_ensemble_and_thermostat_names_exist() -> None:
     thermostats = {c.lower() for c in _md_option_choices("thermostat")}
     assert {"langevin", "bussi", "nhc"} <= thermostats
 
+
 def test_readme_api_names_exist() -> None:
     import mlipx.api  # noqa: PLC0415
 
@@ -177,8 +170,9 @@ def test_readme_api_names_exist() -> None:
 
 def _manifest_profiles() -> dict[str, Any]:
     manifest = json.loads(
-        (REPO_ROOT / "validation" / "science" / "model_manifest.json")
-        .read_text(encoding="utf-8")
+        (REPO_ROOT / "validation" / "science" / "model_manifest.json").read_text(
+            encoding="utf-8"
+        )
     )
     profiles = manifest["profiles"]
     assert isinstance(profiles, dict), "profiles must be keyed by profile_id"
