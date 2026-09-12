@@ -2,6 +2,8 @@
   "schema": "mlipx.beta-figures/1",
   "evidence_root": ".validation-work",
   "generated": {
+    "fig01": "fig01_omat24_energy.png",
+    "fig02": "fig02_omat24_forces.png",
     "fig04": "fig04_eos.png",
     "fig05": "fig05_elastic.png",
     "fig06": "fig06_phonon.png",
@@ -15,8 +17,6 @@
     "fig15": "fig15_performance.png"
   },
   "skipped": {
-    "fig01": "evidence unavailable",
-    "fig02": "evidence unavailable",
     "fig03": "OMat24 stress parity not computable: the official validation split carries no reference stress labels (recorded in the T3 record metrics.stress)"
   }
 }

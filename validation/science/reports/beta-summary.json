@@ -1,7 +1,7 @@
 {
   "schema": "mlipx.beta-validation-summary/1",
   "generated_from": ".validation-work",
-  "code_commit": "293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc",
+  "code_commit": "7b22280d5eb723a0a9edde0ebf8d925bf410a341",
   "model_profiles": {
     "mace": "MACE-OMAT-0 medium (float64)",
     "dpa": "DPA-3.1-3M (Omat24 head)",
@@ -31,8 +31,10 @@
       }
     },
     "t3": {
-      "records": 0,
-      "by_status": {}
+      "records": 4,
+      "by_status": {
+        "pass": 4
+      }
     },
     "t4": {
       "records": 312,
@@ -70,7 +72,240 @@
       }
     }
   },
-  "omat24": {},
+  "omat24": {
+    "dpa": {
+      "status": "pass",
+      "energy_per_atom": {},
+      "forces": {
+        "by_ref_force_magnitude": [
+          {
+            "component_mae_eV_A": 0.03936892474270215,
+            "component_rmse_eV_A": 0.057635563507523024,
+            "n_atoms": 198,
+            "ref_force_hi_eV_A": 0.1,
+            "ref_force_lo_eV_A": 0.0
+          },
+          {
+            "component_mae_eV_A": 0.06515400063432646,
+            "component_rmse_eV_A": 0.09895455755678487,
+            "n_atoms": 1099,
+            "ref_force_hi_eV_A": 0.5,
+            "ref_force_lo_eV_A": 0.1
+          },
+          {
+            "component_mae_eV_A": 0.07907074350243123,
+            "component_rmse_eV_A": 0.12389983929779809,
+            "n_atoms": 1487,
+            "ref_force_hi_eV_A": 1.0,
+            "ref_force_lo_eV_A": 0.5
+          },
+          {
+            "component_mae_eV_A": 0.08902319989689945,
+            "component_rmse_eV_A": 0.12810764620206894,
+            "n_atoms": 2121,
+            "ref_force_hi_eV_A": 2.0,
+            "ref_force_lo_eV_A": 1.0
+          },
+          {
+            "component_mae_eV_A": 0.12329806995156956,
+            "component_rmse_eV_A": 0.18533860426430024,
+            "n_atoms": 1797,
+            "ref_force_hi_eV_A": null,
+            "ref_force_lo_eV_A": 2.0
+          }
+        ],
+        "component_mae_eV_A": 0.0906240417888077,
+        "component_rmse_eV_A": 0.13969257629816928,
+        "cosine": {
+          "frac_below_0p9": 0.06380688806888068,
+          "mean": 0.9678663139551928,
+          "median": 0.9967985566895906,
+          "min": -0.8992457807974785,
+          "min_ref_force_eV_A": 0.1,
+          "n": 6504
+        },
+        "norm_error_mean_eV_A": 0.1815922108882898
+      },
+      "stress": {
+        "note": "OMat24 validation reference stress labels are absent in the official LMDB; stress parity versus DFT is not computable for this reference level",
+        "reference_stress_available": false
+      }
+    },
+    "grace": {
+      "status": "pass",
+      "energy_per_atom": {},
+      "forces": {
+        "by_ref_force_magnitude": [
+          {
+            "component_mae_eV_A": 0.027662049221666714,
+            "component_rmse_eV_A": 0.044180844461495845,
+            "n_atoms": 198,
+            "ref_force_hi_eV_A": 0.1,
+            "ref_force_lo_eV_A": 0.0
+          },
+          {
+            "component_mae_eV_A": 0.04966546617956262,
+            "component_rmse_eV_A": 0.0807769341341724,
+            "n_atoms": 1099,
+            "ref_force_hi_eV_A": 0.5,
+            "ref_force_lo_eV_A": 0.1
+          },
+          {
+            "component_mae_eV_A": 0.05930623277936873,
+            "component_rmse_eV_A": 0.09471088701207794,
+            "n_atoms": 1487,
+            "ref_force_hi_eV_A": 1.0,
+            "ref_force_lo_eV_A": 0.5
+          },
+          {
+            "component_mae_eV_A": 0.0699710655525327,
+            "component_rmse_eV_A": 0.10448367086810141,
+            "n_atoms": 2121,
+            "ref_force_hi_eV_A": 2.0,
+            "ref_force_lo_eV_A": 1.0
+          },
+          {
+            "component_mae_eV_A": 0.10018588337052473,
+            "component_rmse_eV_A": 0.15924426450762497,
+            "n_atoms": 1797,
+            "ref_force_hi_eV_A": null,
+            "ref_force_lo_eV_A": 2.0
+          }
+        ],
+        "component_mae_eV_A": 0.07112659857861912,
+        "component_rmse_eV_A": 0.11563807237998083,
+        "cosine": {
+          "frac_below_0p9": 0.04381918819188192,
+          "mean": 0.9778641004111434,
+          "median": 0.9981687745092116,
+          "min": -0.8892902023472703,
+          "min_ref_force_eV_A": 0.1,
+          "n": 6504
+        },
+        "norm_error_mean_eV_A": 0.14308901978589603
+      },
+      "stress": {
+        "note": "OMat24 validation reference stress labels are absent in the official LMDB; stress parity versus DFT is not computable for this reference level",
+        "reference_stress_available": false
+      }
+    },
+    "mace": {
+      "status": "pass",
+      "energy_per_atom": {},
+      "forces": {
+        "by_ref_force_magnitude": [
+          {
+            "component_mae_eV_A": 0.030427737509153598,
+            "component_rmse_eV_A": 0.049002380803079816,
+            "n_atoms": 198,
+            "ref_force_hi_eV_A": 0.1,
+            "ref_force_lo_eV_A": 0.0
+          },
+          {
+            "component_mae_eV_A": 0.05539968846118031,
+            "component_rmse_eV_A": 0.08721475037118337,
+            "n_atoms": 1099,
+            "ref_force_hi_eV_A": 0.5,
+            "ref_force_lo_eV_A": 0.1
+          },
+          {
+            "component_mae_eV_A": 0.06590984398781484,
+            "component_rmse_eV_A": 0.10220613711979688,
+            "n_atoms": 1487,
+            "ref_force_hi_eV_A": 1.0,
+            "ref_force_lo_eV_A": 0.5
+          },
+          {
+            "component_mae_eV_A": 0.07908088812106709,
+            "component_rmse_eV_A": 0.11691271573790298,
+            "n_atoms": 2121,
+            "ref_force_hi_eV_A": 2.0,
+            "ref_force_lo_eV_A": 1.0
+          },
+          {
+            "component_mae_eV_A": 0.11561387283229312,
+            "component_rmse_eV_A": 0.17829764767280457,
+            "n_atoms": 1797,
+            "ref_force_hi_eV_A": null,
+            "ref_force_lo_eV_A": 2.0
+          }
+        ],
+        "component_mae_eV_A": 0.0806334796836682,
+        "component_rmse_eV_A": 0.12839598836444854,
+        "cosine": {
+          "frac_below_0p9": 0.05166051660516605,
+          "mean": 0.974367589366209,
+          "median": 0.9975664899092129,
+          "min": -0.904055558458703,
+          "min_ref_force_eV_A": 0.1,
+          "n": 6504
+        },
+        "norm_error_mean_eV_A": 0.16205839936584265
+      },
+      "stress": {
+        "note": "OMat24 validation reference stress labels are absent in the official LMDB; stress parity versus DFT is not computable for this reference level",
+        "reference_stress_available": false
+      }
+    },
+    "uma": {
+      "status": "pass",
+      "energy_per_atom": {},
+      "forces": {
+        "by_ref_force_magnitude": [
+          {
+            "component_mae_eV_A": 0.022748452315584585,
+            "component_rmse_eV_A": 0.0368200576576112,
+            "n_atoms": 198,
+            "ref_force_hi_eV_A": 0.1,
+            "ref_force_lo_eV_A": 0.0
+          },
+          {
+            "component_mae_eV_A": 0.03741493244321026,
+            "component_rmse_eV_A": 0.06090863134986117,
+            "n_atoms": 1099,
+            "ref_force_hi_eV_A": 0.5,
+            "ref_force_lo_eV_A": 0.1
+          },
+          {
+            "component_mae_eV_A": 0.047424701227225446,
+            "component_rmse_eV_A": 0.07947300862902776,
+            "n_atoms": 1487,
+            "ref_force_hi_eV_A": 1.0,
+            "ref_force_lo_eV_A": 0.5
+          },
+          {
+            "component_mae_eV_A": 0.05225607132365047,
+            "component_rmse_eV_A": 0.0801997538080476,
+            "n_atoms": 2121,
+            "ref_force_hi_eV_A": 2.0,
+            "ref_force_lo_eV_A": 1.0
+          },
+          {
+            "component_mae_eV_A": 0.07046523190163335,
+            "component_rmse_eV_A": 0.1249339452654366,
+            "n_atoms": 1797,
+            "ref_force_hi_eV_A": null,
+            "ref_force_lo_eV_A": 2.0
+          }
+        ],
+        "component_mae_eV_A": 0.05276109878292388,
+        "component_rmse_eV_A": 0.09094166638495514,
+        "cosine": {
+          "frac_below_0p9": 0.027982779827798277,
+          "mean": 0.986235615866514,
+          "median": 0.9989514130150847,
+          "min": -0.9118895247328634,
+          "min_ref_force_eV_A": 0.1,
+          "n": 6504
+        },
+        "norm_error_mean_eV_A": 0.10625881936671783
+      },
+      "stress": {
+        "note": "OMat24 validation reference stress labels are absent in the official LMDB; stress parity versus DFT is not computable for this reference level",
+        "reference_stress_available": false
+      }
+    }
+  },
   "support_matrix": {
     "single_point": {
       "mace": {

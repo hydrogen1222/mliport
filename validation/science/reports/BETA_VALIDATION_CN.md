@@ -1,6 +1,6 @@
 # mlipx beta 科学验证报告
 
-由 `.validation-work` 下的证据记录生成；对应提交 `293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc`。本文档全部表格由 `validation/science/scripts/generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成并 diff，不要手工编辑。
+由 `.validation-work` 下的证据记录生成；对应提交 `7b22280d5eb723a0a9edde0ebf8d925bf410a341`。本文档全部表格由 `validation/science/scripts/generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成并 diff，不要手工编辑。
 
 模型身份与产物哈希固定在 `validation/science/model_manifest.json`；OMat24 评估子集见 `validation/science/data/`（种子 20260911）。
 
@@ -37,9 +37,26 @@ Recorded outcome: the float64 profile (MACE) passes every check bitwise. The ups
 | mace-float64 | 8 | characterized 8 |
 | uma | 8 | characterized 8 |
 
-## T3: OMat24 held-out evaluation
+## T3: OMat24 held-out evaluation (256-structure subset)
 
-not_run.
+No elemental offsets are fitted; model energies are compared to the OMat24 reference energies directly. The official OMat24 validation split carries no reference stress labels, so stress parity is not computable and is recorded as absent.
+
+| engine | E/atom MAE (eV) | E/atom RMSE | median | p95 | F comp MAE (eV/A) | F cosine min | records |
+|---|---|---|---|---|---|---|---|
+| dpa | None | None | None | None | None | None | 1 |
+(dpa: reference stress absent in the official validation split)
+
+| grace | None | None | None | None | None | None | 1 |
+(grace: reference stress absent in the official validation split)
+
+| mace | None | None | None | None | None | None | 1 |
+(mace: reference stress absent in the official validation split)
+
+| uma | None | None | None | None | None | None | 1 |
+(uma: reference stress absent in the official validation split)
+
+
+Per-structure errors: `t3/t3_errors_dpa.csv`, `t3/t3_errors_grace.csv`, `t3/t3_errors_mace.csv`, `t3/t3_errors_uma.csv`.
 
 ## T4: static workflows
 
