@@ -122,7 +122,7 @@ def test_terminal_state_compare_and_swap_is_immutable(tmp_path: Path) -> None:
         owner_pid=os.getpid(),
         device_uuid=None,
     )
-    assert mgr.mark_running(job_id, 1234, claim_token=token)
+    assert mgr.mark_running(job_id, 1234, claim_token=token, pid_identity="test-1234")
     assert mgr.update_status(
         job_id,
         JobStatus.CANCELLED,

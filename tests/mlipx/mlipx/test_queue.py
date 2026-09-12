@@ -467,6 +467,12 @@ def _enqueue(mgr: JobManager, name: str, device: str = "cpu") -> str:
 
 
 def _mark_running(mgr: JobManager, name: str, pid: int) -> None:
+    """Fabricate a RUNNING record without a real worker process.
+
+    Production ``mark_running`` captures the /proc start tick (and fails
+    closed if it cannot); synthetic PIDs have no such identity, so the test
+    pins one explicitly through the documented seam.
+    """
     job_id = _job_id(name)
     token = mgr.new_job_id()
     assert mgr.claim_job(
@@ -475,7 +481,7 @@ def _mark_running(mgr: JobManager, name: str, pid: int) -> None:
         owner_pid=os.getpid(),
         device_uuid=None,
     )
-    assert mgr.mark_running(job_id, pid, claim_token=token)
+    assert mgr.mark_running(job_id, pid, claim_token=token, pid_identity=f"test-{pid}")
 
 
 def test_enqueue_writes_pending(mgr: JobManager) -> None:
@@ -1031,3 +1037,80 @@ def test_scheduler_daemon_processes_queue(tmp_path: Path) -> None:
         assert (tmp_path / "m1").exists() and (tmp_path / "m2").exists()
     finally:
         stop_scheduler(jobs_dir=jobs_dir)
+
+
+# ---------------------------------------------------------------------------
+# R07/R08: worker exit codes and the PID-identity startup handshake
+# ---------------------------------------------------------------------------
+
+
+def _enqueue_raw(mgr: JobManager, name: str, code: str) -> str:
+    job_id = _job_id(name)
+    mgr.enqueue(
+        job_id=job_id,
+        display_name=name,
+        calc_type="sp",
+        structure="s.cif",
+        formula="X",
+        natoms=1,
+        device="cpu",
+        cmd=[sys.executable, "-c", code],
+    )
+    return job_id
+
+
+def test_worker_maps_exit_codes_to_terminal_job_status(tmp_path: Path) -> None:
+    """0 -> done, 2 -> not_converged, 130 -> cancelled, other -> failed."""
+    mgr = JobManager(jobs_dir=tmp_path / "jobs")
+    cases = {
+        "ok": ("import sys; sys.exit(0)", "done"),
+        "unconverged": ("import sys; sys.exit(2)", "not_converged"),
+        "cancelled": ("import sys; sys.exit(130)", "cancelled"),
+        "broken": ("import sys; sys.exit(3)", "failed"),
+    }
+    for name, (code, _expected) in cases.items():
+        _enqueue_raw(mgr, name, code)
+    scheduler = QueueScheduler(jobs_dir=mgr.jobs_dir, max_concurrent=4)
+    statuses: dict[str, str] = {}
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        scheduler.run_once()
+        statuses = {name: str(mgr.get_job(_job_id(name))["status"]) for name in cases}
+        if all(
+            status in {"done", "not_converged", "cancelled", "failed"}
+            for status in statuses.values()
+        ):
+            break
+        time.sleep(0.2)
+    for name, (_code, expected) in cases.items():
+        assert statuses.get(name) == expected, (
+            name,
+            statuses,
+            mgr.get_job(_job_id(name)),
+        )
+
+
+def test_mark_running_refuses_unpinnable_pid(tmp_path: Path) -> None:
+    """Fail closed: a process whose identity cannot be pinned is not promoted."""
+    mgr = JobManager(jobs_dir=tmp_path / "jobs")
+    job_id = _enqueue(mgr, "orphan")
+    token = mgr.new_job_id()
+    assert mgr.claim_job(
+        job_id, claim_token=token, owner_pid=os.getpid(), device_uuid=None
+    )
+    # A PID that does not exist has no /proc identity: promotion must fail and
+    # the record must stay CLAIMED (the caller owns killing its child).
+    assert not mgr.mark_running(job_id, 999_999_999, claim_token=token)
+    assert mgr.get_job(job_id)["status"] == "claimed"
+
+
+def test_mark_running_does_not_touch_unrelated_records(tmp_path: Path) -> None:
+    """A wrong claim token must never probe/signal the PID."""
+    mgr = JobManager(jobs_dir=tmp_path / "jobs")
+    job_id = _enqueue(mgr, "token-check")
+    token = mgr.new_job_id()
+    assert mgr.claim_job(
+        job_id, claim_token=token, owner_pid=os.getpid(), device_uuid=None
+    )
+    assert not mgr.mark_running(job_id, os.getpid(), claim_token=mgr.new_job_id())
+    assert mgr.get_job(job_id)["status"] == "claimed"

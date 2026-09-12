@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import os
+import signal
+import subprocess
+import sys
 import tempfile
+import textwrap
+import time
 from pathlib import Path
 
 import pytest
 
 from mlipx.cli import create_parser, main
+from mlipx.run_status import (
+    EXIT_CANCELLED,
+    EXIT_ERROR,
+    EXIT_NOT_CONVERGED,
+    RunOutcome,
+    classify_result,
+)
 
 # ---------------------------------------------------------------------------
 # Parser creation
@@ -779,3 +792,365 @@ def test_run_incar_calculation_neb_uses_endpoint_paths(
     assert captured["resolved"].run_options["neb_initial"] == str(initial.resolve())
     assert captured["resolved"].run_options["neb_final"] == str(final.resolve())
     capsys.readouterr()
+
+
+# ---------------------------------------------------------------------------
+# R07: unified success/not_converged/failed/cancelled exit contract
+# ---------------------------------------------------------------------------
+
+
+class _ResultEngine:
+    """Engine stub returning a fixed runner result (or raising)."""
+
+    def __init__(self, result=None, exc=None):
+        self.result = result
+        self.exc = exc
+        self.kwargs = {}
+
+    def run(self, atoms, **kwargs):
+        self.kwargs = kwargs
+        if self.exc is not None:
+            raise self.exc
+        return self.result
+
+
+def _run_opt_with_engine(tmp_path, monkeypatch, engine, capsys):
+    structure = _write_poscar(tmp_path)
+    model = tmp_path / "model.pt"
+    model.touch()
+    monkeypatch.setattr(
+        "mlipx.cli.CalculationEngine.from_config", lambda config: engine
+    )
+    rc = main(
+        [
+            "opt",
+            str(structure),
+            "--model",
+            str(model),
+            "--output",
+            str(tmp_path / "results"),
+        ]
+    )
+    return rc, capsys.readouterr()
+
+
+def test_unconverged_opt_exits_2_and_keeps_partial_reason(
+    tmp_path, monkeypatch, capsys
+):
+    """R07 red case: converged=False must not exit 0."""
+    engine = _ResultEngine(
+        {
+            "converged": False,
+            "nsteps": 0,
+            "energy": -1.0,
+            "forces": None,
+            "failure_reason": "MAX_STEPS=0",
+        }
+    )
+    rc, captured = _run_opt_with_opt_result = _run_opt_with_engine(
+        tmp_path, monkeypatch, engine, capsys
+    )
+    assert rc == EXIT_NOT_CONVERGED == 2
+    assert "not converged" in captured.out.lower()
+
+
+def test_completed_opt_exits_0(tmp_path, monkeypatch, capsys):
+    engine = _ResultEngine({"converged": True, "nsteps": 3})
+    rc, _captured = _run_opt_with_engine(tmp_path, monkeypatch, engine, capsys)
+    assert rc == 0
+
+
+def test_engine_exception_exits_1(tmp_path, monkeypatch, capsys):
+    engine = _ResultEngine(exc=RuntimeError("backend exploded"))
+    rc, captured = _run_opt_with_engine(tmp_path, monkeypatch, engine, capsys)
+    assert rc == EXIT_ERROR
+    assert "backend exploded" in captured.out
+
+
+def test_keyboard_interrupt_exits_130(tmp_path, monkeypatch, capsys):
+    engine = _ResultEngine(exc=KeyboardInterrupt())
+    rc, captured = _run_opt_with_engine(tmp_path, monkeypatch, engine, capsys)
+    assert rc == EXIT_CANCELLED == 130
+    assert "cancelled" in captured.err.lower()
+
+
+def test_engine_gets_a_cancellation_event(tmp_path, monkeypatch, capsys):
+    """SIGTERM/SIGINT must reach the runner through a cooperative event."""
+    engine = _ResultEngine({"converged": True})
+    _run_opt_with_engine(tmp_path, monkeypatch, engine, capsys)
+    assert engine.kwargs.get("cancel_event") is not None
+    assert engine.kwargs["cancel_event"].is_set() is False
+
+
+def test_classify_result_defaults_to_not_converged_for_convergence_types():
+    assert classify_result({}, calc_type="opt") is RunOutcome.NOT_CONVERGED
+    assert classify_result({}, calc_type="neb") is RunOutcome.NOT_CONVERGED
+    # MD/SP have no convergence concept: an empty result is a completion
+    assert classify_result({}, calc_type="md") is RunOutcome.COMPLETED
+    assert (
+        classify_result({"converged": False}, calc_type="opt")
+        is RunOutcome.NOT_CONVERGED
+    )
+    assert (
+        classify_result({"status": "cancelled"}, calc_type="md") is RunOutcome.CANCELLED
+    )
+
+
+def test_run_incar_unconverged_opt_exits_2(tmp_path, monkeypatch, capsys):
+    """The real INCAR path (MAX_STEPS=0, strict FMAX) must return 2."""
+    with tempfile.TemporaryDirectory() as d:
+        dpath = Path(d)
+        structure = _write_poscar(dpath)
+        (dpath / "model.pt").touch()
+        incar = dpath / "INCAR.mlipx"
+        incar.write_text(
+            "CALC_TYPE = OPT\n"
+            "MODEL_PATH = model.pt\n"
+            "TASK = omat\n"
+            "MAX_STEPS = 0\n"
+            "FMAX = 1e-8\n",
+            encoding="utf-8",
+        )
+        engine = _ResultEngine({"converged": False, "nsteps": 0})
+        monkeypatch.setattr(
+            "mlipx.cli.CalculationEngine.from_config", lambda config: engine
+        )
+        old = os.getcwd()
+        try:
+            os.chdir(d)
+            rc = main(["run", "--incar", "INCAR.mlipx", "--structure", str(structure)])
+        finally:
+            os.chdir(old)
+        assert rc == 2
+        assert "not converged" in capsys.readouterr().out.lower()
+
+
+# ---------------------------------------------------------------------------
+# R13: output directory + writer switches reach the runner
+# ---------------------------------------------------------------------------
+
+
+def test_incar_output_dir_is_supported_and_written_into_job_dir(
+    tmp_path, monkeypatch, capsys
+):
+    structure = _write_poscar(tmp_path)
+    (tmp_path / "model.pt").touch()
+    incar = tmp_path / "INCAR.mlipx"
+    incar.write_text(
+        "CALC_TYPE = SP\n"
+        "MODEL_PATH = model.pt\n"
+        "TASK = omat\n"
+        "JOB_NAME = job1\n"
+        "OUTPUT_DIR = out_root\n"
+        "WRITE_OUTCAR = False\n",
+        encoding="utf-8",
+    )
+    engine = _ResultEngine({})
+    monkeypatch.setattr(
+        "mlipx.cli.CalculationEngine.from_config", lambda config: engine
+    )
+    import warnings
+
+    old = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            rc = main(["run", "--incar", str(incar), "--structure", str(structure)])
+    finally:
+        os.chdir(old)
+    assert rc == 0
+    assert not [
+        w
+        for w in record
+        if "Unknown key" in str(w.message) and "OUTPUT_DIR" in str(w.message)
+    ], "OUTPUT_DIR must be a recognised INCAR field, not an unknown-key warning"
+    run_dir = tmp_path / "out_root" / "job1"
+    resolved = json.loads((run_dir / "resolved_config.json").read_text())
+    assert resolved["settings"]["write_outcar"] is False
+    # the parent output directory must not be used as the resolved-config home
+    assert not (tmp_path / "out_root" / "resolved_config.json").exists()
+
+
+def test_two_jobs_keep_their_own_resolved_configs(tmp_path, monkeypatch):
+    structure = _write_poscar(tmp_path)
+    (tmp_path / "model.pt").touch()
+    engine = _ResultEngine({})
+    monkeypatch.setattr(
+        "mlipx.cli.CalculationEngine.from_config", lambda config: engine
+    )
+    for name in ("job_a", "job_b"):
+        incar = tmp_path / f"INCAR.{name}"
+        incar.write_text(
+            "CALC_TYPE = SP\n"
+            "MODEL_PATH = model.pt\n"
+            "TASK = omat\n"
+            f"JOB_NAME = {name}\n"
+            f"OUTPUT_DIR = jobs\n",
+            encoding="utf-8",
+        )
+        old = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            rc = main(["run", "--incar", str(incar), "--structure", str(structure)])
+        finally:
+            os.chdir(old)
+        assert rc == 0
+    root = tmp_path / "jobs"
+    for name in ("job_a", "job_b"):
+        config_path = root / name / "resolved_config.json"
+        assert config_path.is_file()
+        assert json.loads(config_path.read_text())["settings"]["job_name"] == name
+    assert not (root / "resolved_config.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("setting", "runner_attr", "value"),
+    [
+        ("write_outcar", "write_outcar", False),
+        ("write_forces", "write_forces", False),
+        ("write_stress", "write_stress", False),
+        ("write_json", "write_json", False),
+    ],
+)
+def test_output_switches_reach_the_runner(tmp_path, setting, runner_attr, value):
+    """R13: a resolved output switch must actually reach the runner object."""
+    from mlipx.engine import CalculationEngine, EngineConfig
+
+    config = EngineConfig(
+        calc_type="sp",
+        model_path=tmp_path / "model.pt",
+        model_type="mace",
+        task="bulk",
+        device="cpu",
+        output_dir=tmp_path,
+        settings={setting: value},
+    )
+    engine = CalculationEngine.from_config(config)
+    runner = engine._create_runner(calculator=object())
+    assert getattr(runner, runner_attr) is value
+
+
+def test_write_outcar_defaults_to_true(tmp_path):
+    from mlipx.engine import CalculationEngine, EngineConfig
+
+    config = EngineConfig(
+        calc_type="opt",
+        model_path=tmp_path / "model.pt",
+        model_type="mace",
+        task="bulk",
+        device="cpu",
+        output_dir=tmp_path,
+    )
+    runner = CalculationEngine.from_config(config)._create_runner(calculator=object())
+    assert runner.write_outcar is True
+
+
+# ---------------------------------------------------------------------------
+# R08: SIGTERM becomes cooperative cancellation with a bounded exit
+# ---------------------------------------------------------------------------
+
+_SIGTERM_SCRIPT = """
+import sys
+import time
+
+from mlipx.cli import _run_product
+from mlipx.protocols import CancellationRequested
+
+
+class CooperativeEngine:
+    def run(self, atoms, log_fn=None, started_at=None, cancel_event=None):
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                raise CancellationRequested("test cancellation")
+            time.sleep(0.05)
+        return {"converged": True}
+
+
+rc = _run_product(CooperativeEngine(), None, calc_type="sp", started_at=0.0)
+print(f"RC {rc}")
+sys.exit(rc)
+"""
+
+_SIGTERM_IGNORING_SCRIPT = """
+import sys
+import time
+
+from mlipx.cli import _run_product
+
+
+class IgnoringEngine:
+    def run(self, atoms, log_fn=None, started_at=None, cancel_event=None):
+        time.sleep(30)
+        return {"converged": True}
+
+
+rc = _run_product(IgnoringEngine(), None, calc_type="sp", started_at=0.0)
+print(f"RC {rc}")
+sys.exit(rc)
+"""
+
+
+def test_sigterm_requests_cooperative_cancellation(tmp_path):
+    """A queue SIGTERM must stop at a safe point and exit 130, not kill hard."""
+    env = dict(os.environ)
+    env["MLIPX_CANCEL_GRACE_SECONDS"] = "20"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", textwrap.dedent(_SIGTERM_SCRIPT)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        time.sleep(1.0)
+        proc.send_signal(signal.SIGTERM)
+        stdout, stderr = proc.communicate(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    assert proc.returncode == EXIT_CANCELLED, (proc.returncode, stdout, stderr)
+    assert "RC 130" in stdout
+
+
+def test_sigterm_watchdog_bounds_a_stuck_cancellation(tmp_path):
+    """A runner that ignores cancellation is force-exited after the grace period."""
+    env = dict(os.environ)
+    env["MLIPX_CANCEL_GRACE_SECONDS"] = "1.5"
+    started = time.monotonic()
+    proc = subprocess.Popen(
+        [sys.executable, "-c", textwrap.dedent(_SIGTERM_IGNORING_SCRIPT)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        # give the child time to import mlipx and install its handler
+        time.sleep(1.5)
+        proc.send_signal(signal.SIGTERM)
+        _stdout, _stderr = proc.communicate(timeout=15)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    assert time.monotonic() - started < 12
+    assert proc.returncode == EXIT_CANCELLED
+
+
+def test_md_output_switches_reach_the_runner(tmp_path):
+    from mlipx.engine import CalculationEngine, EngineConfig
+
+    config = EngineConfig(
+        calc_type="md",
+        model_path=tmp_path / "model.pt",
+        model_type="mace",
+        task="bulk",
+        device="cpu",
+        output_dir=tmp_path,
+        run_options={"steps": 1, "pre_relax": False},
+        settings={"write_trajectory": False, "write_xdatcar": False},
+    )
+    runner = CalculationEngine.from_config(config)._create_runner(calculator=object())
+    assert runner.write_trajectory is False
+    assert runner.write_xdatcar is False

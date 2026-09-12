@@ -747,6 +747,17 @@ _SPECS: list[OptionSpec] = [
         description="Output format (VASP).",
     ),
     OptionSpec(
+        "output_dir",
+        str,
+        frozenset({"output"}),
+        aliases={"OUTPUT_DIR"},
+        description=(
+            "Output directory for the calculation. Used when the command line "
+            "does not pass --output; the resolved config is written into the "
+            "final job directory."
+        ),
+    ),
+    OptionSpec(
         "job_name",
         str,
         frozenset({"meta"}),

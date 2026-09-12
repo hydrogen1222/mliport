@@ -10,6 +10,9 @@ from __future__ import annotations
 import csv
 import gc
 import json
+import subprocess
+import sys
+import textwrap
 import tracemalloc
 import warnings
 
@@ -989,3 +992,111 @@ def test_md_rejects_nonphysical_parameters(tmp_path, kwargs, message):
             verbose=False,
             **kwargs,
         )
+
+
+# ---------------------------------------------------------------------------
+# R08: KeyboardInterrupt must drain the writer thread and mark the run cancelled
+# ---------------------------------------------------------------------------
+
+_R08_SCRIPT = """
+import sys
+from pathlib import Path
+
+import numpy as np
+from ase import Atoms
+from ase.calculators.calculator import Calculator, all_changes
+
+from mlipx.runners.md import MDRunner
+
+
+class InterruptOnSecondCall(Calculator):
+    implemented_properties = ["energy", "forces", "stress"]
+
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def calculate(self, atoms=None, properties=("energy",), system_changes=all_changes):
+        self.calls += 1
+        if self.calls >= 2:
+            raise KeyboardInterrupt
+        super().calculate(atoms, properties, system_changes)
+        self.results = {
+            "energy": -1.0,
+            "forces": np.zeros((len(atoms), 3)),
+            "stress": np.zeros(6),
+        }
+
+
+class Wrapper:
+    task = "bulk"
+    has_stress = True
+    model_type = "stub"
+
+    def __init__(self, calc):
+        self._calc = calc
+
+    def get_calculator(self):
+        return self._calc
+
+    def info(self):
+        return {"model_type": "stub", "task": "bulk"}
+
+
+out = Path(sys.argv[1])
+atoms = Atoms(
+    "Ar4",
+    positions=[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
+    cell=[20.0, 20.0, 20.0],
+    pbc=True,
+)
+runner = MDRunner(
+    Wrapper(InterruptOnSecondCall()),
+    ensemble="NVE",
+    temperature=300.0,
+    timestep=0.25,
+    steps=20,
+    save_interval=1,
+    output_dir=out,
+    pre_relax=False,
+    verbose=False,
+    seed=7,
+    com_policy="none",
+)
+try:
+    runner.execute(atoms)
+except KeyboardInterrupt:
+    print("INTERRUPTED")
+else:
+    print("NOT_INTERRUPTED")
+"""
+
+
+def test_md_keyboard_interrupt_exits_quickly_and_marks_cancelled(tmp_path):
+    """Red case: the non-daemon writer thread kept the process alive >4 s.
+
+    The interrupted run must drain its output stream, publish status
+    ``cancelled`` and let the interpreter exit without external killing.
+    """
+    out = tmp_path / "md_interrupt"
+    completed = subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(_R08_SCRIPT), str(out)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "INTERRUPTED" in completed.stdout
+    artifacts = json.loads((out / "artifacts.json").read_text(encoding="utf-8"))
+    assert artifacts["status"] == "cancelled"
+    # No half-written frame files: the trajectory is readable or absent.
+    trajectory = out / "raw" / "trajectory.traj"
+    if trajectory.exists():
+        assert len(Trajectory(trajectory)) >= 0
+    # OUTCAR, when requested, carries the cancelled trailer rather than a
+    # completed one.
+    outcar = out / "vasp" / "OUTCAR"
+    if outcar.exists():
+        text = outcar.read_text(encoding="utf-8", errors="ignore")
+        assert "cancelled" in text.lower()

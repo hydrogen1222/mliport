@@ -503,10 +503,19 @@ def _record_failed_attempt(
     context: dict[str, Any],
     model: Mapping[str, Any],
     latest_checkpoint: Path | None,
-    exc: Exception,
+    exc: BaseException,
 ) -> None:
     """Publish a stable failure result without claiming convergence."""
-    failure_status = "cancelled" if isinstance(exc, CancellationRequested) else "failed"
+    failure_status = (
+        "cancelled"
+        if isinstance(exc, (CancellationRequested, KeyboardInterrupt))
+        else "failed"
+    )
+    reason = str(exc) or (
+        "Interrupted by user (KeyboardInterrupt)"
+        if isinstance(exc, KeyboardInterrupt)
+        else f"{type(exc).__name__}"
+    )
     failed_at = _utc_now()
     failure = {
         "schema": "mlipx.neb-results/2",
@@ -515,7 +524,7 @@ def _record_failed_attempt(
         "trajectory_kind": "neb_band",
         "status": failure_status,
         "converged": False,
-        "failure_reason": str(exc),
+        "failure_reason": reason,
         "energy_unit": "eV",
         "force_unit": "eV/Angstrom",
         "barrier_unit": "eV",
@@ -560,7 +569,7 @@ def _record_failed_attempt(
         {
             "status": failure_status,
             "converged": False,
-            "failure_reason": str(exc),
+            "failure_reason": reason,
             "failed_at": failed_at,
         }
     )
@@ -741,6 +750,9 @@ def _run_neb_workflow_locked(
                 latest_checkpoint=latest_checkpoint,
             ),
         )
+    except KeyboardInterrupt as exc:
+        _record_failed_attempt(output, context, model, latest_checkpoint, exc)
+        raise
     except Exception as exc:
         _record_failed_attempt(output, context, model, latest_checkpoint, exc)
         raise
@@ -766,6 +778,18 @@ def _run_neb_workflow_locked(
             resolved_config=resolved.as_dict(),
         )
         last_checkpoint_key = key
+        # The complete-band checkpoint is atomically published; move the
+        # artifacts pointer with it so the TUI never reads the older
+        # stage=prepared checkpoint while the run advances (review R09).
+        atomic_write_json(
+            output / "artifacts.json",
+            _artifacts(
+                status="running",
+                run_id=run_id,
+                attempt_id=attempt_id,
+                latest_checkpoint=latest_checkpoint,
+            ),
+        )
 
     runner = NEBRunner(
         calculator,
@@ -844,6 +868,9 @@ def _run_neb_workflow_locked(
             ),
         )
         return payload
+    except KeyboardInterrupt as exc:
+        _record_failed_attempt(output, context, model, latest_checkpoint, exc)
+        raise
     except Exception as exc:
         _record_failed_attempt(output, context, model, latest_checkpoint, exc)
         raise

@@ -19,7 +19,11 @@ Provides subcommands for different calculation types:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import os
+import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -33,6 +37,94 @@ from mlipx.config import (
 )
 from mlipx.config.settings import init_settings_file
 from mlipx.engine import CalculationEngine, EngineConfig
+from mlipx.protocols import CancellationRequested
+from mlipx.run_status import (
+    EXIT_CANCELLED,
+    EXIT_ERROR,
+    RunOutcome,
+    classify_exception,
+    classify_result,
+    describe,
+    exit_code_for,
+)
+
+#: Seconds the first SIGTERM/SIGINT gives the runners to stop at a safe point
+#: and publish a cancelled status before the watchdog forces a bounded exit.
+CANCEL_GRACE_SECONDS = float(os.environ.get("MLIPX_CANCEL_GRACE_SECONDS", "30"))
+
+
+def _run_product(
+    engine: CalculationEngine, atoms, *, calc_type: str, started_at: float
+):
+    """Run a product calculation with cancellation and unified exit codes."""
+    cancel_event = threading.Event()
+    watchdog: threading.Timer | None = None
+
+    def _start_watchdog() -> None:
+        nonlocal watchdog
+        if watchdog is not None:
+            return
+        watchdog = threading.Timer(CANCEL_GRACE_SECONDS, _force_cancelled_exit)
+        watchdog.daemon = True
+        watchdog.start()
+
+    previous: dict[int, object] = {}
+
+    def _handler(signum, frame):  # noqa: ARG001
+        if cancel_event.is_set():
+            signal.signal(signum, previous.get(signum, signal.SIG_DFL))
+            raise KeyboardInterrupt
+        cancel_event.set()
+        print(
+            "\nCancellation requested; stopping at the next safe point "
+            "(press again to force).",
+            file=sys.stderr,
+        )
+        _start_watchdog()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        previous[sig] = signal.getsignal(sig)
+        try:
+            signal.signal(sig, _handler)
+        except ValueError:  # non-main thread (library use): keep default
+            pass
+    try:
+        result = engine.run(
+            atoms,
+            log_fn=_console_log,
+            started_at=started_at,
+            cancel_event=cancel_event,
+        )
+    except (KeyboardInterrupt, CancellationRequested) as exc:
+        print(f"\n{describe(classify_exception(exc))}.", file=sys.stderr)
+        return exit_code_for(classify_exception(exc))
+    except Exception as exc:  # noqa: BLE001 - reported as a failed run
+        print(f"Error: {exc}")
+        return EXIT_ERROR
+    finally:
+        if watchdog is not None:
+            watchdog.cancel()
+        for sig, prev in previous.items():
+            try:
+                signal.signal(sig, prev)
+            except ValueError:
+                pass
+    outcome = classify_result(result, calc_type=calc_type)
+    if outcome is RunOutcome.NOT_CONVERGED:
+        print(
+            f"Warning: {calc_type.upper()} {describe(outcome)}; inspect the "
+            "output directory before using the structure."
+        )
+    return exit_code_for(outcome)
+
+
+def _force_cancelled_exit() -> None:
+    print(
+        f"Error: cancellation did not finish within {CANCEL_GRACE_SECONDS:g}s; "
+        "forcing exit.",
+        file=sys.stderr,
+    )
+    os._exit(EXIT_CANCELLED)
 
 
 def _doctor_device_argument(value: str) -> str:
@@ -243,8 +335,11 @@ Examples:
         "-o",
         "--output",
         type=str,
-        default=".",
-        help="Output directory (default: current directory)",
+        default=None,
+        help=(
+            "Output directory (default: INCAR OUTPUT_DIR, else the current "
+            "directory)"
+        ),
     )
 
     # sp command
@@ -287,8 +382,8 @@ Examples:
         "--output",
         "-o",
         type=str,
-        default=".",
-        help="Output directory",
+        default=None,
+        help="Output directory (default: settings OUTPUT_DIR, else '.')",
     )
     sp_parser.add_argument(
         "--name",
@@ -369,8 +464,8 @@ Examples:
         "--output",
         "-o",
         type=str,
-        default=".",
-        help="Output directory",
+        default=None,
+        help="Output directory (default: settings OUTPUT_DIR, else '.')",
     )
     opt_parser.add_argument(
         "--name",
@@ -539,8 +634,8 @@ Examples:
         "--output",
         "-o",
         type=str,
-        default=".",
-        help="Output directory",
+        default=None,
+        help="Output directory (default: settings OUTPUT_DIR, else '.')",
     )
     md_parser.add_argument(
         "--name",
@@ -1423,10 +1518,17 @@ def _resolve_engine_config(
         cli_base_dir=Path.cwd(),
     )
     engine_config = EngineConfig.from_resolved(resolved)
+    # Output-directory precedence (review R13): an explicit argument wins,
+    # then an explicit CLI --output, then INCAR/settings OUTPUT_DIR, then ".".
+    # The argparse default for --output is None precisely so an INCAR
+    # OUTPUT_DIR is not silently shadowed by the current-directory default.
+    explicit_output = (
+        output_dir if output_dir is not None else getattr(args, "output", None)
+    )
+    if explicit_output is None:
+        explicit_output = resolved.settings.get("output_dir")
     engine_config.output_dir = (
-        Path(output_dir if output_dir else getattr(args, "output", "."))
-        .expanduser()
-        .resolve()
+        Path(explicit_output if explicit_output else ".").expanduser().resolve()
     )
     engine_config.job_name = (
         job_name if job_name is not None else getattr(args, "name", None)
@@ -1434,20 +1536,39 @@ def _resolve_engine_config(
     return engine_config, resolved, settings
 
 
+def _final_run_dir(config: EngineConfig) -> Path:
+    """Directory the calculation actually writes into (job subdir included)."""
+    if config.job_name:
+        return Path(config.output_dir) / config.job_name
+    return Path(config.output_dir)
+
+
 def _emit_resolved_config(resolved, output_dir: Path) -> None:
-    """Write resolved_config.json when enabled (plan section 15 / 4.5)."""
+    """Atomically write resolved_config.json into the FINAL run directory.
+
+    The file records the provenance of one job; writing it to the parent
+    output directory let sibling jobs overwrite each other (review R13).
+    """
     import json  # noqa: PLC0415
+    import os  # noqa: PLC0415
 
     if not resolved.settings.get("write_resolved_config", True):
         return
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = output_dir / "resolved_config.json"
+    payload = json.dumps(resolved.as_dict(), indent=2, default=str) + "\n"
+    tmp = output_dir / f".resolved_config.json.tmp-{os.getpid()}"
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        (output_dir / "resolved_config.json").write_text(
-            json.dumps(resolved.as_dict(), indent=2, default=str),
-            encoding="utf-8",
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        print(
+            f"Warning: could not write {target}: {exc}",
+            file=sys.stderr,
         )
-    except OSError:
-        pass
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -1497,10 +1618,19 @@ def cmd_run(args: argparse.Namespace) -> int:
                 final=final,
                 log_fn=_console_log,
             )
-            return 0 if result["converged"] else 2
+            outcome = classify_result(result, calc_type="neb")
+            if outcome is RunOutcome.NOT_CONVERGED:
+                print(
+                    "Warning: NEB did not converge; resume from the latest "
+                    "checkpoint to continue."
+                )
+            return exit_code_for(outcome)
+        except (KeyboardInterrupt, CancellationRequested) as exc:
+            print(f"\n{describe(classify_exception(exc))}.", file=sys.stderr)
+            return exit_code_for(classify_exception(exc))
         except Exception as exc:
             print(f"Error: {exc}")
-            return 1
+            return EXIT_ERROR
 
     # Determine structure file
     structure_file = args.structure
@@ -1552,14 +1682,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         job_name=job_name,
     )
 
-    try:
-        _emit_resolved_config(resolved, engine_config.output_dir)
-        engine = CalculationEngine.from_config(engine_config)
-        engine.run(atoms, log_fn=_console_log, started_at=started_at)
-        return 0
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
+    engine = CalculationEngine.from_config(engine_config)
+    _emit_resolved_config(resolved, _final_run_dir(engine_config))
+    return _run_product(engine, atoms, calc_type=calc_type, started_at=started_at)
 
 
 def cmd_sp(args: argparse.Namespace) -> int:
@@ -1580,18 +1705,12 @@ def cmd_sp(args: argparse.Namespace) -> int:
         print(f"System: {atoms.get_chemical_formula()}")
         print(f"Atoms: {len(atoms)}")
 
-        _emit_resolved_config(
-            resolved,
-            config.output_dir / (config.job_name or "")
-            if config.job_name
-            else config.output_dir,
-        )
         engine = CalculationEngine.from_config(config)
-        engine.run(atoms, log_fn=_console_log, started_at=started_at)
-        return 0
+        _emit_resolved_config(resolved, _final_run_dir(config))
+        return _run_product(engine, atoms, calc_type="sp", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
-        return 1
+        return EXIT_ERROR
 
 
 def cmd_opt(args: argparse.Namespace) -> int:
@@ -1612,18 +1731,12 @@ def cmd_opt(args: argparse.Namespace) -> int:
         print(f"System: {atoms.get_chemical_formula()}")
         print(f"Atoms: {len(atoms)}")
 
-        _emit_resolved_config(
-            resolved,
-            config.output_dir / (config.job_name or "")
-            if config.job_name
-            else config.output_dir,
-        )
         engine = CalculationEngine.from_config(config)
-        engine.run(atoms, log_fn=_console_log, started_at=started_at)
-        return 0
+        _emit_resolved_config(resolved, _final_run_dir(config))
+        return _run_product(engine, atoms, calc_type="opt", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
-        return 1
+        return EXIT_ERROR
 
 
 def cmd_md(args: argparse.Namespace) -> int:
@@ -1644,18 +1757,12 @@ def cmd_md(args: argparse.Namespace) -> int:
         print(f"System: {atoms.get_chemical_formula()}")
         print(f"Atoms: {len(atoms)}")
 
-        _emit_resolved_config(
-            resolved,
-            config.output_dir / (config.job_name or "")
-            if config.job_name
-            else config.output_dir,
-        )
         engine = CalculationEngine.from_config(config)
-        engine.run(atoms, log_fn=_console_log, started_at=started_at)
-        return 0
+        _emit_resolved_config(resolved, _final_run_dir(config))
+        return _run_product(engine, atoms, calc_type="md", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
-        return 1
+        return EXIT_ERROR
 
 
 def _parse_neb_atom_map(value: str | None) -> list[int] | None:
@@ -1764,10 +1871,19 @@ def cmd_neb(args: argparse.Namespace) -> int:
                 "Sampled forward barrier: "
                 f"{result['barrier_forward_sampled_eV']:.8f} eV"
             )
-        return 0 if result["converged"] else 2
+        outcome = classify_result(result, calc_type="neb")
+        if outcome is RunOutcome.NOT_CONVERGED:
+            print(
+                "Warning: NEB did not converge; resume from the latest "
+                "checkpoint to continue."
+            )
+        return exit_code_for(outcome)
+    except (KeyboardInterrupt, CancellationRequested) as exc:
+        print(f"\n{describe(classify_exception(exc))}.", file=sys.stderr)
+        return exit_code_for(classify_exception(exc))
     except Exception as exc:
         print(f"Error: {exc}")
-        return 1
+        return EXIT_ERROR
 
 
 def cmd_batch(args: argparse.Namespace) -> int:
@@ -2351,7 +2467,15 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Main entry point."""
+    """Main entry point: Ctrl-C anywhere resolves to exit code 130."""
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.", file=sys.stderr)
+        return EXIT_CANCELLED
+
+
+def _main(argv: list[str] | None = None) -> int:
     run_started_at = time.perf_counter()
     # Check if running in TUI mode (no command, or explicit 'tui' command)
     if argv is None:

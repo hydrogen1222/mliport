@@ -1336,7 +1336,37 @@ async def test_neb_run_screen_live_status_reads_engine_artifacts(
         running_text = str(screen.status.render())
         assert "stage neb" in running_text
         assert "step 12" in running_text
-        assert "max 1000 steps/stage" in running_text
+        # The budget belongs to THIS stage; a combined total percentage would
+        # be invented (review R09).
+        assert "CI budget 1000 steps" in running_text
+
+        # Pre-CI stage reports its own budget, not the CI budget.
+        (checkpoint_dir / "checkpoint.json").write_text(
+            json.dumps(
+                {
+                    "schema": "mlipx.neb-checkpoint/1",
+                    "stage": "neb_pre",
+                    "stage_step": 5,
+                    "resume_fingerprint": {
+                        "neb_options": {"pre_max_steps": 300, "max_steps": 1000}
+                    },
+                }
+            )
+        )
+        screen._refresh_neb_status("running")
+        pre_text = str(screen.status.render())
+        assert "stage neb_pre" in pre_text
+        assert "pre-CI budget 300 steps" in pre_text
+        (checkpoint_dir / "checkpoint.json").write_text(
+            json.dumps(
+                {
+                    "schema": "mlipx.neb-checkpoint/1",
+                    "stage": "neb",
+                    "stage_step": 12,
+                    "resume_fingerprint": {"neb_options": {"max_steps": 1000}},
+                }
+            )
+        )
 
         # Completed run: converged barrier summary comes from neb_results.json.
         (run_dir / "neb_results.json").write_text(

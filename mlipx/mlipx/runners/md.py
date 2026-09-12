@@ -16,8 +16,10 @@ Outputs trajectories in multiple formats.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
+import sys
 import threading
 import time
 from importlib.metadata import PackageNotFoundError, version
@@ -1429,8 +1431,14 @@ class MDRunner(BaseRunner):
 
         dyn.attach(print_progress, interval=1)
 
+        output_closed = False
+
         def close_output_stream(primary_error: BaseException | None = None) -> None:
             """Drain requested frames, reporting output failure as fatal."""
+            nonlocal output_closed
+            if output_closed:
+                return
+            output_closed = True
             try:
                 output_stream.close()
             except Exception as output_error:
@@ -1453,8 +1461,10 @@ class MDRunner(BaseRunner):
                     raise output_error from primary_error
                 raise
 
+        run_finished_normally = False
         try:
             dyn.run(self.total_steps)
+            run_finished_normally = True
         except ForceSafetyAbort as exc:
             self.log(f"\nMD aborted by force safety threshold: {exc}", level="error")
             close_output_stream(exc)
@@ -1491,6 +1501,18 @@ class MDRunner(BaseRunner):
                 status="cancelled", frame_stats=output_stream.stats
             )
             raise  # Re-raise to propagate cancellation
+        except KeyboardInterrupt as exc:
+            # Ctrl-C is cancellation, not a crash: drain the writer thread
+            # (it is non-daemon and would otherwise block process exit) and
+            # publish a cancelled status before propagating (review R08).
+            self.log("\n⚠️ MD simulation interrupted by user (KeyboardInterrupt)")
+            close_output_stream(exc)
+            if md_outcar_writer is not None:
+                md_outcar_writer.finalize(status="cancelled")
+            self._write_artifacts_manifest(
+                status="cancelled", frame_stats=output_stream.stats
+            )
+            raise
         except Exception as e:
             self.log(f"\n❌ MD simulation failed: {e}", level="error")
             close_output_stream(e)
@@ -1500,6 +1522,35 @@ class MDRunner(BaseRunner):
                 status="failed", frame_stats=output_stream.stats
             )
             raise
+        finally:
+            # Backstop for BaseException paths that no handler above
+            # enumerated (KeyboardInterrupt raised inside a handler,
+            # SystemExit, ...): the non-daemon writer thread must always be
+            # drained and the manifest must never stay "running" (R08).
+            if not run_finished_normally and not output_closed:
+                exc_type = sys.exc_info()[0]
+                terminal = (
+                    "cancelled"
+                    if exc_type in (KeyboardInterrupt, CancellationRequested)
+                    else "failed"
+                )
+                self.log(
+                    f"\nMD run ended abnormally ({exc_type.__name__ if exc_type else 'unknown'}); "
+                    f"closing output with status {terminal}",
+                    level="error",
+                )
+                try:
+                    close_output_stream()
+                except Exception as cleanup_error:  # noqa: BLE001
+                    self.log(
+                        f"MD output cleanup failed: {cleanup_error}", level="error"
+                    )
+                if md_outcar_writer is not None:
+                    md_outcar_writer.finalize(status=terminal)
+                with contextlib.suppress(Exception):
+                    self._write_artifacts_manifest(
+                        status=terminal, frame_stats=output_stream.stats
+                    )
 
         close_output_stream()
         md_time = time.time() - start_time

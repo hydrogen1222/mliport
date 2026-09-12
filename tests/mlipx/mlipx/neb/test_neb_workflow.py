@@ -422,3 +422,88 @@ def test_geometry_resume_does_not_reinterpolate_saved_interior_band() -> None:
 
     assert runner.last_band is not None
     assert runner.last_band[1].positions[1, 1] == pytest.approx(middle.positions[1, 1])
+
+
+# ---------------------------------------------------------------------------
+# R08/R09: interruption status and the artifacts checkpoint pointer
+# ---------------------------------------------------------------------------
+
+
+def test_keyboard_interrupt_publishes_cancelled_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C must not leave artifacts/context at status 'running' (R08)."""
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model identity")
+    output = tmp_path / "interrupted"
+    initial, final = _endpoints()
+
+    def interrupt(self, band):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(NEBRunner, "run", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        run_neb_workflow(
+            FakeMACEWrapper(),
+            _resolved(model),
+            output_dir=output,
+            initial=initial,
+            final=final,
+            verbose=False,
+        )
+
+    failure = json.loads((output / "neb_results.json").read_text(encoding="utf-8"))
+    context = json.loads((output / "run_context.json").read_text(encoding="utf-8"))
+    artifacts = json.loads((output / "artifacts.json").read_text(encoding="utf-8"))
+    assert failure["status"] == "cancelled"
+    assert failure["converged"] is False
+    assert context["status"] == "cancelled"
+    assert artifacts["status"] == "cancelled"
+    assert "KeyboardInterrupt" in failure["failure_reason"]
+    # the last complete checkpoint stays readable for resume
+    checkpoint, images = load_checkpoint(output)
+    assert checkpoint["complete"] is True
+    assert len(images) == 3
+
+
+def test_artifacts_pointer_follows_each_published_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TUI reads artifacts.checkpoint.path; it must name the latest stage (R09)."""
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model identity")
+    output = tmp_path / "run"
+    initial, final = _endpoints()
+    captured: dict[str, Path] = {}
+
+    def fake_run(self, band):
+        self.checkpoint_callback("neb_pre", 0, band.images)
+        first = json.loads((output / "artifacts.json").read_text(encoding="utf-8"))
+        captured["pre"] = Path(first["artifacts"]["checkpoint"]["path"])
+        self.checkpoint_callback("ci_neb", 5, band.images)
+        second = json.loads((output / "artifacts.json").read_text(encoding="utf-8"))
+        captured["ci"] = Path(second["artifacts"]["checkpoint"]["path"])
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(NEBRunner, "run", fake_run)
+    with pytest.raises(KeyboardInterrupt):
+        run_neb_workflow(
+            FakeMACEWrapper(),
+            _resolved(model),
+            output_dir=output,
+            initial=initial,
+            final=final,
+            verbose=False,
+        )
+
+    first_meta, _ = load_checkpoint(captured["pre"])
+    second_meta, _ = load_checkpoint(captured["ci"])
+    assert first_meta["stage"] == "neb_pre"
+    assert second_meta["stage"] == "ci_neb"
+    assert captured["pre"] != captured["ci"]
+    # the pointer the TUI resolves is the latest published stage, not the
+    # stage=prepared checkpoint written at start-up
+    final_artifacts = json.loads(
+        (output / "artifacts.json").read_text(encoding="utf-8")
+    )
+    assert final_artifacts["status"] == "cancelled"

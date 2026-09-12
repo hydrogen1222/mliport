@@ -306,7 +306,7 @@ class RunScreen(Screen):
             return
         engine_status = str(artifacts.get("status", ""))
 
-        if job_status in {"done", "failed", "cancelled"}:
+        if job_status in {"done", "not_converged", "failed", "cancelled"}:
             self.status.update(self._neb_result_summary(artifacts, engine_status))
             return
 
@@ -320,17 +320,21 @@ class RunScreen(Screen):
                 metadata = json.loads(
                     (Path(str(latest)) / "checkpoint.json").read_text(encoding="utf-8")
                 )
-                detail = (
-                    f" — stage {metadata.get('stage', 'running')}, "
-                    f"step {metadata.get('stage_step', 0)}"
+                stage = str(metadata.get("stage", "running"))
+                detail = f" — stage {stage}, step {metadata.get('stage_step', 0)}"
+                # Report the budget of THIS stage separately; a single
+                # combined percentage would be invented (review R09).
+                options = (
+                    metadata.get("resume_fingerprint", {}).get("neb_options", {}) or {}
                 )
-                max_steps = (
-                    metadata.get("resume_fingerprint", {})
-                    .get("neb_options", {})
-                    .get("max_steps")
-                )
-                if max_steps:
-                    detail += f" (max {max_steps} steps/stage)"
+                if stage == "neb_pre":
+                    budget = options.get("pre_max_steps")
+                    if budget:
+                        detail += f" (pre-CI budget {budget} steps)"
+                elif stage in {"neb", "ci_neb"}:
+                    budget = options.get("max_steps")
+                    if budget:
+                        detail += f" (CI budget {budget} steps)"
             except Exception:
                 detail = " — checkpoint written"
         self.status.update(f"NEB {engine_status or 'running'}{detail}")

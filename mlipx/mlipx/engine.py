@@ -291,6 +291,7 @@ class CalculationEngine:
             output_dir=self.config.output_dir,
             charge=opts.get("charge"),
             spin=opts.get("spin"),
+            write_outcar=self.config.settings.get("write_outcar", True),
             write_forces=self.config.settings.get("write_forces", True),
             write_stress=self.config.settings.get("write_stress", True),
             write_json=self.config.settings.get("write_json", True),

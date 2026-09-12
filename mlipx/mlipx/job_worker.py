@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from mlipx.jobs import JobManager, JobStatus
+from mlipx.run_status import RunOutcome, outcome_from_exit_code
 
 
 def leased_process_environment(
@@ -49,6 +50,9 @@ def leased_process_environment(
     return cmd, env
 
 
+HANDSHAKE_TIMEOUT_SECONDS = 10.0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("jobs_dir")
@@ -61,11 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     if not args.command:
         return 2
 
-    # The parent records our PID immediately after Popen returns.  Wait for
-    # that atomic state update so a very short command cannot finish first and
-    # have its terminal status overwritten with "running".
+    # Startup handshake: the parent records our PID (and its /proc start-tick
+    # identity) immediately after Popen returns.  Wait for that atomic update
+    # on a wall-clock budget so a very short command cannot finish first and
+    # have its terminal status overwritten with "running".  The retry is
+    # bounded but generous; PID-reuse protection is never weakened.
     data = None
-    for _ in range(100):
+    deadline = time.monotonic() + HANDSHAKE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
         data = manager.get_job(args.job_id)
         if (
             data is not None
@@ -74,8 +81,20 @@ def main(argv: list[str] | None = None) -> int:
             and data.get("claim_token") == args.claim_token
         ):
             break
-        time.sleep(0.01)
+        time.sleep(0.02)
     else:
+        # Publish a readable reason instead of leaving a stale RUNNING record
+        # for the scheduler to reap as "exited unexpectedly".
+        manager.update_status(
+            args.job_id,
+            JobStatus.FAILED,
+            expected_statuses={JobStatus.CLAIMED, JobStatus.RUNNING},
+            claim_token=args.claim_token,
+            error=(
+                "worker startup handshake timed out: the scheduler did not "
+                "publish this worker's PID/identity"
+            ),
+        )
         return 2
 
     log_path = manager._log_file(args.job_id)
@@ -91,14 +110,28 @@ def main(argv: list[str] | None = None) -> int:
                 stderr=subprocess.STDOUT,
                 check=False,
             )
-        status = JobStatus.DONE if result.returncode == 0 else JobStatus.FAILED
+        outcome = outcome_from_exit_code(result.returncode)
+        status = {
+            RunOutcome.COMPLETED: JobStatus.DONE,
+            RunOutcome.NOT_CONVERGED: JobStatus.NOT_CONVERGED,
+            RunOutcome.CANCELLED: JobStatus.CANCELLED,
+            RunOutcome.FAILED: JobStatus.FAILED,
+        }[outcome]
+        if outcome is RunOutcome.COMPLETED:
+            error = None
+        elif outcome is RunOutcome.NOT_CONVERGED:
+            error = "Exit code 2: calculation finished but did not converge"
+        elif outcome is RunOutcome.CANCELLED:
+            error = "Cancelled (signal or cooperative cancellation)"
+        else:
+            error = f"Exit code {result.returncode}"
         manager.update_status(
             args.job_id,
             status,
             expected_statuses={JobStatus.RUNNING},
             expected_pid=os.getpid(),
             claim_token=args.claim_token,
-            error=None if result.returncode == 0 else f"Exit code {result.returncode}",
+            error=error,
         )
         return result.returncode
     except Exception as exc:

@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
@@ -39,14 +40,26 @@ class JobStatus(str, Enum):
     CLAIMED = "claimed"
     RUNNING = "running"
     DONE = "done"
+    NOT_CONVERGED = "not_converged"
     FAILED = "failed"
     CANCELLED = "cancelled"
 
 
+#: Statuses that mean the scheduler will not touch the job again.  A
+#: ``not_converged`` run is finished (its exit code is 2, not 0) but it is not
+#: a success: queue callers must inspect the status, never the exit code alone.
 _TERMINAL_STATUSES = frozenset(
-    {JobStatus.DONE.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value}
+    {
+        JobStatus.DONE.value,
+        JobStatus.NOT_CONVERGED.value,
+        JobStatus.FAILED.value,
+        JobStatus.CANCELLED.value,
+    }
 )
 _ACTIVE_LEASE_STATUSES = frozenset({JobStatus.CLAIMED.value, JobStatus.RUNNING.value})
+#: Sentinel: capture the worker's /proc identity automatically.  Tests that
+#: fabricate PIDs pass an explicit identity instead.
+_AUTO_PID_IDENTITY = object()
 _ALLOWED_TRANSITIONS = {
     JobStatus.PENDING.value: frozenset(
         {
@@ -68,7 +81,12 @@ _ALLOWED_TRANSITIONS = {
         }
     ),
     JobStatus.RUNNING.value: frozenset(
-        {JobStatus.DONE.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value}
+        {
+            JobStatus.DONE.value,
+            JobStatus.NOT_CONVERGED.value,
+            JobStatus.FAILED.value,
+            JobStatus.CANCELLED.value,
+        }
     ),
 }
 
@@ -469,17 +487,69 @@ class JobManager:
             self._write_data_unlocked(data)
             return data.copy()
 
-    def mark_running(self, job_id: str, pid: int, *, claim_token: str) -> bool:
-        """CAS CLAIMED -> RUNNING for the process created by that claim."""
+    @staticmethod
+    def _wait_for_process_identity(pid: int, *, timeout_seconds: float = 2.0):
+        """Bounded retry for the /proc start tick of a just-spawned worker.
+
+        The parent races the child's own startup; a single read can fail
+        transiently (review queue-identity timing).  Retrying here does not
+        weaken PID-reuse protection -- the identity is still required.
+        """
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            identity = _process_identity(pid)
+            if identity is not None:
+                return identity
+            if not _pid_alive(pid):
+                return None
+            time.sleep(0.01)
+        return None
+
+    def mark_running(
+        self,
+        job_id: str,
+        pid: int,
+        *,
+        claim_token: str,
+        pid_identity: object = _AUTO_PID_IDENTITY,
+    ) -> bool:
+        """CAS CLAIMED -> RUNNING for the process created by that claim.
+
+        The worker's immutable /proc start tick must be captured before the
+        job becomes RUNNING; if it cannot be (while the platform supports
+        identity, i.e. POSIX /proc), promotion fails closed rather than run
+        without PID-reuse protection.  Callers that spawned the process are
+        responsible for killing it on ``False``.
+
+        ``pid_identity`` is an explicit test seam for synthetic records only;
+        production callers must leave it at the default sentinel.
+        """
         if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
             raise ValueError("worker PID must be a positive integer")
+        # Never probe or signal a PID unless this record really is the CLAIMED
+        # job with this token: a missing/stale record must not touch anything.
+        with self._locked():
+            data = self._read_job_state_unlocked(job_id)
+            if (
+                data is None
+                or data.get("status") != JobStatus.CLAIMED.value
+                or data.get("claim_token") != claim_token
+            ):
+                return False
+        if pid_identity is _AUTO_PID_IDENTITY:
+            identity = self._wait_for_process_identity(pid)
+            if identity is None and os.name != "nt":
+                # The worker is alive but its identity could not be pinned.
+                return False
+        else:
+            identity = pid_identity
         return self.update_status(
             job_id,
             JobStatus.RUNNING,
             expected_statuses={JobStatus.CLAIMED},
             claim_token=claim_token,
             pid=pid,
-            pid_identity=_process_identity(pid),
+            pid_identity=identity,
         )
 
     def update_status(

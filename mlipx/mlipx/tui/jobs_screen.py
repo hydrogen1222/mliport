@@ -127,6 +127,7 @@ class JobsScreen(Screen):
         status_icons = {
             "running": "●",
             "done": "✓",
+            "not_converged": "◐",
             "failed": "✗",
             "cancelled": "⊘",
             "pending": "○",
