@@ -1406,3 +1406,62 @@ def test_elastic_relaxed_ions_differ_from_clamped():
     # diamond symmetry: only the shear constant couples to the internal
     # (optical-mode) relaxation; C11/C12 legitimately coincide
     assert abs(relaxed["C44_GPa"] - clamped["C44_GPa"]) > 1.0
+
+
+# ---------------------------------------------------------------------------
+# T3 report field mapping (review section 0: missing stress must not blank E/F)
+# ---------------------------------------------------------------------------
+
+
+def test_t3_markdown_reads_real_metric_field_names():
+    import generate_beta_report as report
+
+    record = {
+        "engine": "mace",
+        "status": "pass",
+        "metrics": {
+            "energy_per_atom_eV": {
+                "mae": 0.018388498,
+                "rmse": 0.043544182,
+                "median": 0.009547227,
+                "p95": 0.054390283,
+            },
+            "forces": {
+                "component_mae_eV_A": 0.090624042,
+                "cosine": {"min": -0.89924578},
+            },
+            "stress": {"reference_stress_available": False},
+            "n_structures": 256,
+            "n_failed": 0,
+        },
+    }
+    text = report.md_t3([record], REPO / "validation" / "science" / "t3")
+    assert "None" not in text, text
+    row = next(line for line in text.splitlines() if line.startswith("| mace "))
+    cells = [cell.strip() for cell in row.strip("|").split("|")]
+    assert cells[1] != "None" and cells[2] != "None"
+    assert cells[5] != "None" and cells[6] != "None"
+    assert cells[7] == "256"
+    assert "reference stress absent" in text
+
+
+def test_t3_summary_json_keeps_energy_and_force_metrics_without_stress():
+    import generate_beta_report as report
+
+    t3_record = {
+        "engine": "uma",
+        "status": "pass",
+        "metrics": {
+            "energy_per_atom_eV": {"mae": 0.02, "rmse": 0.05},
+            "forces": {"component_mae_eV_A": 0.1, "cosine": {"min": -0.5}},
+            "stress": {"reference_stress_available": False},
+            "n_structures": 256,
+        },
+    }
+    tiers = {tier: [] for tier in report.TIER_GLOBS}
+    tiers["t3"] = [t3_record]
+    summary = report._summary_json(Path("."), Path("."), tiers, {}, [])
+    uma = summary["omat24"]["uma"]
+    assert uma["energy_per_atom"]["mae"] == pytest.approx(0.02)
+    assert uma["forces"]["component_mae_eV_A"] == pytest.approx(0.1)
+    assert uma["stress"]["reference_stress_available"] is False

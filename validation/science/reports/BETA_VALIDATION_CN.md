@@ -43,16 +43,16 @@ No elemental offsets are fitted; model energies are compared to the OMat24 refer
 
 | engine | E/atom MAE (eV) | E/atom RMSE | median | p95 | F comp MAE (eV/A) | F cosine min | records |
 |---|---|---|---|---|---|---|---|
-| dpa | None | None | None | None | None | None | 1 |
+| dpa | 0.01839 | 0.04354 | 0.009547 | 0.05439 | 0.09062 | -0.8992 | 256 |
 (dpa: reference stress absent in the official validation split)
 
-| grace | None | None | None | None | None | None | 1 |
+| grace | 0.01433 | 0.04869 | 0.005908 | 0.03586 | 0.07113 | -0.8893 | 256 |
 (grace: reference stress absent in the official validation split)
 
-| mace | None | None | None | None | None | None | 1 |
+| mace | 0.01725 | 0.0491 | 0.007634 | 0.03875 | 0.08063 | -0.9041 | 256 |
 (mace: reference stress absent in the official validation split)
 
-| uma | None | None | None | None | None | None | 1 |
+| uma | 0.01083 | 0.04053 | 0.00323 | 0.02664 | 0.05276 | -0.9119 | 256 |
 (uma: reference stress absent in the official validation split)
 
 

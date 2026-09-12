@@ -75,7 +75,14 @@
   "omat24": {
     "dpa": {
       "status": "pass",
-      "energy_per_atom": {},
+      "energy_per_atom": {
+        "mae": 0.018388498204195986,
+        "max": 0.4723594000097364,
+        "median": 0.009547227062284946,
+        "n": 256,
+        "p95": 0.05439028334803879,
+        "rmse": 0.04354418156598726
+      },
       "forces": {
         "by_ref_force_magnitude": [
           {
@@ -133,7 +140,14 @@
     },
     "grace": {
       "status": "pass",
-      "energy_per_atom": {},
+      "energy_per_atom": {
+        "mae": 0.01433254859040006,
+        "max": 0.6368890702724457,
+        "median": 0.005908285578091939,
+        "n": 256,
+        "p95": 0.03586343019692735,
+        "rmse": 0.04869175547840193
+      },
       "forces": {
         "by_ref_force_magnitude": [
           {
@@ -191,7 +205,14 @@
     },
     "mace": {
       "status": "pass",
-      "energy_per_atom": {},
+      "energy_per_atom": {
+        "mae": 0.01724543345017896,
+        "max": 0.5843864574872839,
+        "median": 0.007634326491306501,
+        "n": 256,
+        "p95": 0.03874601205927511,
+        "rmse": 0.04910336001442339
+      },
       "forces": {
         "by_ref_force_magnitude": [
           {
@@ -249,7 +270,14 @@
     },
     "uma": {
       "status": "pass",
-      "energy_per_atom": {},
+      "energy_per_atom": {
+        "mae": 0.010832343006031878,
+        "max": 0.5018809978055305,
+        "median": 0.0032295563185833487,
+        "n": 256,
+        "p95": 0.026636114130330586,
+        "rmse": 0.04052566402767293
+      },
       "forces": {
         "by_ref_force_magnitude": [
           {

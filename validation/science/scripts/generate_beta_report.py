@@ -574,15 +574,23 @@ def md_t3(records: list[dict[str, Any]], t3_csv: Path) -> str:
     for r in records:
         m = r.get("metrics", {})
         eng = r.get("engine", "?")
-        e = m.get("energy_per_atom", {}) or {}
+        # Field names must match omat_eval.py's actual record schema:
+        # metrics.energy_per_atom_eV and metrics.forces.component_mae_eV_A
+        # (missing stress must never blank out these existing E/F values).
+        e = m.get("energy_per_atom_eV") or m.get("energy_per_atom") or {}
         f = m.get("forces", {}) or {}
-        cos = f.get("cosine_stats", {}) or {}
+        cos = f.get("cosine") or f.get("cosine_stats") or {}
         stress = m.get("stress", {}) or {}
+        n_structures = m.get("n_structures")
+        n_failed = int(m.get("n_failed", 0) or 0)
+        record_cell = "?" if n_structures is None else str(int(n_structures))
+        if n_failed:
+            record_cell += f" ({n_failed} failed)"
         lines.append(
             f"| {eng} | {_fmt(e.get('mae'))} | {_fmt(e.get('rmse'))} "
             f"| {_fmt(e.get('median'))} | {_fmt(e.get('p95'))} "
-            f"| {_fmt(f.get('component_mae'))} "
-            f"| {_fmt(cos.get('min'))} | 1 |"
+            f"| {_fmt(f.get('component_mae_eV_A', f.get('component_mae')))} "
+            f"| {_fmt(cos.get('min'))} | {record_cell} |"
         )
         if stress.get("reference_stress_available") is False:
             lines.append("")
@@ -1307,7 +1315,7 @@ def _summary_json(root: Path, out_dir: Path,
     omat = {}
     for r in t3:
         m = r.get("metrics", {})
-        e = m.get("energy_per_atom", {}) or {}
+        e = m.get("energy_per_atom_eV") or m.get("energy_per_atom") or {}
         f = m.get("forces", {}) or {}
         omat[r.get("engine", "?")] = {
             "status": r.get("status"),
