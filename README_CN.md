@@ -259,34 +259,34 @@ Bussi 随机速度重标定、Nosé-Hoover 链。轨迹写为 XDATCAR 加 JSON(�
 README 中的生成块与生成器输出逐字节比对,漂移即失败。
 
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
-Status: post-fix beta candidate. Software CI is validated on Python 3.10-3.12. Historical scientific evidence has been retained and is being reclassified under the current validation semantics. Current-HEAD scientific revalidation is pending.
+Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).
 
 Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mliport integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
 
 | Workflow | MACE | DPA | GRACE | UMA |
 |---|---|---|---|---|
 | Install & doctor (CI software tests) | software_validated* | software_validated* | software_validated* | software_validated* |
-| Single-point inference (4 structures) | software_validated (passx26) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) |
-| Energy-forces consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
-| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx6) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx8, passx3) | model_characterized (characterizedx4, passx3) |
-| Stress-energy consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
-| Coordinate invariance & cache | model_characterized (characterizedx4, passx20) | model_characterized (characterizedx4, failx18, passx2) | model_characterized (characterizedx8, failx18, passx22) | model_characterized (characterizedx4, failx18, passx2) |
-| Fixed-cell relaxation | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) |
-| Cell relaxation | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) |
-| EOS / bulk modulus | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
-| Elastic constants | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) | software_validated (passx4) |
-| Harmonic phonons | software_validated (passx12) | model_characterized (failx1, passx11) | software_validated (passx12) | model_characterized (failx1, passx11) |
-| Harmonic thermodynamics | model_characterized (failx6, passx6) | model_characterized (failx3, passx9) | model_characterized (failx6, passx6) | model_characterized (failx6, passx6) |
-| Vacancy formation energy | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
-| Surface energy | software_validated (passx6) | software_validated (passx6) | software_validated (passx6) | software_validated (passx6) |
-| NEB | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) | model_characterized (characterizedx1, passx7) |
-| Saddle-point Hessian | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) |
+| Single-point inference (4 structures) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
+| Energy-forces consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx4) |
+| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx4, passx3) |
+| Stress-energy consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx4) |
+| Coordinate invariance & cache | not_run | not_run | not_run | not_run |
+| Fixed-cell relaxation | not_run | not_run | not_run | not_run |
+| Cell relaxation | not_run | not_run | not_run | not_run |
+| EOS / bulk modulus | not_run | not_run | not_run | not_run |
+| Elastic constants | not_run | not_run | not_run | not_run |
+| Harmonic phonons | not_run | not_run | not_run | not_run |
+| Harmonic thermodynamics | not_run | not_run | not_run | not_run |
+| Vacancy formation energy | not_run | not_run | not_run | not_run |
+| Surface energy | not_run | not_run | not_run | not_run |
+| NEB | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) | software_validated (passx3) |
+| Saddle-point Hessian | not_run | not_run | not_run | not_run |
 | Short NVE / NVT MD | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) |
-| Transport analysis (demonstration) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) | model_characterized (characterizedx3, passx3) |
-| Mechanism analysis (GEMDAT) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) | model_characterized (characterizedx3) |
-| Performance (SP/MD scaling) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) |
+| Transport analysis (demonstration) | model_characterized (characterizedx1, passx1) | model_characterized (characterizedx1, passx1) | model_characterized (characterizedx1, passx1) | model_characterized (characterizedx1, passx1) |
+| Mechanism analysis (GEMDAT) | model_characterized (characterizedx1) | model_characterized (characterizedx1) | model_characterized (characterizedx1) | model_characterized (characterizedx1) |
+| Performance (SP/MD scaling) | not_run | not_run | not_run | not_run |
 
-Held-out OMat24 accuracy (E/atom MAE over 256 structures, no elemental offsets fitted): MACE (float64) 0.0172 eV; DPA 0.0184 eV; GRACE 0.0143 eV; UMA 0.0108 eV. Stress parity is not computable: the official OMat24 validation split carries no reference stress labels.
+Held-out OMat24 accuracy: not run on this evidence set.
 
 `*` = CI software test only, no model involved. A cell lists the recorded statuses for that workload; per-workload rows reuse the same evidence tiers, so row counts are not additive. Full per-test tables and limitations: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md). Model identities pinned in `validation/science/model_manifest.json`.
 <!-- END GENERATED -->
