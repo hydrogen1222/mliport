@@ -5,12 +5,47 @@
 重新认证状态：**current_head_revalidated** —— campaign manifest declares completion and every record was produced at the target software commit
 
 - software_commit（声称被验证）：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
-- validation_code_commit：`5d67211f9c6ed894615beede5ecca17e50b1bbfa`
-- report_generator_commit：`5d67211f9c6ed894615beede5ecca17e50b1bbfa`
+- validation_code_commit：`a0d677b0660b76aee9a3e90ae08e5e24873124a4`
+- report_generator_commit：`a0d677b0660b76aee9a3e90ae08e5e24873124a4`
 - evidence_campaign：`20260913-current-head-5f8d91d`
 - evidence_source_commits：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
 
 模型身份与产物哈希固定在 `validation/science/model_manifest.json`；OMat24 评估子集见 `validation/science/data/`（种子 20260911）。
+
+## Beta GO / NO-GO 清单（任务书 §28）
+
+- 结论：**beta GO**（23 ✅ / 1 ⚠️ / 0 ❌）
+- 被验证软件提交：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
+- 证据 campaign：`20260913-current-head-5f8d91d`，96 条记录（53 pass / 43 characterized / 0 fail / 0 blocked）
+
+| # | 条目 | 状态 | 证据 |
+|---|---|---|---|
+| 1 | 新项目名无已知同领域 namespace collision | ✅ | `mliport` 在 PyPI 镜像与 GitHub 搜索均可用；仓库已改名 `hydrogen1222/mliport` |
+| 2 | Python package / CLI / repo identity 完成迁移 | ✅ | 改名提交链；clean break，旧 `mlipx` import 不再发布 |
+| 3 | 目标提交 CI 3.10/3.11/3.12 全绿 | ✅ | `5f8d91d4` 及后续提交的 tests/lint/package-build 全绿 |
+| 4 | wheel clean install 全绿 | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke |
+| 5 | strict evidence loader 唯一 | ✅ | `validation/science/evidence/` + report 不得直接读 raw record 的静态测试 |
+| 6 | report/README 不再直接解释 raw records | ✅ | 报告与 figures 全部消费 `load_evidence`；README block 机器渲染 |
+| 7 | malformed evidence fail-closed | ✅ | V01-T5/T6/T7 测试；report 退出码 2/3；archive builder 拒绝 |
+| 8 | profile identity 不混 precision/model/commit | ✅ | V01-T2/T3/T4；engine 单元格显示 `mixed` 并附 `worst_status` |
+| 9 | current campaign manifest 固定 | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` |
+| 10 | MACE/DPA/GRACE/UMA current-head GPU smoke | ✅ | 4 个后端 x t1/t2/t2fd/t3/t4/t5/t6/t7/t8 |
+| 11 | repeat inference current-head | ✅ | T1 记录包含各后端的 repeat inference 指标 |
+| 12 | FD current-head / 证据重分类 | ✅ | T2FD：32 条记录 |
+| 13 | saddle 当前语义 | ⚠️ | CPU/解析 known-answer 层全绿；GPU `t5h` 未纳入四后端 smoke |
+| 14 | NEB fixed-band validation | ✅ | 全 image 约束校验 + 回归测试 |
+| 15 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract 测试；T7 transport 使用 `exact_unwrapped`（12 条） |
+| 16 | GEMDAT backend error 不再变物理 0 | ✅ | PR-C 状态合同；T7 12 条记录 |
+| 17 | alpha weighting/validity 收口 | ✅ | local Δlog(t) 权重 + finite & valid summary |
+| 18 | analysis version bump | ✅ | alpha estimator `/2`；task revision msd 7 / transport 6 |
+| 19 | T7 transport 重算 | ✅ | 12 条 T7 记录（md/transport/gemdat） |
+| 20 | T8 按新身份重跑/重建 | ✅ | 20 条 T8 记录 |
+| 21 | historical reused evidence 明确标识 | ✅ | version block + campaign scope 的 `not_in_scope` / `historical_reuse` |
+| 22 | report 可从正式 evidence archive 重建 | ✅ | sha256 `bb6b1b06bb3e891e…`，96 条记录，https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst |
+| 23 | README 声明与证据一致 | ✅ | 生成块 + 明确的历史 T3/T4 声明 |
+| 24 | 无 secret/model weights/临时 probe/attic 污染发行包 | ✅ | hygiene/distribution 检查；archive 排除权重、轨迹与 attic |
+
+范围说明：T3 精度与 T4 静态工作流保持历史证据，不作为 current-HEAD 声明；GPU `t5h` saddle 工作流不在四后端 smoke 范围内，其语义由 CPU/解析 known-answer 层覆盖。
 
 ## T1: inference (energy / forces / stress)
 

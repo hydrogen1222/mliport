@@ -4,8 +4,8 @@
   "code_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
   "versions": {
     "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-    "validation_code_commit": "5d67211f9c6ed894615beede5ecca17e50b1bbfa",
-    "report_generator_commit": "5d67211f9c6ed894615beede5ecca17e50b1bbfa",
+    "validation_code_commit": "a0d677b0660b76aee9a3e90ae08e5e24873124a4",
+    "report_generator_commit": "a0d677b0660b76aee9a3e90ae08e5e24873124a4",
     "evidence_campaign": "20260913-current-head-5f8d91d",
     "evidence_source_commits": [
       "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"

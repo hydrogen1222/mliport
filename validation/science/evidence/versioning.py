@@ -30,6 +30,7 @@ from typing import Any
 from .constants import VALIDATION_LOGIC_VERSION
 
 CAMPAIGN_MANIFEST_SCHEMA = "mliport.beta-campaign/1"
+ARCHIVE_MANIFEST_SCHEMA = "mliport.beta-archive-manifest/1"
 
 REVALIDATION_STATUSES = (
     "no_evidence",
@@ -111,6 +112,26 @@ def load_campaign_manifest(path: str | Path) -> dict[str, Any]:
         msg = (
             f"campaign manifest {manifest_path} has unknown status "
             f"{manifest.get('status')!r}"
+        )
+        raise CampaignManifestError(msg)
+    return manifest
+
+
+def load_archive_manifest(path: str | Path) -> dict[str, Any]:
+    """Load the committed evidence-archive identity (sha256 / url / records)."""
+    manifest_path = Path(path)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        msg = f"archive manifest {manifest_path} is unreadable ({exc})"
+        raise CampaignManifestError(msg) from exc
+    if not isinstance(manifest, dict):
+        msg = f"archive manifest {manifest_path} must be a JSON object"
+        raise CampaignManifestError(msg)
+    if manifest.get("schema") != ARCHIVE_MANIFEST_SCHEMA:
+        msg = (
+            f"archive manifest {manifest_path} has schema "
+            f"{manifest.get('schema')!r}; expected {ARCHIVE_MANIFEST_SCHEMA}"
         )
         raise CampaignManifestError(msg)
     return manifest
@@ -234,11 +255,13 @@ def build_version_block(
 
 
 __all__ = [
+    "ARCHIVE_MANIFEST_SCHEMA",
     "CAMPAIGN_MANIFEST_FIELDS",
     "CAMPAIGN_MANIFEST_SCHEMA",
     "REVALIDATION_STATUSES",
     "CampaignManifestError",
     "VersionBlock",
     "build_version_block",
+    "load_archive_manifest",
     "load_campaign_manifest",
 ]

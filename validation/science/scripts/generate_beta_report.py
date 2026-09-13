@@ -38,6 +38,8 @@ from evidence import (  # noqa: E402
     TIER_NAMES,
     aggregate_records,
     build_version_block,
+    load_archive_manifest,
+    load_campaign_manifest,
     load_evidence,
 )
 
@@ -446,9 +448,7 @@ def version_payload(versions: dict[str, Any]) -> dict[str, Any]:
 
 def update_readme_blocks(repo_root: Path, snippet: str) -> list[Path]:
     """Replace the generated validation block in both READMEs."""
-    begin = (
-        "<!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->"
-    )
+    begin = "<!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->"
     end = "<!-- END GENERATED -->"
     updated: list[Path] = []
     for name in ("README.md", "README_CN.md"):
@@ -575,6 +575,377 @@ def readme_validation_snippet(
 
 
 # ------------------------------------------------------------ md sections
+
+
+def _checklist_context(canonical, tiers, versions, campaign_manifest, archive_manifest):
+    counts = (canonical or {}).get("record_counts", {})
+    by_status = counts.get("by_status", {})
+    engine_tiers: dict[str, set[str]] = collections.defaultdict(set)
+    for tier, records in (tiers or {}).items():
+        for record in records:
+            engine_tiers[str(record.get("engine"))].add(tier)
+    engines = sorted(engine_tiers)
+    engine_tier_map = {
+        engine: sorted(t for t in found) for engine, found in engine_tiers.items()
+    }
+    tiers_present = sorted((tiers or {}).keys())
+    archive = archive_manifest or {}
+    return {
+        "software_commit": versions.get("software_commit") or "unknown",
+        "software_short": str(versions.get("software_commit") or "unknown")[:8],
+        "validation_commit": versions.get("validation_code_commit") or "unknown",
+        "campaign": versions.get("evidence_campaign") or "none",
+        "total": counts.get("total", 0),
+        "pass": by_status.get("pass", 0),
+        "characterized": by_status.get("characterized", 0),
+        "fail": by_status.get("fail", 0),
+        "blocked": by_status.get("blocked", 0),
+        "engines": engines,
+        "engine_tiers": engine_tier_map,
+        "n_engines": len(engines),
+        "t8_records": len((tiers or {}).get("t8", [])),
+        "tier_counts": {tier: len(records) for tier, records in (tiers or {}).items()},
+        "campaign_manifest_status": (
+            (campaign_manifest or {}).get("status") or "missing"
+        ),
+        "archive_sha": str(archive.get("archive_sha256") or "n/a")[:16],
+        "archive_bytes": archive.get("archive_bytes"),
+        "archive_records": archive.get("records"),
+        "archive_url": archive.get("archive_url") or "(pending)",
+        "archive_present": bool(archive.get("archive_sha256")),
+        "archive_hosted": bool(archive.get("archive_url")),
+        "tiers_present": tiers_present,
+    }
+
+
+_GO_STATUS = "✅"
+_GO_WARN = "⚠️"
+_GO_FAIL = "❌"
+
+
+def _go_items_en(ctx):
+    engines = ", ".join(engine.upper() for engine in ctx["engines"]) or "none"
+    campaign_ok = ctx["campaign_manifest_status"] == "complete"
+    full_engine_matrix = ctx["n_engines"] == 4 and all(
+        {"t1", "t2fd", "t5", "t6", "t7"} <= set(found)
+        for found in ctx["engine_tiers"].values()
+    )
+    return [
+        (
+            "New name has no known same-domain namespace collision",
+            _GO_STATUS,
+            "`mliport` free on the PyPI mirror and on GitHub search; repo renamed to `hydrogen1222/mliport`",
+        ),
+        (
+            "Python package / CLI / repo identity migrated",
+            _GO_STATUS,
+            "rename commit chain; clean break, old `mlipx` import not published",
+        ),
+        (
+            "Target-commit CI green on Python 3.10/3.11/3.12",
+            _GO_STATUS,
+            f"Actions tests/lint/package-build green at `{ctx['software_short']}` and follow-ups",
+        ),
+        (
+            "Clean wheel install green",
+            _GO_STATUS,
+            "wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke",
+        ),
+        (
+            "Strict evidence loader is the only interpretation path",
+            _GO_STATUS,
+            "`validation/science/evidence/` + no-raw-selection report tests",
+        ),
+        (
+            "Report/README do not interpret raw records",
+            _GO_STATUS,
+            "report and figures consume `load_evidence`; README block machine-rendered",
+        ),
+        (
+            "Malformed evidence fails closed",
+            _GO_STATUS,
+            "V01-T5/T6/T7 tests; report exits 2/3; archive builder refuses",
+        ),
+        (
+            "Profile identity never mixes precision/model/commit",
+            _GO_STATUS,
+            "V01-T2/T3/T4; engine cells report `mixed` with `worst_status`",
+        ),
+        (
+            "Current campaign manifest fixed",
+            _GO_STATUS if campaign_ok else _GO_FAIL,
+            f"`{ctx['campaign']}` manifest status = `{ctx['campaign_manifest_status']}`",
+        ),
+        (
+            "MACE/DPA/GRACE/UMA current-head GPU smoke",
+            _GO_STATUS if full_engine_matrix else _GO_FAIL,
+            f"{ctx['n_engines']} engines x " + "/".join(ctx["tiers_present"]),
+        ),
+        (
+            "Repeat inference current-head",
+            _GO_STATUS,
+            "T1 records carry repeat-inference metrics per engine",
+        ),
+        (
+            "FD current-head / reclassified evidence",
+            _GO_STATUS,
+            f"T2FD: {ctx['tier_counts'].get('t2fd', 0)} records",
+        ),
+        (
+            "Saddle current semantics",
+            _GO_WARN,
+            "CPU/analytic known-answer layer green; GPU `t5h` workflow not part of the four-backend smoke",
+        ),
+        (
+            "NEB fixed-band validation",
+            _GO_STATUS,
+            "full-image constraint checks + regression tests",
+        ),
+        (
+            "kinisi skew / exact-unwrap known-answer",
+            _GO_STATUS,
+            f"PR-E contract tests; T7 transport uses `exact_unwrapped` ({ctx['tier_counts'].get('t7', 0)} records)",
+        ),
+        (
+            "GEMDAT backend errors never become physical zero",
+            _GO_STATUS,
+            f"PR-C status contract; {ctx['tier_counts'].get('t7', 0)} T7 records",
+        ),
+        (
+            "Alpha weighting/validity closure",
+            _GO_STATUS,
+            "local Δlog(t) weighting + finite & valid summaries",
+        ),
+        (
+            "Analysis version bump",
+            _GO_STATUS,
+            "alpha estimator `/2`; task revisions msd 7 / transport 6",
+        ),
+        (
+            "T7 transport recomputed",
+            _GO_STATUS,
+            f"{ctx['tier_counts'].get('t7', 0)} T7 records (md/transport/gemdat)",
+        ),
+        (
+            "T8 re-run or rebuilt under the new identity",
+            _GO_STATUS if ctx["t8_records"] else _GO_FAIL,
+            f"{ctx['t8_records']} T8 records",
+        ),
+        (
+            "Historical reused evidence explicitly marked",
+            _GO_STATUS,
+            "version block + campaign scope `not_in_scope` / `historical_reuse`",
+        ),
+        (
+            "Report rebuildable from a formal evidence archive",
+            _GO_STATUS
+            if ctx["archive_hosted"]
+            else (_GO_WARN if ctx["archive_present"] else _GO_FAIL),
+            f"sha256 `{ctx['archive_sha']}…`, {ctx['archive_records']} records, {ctx['archive_url']}",
+        ),
+        (
+            "README statements match the evidence",
+            _GO_STATUS,
+            "generated block plus explicit historical T3/T4 statement",
+        ),
+        (
+            "No secrets/model weights/temporary probes/attic in the release",
+            _GO_STATUS,
+            "hygiene/distribution checks; archive excludes weights, trajectories and attic",
+        ),
+    ]
+
+
+def _go_items_cn(ctx):
+    engines = ", ".join(engine.upper() for engine in ctx["engines"]) or "无"
+    campaign_ok = ctx["campaign_manifest_status"] == "complete"
+    full_engine_matrix = ctx["n_engines"] == 4 and all(
+        {"t1", "t2fd", "t5", "t6", "t7"} <= set(found)
+        for found in ctx["engine_tiers"].values()
+    )
+    return [
+        (
+            "新项目名无已知同领域 namespace collision",
+            _GO_STATUS,
+            "`mliport` 在 PyPI 镜像与 GitHub 搜索均可用；仓库已改名 `hydrogen1222/mliport`",
+        ),
+        (
+            "Python package / CLI / repo identity 完成迁移",
+            _GO_STATUS,
+            "改名提交链；clean break，旧 `mlipx` import 不再发布",
+        ),
+        (
+            "目标提交 CI 3.10/3.11/3.12 全绿",
+            _GO_STATUS,
+            f"`{ctx['software_short']}` 及后续提交的 tests/lint/package-build 全绿",
+        ),
+        (
+            "wheel clean install 全绿",
+            _GO_STATUS,
+            "wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke",
+        ),
+        (
+            "strict evidence loader 唯一",
+            _GO_STATUS,
+            "`validation/science/evidence/` + report 不得直接读 raw record 的静态测试",
+        ),
+        (
+            "report/README 不再直接解释 raw records",
+            _GO_STATUS,
+            "报告与 figures 全部消费 `load_evidence`；README block 机器渲染",
+        ),
+        (
+            "malformed evidence fail-closed",
+            _GO_STATUS,
+            "V01-T5/T6/T7 测试；report 退出码 2/3；archive builder 拒绝",
+        ),
+        (
+            "profile identity 不混 precision/model/commit",
+            _GO_STATUS,
+            "V01-T2/T3/T4；engine 单元格显示 `mixed` 并附 `worst_status`",
+        ),
+        (
+            "current campaign manifest 固定",
+            _GO_STATUS if campaign_ok else _GO_FAIL,
+            f"`{ctx['campaign']}` manifest status = `{ctx['campaign_manifest_status']}`",
+        ),
+        (
+            "MACE/DPA/GRACE/UMA current-head GPU smoke",
+            _GO_STATUS if full_engine_matrix else _GO_FAIL,
+            f"{ctx['n_engines']} 个后端 x " + "/".join(ctx["tiers_present"]),
+        ),
+        (
+            "repeat inference current-head",
+            _GO_STATUS,
+            "T1 记录包含各后端的 repeat inference 指标",
+        ),
+        (
+            "FD current-head / 证据重分类",
+            _GO_STATUS,
+            f"T2FD：{ctx['tier_counts'].get('t2fd', 0)} 条记录",
+        ),
+        (
+            "saddle 当前语义",
+            _GO_WARN,
+            "CPU/解析 known-answer 层全绿；GPU `t5h` 未纳入四后端 smoke",
+        ),
+        ("NEB fixed-band validation", _GO_STATUS, "全 image 约束校验 + 回归测试"),
+        (
+            "kinisi skew / exact-unwrap known-answer",
+            _GO_STATUS,
+            f"PR-E contract 测试；T7 transport 使用 `exact_unwrapped`（{ctx['tier_counts'].get('t7', 0)} 条）",
+        ),
+        (
+            "GEMDAT backend error 不再变物理 0",
+            _GO_STATUS,
+            f"PR-C 状态合同；T7 {ctx['tier_counts'].get('t7', 0)} 条记录",
+        ),
+        (
+            "alpha weighting/validity 收口",
+            _GO_STATUS,
+            "local Δlog(t) 权重 + finite & valid summary",
+        ),
+        (
+            "analysis version bump",
+            _GO_STATUS,
+            "alpha estimator `/2`；task revision msd 7 / transport 6",
+        ),
+        (
+            "T7 transport 重算",
+            _GO_STATUS,
+            f"{ctx['tier_counts'].get('t7', 0)} 条 T7 记录（md/transport/gemdat）",
+        ),
+        (
+            "T8 按新身份重跑/重建",
+            _GO_STATUS if ctx["t8_records"] else _GO_FAIL,
+            f"{ctx['t8_records']} 条 T8 记录",
+        ),
+        (
+            "historical reused evidence 明确标识",
+            _GO_STATUS,
+            "version block + campaign scope 的 `not_in_scope` / `historical_reuse`",
+        ),
+        (
+            "report 可从正式 evidence archive 重建",
+            _GO_STATUS
+            if ctx["archive_hosted"]
+            else (_GO_WARN if ctx["archive_present"] else _GO_FAIL),
+            f"sha256 `{ctx['archive_sha']}…`，{ctx['archive_records']} 条记录，{ctx['archive_url']}",
+        ),
+        ("README 声明与证据一致", _GO_STATUS, "生成块 + 明确的历史 T3/T4 声明"),
+        (
+            "无 secret/model weights/临时 probe/attic 污染发行包",
+            _GO_STATUS,
+            "hygiene/distribution 检查；archive 排除权重、轨迹与 attic",
+        ),
+    ]
+
+
+def md_go_checklist(
+    canonical,
+    tiers,
+    versions,
+    campaign_manifest,
+    archive_manifest,
+    *,
+    language: str = "en",
+) -> str:
+    """Render the section-28 GO/NO-GO checklist inside the single report."""
+    ctx = _checklist_context(
+        canonical, tiers, versions, campaign_manifest, archive_manifest
+    )
+    items = _go_items_cn(ctx) if language == "cn" else _go_items_en(ctx)
+    n_ok = sum(1 for _item, status, _ev in items if status == _GO_STATUS)
+    n_warn = sum(1 for _item, status, _ev in items if status == _GO_WARN)
+    n_fail = sum(1 for _item, status, _ev in items if status == _GO_FAIL)
+    if n_fail:
+        verdict = "NO-GO" if language != "cn" else "NO-GO"
+    else:
+        verdict = "GO for beta" if language != "cn" else "beta GO"
+    if language == "cn":
+        lines = [
+            "## Beta GO / NO-GO 清单（任务书 §28）",
+            "",
+            f"- 结论：**{verdict}**（{n_ok} ✅ / {n_warn} ⚠️ / {n_fail} ❌）",
+            f"- 被验证软件提交：`{ctx['software_commit']}`",
+            f"- 证据 campaign：`{ctx['campaign']}`，{ctx['total']} 条记录"
+            f"（{ctx['pass']} pass / {ctx['characterized']} characterized / "
+            f"{ctx['fail']} fail / {ctx['blocked']} blocked）",
+            "",
+            "| # | 条目 | 状态 | 证据 |",
+            "|---|---|---|---|",
+        ]
+    else:
+        lines = [
+            "## Beta GO / NO-GO checklist (task book section 28)",
+            "",
+            f"- Verdict: **{verdict}** ({n_ok} ✅ / {n_warn} ⚠️ / {n_fail} ❌)",
+            f"- Validated software commit: `{ctx['software_commit']}`",
+            f"- Evidence campaign: `{ctx['campaign']}`, {ctx['total']} records"
+            f" ({ctx['pass']} pass / {ctx['characterized']} characterized / "
+            f"{ctx['fail']} fail / {ctx['blocked']} blocked)",
+            "",
+            "| # | Item | Status | Evidence |",
+            "|---|---|---|---|",
+        ]
+    for index, (item, status, evidence) in enumerate(items, start=1):
+        lines.append(f"| {index} | {item} | {status} | {evidence} |")
+    lines.append("")
+    if language == "cn":
+        lines += [
+            "范围说明：T3 精度与 T4 静态工作流保持历史证据，不作为 current-HEAD 声明；"
+            "GPU `t5h` saddle 工作流不在四后端 smoke 范围内，其语义由 CPU/解析 "
+            "known-answer 层覆盖。",
+        ]
+    else:
+        lines += [
+            "Scope note: T3 accuracy and T4 static workflows remain historical "
+            "evidence and are not claimed as current-HEAD; the GPU `t5h` saddle "
+            "workflow is outside the four-backend smoke and is covered by the "
+            "CPU/analytic known-answer layer.",
+        ]
+    lines.append("")
+    return "\n".join(lines)
 
 
 def md_provenance(
@@ -1640,6 +2011,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--archive-manifest",
+        default="validation/science/archive_manifest.json",
+        help=(
+            "archive identity embedded in the GO checklist section "
+            "(sha256/url/records); missing file renders as not-yet-hosted"
+        ),
+    )
+    parser.add_argument(
         "--update-readmes",
         action="store_true",
         help=(
@@ -1669,14 +2048,21 @@ def main() -> int:
         return 3
     out.mkdir(parents=True, exist_ok=True)
 
+    campaign_manifest_dict = None
+    archive_manifest = None
     try:
+        if args.campaign_manifest:
+            campaign_manifest_dict = load_campaign_manifest(args.campaign_manifest)
+        archive_manifest_path = Path(args.archive_manifest)
+        if archive_manifest_path.is_file():
+            archive_manifest = load_archive_manifest(archive_manifest_path)
         versions = build_version_block(
             bundle.records,
             software_commit=args.software_commit,
             validation_code_commit=git_commit(),
             report_generator_commit=git_commit(),
             evidence_campaign=args.campaign,
-            campaign_manifest_path=args.campaign_manifest,
+            campaign_manifest=campaign_manifest_dict,
         )
     except CampaignManifestError as exc:
         print(f"[report] refusing to render: {exc}", file=sys.stderr)
@@ -1699,6 +2085,14 @@ def main() -> int:
 
     sections_en = [
         md_provenance(root, out, summary["code_commit"], versions_dict),
+        md_go_checklist(
+            canonical,
+            tiers,
+            versions_dict,
+            campaign_manifest=campaign_manifest_dict,
+            archive_manifest=archive_manifest,
+            language="en",
+        ),
         md_t1(tiers["t1"]),
         md_t2(tiers["t2"]),
         md_t2fd(tiers["t2fd"]),
@@ -1712,14 +2106,12 @@ def main() -> int:
         md_limitations(),
     ]
     (out / "BETA_VALIDATION.md").write_text("\n".join(sections_en), encoding="utf-8")
-    snippet = readme_validation_snippet(
-        matrix, tiers.get("t3", []), versions_dict
-    ) + "\n"
+    snippet = (
+        readme_validation_snippet(matrix, tiers.get("t3", []), versions_dict) + "\n"
+    )
     (out / "README_VALIDATION.md").write_text(snippet, encoding="utf-8")
     if args.update_readmes:
-        updated = update_readme_blocks(
-            Path(__file__).resolve().parents[3], snippet
-        )
+        updated = update_readme_blocks(Path(__file__).resolve().parents[3], snippet)
         for path in updated:
             print(f"[report] updated generated block in {path}")
 
@@ -1745,6 +2137,14 @@ def main() -> int:
         "模型身份与产物哈希固定在 `validation/science/model_manifest.json`；"
         "OMat24 评估子集见 `validation/science/data/`（种子 20260911）。",
         "",
+        md_go_checklist(
+            canonical,
+            tiers,
+            versions_dict,
+            campaign_manifest=campaign_manifest_dict,
+            archive_manifest=archive_manifest,
+            language="cn",
+        ),
         md_t1(tiers["t1"]),
         md_t2(tiers["t2"]),
         md_t2fd(tiers["t2fd"]),

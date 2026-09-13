@@ -61,17 +61,20 @@ from .loader import (
     tier_of_path,
 )
 from .versioning import (
+    ARCHIVE_MANIFEST_SCHEMA,
     CAMPAIGN_MANIFEST_SCHEMA,
     REVALIDATION_STATUSES,
     CampaignManifestError,
     VersionBlock,
     build_version_block,
+    load_archive_manifest,
     load_campaign_manifest,
 )
 
 __all__ = [
     "ALLOWED_WRAPPER_MODULES",
     "BETA_VALIDATION_SUITE_REVISION",
+    "ARCHIVE_MANIFEST_SCHEMA",
     "CAMPAIGN_MANIFEST_SCHEMA",
     "ENGINE_PROPERTIES",
     "EXIT_HARNESS_VIOLATION",
@@ -100,6 +103,7 @@ __all__ = [
     "device_class",
     "exit_code",
     "harness_violations",
+    "load_archive_manifest",
     "load_campaign_manifest",
     "load_evidence",
     "migrate_record",

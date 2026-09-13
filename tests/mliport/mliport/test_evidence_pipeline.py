@@ -636,3 +636,95 @@ def test_pr_i_committed_schemas_audit_clean_and_loader_fails_closed(
     loaded = load_evidence(tmp_path)
     assert loaded.records == []
     assert any("unusable" in problem for problem in loaded.problems)
+
+
+# --------------------------------------- single consolidated report (PR6)
+def test_archive_manifest_loader_is_fail_closed(tmp_path):
+    from evidence import load_archive_manifest
+    from evidence.versioning import CampaignManifestError
+
+    def _write(payload):
+        path = tmp_path / "archive_manifest.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    valid = _write(
+        {
+            "schema": "mliport.beta-archive-manifest/1",
+            "campaign_id": "c1",
+            "archive_sha256": "a" * 64,
+            "archive_url": "https://example.invalid/archive.tar.zst",
+            "records": 1,
+        }
+    )
+    assert load_archive_manifest(valid)["campaign_id"] == "c1"
+    with pytest.raises(CampaignManifestError, match="schema"):
+        load_archive_manifest(_write({"schema": "wrong"}))
+
+
+def test_report_embeds_go_checklist_in_one_document(tmp_path, monkeypatch):
+    software_commit = "a" * 40
+    monkeypatch.setenv(common.SOFTWARE_COMMIT_ENV, software_commit)
+    record = _record()
+    record["campaign_id"] = "camp-consolidated"
+    record["profile_id"] = common.profile_id_for(record)
+    record["record_id"] = common.record_id_for(record)
+    _write(tmp_path / "evidence" / "t1", "a.json", record)
+
+    campaign_manifest = tmp_path / "campaign.json"
+    campaign_manifest.write_text(
+        json.dumps(
+            {
+                "schema": "mliport.beta-campaign/1",
+                "campaign_id": "camp-consolidated",
+                "software_commit": software_commit,
+                "validation_commit": "b" * 40,
+                "status": "complete",
+                "evidence_source_commits": [software_commit],
+            }
+        ),
+        encoding="utf-8",
+    )
+    archive_manifest = tmp_path / "archive_manifest.json"
+    archive_manifest.write_text(
+        json.dumps(
+            {
+                "schema": "mliport.beta-archive-manifest/1",
+                "campaign_id": "camp-consolidated",
+                "archive_sha256": "c" * 64,
+                "archive_url": "https://example.invalid/archive.tar.zst",
+                "archive_bytes": 123,
+                "records": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "reports"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_beta_report",
+            "--evidence-root",
+            str(tmp_path / "evidence"),
+            "--campaign",
+            "camp-consolidated",
+            "--campaign-manifest",
+            str(campaign_manifest),
+            "--archive-manifest",
+            str(archive_manifest),
+            "--out",
+            str(out),
+        ],
+    )
+    assert report.main() == 0
+    document = (out / "BETA_VALIDATION.md").read_text(encoding="utf-8")
+    chinese = (out / "BETA_VALIDATION_CN.md").read_text(encoding="utf-8")
+    assert "## Beta GO / NO-GO checklist" in document
+    assert "## Beta GO / NO-GO 清单" in chinese
+    assert "Verdict: **" in document
+    assert "GO for beta" in document or "NO-GO" in document
+    assert "https://example.invalid/archive.tar.zst" in document
+    assert "cccccccccccccccc" in document  # archive sha prefix from live manifest
+    # there is exactly one report document per language; no scattered checklist
+    assert not (out / "BETA_GO_CHECKLIST.md").exists()

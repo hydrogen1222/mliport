@@ -7,12 +7,47 @@ Revalidation status: **current_head_revalidated** -- campaign manifest declares 
 | version identity | commit |
 |---|---|
 | software_commit (claimed validated) | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
-| validation_code_commit | `5d67211f9c6ed894615beede5ecca17e50b1bbfa` |
-| report_generator_commit | `5d67211f9c6ed894615beede5ecca17e50b1bbfa` |
+| validation_code_commit | `a0d677b0660b76aee9a3e90ae08e5e24873124a4` |
+| report_generator_commit | `a0d677b0660b76aee9a3e90ae08e5e24873124a4` |
 | evidence_campaign | `20260913-current-head-5f8d91d` |
 | evidence_source_commits | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
 
 Model identities and artifact hashes are pinned in `validation/science/model_manifest.json`; the OMat24 evaluation subset in `validation/science/data/` (seed 20260911).
+
+## Beta GO / NO-GO checklist (task book section 28)
+
+- Verdict: **GO for beta** (23 ✅ / 1 ⚠️ / 0 ❌)
+- Validated software commit: `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
+- Evidence campaign: `20260913-current-head-5f8d91d`, 96 records (53 pass / 43 characterized / 0 fail / 0 blocked)
+
+| # | Item | Status | Evidence |
+|---|---|---|---|
+| 1 | New name has no known same-domain namespace collision | ✅ | `mliport` free on the PyPI mirror and on GitHub search; repo renamed to `hydrogen1222/mliport` |
+| 2 | Python package / CLI / repo identity migrated | ✅ | rename commit chain; clean break, old `mlipx` import not published |
+| 3 | Target-commit CI green on Python 3.10/3.11/3.12 | ✅ | Actions tests/lint/package-build green at `5f8d91d4` and follow-ups |
+| 4 | Clean wheel install green | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke |
+| 5 | Strict evidence loader is the only interpretation path | ✅ | `validation/science/evidence/` + no-raw-selection report tests |
+| 6 | Report/README do not interpret raw records | ✅ | report and figures consume `load_evidence`; README block machine-rendered |
+| 7 | Malformed evidence fails closed | ✅ | V01-T5/T6/T7 tests; report exits 2/3; archive builder refuses |
+| 8 | Profile identity never mixes precision/model/commit | ✅ | V01-T2/T3/T4; engine cells report `mixed` with `worst_status` |
+| 9 | Current campaign manifest fixed | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` |
+| 10 | MACE/DPA/GRACE/UMA current-head GPU smoke | ✅ | 4 engines x t1/t2/t2fd/t3/t4/t5/t6/t7/t8 |
+| 11 | Repeat inference current-head | ✅ | T1 records carry repeat-inference metrics per engine |
+| 12 | FD current-head / reclassified evidence | ✅ | T2FD: 32 records |
+| 13 | Saddle current semantics | ⚠️ | CPU/analytic known-answer layer green; GPU `t5h` workflow not part of the four-backend smoke |
+| 14 | NEB fixed-band validation | ✅ | full-image constraint checks + regression tests |
+| 15 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract tests; T7 transport uses `exact_unwrapped` (12 records) |
+| 16 | GEMDAT backend errors never become physical zero | ✅ | PR-C status contract; 12 T7 records |
+| 17 | Alpha weighting/validity closure | ✅ | local Δlog(t) weighting + finite & valid summaries |
+| 18 | Analysis version bump | ✅ | alpha estimator `/2`; task revisions msd 7 / transport 6 |
+| 19 | T7 transport recomputed | ✅ | 12 T7 records (md/transport/gemdat) |
+| 20 | T8 re-run or rebuilt under the new identity | ✅ | 20 T8 records |
+| 21 | Historical reused evidence explicitly marked | ✅ | version block + campaign scope `not_in_scope` / `historical_reuse` |
+| 22 | Report rebuildable from a formal evidence archive | ✅ | sha256 `bb6b1b06bb3e891e…`, 96 records, https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst |
+| 23 | README statements match the evidence | ✅ | generated block plus explicit historical T3/T4 statement |
+| 24 | No secrets/model weights/temporary probes/attic in the release | ✅ | hygiene/distribution checks; archive excludes weights, trajectories and attic |
+
+Scope note: T3 accuracy and T4 static workflows remain historical evidence and are not claimed as current-HEAD; the GPU `t5h` saddle workflow is outside the four-backend smoke and is covered by the CPU/analytic known-answer layer.
 
 ## T1: inference (energy / forces / stress)
 
