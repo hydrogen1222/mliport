@@ -58,6 +58,28 @@ reconstructed fallback is only used when explicitly allowed and is recorded.
   [GEMDAT electrolyte](electrolyte-gemdat.md); transport gives rates, not
   mechanisms.
 
+## Estimator comparison (validation audit)
+
+Three estimator families are computed on the *same* trajectory and reported
+separately; they answer different questions and are **not required to agree**:
+
+| Estimator | What it is | Window |
+|---|---|---|
+| plain OLS baseline | `D = slope(MSD)/(2d)` with explicit unit conversion | aligned to the kinisi fit start |
+| native MSD diagnostic | the product's explicit-range OLS diagnostic (regime-aware) | recorded fit window |
+| kinisi posterior | tracer diffusion with a credible interval | kinisi lag/fit window |
+| Nernst-Einstein | `sigma_NE = n (z e)^2 D_tracer / (k_B T)` | derived from the tracer estimate |
+
+The validation report records `kinisi_to_plain_D_ratio` and raises an
+`estimator_disagreement_warning` when the ratio is below 0.5 or above 2. That
+is a prompt to explain the difference (windows, drift, regime), never a
+pass/fail threshold. The units audit is a known-answer check:
+`1 Å²/ps = 1e-8 m²/s`, so a 3D MSD slope of `6 Å²/ps` gives `D = 1e-8 m²/s`.
+
+A large disagreement usually means the fitted window is not in the diffusive
+regime (check the local `alpha`): a "demonstration, not converged" protocol can
+show `alpha ≈ 2` even though the trajectory is finite and healthy.
+
 **Example.**
 
 ```bash

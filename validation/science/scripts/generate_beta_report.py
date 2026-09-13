@@ -1952,6 +1952,59 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
                     f"| {_fmt(native, 3)} |"
                 )
         lines.append("")
+        comparison_rows = []
+        for eng in ENGINE_ORDER:
+            for key in sorted(tr.get(eng, {})):
+                record = tr[eng][key]
+                comparison = record["metrics"].get("estimator_comparison") or {}
+                if not comparison:
+                    continue
+                temp = key.rsplit("_T", 1)[-1].replace("K", "")
+                plain = comparison.get("plain_ols", {}) or {}
+                native_d = comparison.get("native_msd_diagnostic", {}) or {}
+                kinisi_d = comparison.get("kinisi_posterior", {}) or {}
+                ne = comparison.get("nernst_einstein", {}) or {}
+
+                def _ps(value: Any) -> str:
+                    return "n/a" if value is None else f"{float(value):.1f}"
+
+                window = (
+                    f"{_ps((native_d.get('fit_window_ps') or [None])[0])}-"
+                    f"{_ps((native_d.get('fit_window_ps') or [None, None])[1])}"
+                    " / "
+                    f"{_ps((kinisi_d.get('effective_fit_window_ps') or [None])[0])}-"
+                    f"{_ps((kinisi_d.get('effective_fit_window_ps') or [None, None])[1])}"
+                )
+                warning = (
+                    "estimator_disagreement_warning"
+                    if comparison.get("estimator_disagreement_warning")
+                    else "ok"
+                )
+                comparison_rows.append(
+                    f"| {eng} | {temp} | {_fmt(plain.get('D_m2_s'), 3)} "
+                    f"| {_fmt(native_d.get('D_m2_s'), 3)} "
+                    f"| {_fmt(kinisi_d.get('D_m2_s'), 3)} "
+                    f"| {_fmt(comparison.get('kinisi_to_plain_D_ratio'), 3)} "
+                    f"| {_fmt(ne.get('sigma_S_m'), 3)} "
+                    f"| {window} | {warning} |"
+                )
+        if comparison_rows:
+            lines += [
+                "### Estimator comparison (same trajectory)",
+                "",
+                "| engine | T (K) | plain OLS D (m^2/s) | native MSD diagnostic D "
+                "| kinisi posterior D | kinisi/plain | NE sigma (S/m) "
+                "| windows native/kinisi (ps) | warning |",
+                "|---|---|---|---|---|---|---|---|---|",
+                *comparison_rows,
+                "",
+                "Units: ``D = slope(MSD)/(2d)`` with "
+                "``1 A^2/ps = 1e-8 m^2/s`` (known-answer audited). The three "
+                "estimators use different windows and assumptions; an "
+                "``estimator_disagreement_warning`` (ratio < 0.5 or > 2) is a "
+                "prompt to explain the difference, not a pass/fail verdict.",
+                "",
+            ]
     md = g.get("t7_md__t7m0_na3ps4_T700K", [])
     if md:
         parts = []

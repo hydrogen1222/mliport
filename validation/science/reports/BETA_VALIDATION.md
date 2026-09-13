@@ -7,8 +7,8 @@ Revalidation status: **target_commit_revalidated** -- campaign manifest declares
 | version identity | commit |
 |---|---|
 | software_commit (claimed validated) | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
-| validation_code_commit | `ed5e7930f558dc297a070ab001e3637dabe2ef08` |
-| report_generator_commit | `ed5e7930f558dc297a070ab001e3637dabe2ef08` |
+| validation_code_commit | `cf4ec6c7efd4e982bd6ad61b51b6af64e1d227e9` |
+| report_generator_commit | `cf4ec6c7efd4e982bd6ad61b51b6af64e1d227e9` |
 | evidence_campaign | `20260913-current-head-5f8d91d` |
 | evidence_source_commits | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
 
@@ -134,6 +134,17 @@ Drift improves with smaller timestep: mace/float64#e04aba True, dpa/upstream/mod
 | dpa | 700 | 1.6e-08 | [1.56e-08, 1.63e-08] | 751 | fit from 2 ps (MSD 322 A^2) | 5.34e-08 |
 | grace | 700 | 1.57e-08 | [1.52e-08, 1.62e-08] | 735 | fit from 2 ps (MSD 318 A^2) | 5.3e-08 |
 | uma | 700 | 1.8e-08 | [1.77e-08, 1.83e-08] | 846 | fit from 2 ps (MSD 324 A^2) | 5.35e-08 |
+
+### Estimator comparison (same trajectory)
+
+| engine | T (K) | plain OLS D (m^2/s) | native MSD diagnostic D | kinisi posterior D | kinisi/plain | NE sigma (S/m) | windows native/kinisi (ps) | warning |
+|---|---|---|---|---|---|---|---|---|
+| mace | 700 | 3.93e-08 | 5.2e-08 | 1.95e-08 | 0.496 | 915 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
+| dpa | 700 | 4.06e-08 | 5.34e-08 | 1.6e-08 | 0.394 | 751 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
+| grace | 700 | 3.99e-08 | 5.3e-08 | 1.57e-08 | 0.392 | 735 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
+| uma | 700 | 4.04e-08 | 5.35e-08 | 1.8e-08 | 0.445 | 846 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
+
+Units: ``D = slope(MSD)/(2d)`` with ``1 A^2/ps = 1e-8 m^2/s`` (known-answer audited). The three estimators use different windows and assumptions; an ``estimator_disagreement_warning`` (ratio < 0.5 or > 2) is a prompt to explain the difference, not a pass/fail verdict.
 
 ### Production MD health (700 K)
 

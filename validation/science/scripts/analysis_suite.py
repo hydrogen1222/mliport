@@ -234,6 +234,154 @@ def _native_msd_diagnostic(dataset) -> dict[str, Any]:
     }
 
 
+#: Aligned estimator protocol revision (PR8): plain OLS baseline + ratio.
+ESTIMATOR_PROTOCOL_REVISION = 2
+#: kinisi/plain ratio outside this interval raises a diagnostic warning.
+DISAGREEMENT_RATIO_RANGE = (0.5, 2.0)
+
+
+def plain_ols_diffusion_m2_s(slope_A2_per_ps: float, dimensions: int = 3) -> float:
+    """Known-answer unit path: D = slope / (2d), A^2/ps -> m^2/s.
+
+    ``1 A^2/ps = 1e-8 m^2/s`` (the product's ``diffusion_A2_fs_to_m2_s``
+    applies the same factor).  A 3D MSD slope of 6 A^2/ps therefore gives
+    exactly D = 1e-8 m^2/s.
+    """
+    from mliport.analysis.units import diffusion_A2_fs_to_m2_s  # noqa: PLC0415
+
+    D_A2_ps = float(slope_A2_per_ps) / (2.0 * float(dimensions))
+    return diffusion_A2_fs_to_m2_s(D_A2_ps / 1000.0)
+
+
+def estimator_disagreement(ratio: float | None) -> bool:
+    """Diagnostic warning (not a pass/fail) for a kinisi/OLS ratio."""
+    if ratio is None:
+        return False
+    low, high = DISAGREEMENT_RATIO_RANGE
+    return bool(ratio < low or ratio > high)
+
+
+def _aligned_plain_ols(dataset, temperature_k: float) -> dict[str, Any]:
+    """Deterministic OLS baseline aligned with the kinisi transport window.
+
+    Uses the same dataset/positions convention and the same drift handling as
+    the native diagnostic, with the fit window aligned to the kinisi start;
+    D = slope/(2d) through the product's unit conversion.
+    """
+    from mliport.analysis.msd import (  # noqa: PLC0415
+        calculate_msd,
+        diagnostic_linear_diffusion_fit,
+    )
+
+    result = calculate_msd(dataset, mobile_species=MOBILE_SPECIES)
+    lag_ps = np.asarray(result["lag_time_ps"], dtype=float)
+    msd_xyz = np.asarray(result["msd_by_axes_A2"]["xyz"], dtype=float)
+    fit_start = float(KINISI_FIT_START_PS)
+    fit_stop = float(lag_ps[-1])
+    fit = diagnostic_linear_diffusion_fit(
+        lag_ps, msd_xyz, axes="xyz", fit_start_ps=fit_start, fit_stop_ps=fit_stop
+    )
+    slope_A2_ps = float(fit["slope_A2_ps"])
+    diffusion_A2_ps = slope_A2_ps / 6.0  # 3 dimensions
+    drift = result.get("drift_semantics") or result.get("drift_correction") or {}
+    volumes = dataset.volumes_A3
+    return {
+        "estimator_protocol_revision": ESTIMATOR_PROTOCOL_REVISION,
+        "species": MOBILE_SPECIES,
+        "axes": "xyz",
+        "dimensions": 3,
+        "positions_convention": dataset.positions_convention,
+        "frame_interval_fs": dataset.frame_interval_fs,
+        "md_timestep_fs": dataset.md_timestep_fs,
+        "equilibration_trim_ps": EQUILIBRATION_PS,
+        "temperature_K": float(temperature_k),
+        "mean_cell_A3": (float(np.mean(volumes)) if volumes is not None else None),
+        "native_fit_window_ps": [
+            float(fit["actual_fit_start_ps"]),
+            float(fit["actual_fit_stop_ps"]),
+        ],
+        "kinisi_fit_window_ps": [fit_start, fit_stop],
+        "slope_A2_per_ps": slope_A2_ps,
+        "D_plain_ols_A2_per_ps": diffusion_A2_ps,
+        "D_plain_ols_m2_s": plain_ols_diffusion_m2_s(slope_A2_ps, 3),
+        "fit_quality": {
+            "r_squared": fit.get("r_squared"),
+            "fit_points": fit.get("fit_points"),
+        },
+        "drift_semantics": {
+            "drift_mode": drift.get("drift_mode") or drift.get("mode"),
+            "drift_reference": drift.get("drift_reference"),
+            "center_definition": drift.get("center_definition"),
+        },
+        "units": {
+            "msd": "A^2",
+            "lag": "ps",
+            "slope": "A^2/ps",
+            "D": "m^2/s",
+            "conversion": "D = slope/(2d); 1 A^2/ps = 1e-8 m^2/s",
+        },
+    }
+
+
+def _estimator_comparison(
+    aligned: dict[str, Any],
+    native: dict[str, Any],
+    kinisi: dict[str, Any],
+    cross_backend: dict[str, Any],
+) -> dict[str, Any]:
+    """Three estimator families on one trajectory; ratio is a diagnostic."""
+    post = kinisi.get("D_posterior_m2_s") or {}
+    kinisi_D = post.get("mean") if isinstance(post, dict) else post
+    plain_D = aligned.get("D_plain_ols_m2_s")
+    ratio = (
+        float(kinisi_D) / float(plain_D)
+        if kinisi_D is not None and plain_D not in (None, 0)
+        else None
+    )
+    return {
+        "estimator_protocol_revision": ESTIMATOR_PROTOCOL_REVISION,
+        "plain_ols": {
+            "D_m2_s": plain_D,
+            "fit_window_ps": aligned.get("kinisi_fit_window_ps"),
+            "slope_A2_per_ps": aligned.get("slope_A2_per_ps"),
+            "r_squared": (aligned.get("fit_quality") or {}).get("r_squared"),
+        },
+        "native_msd_diagnostic": {
+            "D_m2_s": native.get("D_diagnostic_m2_s"),
+            "fit_window_ps": [
+                (native.get("diagnostic_fit") or {}).get("actual_fit_start_ps"),
+                (native.get("diagnostic_fit") or {}).get("actual_fit_stop_ps"),
+            ],
+            "mean_log_log_alpha_in_fit": native.get("mean_log_log_alpha_in_fit"),
+            "diffusive_regime_warning": native.get("diffusive_regime_warning"),
+        },
+        "kinisi_posterior": {
+            "D_m2_s": kinisi_D,
+            "credible_interval_95_m2_s": (
+                post.get("credible_interval_95") if isinstance(post, dict) else None
+            ),
+            "effective_fit_window_ps": [
+                kinisi.get("fit_start_ps"),
+                aligned.get("kinisi_fit_window_ps", [None, None])[-1],
+            ],
+        },
+        "nernst_einstein": {
+            "sigma_S_m": kinisi.get("sigma_NE_S_m"),
+            "definition": kinisi.get("nernst_einstein_definition"),
+        },
+        "kinisi_to_plain_D_ratio": ratio,
+        "estimator_disagreement_warning": estimator_disagreement(ratio),
+        "disagreement_ratio_range": list(DISAGREEMENT_RATIO_RANGE),
+        "drift_definitions_match": cross_backend.get("definitions_match"),
+        "note": (
+            "plain OLS, the native MSD diagnostic and the kinisi posterior use "
+            "different windows/assumptions; the ratio is a diagnostic prompt, "
+            "not a pass/fail threshold and not proof that any estimator is "
+            "wrong"
+        ),
+    }
+
+
 def _gemdat_diagnostic(dataset, args, temperature_k: float) -> dict[str, Any]:
     from mliport.analysis.electrolyte import gemdat_electrolyte
 
@@ -556,6 +704,7 @@ def run_transport_case(ctx, args) -> int:
             finite = bool(np.all(np.isfinite(t_vals)) and np.all(np.isfinite(e_tot)))
 
             msd = _native_msd_diagnostic(dataset)
+            aligned = _aligned_plain_ols(dataset, temperature)
             sufficient = bool(finite and msd["D_diagnostic_m2_s"] >= MIN_MSD_SLOPE_M2_S)
 
             metrics: dict[str, Any] = {
@@ -571,6 +720,7 @@ def run_transport_case(ctx, args) -> int:
                     )[0]
                 ),
                 "native_msd": msd,
+                "aligned_baseline": aligned,
                 "sampling_sufficient": sufficient,
             }
             status = "characterized"
@@ -578,7 +728,11 @@ def run_transport_case(ctx, args) -> int:
             if sufficient:
                 kin = _kinisi_transport(dataset, temperature)
                 metrics["kinisi_transport"] = kin
-                metrics["cross_backend_drift"] = _drift_comparability(msd, kin)
+                cross_backend = _drift_comparability(msd, kin)
+                metrics["cross_backend_drift"] = cross_backend
+                metrics["estimator_comparison"] = _estimator_comparison(
+                    aligned, msd, kin, cross_backend
+                )
                 post = kin["D_posterior_m2_s"]
                 d_mean = post["mean"] if isinstance(post, dict) else post
                 d_std = post.get("std", 0.0) if isinstance(post, dict) else 0.0
