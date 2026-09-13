@@ -1,0 +1,13 @@
+{
+  "checks": {
+    "fairchem_alias": {
+      "status": "pass",
+      "resolved_model_type": "fairchem",
+      "runtime_model_type": "uma",
+      "detail": "fairchem is a legitimate alias for the UMA runtime",
+      "wrapper_module": "mliport.calculators.uma",
+      "wrapper_class": "UMACalculator",
+      "exit_code": 0
+    }
+  }
+}

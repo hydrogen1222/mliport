@@ -226,3 +226,45 @@ def test_committed_bridge_summary_is_consistent():
     assert summary["fairchem_alias"]["status"] == "pass"
     for name, status in summary["negative_checks"].items():
         assert status == "pass", name
+
+
+# ------------------------------------------------------- bridge archive
+def test_bridge_archive_builder_refuses_a_non_pass_summary(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    import build_bridge_archive
+    from evidence import BridgeArtifactError
+
+    campaign = tmp_path / "campaign"
+    campaign.mkdir()
+    (campaign / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema": release_bridge.BRIDGE_SUMMARY_SCHEMA,
+                "campaign_id": "c",
+                "release_candidate_commit": "a" * 40,
+                "scientific_campaign_target": TARGET,
+                "status": "fail",
+                "engines": {"mace": "pass"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(BridgeArtifactError, match="refusing"):
+        build_bridge_archive.load_validated_summary(campaign)
+
+
+def test_committed_bridge_archive_manifest_is_consistent():
+    manifests = sorted(
+        (REPO / "validation" / "science" / "bridge").glob("*/archive_manifest.json")
+    )
+    if not manifests:
+        return  # the bridge archive is built after the GPU bridge run
+    manifest = json.loads(manifests[-1].read_text(encoding="utf-8"))
+    assert manifest["schema"] == "mliport.release-bridge-archive-manifest/1"
+    assert len(manifest["release_candidate_commit"]) == 40
+    assert manifest["scientific_campaign_target"] == TARGET
+    assert len(manifest["archive_sha256"]) == 64
+    assert int(manifest["archive_bytes"]) > 0
+    assert manifest["records"] == 4
+    assert set(manifest["engines"]) == {"mace", "dpa", "grace", "uma"}
+    assert str(manifest["archive_url"]).startswith("https://")

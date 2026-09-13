@@ -7,8 +7,8 @@ Revalidation status: **target_commit_revalidated** -- campaign manifest declares
 | version identity | commit |
 |---|---|
 | software_commit (claimed validated) | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
-| validation_code_commit | `e8edcea36bae773df409d0cf67be5cd7bf8a4571` |
-| report_generator_commit | `e8edcea36bae773df409d0cf67be5cd7bf8a4571` |
+| validation_code_commit | `6e1a945f91c76a4f17be10ed189fba0232936514` |
+| report_generator_commit | `6e1a945f91c76a4f17be10ed189fba0232936514` |
 | evidence_campaign | `20260913-current-head-5f8d91d` |
 | evidence_source_commits | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
 
@@ -16,8 +16,9 @@ Model identities and artifact hashes are pinned in `validation/science/model_man
 
 ## Beta GO / NO-GO checklist (task book section 28)
 
-- Verdict: **GO for beta** (23 ✅ / 1 ⚠️ / 0 ❌)
-- Validated software commit: `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
+- Verdict: **GO for beta** (24 ✅ / 1 ⚠️ / 0 ❌)
+- Scientific campaign target (full campaign): `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
+- Release candidate commit (bridge): `6e1a945f91c76a4f17be10ed189fba0232936514`
 - Evidence campaign: `20260913-current-head-5f8d91d`, 101 records (58 pass / 43 characterized / 0 fail / 0 blocked)
 
 | # | Item | Status | Evidence | evidence query |
@@ -25,29 +26,44 @@ Model identities and artifact hashes are pinned in `validation/science/model_man
 | 1 | New name has no known same-domain namespace collision | ✅ | `mliport` free on the PyPI mirror and on GitHub search; repo renamed to `hydrogen1222/mliport` | `external=pypi:mliport,github:hydrogen1222/mliport` |
 | 2 | Python package / CLI / repo identity migrated | ✅ | rename commit chain; clean break, old `mlipx` import not published | `canonical=record_counts; scope=current_campaign` |
 | 3 | Target-commit CI green on Python 3.10/3.11/3.12 | ✅ | Actions tests/lint/package-build green at `5f8d91d4` and follow-ups | `ci=github_actions:tests,lint,package-build; python=3.10,3.11,3.12; commit=5f8d91d4` |
-| 4 | Clean wheel install green | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b2` capability smoke | `ci=wheel-install-smoke; python=3.10,3.11,3.12` |
+| 4 | Clean wheel install green | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b3` capability smoke | `ci=wheel-install-smoke; python=3.10,3.11,3.12` |
 | 5 | Strict evidence loader is the only interpretation path | ✅ | `validation/science/evidence/` + no-raw-selection report tests | `loader=evidence.load_evidence; raw_selection=forbidden` |
 | 6 | Report/README do not interpret raw records | ✅ | report and figures consume `load_evidence`; README block machine-rendered | `renderer=generate_beta_report; readme_block=generated` |
 | 7 | Malformed evidence fails closed | ✅ | V01-T5/T6/T7 tests; report exits 2/3; archive builder refuses | `tests=V01-T5,V01-T6,V01-T7; exit_codes=2,3` |
 | 8 | Profile identity never mixes precision/model/commit | ✅ | V01-T2/T3/T4; engine cells report `mixed` with `worst_status` | `tests=V01-T2,V01-T3,V01-T4; identity=precision,model,commit` |
 | 9 | Current campaign manifest fixed | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` | `campaign_manifest=20260913-current-head-5f8d91d; status=complete` |
-| 10 | MACE/DPA/GRACE/UMA target-commit GPU smoke | ✅ | 4 engines x t1/t2fd/t5/t6/t7/t8 | `tier_records=t1,t2fd,t5,t6,t7,t8; engines=DPA,GRACE,MACE,UMA` |
-| 11 | Repeat inference target-commit | ✅ | T1 records carry repeat-inference metrics per engine | `tier=t1; metric=repeat_inference` |
-| 12 | FD target-commit / reclassified evidence | ✅ | T2FD: 32 records | `tier=t2fd; records=32` |
-| 13 | Saddle current semantics | ⚠️ | CPU/analytic known-answer layer green; GPU `t5h` workflow not part of the four-backend smoke | `workflow=t5h; layer=cpu_known_answer` |
-| 14 | NEB fixed-band validation | ✅ | full-image constraint checks + regression tests | `tier=t5; checks=fixed_band,constraint` |
-| 15 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract tests; T7 transport uses `exact_unwrapped` (12 records) | `tests=PR-E; tier=t7; contract=exact_unwrapped` |
-| 16 | GEMDAT backend errors never become physical zero | ✅ | PR-C status contract; 12 T7 records | `tier=t7; status_contract=gemdat_backend_error` |
-| 17 | Alpha weighting/validity closure | ✅ | local Δlog(t) weighting + finite & valid summaries | `analysis=alpha; version=2` |
-| 18 | Analysis version bump | ✅ | alpha estimator `/2`; task revisions msd 7 / transport 6 | `analysis=msd,transport; revisions=msd:7,transport:6` |
-| 19 | T7 transport recomputed | ✅ | 12 T7 records (md/transport/gemdat) | `tier=t7; records=12` |
-| 20 | T8 re-run or rebuilt under the new identity | ✅ | 25 T8 records | `tier=t8; records=25` |
-| 21 | Historical reused evidence explicitly marked | ✅ | version block + campaign scope `not_in_scope` / `historical_reuse` | `tiers=historical_reuse:t2,t3,t4; scope=explicit` |
-| 22 | Report rebuildable from a formal evidence archive | ✅ | sha256 `e6a95777f471461f…`, 101 records, https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b2/mliport-validation-20260913-current-head-5f8d91d.tar.zst | `archive_manifest; sha256=e6a95777f471461f; url=https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b2/mliport-validation-20260913-current-head-5f8d91d.tar.zst` |
-| 23 | README statements match the evidence | ✅ | generated block plus explicit historical T3/T4 statement | `summary=beta-summary.json; readme_block=README_VALIDATION.md` |
-| 24 | No secrets/model weights/temporary probes/attic in the release | ✅ | hygiene/distribution checks; archive excludes weights, trajectories and attic | `hygiene=repository_hygiene,distribution_manifest,rename_guard` |
+| 10 | MACE/DPA/GRACE/UMA scientific-campaign GPU smoke | ✅ | 4 engines x t1/t2fd/t5/t6/t7/t8 | `tier_records=t1,t2fd,t5,t6,t7,t8; engines=DPA,GRACE,MACE,UMA` |
+| 11 | Release-candidate bridge smoke | ✅ | 20260913-release-bridge-6e1a945f at `6e1a945f91c76a4f17be10ed189fba0232936514`: dpa:pass, grace:pass, mace:pass, uma:pass; negatives dpa:no_implicit_fallback:pass, dpa:strict_config:pass, grace:no_implicit_fallback:pass, grace:strict_config:pass, mace:no_implicit_fallback:pass, mace:strict_config:pass, uma:no_implicit_fallback:pass, uma:strict_config:pass; fairchem alias pass; bridge archive `4fadb6db5258e4b4…` https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst | `release_bridge=20260913-release-bridge-6e1a945f; release_commit=6e1a945f91c76a4f17be10ed189fba0232936514; engines=DPA,GRACE,MACE,UMA; negatives=no_backend,strict_config; alias=fairchem` |
+| 12 | Repeat inference target-commit | ✅ | T1 records carry repeat-inference metrics per engine | `tier=t1; metric=repeat_inference` |
+| 13 | FD target-commit / reclassified evidence | ✅ | T2FD: 32 records | `tier=t2fd; records=32` |
+| 14 | Saddle current semantics | ⚠️ | CPU/analytic known-answer layer green; GPU `t5h` workflow not part of the four-backend smoke | `workflow=t5h; layer=cpu_known_answer` |
+| 15 | NEB fixed-band validation | ✅ | full-image constraint checks + regression tests | `tier=t5; checks=fixed_band,constraint` |
+| 16 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract tests; T7 transport uses `exact_unwrapped` (12 records) | `tests=PR-E; tier=t7; contract=exact_unwrapped` |
+| 17 | GEMDAT backend errors never become physical zero | ✅ | PR-C status contract; 12 T7 records | `tier=t7; status_contract=gemdat_backend_error` |
+| 18 | Alpha weighting/validity closure | ✅ | local Δlog(t) weighting + finite & valid summaries | `analysis=alpha; version=2` |
+| 19 | Analysis version bump | ✅ | alpha estimator `/2`; task revisions msd 7 / transport 6 | `analysis=msd,transport; revisions=msd:7,transport:6` |
+| 20 | T7 transport recomputed | ✅ | 12 T7 records (md/transport/gemdat) | `tier=t7; records=12` |
+| 21 | T8 re-run or rebuilt under the new identity | ✅ | 25 T8 records | `tier=t8; records=25` |
+| 22 | Historical reused evidence explicitly marked | ✅ | version block + campaign scope `not_in_scope` / `historical_reuse` | `tiers=historical_reuse:t2,t3,t4; scope=explicit` |
+| 23 | Report rebuildable from a formal evidence archive | ✅ | sha256 `e6a95777f471461f…`, 101 records, https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b2/mliport-validation-20260913-current-head-5f8d91d.tar.zst | `archive_manifest; sha256=e6a95777f471461f; url=https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b2/mliport-validation-20260913-current-head-5f8d91d.tar.zst` |
+| 24 | README statements match the evidence | ✅ | generated block plus explicit historical T3/T4 statement | `summary=beta-summary.json; readme_block=README_VALIDATION.md` |
+| 25 | No secrets/model weights/temporary probes/attic in the release | ✅ | hygiene/distribution checks; archive excludes weights, trajectories and attic | `hygiene=repository_hygiene,distribution_manifest,rename_guard` |
 
 Scope note: tier(s) `t2, t3, t4` were not run in this campaign or produced no current records; their historical evidence is listed separately and is not part of the current-commit claim. The GPU `t5h` saddle workflow is outside the four-backend smoke and is covered by the CPU/analytic known-answer layer.
+
+## Release bridge (exact release candidate)
+
+The full scientific campaign targets `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`; the release candidate `6e1a945f91c76a4f17be10ed189fba0232936514` contains productization/configuration changes, so a four-backend release bridge (campaign `20260913-release-bridge-6e1a945f`) was executed at that commit. It verifies backend selection, model loading, single-point inference, strict configuration and the fail-closed no-backend path; no long scientific trajectories were regenerated.
+
+| backend | model load | SP | no-backend | strict config |
+|---|---|---|---|---|
+| MACE | pass | pass | pass | pass |
+| DPA | pass | pass | pass | pass |
+| GRACE | pass | pass | pass | pass |
+| UMA | pass | pass | pass | pass |
+
+Negative checks: dpa:no_implicit_fallback=pass, dpa:strict_config=pass, grace:no_implicit_fallback=pass, grace:strict_config=pass, mace:no_implicit_fallback=pass, mace:strict_config=pass, uma:no_implicit_fallback=pass, uma:strict_config=pass; fairchem alias: pass.
+Bridge archive: `4fadb6db5258e4b454d49b2fa804a4fb14cbb45eb3ec8dcf5b4e196da9065169` (4 records) https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst
 
 ## T1: inference (energy / forces / stress)
 
@@ -128,7 +144,7 @@ Drift improves with smaller timestep: mace/float64#e04aba True, dpa/upstream/mod
 
 ### Tracer diffusion (kinisi; D in m^2/s)
 
-| engine | T (K) | D | 95% CI | sigma_NE (S/m) | fit window (ps) | native MSD diag |
+| engine | T (K) | D | kinisi 95% credible interval | sigma_NE (S/m) | fit window (ps) | native MSD diag |
 |---|---|---|---|---|---|---|
 | mace | 700 | 1.95e-08 | [1.92e-08, 1.98e-08] | 915 | fit from 2 ps (MSD 312 A^2) | 5.2e-08 |
 | dpa | 700 | 1.6e-08 | [1.56e-08, 1.63e-08] | 751 | fit from 2 ps (MSD 322 A^2) | 5.34e-08 |
@@ -137,14 +153,16 @@ Drift improves with smaller timestep: mace/float64#e04aba True, dpa/upstream/mod
 
 ### Estimator comparison (same trajectory)
 
-| engine | T (K) | plain OLS D (m^2/s) | native MSD diagnostic D | kinisi posterior D | kinisi/plain | NE sigma (S/m) | windows native/kinisi (ps) | warning |
-|---|---|---|---|---|---|---|---|---|
-| mace | 700 | 3.93e-08 | 5.2e-08 | 1.95e-08 | 0.496 | 915 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
-| dpa | 700 | 4.06e-08 | 5.34e-08 | 1.6e-08 | 0.394 | 751 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
-| grace | 700 | 3.99e-08 | 5.3e-08 | 1.57e-08 | 0.392 | 735 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
-| uma | 700 | 4.04e-08 | 5.35e-08 | 1.8e-08 | 0.445 | 846 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning |
+| engine | T (K) | D_ols native window | D_ols kinisi window | native MSD diagnostic D | kinisi posterior D | kinisi/plain | kinisi/same-window OLS | NE sigma (S/m) | windows native/kinisi (ps) | flags |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mace | 700 | 5.2e-08 | 3.93e-08 | 5.2e-08 | 1.95e-08 | 0.496 | 0.496 | 915 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning, estimator_model_difference |
+| dpa | 700 | 5.34e-08 | 4.06e-08 | 5.34e-08 | 1.6e-08 | 0.394 | 0.394 | 751 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning, estimator_model_difference |
+| grace | 700 | 5.3e-08 | 3.99e-08 | 5.3e-08 | 1.57e-08 | 0.392 | 0.392 | 735 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning, estimator_model_difference |
+| uma | 700 | 5.35e-08 | 4.04e-08 | 5.35e-08 | 1.8e-08 | 0.445 | 0.445 | 846 | 7.5-15.0 / 2.0-15.0 | estimator_disagreement_warning, estimator_model_difference |
 
-Units: ``D = slope(MSD)/(2d)`` with ``1 A^2/ps = 1e-8 m^2/s`` (known-answer audited). The three estimators use different windows and assumptions; an ``estimator_disagreement_warning`` (ratio < 0.5 or > 2) is a prompt to explain the difference, not a pass/fail verdict.
+Units: ``D = slope(MSD)/(2d)`` with ``1 A^2/ps = 1e-8 m^2/s`` (known-answer audited). The two ``D_ols`` columns use the native diagnostic window and the kinisi fit window on the same trajectory, so the window effect is separated from the estimator effect.
+The kinisi 95% credible interval is estimator/model uncertainty conditional on the analysed trajectory; it does not include independent initial-condition uncertainty, finite-size convergence, MLIP model error, temperature sampling convergence or long-time rare-event sampling.
+``estimator_disagreement_warning`` (kinisi/plain < 0.5 or > 2) is a prompt to explain the difference. When kinisi still differs from OLS on the same window, ``estimator_model_difference`` records that the remaining gap comes from the estimator's statistical model (overlapping displacement correlations, posterior inference) rather than the fit interval; no estimator is forced to match another.
 
 ### Production MD health (700 K)
 
@@ -165,36 +183,38 @@ dpa: T std 50.8 K, drift -0.000485 eV/atom/ps<br>grace: T std 49.3 K, drift 0.00
 
 | atoms | mace | dpa | grace | uma |
 |---|---|---|---|---|
-| 32 | 42.8 [42.4-44.3] n=20 | 154 [153-156] n=20 | grace/upstream/model-defined#efb19e: 8.4 [8.35-8.53] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 9.53 [9.15-10.1] n=20 (cache off) | 122 [121-124] n=20 |
-| 128 | 46.3 [45.8-48.4] n=20 | 156 [155-160] n=20 | grace/upstream/model-defined#efb19e: 13.5 [13.3-14.5] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 16 [15.6-16.5] n=20 (cache off) | 123 [122-124] n=20 |
-| 512 | 139 [139-141] n=20 | 166 [165-167] n=20 | grace/upstream/model-defined#efb19e: 31.2 [31-31.6] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 42.7 [41.5-44.9] n=20 (cache off) | 222 [220-224] n=20 |
+| 32 | 48.8 [48.6-53.5] n=20 | 155 [154-157] n=20 | grace/upstream/model-defined#efb19e: 8.38 [8.32-8.45] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 8.99 [8.92-9.26] n=20 (cache off) | 124 [123-127] n=20 |
+| 128 | 51.5 [50.8-59.6] n=20 | 156 [155-159] n=20 | grace/upstream/model-defined#efb19e: 13.5 [13.3-13.7] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 15.4 [15.2-16.1] n=20 (cache off) | 126 [124-127] n=20 |
+| 512 | 169 [167-172] n=20 | 166 [165-169] n=20 | grace/upstream/model-defined#efb19e: 31 [30.5-32] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 41.3 [40.9-42.5] n=20 (cache off) | 222 [220-223] n=20 |
 
 ### Single-point startup and spread (per engine/size)
 
 | engine | variant | atoms | model_load_s | first_inference_ms | warmup | n_timed | median_ms | mean_ms | p05_ms | p95_ms | min_ms | max_ms | atoms/s |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| mace | default | 32 | 3.85 | 547 | 7 | 20 | 42.8 | 43.1 | 42.4 | 44.3 | 42.3 | 44.7 | 7e+02 |
-| dpa | default | 32 | 5.87 | 5.29e+03 | 8 | 20 | 154 | 154 | 153 | 156 | 153 | 156 | 2e+02 |
-| grace | cache on | 32 | 10.3 | 8.8e+03 | 5 | 20 | 8.4 | 8.46 | 8.35 | 8.53 | 8.33 | 9.49 | 4e+03 |
-| grace | cache off | 32 | 10.9 | 9.04e+03 | 5 | 20 | 9.53 | 9.66 | 9.15 | 10.1 | 9.13 | 11.7 | 3e+03 |
-| uma | default | 32 | 9.38 | 818 | 6 | 20 | 122 | 122 | 121 | 124 | 121 | 125 | 3e+02 |
-| mace | default | 128 | 3.85 | 50.6 | 5 | 20 | 46.3 | 46.7 | 45.8 | 48.4 | 45.7 | 51.6 | 3e+03 |
-| dpa | default | 128 | 5.87 | 193 | 5 | 20 | 156 | 156 | 155 | 160 | 155 | 160 | 8e+02 |
-| grace | cache on | 128 | 10.3 | 9.61e+03 | 5 | 20 | 13.5 | 13.7 | 13.3 | 14.5 | 13.3 | 15.8 | 9e+03 |
-| grace | cache off | 128 | 10.9 | 1e+04 | 6 | 20 | 16 | 16 | 15.6 | 16.5 | 15.5 | 16.5 | 8e+03 |
-| uma | default | 128 | 9.38 | 129 | 5 | 20 | 123 | 123 | 122 | 124 | 122 | 126 | 1e+03 |
-| mace | default | 512 | 3.85 | 141 | 5 | 20 | 139 | 140 | 139 | 141 | 139 | 142 | 4e+03 |
-| dpa | default | 512 | 5.87 | 229 | 5 | 20 | 166 | 166 | 165 | 167 | 165 | 168 | 3e+03 |
-| grace | cache on | 512 | 10.3 | 9.97e+03 | 5 | 20 | 31.2 | 31.2 | 31 | 31.6 | 31 | 32 | 2e+04 |
-| grace | cache off | 512 | 10.9 | 9.64e+03 | 5 | 20 | 42.7 | 43.5 | 41.5 | 44.9 | 41.4 | 62.1 | 1e+04 |
-| uma | default | 512 | 9.38 | 223 | 5 | 20 | 222 | 222 | 220 | 224 | 220 | 224 | 2e+03 |
+| mace | default | 32 | 3.78 | 539 | 8 | 20 | 48.8 | 49.8 | 48.6 | 53.5 | 48.6 | 56.9 | 7e+02 |
+| dpa | default | 32 | 5.82 | 5.33e+03 | 8 | 20 | 155 | 155 | 154 | 157 | 154 | 159 | 2e+02 |
+| grace | cache on | 32 | 10.4 | 8.76e+03 | 5 | 20 | 8.38 | 8.39 | 8.32 | 8.45 | 8.32 | 8.55 | 4e+03 |
+| grace | cache off | 32 | 10.4 | 8.88e+03 | 5 | 20 | 8.99 | 9.06 | 8.92 | 9.26 | 8.9 | 9.34 | 4e+03 |
+| uma | default | 32 | 9.46 | 876 | 5 | 20 | 124 | 124 | 123 | 127 | 123 | 128 | 3e+02 |
+| mace | default | 128 | 3.78 | 55.7 | 5 | 20 | 51.5 | 52.9 | 50.8 | 59.6 | 50.6 | 61.2 | 2e+03 |
+| dpa | default | 128 | 5.82 | 197 | 5 | 20 | 156 | 156 | 155 | 159 | 155 | 159 | 8e+02 |
+| grace | cache on | 128 | 10.4 | 9.64e+03 | 5 | 20 | 13.5 | 13.5 | 13.3 | 13.7 | 13.3 | 13.7 | 9e+03 |
+| grace | cache off | 128 | 10.4 | 9.7e+03 | 5 | 20 | 15.4 | 15.5 | 15.2 | 16.1 | 15.2 | 16.2 | 8e+03 |
+| uma | default | 128 | 9.46 | 132 | 5 | 20 | 126 | 126 | 124 | 127 | 124 | 131 | 1e+03 |
+| mace | default | 512 | 3.78 | 176 | 6 | 20 | 169 | 169 | 167 | 172 | 167 | 172 | 3e+03 |
+| dpa | default | 512 | 5.82 | 228 | 5 | 20 | 166 | 167 | 165 | 169 | 165 | 169 | 3e+03 |
+| grace | cache on | 512 | 10.4 | 9.48e+03 | 5 | 20 | 31 | 31.2 | 30.5 | 32 | 30.5 | 34.8 | 2e+04 |
+| grace | cache off | 512 | 10.4 | 9.43e+03 | 5 | 20 | 41.3 | 41.6 | 40.9 | 42.5 | 40.8 | 47.3 | 1e+04 |
+| uma | default | 512 | 9.46 | 222 | 5 | 20 | 222 | 221 | 220 | 223 | 219 | 223 | 2e+03 |
+
+Benchmark provenance: warmup stop `fixed_count:5` x10; warmup stop `stability:last3<=0.05` x15; GPU sync `tensorflow:implicit-host-transfer(cuda:0)` x10; GPU sync `torch.cuda.synchronize(cuda:0)` x15. Startup (`model_load_s`, `first_inference_ms`) is measured separately and excluded from the warm median. TensorFlow 2.20 has no explicit device-sync API, so GRACE reports its implicit host-transfer synchronization.
 
 ### NVE MD throughput (steps/s / atom-steps/s)
 
 | atoms | mace | dpa | grace | uma |
 |---|---|---|---|---|
-| 128 | 21.7 / 2.77e+03 | 6.38 / 816 | grace/upstream/model-defined#efb19e: 76.2 / 9.75e+03<br>grace/upstream/model-defined#efb19e: 62.1 / 7.94e+03 | 8.1 / 1.04e+03 |
-| 512 | 7.17 / 3.67e+03 | 6.01 / 3.08e+03 | grace/upstream/model-defined#efb19e: 32.1 / 1.65e+04<br>grace/upstream/model-defined#efb19e: 23.4 / 1.2e+04 | 4.53 / 2.32e+03 |
+| 128 | 20.9 / 2.68e+03 | 6.34 / 811 | grace/upstream/model-defined#efb19e: 76.5 / 9.79e+03<br>grace/upstream/model-defined#efb19e: 61.3 / 7.84e+03 | 7.93 / 1.01e+03 |
+| 512 | 7.1 / 3.64e+03 | 5.99 / 3.07e+03 | grace/upstream/model-defined#efb19e: 32 / 1.64e+04<br>grace/upstream/model-defined#efb19e: 24.1 / 1.23e+04 | 4.52 / 2.32e+03 |
 
 ## Historical evidence not in this campaign
 

@@ -1,0 +1,17 @@
+{
+  "schema": "mliport.release-bridge-archive-manifest/1",
+  "campaign_id": "20260913-release-bridge-6e1a945f",
+  "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+  "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+  "archive_sha256": "4fadb6db5258e4b454d49b2fa804a4fb14cbb45eb3ec8dcf5b4e196da9065169",
+  "archive_bytes": 3273,
+  "archive_url": "https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst",
+  "records": 4,
+  "engines": [
+    "dpa",
+    "grace",
+    "mace",
+    "uma"
+  ],
+  "generated_at": "2026-09-13T15:26:18+00:00"
+}

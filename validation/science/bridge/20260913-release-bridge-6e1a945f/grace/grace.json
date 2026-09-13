@@ -1,0 +1,82 @@
+{
+  "schema": "mliport.release-bridge/1",
+  "campaign_id": "20260913-release-bridge-6e1a945f",
+  "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+  "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+  "engine": "grace",
+  "profile": {
+    "profile_id": "grace_omat",
+    "identity": "GRACE-2L-OMAT-medium-base (upstream default precision build)",
+    "dtype": "upstream/model-defined",
+    "task": "bulk",
+    "head": null,
+    "manifest_model_sha256": "d497af4c7d9ad7a8e8e0f2a825a357cec940904a2579863f4c865515efc4602a"
+  },
+  "model": {
+    "path": "/mnt/hdd500/grace-cache/GRACE-2L-OMAT-medium-base",
+    "digest_kind": "tree",
+    "computed_sha256": "cd00bce19c567e1be742bf3902392a5a5d013b89cf1732f9a491a55dac4f868e"
+  },
+  "environment": {
+    "venv": ".venv-grace",
+    "python": "3.12.13",
+    "mliport_version": "2.0.0b3",
+    "backend_distribution": "tensorpotential",
+    "backend_version": "0.6.0"
+  },
+  "structure": {
+    "path": "/home/storm/others/mlipx/validation/science/bridge/20260913-release-bridge-6e1a945f/structure.vasp",
+    "sha256": "78e72d9fc8458e12d72ad5f2f799ff5404f15b34c23229ff57d5ae733a732a8e"
+  },
+  "checks": {
+    "model_load": {
+      "status": "pass",
+      "exit_code": 0,
+      "detail": "I0000 00:00:1789312719.292656 2133664 gpu_device.cc:2020] Created device /device:GPU:0 with 14696 MB memory:  -> device: 0, name: Tesla V100-SXM2-16GB, pci bus id: 0000:08:00.0, compute capability: 7.0"
+    },
+    "single_point": {
+      "status": "pass",
+      "reason": "",
+      "energy_eV": -1.925786018371582,
+      "fmax_eV_A": 9.510133081144087e-08,
+      "natoms": 4,
+      "stress_supported": true,
+      "requested_model_type": "grace",
+      "resolved_model_type": "grace",
+      "requested_device": "cuda:0",
+      "actual_device_type": "cuda",
+      "actual_device_uuid": "GPU-f24116e9-bea2-e0a6-70a9-d0b50811856b",
+      "implemented_properties": [
+        "energy",
+        "forces",
+        "stress",
+        "free_energy"
+      ],
+      "model_precision": [
+        "float32"
+      ],
+      "mliport_version": "2.0.0b3"
+    },
+    "device_attribution": {
+      "status": "pass",
+      "requested": "cuda:0",
+      "actual": "cuda",
+      "detail": "no silent CPU fallback for a CUDA request"
+    },
+    "no_implicit_fallback": {
+      "status": "pass",
+      "label": "no_implicit_fallback",
+      "expected": "non-zero exit and one of ('No MLIP backend was selected',)",
+      "observed_exit_code": 1,
+      "observed_message": "Error: No MLIP backend was selected."
+    },
+    "strict_config": {
+      "status": "pass",
+      "label": "strict_config",
+      "expected": "non-zero exit and one of ('Strict config validation failed', 'Unknown key')",
+      "observed_exit_code": 1,
+      "observed_message": "Error: Strict config validation failed:"
+    }
+  },
+  "status": "pass"
+}

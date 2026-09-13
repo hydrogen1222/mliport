@@ -1,0 +1,78 @@
+{
+  "schema": "mliport.release-bridge-campaign/1",
+  "campaign_id": "20260913-release-bridge-6e1a945f",
+  "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+  "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+  "scientific_target_note": "The full scientific campaign was produced at the scientific target; this bridge re-verifies selection/load/inference/config paths at the release candidate without regenerating long trajectories.",
+  "status": "pass",
+  "engines": {
+    "mace": "pass",
+    "dpa": "pass",
+    "grace": "pass",
+    "uma": "pass"
+  },
+  "negative_checks": {
+    "mace:no_implicit_fallback": "pass",
+    "mace:strict_config": "pass",
+    "dpa:no_implicit_fallback": "pass",
+    "dpa:strict_config": "pass",
+    "grace:no_implicit_fallback": "pass",
+    "grace:strict_config": "pass",
+    "uma:no_implicit_fallback": "pass",
+    "uma:strict_config": "pass"
+  },
+  "fairchem_alias": {
+    "status": "pass",
+    "resolved_model_type": "fairchem",
+    "runtime_model_type": "uma",
+    "detail": "fairchem is a legitimate alias for the UMA runtime",
+    "wrapper_module": "mliport.calculators.uma",
+    "wrapper_class": "UMACalculator",
+    "exit_code": 0
+  },
+  "records": [
+    "mace/mace.json",
+    "dpa/dpa.json",
+    "grace/grace.json",
+    "uma/uma.json"
+  ],
+  "environment": {
+    "mace": {
+      "venv": ".venv-mace",
+      "python": "3.12.13",
+      "mliport_version": "2.0.0b3",
+      "backend_distribution": "mace-torch",
+      "backend_version": "0.3.16"
+    },
+    "dpa": {
+      "venv": ".venv-dpa",
+      "python": "3.12.13",
+      "mliport_version": "2.0.0b3",
+      "backend_distribution": "deepmd-kit",
+      "backend_version": "3.1.3"
+    },
+    "grace": {
+      "venv": ".venv-grace",
+      "python": "3.12.13",
+      "mliport_version": "2.0.0b3",
+      "backend_distribution": "tensorpotential",
+      "backend_version": "0.6.0"
+    },
+    "uma": {
+      "venv": ".venv",
+      "python": "3.12.13",
+      "mliport_version": "2.0.0b3",
+      "backend_distribution": "fairchem-core",
+      "backend_version": "0.1.dev1316+gcac51938e"
+    }
+  },
+  "model_manifest": {
+    "path": "validation/science/model_manifest.json",
+    "sha256": "9aefc12228014933b2b71d244e6722ea07ba001c8d9a004f6c2c59f9faee6060"
+  },
+  "structure": {
+    "path": "structure.vasp",
+    "sha256": "78e72d9fc8458e12d72ad5f2f799ff5404f15b34c23229ff57d5ae733a732a8e"
+  },
+  "device": "cuda:0"
+}

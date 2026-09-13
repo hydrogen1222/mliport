@@ -1,0 +1,83 @@
+{
+  "schema": "mliport.release-bridge/1",
+  "campaign_id": "20260913-release-bridge-6e1a945f",
+  "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+  "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+  "engine": "dpa",
+  "profile": {
+    "profile_id": "dpa_omat",
+    "identity": "DPA-3.1-3M, branch Omat24",
+    "dtype": "upstream/model-defined",
+    "task": "bulk",
+    "head": "Omat24",
+    "manifest_model_sha256": "86dd3a804d78ca5d203ebf98747e8f16dff9713ba8950097ceb760b161e19907"
+  },
+  "model": {
+    "path": "/home/storm/others/mlipx/models/dpa/DPA-3.1-3M.pt",
+    "digest_kind": "file",
+    "computed_sha256": "86dd3a804d78ca5d203ebf98747e8f16dff9713ba8950097ceb760b161e19907"
+  },
+  "environment": {
+    "venv": ".venv-dpa",
+    "python": "3.12.13",
+    "mliport_version": "2.0.0b3",
+    "backend_distribution": "deepmd-kit",
+    "backend_version": "3.1.3"
+  },
+  "structure": {
+    "path": "/home/storm/others/mlipx/validation/science/bridge/20260913-release-bridge-6e1a945f/structure.vasp",
+    "sha256": "78e72d9fc8458e12d72ad5f2f799ff5404f15b34c23229ff57d5ae733a732a8e"
+  },
+  "checks": {
+    "model_load": {
+      "status": "pass",
+      "exit_code": 0,
+      "detail": "To get the best performance, it is recommended to adjust the number of threads by setting the environment variables OMP_NUM_THREADS, DP_INTRA_OP_PARALLELISM_THREADS, and DP_INTER_OP_PARALLELISM_THREADS. See https://deepmd.rtfd.io/parallelism/ for more information."
+    },
+    "single_point": {
+      "status": "pass",
+      "reason": "",
+      "energy_eV": -1.2074403762817383,
+      "fmax_eV_A": 9.331897075436753e-08,
+      "natoms": 4,
+      "stress_supported": true,
+      "requested_model_type": "dpa",
+      "resolved_model_type": "dpa",
+      "requested_device": "cuda:0",
+      "actual_device_type": "cuda",
+      "actual_device_uuid": "GPU-f24116e9-bea2-e0a6-70a9-d0b50811856b",
+      "implemented_properties": [
+        "energy",
+        "free_energy",
+        "forces",
+        "virial",
+        "stress"
+      ],
+      "model_precision": [
+        "float32"
+      ],
+      "mliport_version": "2.0.0b3"
+    },
+    "device_attribution": {
+      "status": "pass",
+      "requested": "cuda:0",
+      "actual": "cuda",
+      "detail": "no silent CPU fallback for a CUDA request"
+    },
+    "no_implicit_fallback": {
+      "status": "pass",
+      "label": "no_implicit_fallback",
+      "expected": "non-zero exit and one of ('No MLIP backend was selected',)",
+      "observed_exit_code": 1,
+      "observed_message": "Error: No MLIP backend was selected."
+    },
+    "strict_config": {
+      "status": "pass",
+      "label": "strict_config",
+      "expected": "non-zero exit and one of ('Strict config validation failed', 'Unknown key')",
+      "observed_exit_code": 1,
+      "observed_message": "Error: Strict config validation failed:"
+    }
+  },
+  "status": "pass"
+}

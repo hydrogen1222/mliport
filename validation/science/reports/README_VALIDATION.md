@@ -1,5 +1,7 @@
 Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).
 
+The full scientific beta campaign targets commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`. The release candidate `6e1a945f91c7` retains that validated scientific implementation and adds productization/release-layer changes. A four-backend release-bridge smoke (`20260913-release-bridge-6e1a945f`) was executed at the release-candidate commit to verify configuration, backend selection, model loading and single-point inference paths. No long scientific trajectories were regenerated.
+
 Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mliport integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
 
 | Workflow | MACE | DPA | GRACE | UMA |

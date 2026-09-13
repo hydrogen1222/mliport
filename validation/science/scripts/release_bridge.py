@@ -342,6 +342,21 @@ def resolve_profile(manifest: dict[str, Any], profile_id: str) -> dict[str, Any]
     return dict(profiles[profile_id])
 
 
+def cleanup_work_dirs(out_dir: Path) -> None:
+    """Drop raw child-run outputs, keeping only bridge evidence records."""
+    import shutil  # noqa: PLC0415
+
+    for engine_dir in sorted(p for p in out_dir.iterdir() if p.is_dir()):
+        for name in (
+            "sp",
+            "scratch",
+            "negative-no-backend",
+            "negative-strict-config",
+        ):
+            shutil.rmtree(engine_dir / name, ignore_errors=True)
+        (engine_dir / "strict-typo.incar").unlink(missing_ok=True)
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -577,6 +592,11 @@ def main() -> int:
     parser.add_argument("--models-root", default=".")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--engines", default="mace,dpa,grace,uma")
+    parser.add_argument(
+        "--keep-work",
+        action="store_true",
+        help="keep each engine's raw SP/config-run outputs (default: records only)",
+    )
     args = parser.parse_args()
 
     release_commit = args.release_commit.strip().lower()
@@ -588,12 +608,15 @@ def main() -> int:
         )
         return 2
     campaign = args.campaign or f"20260913-release-bridge-{release_commit[:8]}"
-    out_dir = Path(args.out or f"validation/science/bridge/{campaign}")
+    # Every path handed to a child process must be absolute: the children run
+    # with an isolated cwd, so a relative structure/output path would resolve
+    # inside that scratch directory (this bit the first b3 bridge run).
+    out_dir = Path(args.out or f"validation/science/bridge/{campaign}").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    structure = out_dir / "structure.vasp"
+    structure = (out_dir / "structure.vasp").resolve()
     structure.write_text(KNOWN_STRUCTURE, encoding="utf-8")
-    manifest_path = REPO / args.manifest
+    manifest_path = (REPO / args.manifest).resolve()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     engines = [e.strip() for e in args.engines.split(",") if e.strip()]
     unknown = [e for e in engines if e not in ENGINE_CASES]
@@ -692,6 +715,8 @@ def main() -> int:
         "device": args.device,
     }
     write_json(out_dir / "summary.json", summary)
+    if not args.keep_work:
+        cleanup_work_dirs(out_dir)
     print(
         f"[bridge] campaign={campaign} release={release_commit[:8]} "
         f"status={overall} engines={engine_status} alias={alias['status']}"

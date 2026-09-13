@@ -5,16 +5,48 @@
   "versions": {
     "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
     "target_software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-    "validation_code_commit": "e8edcea36bae773df409d0cf67be5cd7bf8a4571",
-    "report_generator_commit": "e8edcea36bae773df409d0cf67be5cd7bf8a4571",
+    "validation_code_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+    "report_generator_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
     "evidence_campaign": "20260913-current-head-5f8d91d",
     "evidence_source_commits": [
       "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
     ],
     "scientific_revalidation_status": "target_commit_revalidated",
     "status_reason": "campaign manifest declares completion and every record was produced at the target software commit",
-    "repository_head_at_render_time": "e8edcea36bae773df409d0cf67be5cd7bf8a4571",
-    "validation_logic_version": 1
+    "repository_head_at_render_time": "6e1a945f91c76a4f17be10ed189fba0232936514",
+    "validation_logic_version": 1,
+    "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+    "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+    "release_bridge_campaign": "20260913-release-bridge-6e1a945f",
+    "release_bridge_status": "pass"
+  },
+  "release_bridge": {
+    "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+    "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+    "release_bridge_campaign": "20260913-release-bridge-6e1a945f",
+    "release_bridge_status": "pass",
+    "engines": {
+      "mace": "pass",
+      "dpa": "pass",
+      "grace": "pass",
+      "uma": "pass"
+    },
+    "negative_checks": {
+      "mace:no_implicit_fallback": "pass",
+      "mace:strict_config": "pass",
+      "dpa:no_implicit_fallback": "pass",
+      "dpa:strict_config": "pass",
+      "grace:no_implicit_fallback": "pass",
+      "grace:strict_config": "pass",
+      "uma:no_implicit_fallback": "pass",
+      "uma:strict_config": "pass"
+    },
+    "fairchem_alias": "pass",
+    "archive": {
+      "sha256": "4fadb6db5258e4b454d49b2fa804a4fb14cbb45eb3ec8dcf5b4e196da9065169",
+      "url": "https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst",
+      "records": 4
+    }
   },
   "model_profiles": {
     "mace": "MACE-OMAT-0 medium (float64)",

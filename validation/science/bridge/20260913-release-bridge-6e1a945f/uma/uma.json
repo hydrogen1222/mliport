@@ -1,0 +1,82 @@
+{
+  "schema": "mliport.release-bridge/1",
+  "campaign_id": "20260913-release-bridge-6e1a945f",
+  "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",
+  "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+  "engine": "uma",
+  "profile": {
+    "profile_id": "uma_omat",
+    "identity": "UMA-s 1.2 (OMat task head)",
+    "dtype": "upstream/model-defined",
+    "task": "omat",
+    "head": null,
+    "manifest_model_sha256": "ba5c0d912efa22dc238e5fb1b5b7f66ee2e68c48c1b95b7cfd7fe1da5938398b"
+  },
+  "model": {
+    "path": "/home/storm/others/mlipx/models/uma/uma-s-1p2.pt",
+    "digest_kind": "file",
+    "computed_sha256": "ba5c0d912efa22dc238e5fb1b5b7f66ee2e68c48c1b95b7cfd7fe1da5938398b"
+  },
+  "environment": {
+    "venv": ".venv",
+    "python": "3.12.13",
+    "mliport_version": "2.0.0b3",
+    "backend_distribution": "fairchem-core",
+    "backend_version": "0.1.dev1316+gcac51938e"
+  },
+  "structure": {
+    "path": "/home/storm/others/mlipx/validation/science/bridge/20260913-release-bridge-6e1a945f/structure.vasp",
+    "sha256": "78e72d9fc8458e12d72ad5f2f799ff5404f15b34c23229ff57d5ae733a732a8e"
+  },
+  "checks": {
+    "model_load": {
+      "status": "pass",
+      "exit_code": 0,
+      "detail": "    Compute elapsed (model ready -> output writing): 0.79 s"
+    },
+    "single_point": {
+      "status": "pass",
+      "reason": "",
+      "energy_eV": -1.3585351435545157,
+      "fmax_eV_A": 4.382435392358275e-08,
+      "natoms": 4,
+      "stress_supported": true,
+      "requested_model_type": "uma",
+      "resolved_model_type": "uma",
+      "requested_device": "cuda:0",
+      "actual_device_type": "cuda",
+      "actual_device_uuid": "GPU-f24116e9-bea2-e0a6-70a9-d0b50811856b",
+      "implemented_properties": [
+        "energy",
+        "forces",
+        "stress",
+        "free_energy"
+      ],
+      "model_precision": [
+        "float32"
+      ],
+      "mliport_version": "2.0.0b3"
+    },
+    "device_attribution": {
+      "status": "pass",
+      "requested": "cuda:0",
+      "actual": "cuda",
+      "detail": "no silent CPU fallback for a CUDA request"
+    },
+    "no_implicit_fallback": {
+      "status": "pass",
+      "label": "no_implicit_fallback",
+      "expected": "non-zero exit and one of ('No MLIP backend was selected',)",
+      "observed_exit_code": 1,
+      "observed_message": "Error: No MLIP backend was selected."
+    },
+    "strict_config": {
+      "status": "pass",
+      "label": "strict_config",
+      "expected": "non-zero exit and one of ('Strict config validation failed', 'Unknown key')",
+      "observed_exit_code": 1,
+      "observed_message": "Error: Strict config validation failed:"
+    }
+  },
+  "status": "pass"
+}
