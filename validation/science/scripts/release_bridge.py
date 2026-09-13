@@ -248,6 +248,32 @@ def tree_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def display_path(path: Path, *, fallback: str | None = None) -> str:
+    """Repository-relative provenance, never an absolute local path."""
+    if fallback:
+        return fallback
+    try:
+        return str(Path(path).resolve().relative_to(REPO))
+    except ValueError:
+        return str(path)
+
+
+def harness_commit() -> str:
+    import subprocess  # noqa: PLC0415
+
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        ).stdout.strip()
+    except Exception:  # noqa: BLE001 - provenance is best-effort
+        return "unknown"
+
+
 def model_digest(path: Path) -> tuple[str, str]:
     if path.is_dir():
         return "tree", tree_sha256(path)
@@ -387,10 +413,12 @@ def run_engine_bridge(
     case: dict[str, Any],
     profile: dict[str, Any],
     model_path: Path,
+    model_display_path: str,
     structure: Path,
     out_dir: Path,
     campaign: str,
     release_commit: str,
+    harness: str,
     device: str,
 ) -> dict[str, Any]:
     engine_dir = out_dir / engine
@@ -510,12 +538,16 @@ def run_engine_bridge(
             "manifest_model_sha256": profile.get("model_sha256"),
         },
         "model": {
-            "path": str(model_path),
+            "path": model_display_path,
             "digest_kind": digest_kind,
             "computed_sha256": digest,
         },
         "environment": environment_identity(engine),
-        "structure": {"path": str(structure), "sha256": sha256_file(structure)},
+        "structure": {
+            "path": display_path(structure),
+            "sha256": sha256_file(structure),
+        },
+        "harness_commit": harness,
         "checks": checks,
         "status": bridge_status(checks),
     }
@@ -611,6 +643,7 @@ def main() -> int:
     # Every path handed to a child process must be absolute: the children run
     # with an isolated cwd, so a relative structure/output path would resolve
     # inside that scratch directory (this bit the first b3 bridge run).
+    harness = harness_commit()
     out_dir = Path(args.out or f"validation/science/bridge/{campaign}").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -650,10 +683,12 @@ def main() -> int:
             case=case,
             profile=profile,
             model_path=model_path,
+            model_display_path=case["model"],
             structure=structure,
             out_dir=out_dir,
             campaign=campaign,
             release_commit=release_commit,
+            harness=harness,
             device=args.device,
         )
 
@@ -706,6 +741,7 @@ def main() -> int:
         "negative_checks": negative_status,
         "fairchem_alias": alias,
         "records": [f"{engine}/{engine}.json" for engine in records],
+        "harness_commit": harness,
         "environment": {engine: environment_identity(engine) for engine in records},
         "model_manifest": {
             "path": str(manifest_path.relative_to(REPO)),

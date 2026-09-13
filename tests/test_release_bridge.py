@@ -268,3 +268,21 @@ def test_committed_bridge_archive_manifest_is_consistent():
     assert manifest["records"] == 4
     assert set(manifest["engines"]) == {"mace", "dpa", "grace", "uma"}
     assert str(manifest["archive_url"]).startswith("https://")
+
+
+def test_committed_bridge_records_are_repository_relative():
+    """Bridge provenance must not leak absolute local paths or old-name dirs."""
+    checked = 0
+    for path in sorted((REPO / "validation" / "science" / "bridge").glob("*/*/*.json")):
+        text = path.read_text(encoding="utf-8")
+        assert "/home/" not in text, path
+        assert "mlipx" not in text, path
+        payload = json.loads(text)
+        model = payload.get("model")
+        if isinstance(model, dict) and model.get("path"):
+            model_path = str(model["path"])
+            assert not Path(model_path).is_absolute(), (path, model_path)
+            assert model_path.startswith(("models/", "http"))
+        checked += 1
+    if not checked:
+        return  # bridge records are generated on the GPU host
