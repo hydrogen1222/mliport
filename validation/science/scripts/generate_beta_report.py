@@ -828,6 +828,24 @@ _GO_WARN = "⚠️"
 _GO_FAIL = "❌"
 
 
+def package_version() -> str:
+    """Version of the package under test (metadata, else pyproject)."""
+    try:
+        from importlib.metadata import version  # noqa: PLC0415
+
+        return version("mliport")
+    except Exception:  # noqa: BLE001 - fall back to the source tree
+        import re  # noqa: PLC0415
+
+        pyproject = Path(__file__).resolve().parents[3] / "mliport" / "pyproject.toml"
+        match = re.search(
+            r'^version = "([^"]+)"$',
+            pyproject.read_text(encoding="utf-8"),
+            flags=re.MULTILINE,
+        )
+        return match.group(1) if match else "unknown"
+
+
 def _go_queries(ctx, views) -> list[str]:
     """Concrete evidence query for every GO item (task book section 17.3).
 
@@ -895,7 +913,8 @@ def _go_items_en(ctx):
         (
             "Clean wheel install green",
             _GO_STATUS,
-            "wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke",
+            "wheel-install-smoke 3.10/3.11/3.12 + "
+            f"`mliport-{package_version()}` capability smoke",
         ),
         (
             "Strict evidence loader is the only interpretation path",
@@ -1028,7 +1047,8 @@ def _go_items_cn(ctx):
         (
             "wheel clean install 全绿",
             _GO_STATUS,
-            "wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke",
+            "wheel-install-smoke 3.10/3.11/3.12 + "
+            f"`mliport-{package_version()}` capability smoke",
         ),
         (
             "strict evidence loader 唯一",

@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 title: "mliport — backend-neutral MLIP inference and workflow framework"
-version: 2.0.0b1
+version: 2.0.0b2
 message: >-
   If you use mliport, please cite this repository. mliport orchestrates
   upstream MLIP backends and analysis libraries; cite the specific upstream
