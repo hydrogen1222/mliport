@@ -149,8 +149,8 @@ class TestCalculationEngineSetup:
         with pytest.raises(ValueError, match="Unknown calc_type"):
             CalculationEngine.from_config(config)
 
-    def test_engine_config_options_validation_unknown_key_warns(self):
-        """Unknown options keys should not raise, just warn."""
+    def test_engine_config_options_validation_unknown_key_strict_by_default(self):
+        """CFG-01: unknown option keys are fatal unless lenient mode is chosen."""
         from mliport.engine import CalculationEngine, EngineConfig
 
         config = EngineConfig(
@@ -163,10 +163,29 @@ class TestCalculationEngineSetup:
             output_dir=Path("./results"),
             options={"made_up_key": 42},
         )
-        # Should not raise
-        with patch.object(Path, "exists", return_value=True):
-            engine = CalculationEngine.from_config(config)
-            assert engine is not None
+        with (
+            pytest.raises(ValueError, match="made_up_key"),
+            patch.object(Path, "exists", return_value=True),
+        ):
+            CalculationEngine.from_config(config)
+
+        # explicit opt-in keeps the legacy warning behaviour
+        lenient = EngineConfig(
+            model_type="uma",
+            calc_type="sp",
+            model_path=Path("model.pt"),
+            task="omat",
+            device="cpu",
+            inference_mode="default",
+            output_dir=Path("./results"),
+            options={"made_up_key": 42},
+            strict_config=False,
+        )
+        with (
+            pytest.warns(UserWarning, match="made_up_key"),
+            patch.object(Path, "exists", return_value=True),
+        ):
+            assert CalculationEngine.from_config(lenient) is not None
 
     @pytest.mark.parametrize("model_type", ["uma", "mace", "dpa"])
     def test_pytorch_thread_count_is_applied_before_calculator_creation(

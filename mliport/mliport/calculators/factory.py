@@ -81,13 +81,16 @@ def _check_unknown_kwargs(
         if key in accepted:
             kept[key] = value
             continue
-        # A key valid for another engine -> benign leftover, warn and drop.
+        # A key valid for another engine: fatal under strict config, benign
+        # warn-and-drop only in the explicit lenient mode (CFG-01).
         if key in _ALL_CALC_KEYS:
-            warnings.warn(
+            message = (
                 f"Option {key!r} is not applicable to engine {model_type!r}; "
-                f"ignoring it.",
-                stacklevel=3,
+                "cross-backend options are rejected in strict mode."
             )
+            if strict:
+                raise ValueError(message)
+            warnings.warn(message, stacklevel=3)
             continue
         # Truly unknown key -> likely a typo.
         suggestion = difflib.get_close_matches(

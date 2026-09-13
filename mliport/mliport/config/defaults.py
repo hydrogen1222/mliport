@@ -32,9 +32,11 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
     "general": {
-        # Backward compatible: unknown keys warn (existing behaviour). Users opt
-        # into hard errors via settings.ini ``strict_config = true``.
-        "strict_config": False,
+        # Scientific config is strict by default: a misspelled or
+        # cross-backend option is a fatal error, not a warning. Legacy
+        # behaviour is an explicit opt-in via ``strict_config = false`` /
+        # ``--lenient-config``.
+        "strict_config": True,
         "write_resolved_config": True,
         # None = generate a seed and record it (see resolver).
         "default_seed": None,

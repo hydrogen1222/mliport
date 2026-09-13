@@ -45,7 +45,9 @@ DEFAULT_SETTINGS_INI = """\
 ; ============================================================
 
 [general]
-strict_config = false
+; strict by default: unknown/cross-backend keys are fatal.
+; set strict_config = false (or pass --lenient-config) to opt into warnings.
+strict_config = true
 write_resolved_config = true
 default_seed =
 

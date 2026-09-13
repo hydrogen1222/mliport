@@ -259,7 +259,7 @@ def _resolve_via_api(
         None,
         None,
         None,
-        False,
+        None,  # resolver default (strict since CFG-01)
     )
     return engine
 
@@ -481,7 +481,7 @@ async def test_tui_md_command_resolves_like_api_request(tmp_path: Path) -> None:
         None,
         None,
         None,
-        False,
+        None,  # resolver default (strict since CFG-01)
     )
 
     assert_equivalent(tui_engine, api_engine)

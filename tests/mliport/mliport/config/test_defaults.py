@@ -84,8 +84,9 @@ def test_get_default_calc_type_scoped() -> None:
 
 
 def test_get_default_fallback_to_general() -> None:
-    assert get_default("opt", "strict_config") is False
-    assert get_default("md", "strict_config") is False
+    # scientific config is strict by default (CFG-01)
+    assert get_default("opt", "strict_config") is True
+    assert get_default("md", "strict_config") is True
 
 
 def test_get_default_unknown_returns_fallback() -> None:
@@ -93,7 +94,7 @@ def test_get_default_unknown_returns_fallback() -> None:
 
 
 def test_get_default_no_calc_type() -> None:
-    assert get_default(None, "strict_config") is False
+    assert get_default(None, "strict_config") is True
 
 
 # ---------------------------------------------------------------------------

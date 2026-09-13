@@ -84,7 +84,7 @@ class EngineConfig:
     options: dict = field(default_factory=dict)
     torch_num_threads: int | None = None
     activation_checkpointing: bool | None = None
-    strict_config: bool = False
+    strict_config: bool = True
     detach: bool = False
 
     def __post_init__(self) -> None:

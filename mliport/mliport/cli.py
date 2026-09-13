@@ -364,7 +364,7 @@ Examples:
         type=str,
         default=None,
         choices=["uma", "mace", "dpa", "grace"],
-        help="MLIP engine type (default: uma; resolved from settings).",
+        help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     sp_parser.add_argument(
         "--task",
@@ -415,7 +415,7 @@ Examples:
         type=str,
         default=None,
         choices=["uma", "mace", "dpa", "grace"],
-        help="MLIP engine type (default: uma; resolved from settings).",
+        help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     opt_parser.add_argument(
         "--task",
@@ -498,7 +498,7 @@ Examples:
         type=str,
         default=None,
         choices=["uma", "mace", "dpa", "grace"],
-        help="MLIP engine type (default: uma; resolved from settings).",
+        help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     md_parser.add_argument(
         "--task",
@@ -771,7 +771,7 @@ Examples:
         type=str,
         default=None,
         choices=["uma", "mace", "dpa", "grace"],
-        help="MLIP engine type (default: uma; resolved from settings).",
+        help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     batch_parser.add_argument(
         "--task",
@@ -818,6 +818,23 @@ Examples:
     _add_resolver_args(batch_parser)
 
     # config command (plan section 4.2 / 9 / 17.6 / 24)
+    for _model_parser in (
+        run_parser,
+        sp_parser,
+        opt_parser,
+        md_parser,
+        neb_parser,
+        batch_parser,
+    ):
+        _model_parser.add_argument(
+            "--lenient-config",
+            action="store_true",
+            help=(
+                "Downgrade unknown/cross-backend configuration keys to "
+                "warnings (legacy behaviour). The default is strict."
+            ),
+        )
+
     config_parser = subparsers.add_parser(
         "config",
         help="Inspect and manage mliport configuration",
@@ -825,7 +842,12 @@ Examples:
         "settings.ini, or explain where a parameter value comes from.",
     )
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
-    config_sub.add_parser("show", help="Show the resolved configuration")
+    config_show = config_sub.add_parser("show", help="Show the resolved configuration")
+    config_show.add_argument(
+        "--lenient-config",
+        action="store_true",
+        help="Downgrade unknown configuration keys to warnings.",
+    )
     config_sub.add_parser("paths", help="List settings.ini search paths")
     config_init = config_sub.add_parser("init", help="Create a settings.ini")
     config_init.add_argument(
@@ -1479,6 +1501,8 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
     (plan section 17.6: argparse defaults -> None, resolved by ConfigResolver).
     """
     opts: dict = {}
+    if getattr(args, "lenient_config", False):
+        opts["strict_config"] = False
     for key in (
         "model_type",
         "task",
@@ -2119,7 +2143,15 @@ def cmd_config(args: argparse.Namespace) -> int:
     if sub == "explain":
         # Explain uses a representative md resolve; the source trace is what matters.
         settings = _load_settings(args)
-        resolved = resolve_config(calc_type="md", settings=settings)
+        resolved = resolve_config(
+            calc_type="md",
+            settings=settings,
+            cli=(
+                {"strict_config": False}
+                if getattr(args, "lenient_config", False)
+                else None
+            ),
+        )
         print(resolved.explain(args.key))
         return 0
 
