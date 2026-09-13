@@ -2,13 +2,13 @@
 
 Generated from evidence records under `.validation-work`; evidence commits: `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`. Every table in this document is rendered from result JSON by `validation/science/scripts/generate_beta_report.py`; regenerate and diff instead of editing.
 
-Revalidation status: **current_head_revalidated** -- campaign manifest declares completion and every record was produced at the target software commit
+Revalidation status: **target_commit_revalidated** -- campaign manifest declares completion and every record was produced at the target software commit
 
 | version identity | commit |
 |---|---|
 | software_commit (claimed validated) | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
-| validation_code_commit | `a0d677b0660b76aee9a3e90ae08e5e24873124a4` |
-| report_generator_commit | `a0d677b0660b76aee9a3e90ae08e5e24873124a4` |
+| validation_code_commit | `42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee` |
+| report_generator_commit | `42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee` |
 | evidence_campaign | `20260913-current-head-5f8d91d` |
 | evidence_source_commits | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
 
@@ -20,34 +20,34 @@ Model identities and artifact hashes are pinned in `validation/science/model_man
 - Validated software commit: `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
 - Evidence campaign: `20260913-current-head-5f8d91d`, 96 records (53 pass / 43 characterized / 0 fail / 0 blocked)
 
-| # | Item | Status | Evidence |
-|---|---|---|---|
-| 1 | New name has no known same-domain namespace collision | ✅ | `mliport` free on the PyPI mirror and on GitHub search; repo renamed to `hydrogen1222/mliport` |
-| 2 | Python package / CLI / repo identity migrated | ✅ | rename commit chain; clean break, old `mlipx` import not published |
-| 3 | Target-commit CI green on Python 3.10/3.11/3.12 | ✅ | Actions tests/lint/package-build green at `5f8d91d4` and follow-ups |
-| 4 | Clean wheel install green | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke |
-| 5 | Strict evidence loader is the only interpretation path | ✅ | `validation/science/evidence/` + no-raw-selection report tests |
-| 6 | Report/README do not interpret raw records | ✅ | report and figures consume `load_evidence`; README block machine-rendered |
-| 7 | Malformed evidence fails closed | ✅ | V01-T5/T6/T7 tests; report exits 2/3; archive builder refuses |
-| 8 | Profile identity never mixes precision/model/commit | ✅ | V01-T2/T3/T4; engine cells report `mixed` with `worst_status` |
-| 9 | Current campaign manifest fixed | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` |
-| 10 | MACE/DPA/GRACE/UMA current-head GPU smoke | ✅ | 4 engines x t1/t2/t2fd/t3/t4/t5/t6/t7/t8 |
-| 11 | Repeat inference current-head | ✅ | T1 records carry repeat-inference metrics per engine |
-| 12 | FD current-head / reclassified evidence | ✅ | T2FD: 32 records |
-| 13 | Saddle current semantics | ⚠️ | CPU/analytic known-answer layer green; GPU `t5h` workflow not part of the four-backend smoke |
-| 14 | NEB fixed-band validation | ✅ | full-image constraint checks + regression tests |
-| 15 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract tests; T7 transport uses `exact_unwrapped` (12 records) |
-| 16 | GEMDAT backend errors never become physical zero | ✅ | PR-C status contract; 12 T7 records |
-| 17 | Alpha weighting/validity closure | ✅ | local Δlog(t) weighting + finite & valid summaries |
-| 18 | Analysis version bump | ✅ | alpha estimator `/2`; task revisions msd 7 / transport 6 |
-| 19 | T7 transport recomputed | ✅ | 12 T7 records (md/transport/gemdat) |
-| 20 | T8 re-run or rebuilt under the new identity | ✅ | 20 T8 records |
-| 21 | Historical reused evidence explicitly marked | ✅ | version block + campaign scope `not_in_scope` / `historical_reuse` |
-| 22 | Report rebuildable from a formal evidence archive | ✅ | sha256 `bb6b1b06bb3e891e…`, 96 records, https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst |
-| 23 | README statements match the evidence | ✅ | generated block plus explicit historical T3/T4 statement |
-| 24 | No secrets/model weights/temporary probes/attic in the release | ✅ | hygiene/distribution checks; archive excludes weights, trajectories and attic |
+| # | Item | Status | Evidence | evidence query |
+|---|---|---|---|---|
+| 1 | New name has no known same-domain namespace collision | ✅ | `mliport` free on the PyPI mirror and on GitHub search; repo renamed to `hydrogen1222/mliport` | `external=pypi:mliport,github:hydrogen1222/mliport` |
+| 2 | Python package / CLI / repo identity migrated | ✅ | rename commit chain; clean break, old `mlipx` import not published | `canonical=record_counts; scope=current_campaign` |
+| 3 | Target-commit CI green on Python 3.10/3.11/3.12 | ✅ | Actions tests/lint/package-build green at `5f8d91d4` and follow-ups | `ci=github_actions:tests,lint,package-build; python=3.10,3.11,3.12; commit=5f8d91d4` |
+| 4 | Clean wheel install green | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke | `ci=wheel-install-smoke; python=3.10,3.11,3.12` |
+| 5 | Strict evidence loader is the only interpretation path | ✅ | `validation/science/evidence/` + no-raw-selection report tests | `loader=evidence.load_evidence; raw_selection=forbidden` |
+| 6 | Report/README do not interpret raw records | ✅ | report and figures consume `load_evidence`; README block machine-rendered | `renderer=generate_beta_report; readme_block=generated` |
+| 7 | Malformed evidence fails closed | ✅ | V01-T5/T6/T7 tests; report exits 2/3; archive builder refuses | `tests=V01-T5,V01-T6,V01-T7; exit_codes=2,3` |
+| 8 | Profile identity never mixes precision/model/commit | ✅ | V01-T2/T3/T4; engine cells report `mixed` with `worst_status` | `tests=V01-T2,V01-T3,V01-T4; identity=precision,model,commit` |
+| 9 | Current campaign manifest fixed | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` | `campaign_manifest=20260913-current-head-5f8d91d; status=complete` |
+| 10 | MACE/DPA/GRACE/UMA target-commit GPU smoke | ✅ | 4 engines x t1/t2fd/t5/t6/t7/t8 | `tier_records=t1,t2fd,t5,t6,t7,t8; engines=DPA,GRACE,MACE,UMA` |
+| 11 | Repeat inference target-commit | ✅ | T1 records carry repeat-inference metrics per engine | `tier=t1; metric=repeat_inference` |
+| 12 | FD target-commit / reclassified evidence | ✅ | T2FD: 32 records | `tier=t2fd; records=32` |
+| 13 | Saddle current semantics | ⚠️ | CPU/analytic known-answer layer green; GPU `t5h` workflow not part of the four-backend smoke | `workflow=t5h; layer=cpu_known_answer` |
+| 14 | NEB fixed-band validation | ✅ | full-image constraint checks + regression tests | `tier=t5; checks=fixed_band,constraint` |
+| 15 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract tests; T7 transport uses `exact_unwrapped` (12 records) | `tests=PR-E; tier=t7; contract=exact_unwrapped` |
+| 16 | GEMDAT backend errors never become physical zero | ✅ | PR-C status contract; 12 T7 records | `tier=t7; status_contract=gemdat_backend_error` |
+| 17 | Alpha weighting/validity closure | ✅ | local Δlog(t) weighting + finite & valid summaries | `analysis=alpha; version=2` |
+| 18 | Analysis version bump | ✅ | alpha estimator `/2`; task revisions msd 7 / transport 6 | `analysis=msd,transport; revisions=msd:7,transport:6` |
+| 19 | T7 transport recomputed | ✅ | 12 T7 records (md/transport/gemdat) | `tier=t7; records=12` |
+| 20 | T8 re-run or rebuilt under the new identity | ✅ | 20 T8 records | `tier=t8; records=20` |
+| 21 | Historical reused evidence explicitly marked | ✅ | version block + campaign scope `not_in_scope` / `historical_reuse` | `tiers=historical_reuse:t2,t3,t4; scope=explicit` |
+| 22 | Report rebuildable from a formal evidence archive | ✅ | sha256 `bb6b1b06bb3e891e…`, 96 records, https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst | `archive_manifest; sha256=bb6b1b06bb3e891e; url=https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst` |
+| 23 | README statements match the evidence | ✅ | generated block plus explicit historical T3/T4 statement | `summary=beta-summary.json; readme_block=README_VALIDATION.md` |
+| 24 | No secrets/model weights/temporary probes/attic in the release | ✅ | hygiene/distribution checks; archive excludes weights, trajectories and attic | `hygiene=repository_hygiene,distribution_manifest,rename_guard` |
 
-Scope note: T3 accuracy and T4 static workflows remain historical evidence and are not claimed as current-HEAD; the GPU `t5h` saddle workflow is outside the four-backend smoke and is covered by the CPU/analytic known-answer layer.
+Scope note: tier(s) `t2, t3, t4` were not run in this campaign or produced no current records; their historical evidence is listed separately and is not part of the current-commit claim. The GPU `t5h` saddle workflow is outside the four-backend smoke and is covered by the CPU/analytic known-answer layer.
 
 ## T1: inference (energy / forces / stress)
 
@@ -60,12 +60,9 @@ Scope note: T3 accuracy and T4 static workflows remain historical evidence and a
 
 ## T2: invariance, repeatability, A→B→A
 
-Tolerance policy: `max(10 x measured repeatability floor, absolute floor 1e-10 eV / 1e-9 eV/A / 1e-9 eV/A^3)`. The floors are measured per system/profile from repeated identical inference before any transformed comparison.
+Not run in this campaign.
 
-Recorded outcome: the float64 profile (MACE) passes every check bitwise. The upstream-float32 builds (DPA, UMA) show 1e-7..1e-6 eV coordinate-order arithmetic noise across most transformed comparisons. GRACE passes all four-system invariance checks with the mliport neighbor cache ON (energy deltas 0..1e-14 eV); with the cache OFF the same noise appears on most checks. These failures are recorded as-is, not hidden.
-
-| profile | records | by status |
-|---|---|---|
+Historical evidence exists for this tier; it is listed in the historical section and is not part of this campaign's claim.
 
 ## T2fd: force/stress vs finite-difference derivatives
 
@@ -78,86 +75,15 @@ Recorded outcome: the float64 profile (MACE) passes every check bitwise. The ups
 
 ## T3: OMat24 held-out evaluation
 
-not_run.
+Not run in this campaign.
+
+Historical evidence exists for this tier; it is listed in the historical section and is not part of this campaign's claim.
 
 ## T4: static workflows
 
-Two harness defects were found while rendering this report and fixed with regression tests; the affected records were archived under `.validation-work/attic/` and regenerated on CPU (the `device` field of each fresh record says cpu): (1) t4_thermo once summed the 8x8x8 q-grid without the 1/N_q normalization, inflating ZPE/Cv/S/F by 512x -- the phonon normal modes themselves were never affected; (2) the relaxed-ion elastic path once discarded the relaxed structure, making the t4d relaxed-ion records duplicate the clamped-ion values.
+Not run in this campaign.
 
-### Ionic relaxation (fixed cell, FIRE / LBFGS)
-
-| system | FIRE: status (fmax, steps) | LBFGS: status (fmax, steps) | optimizer agreement |
-|---|---|---|---|
-| cu_fcc | — | — | not_run (dE None eV, both converged None) |
-| si_diamond | — | — | not_run (dE None eV, both converged None) |
-| mgo_rocksalt | — | — | not_run (dE None eV, both converged None) |
-| na3ps4 | — | — | not_run (dE None eV, both converged None) |
-
-### Cell relaxation (FrechetCellFilter, requires stress + 3D PBC)
-
-| system | status (dV, dE) |
-|---|---|
-| cu_fcc | not_run |
-| si_diamond | not_run |
-| mgo_rocksalt | not_run |
-| na3ps4 | not_run |
-
-### Equation of state (Birch-Murnaghan B0 in GPa / V0 in A^3)
-
-| system | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| cu_fcc | — | — | — | — |
-| si_diamond | — | — | — | — |
-| mgo_rocksalt | — | — | — | — |
-
-### Cubic elastic constants (GPa, finite-strain fits)
-
-| system | variant | mace | dpa | grace | uma |
-|---|---|---|---|---|---|
-| cu_fcc | clamped | — | — | — | — |
-| cu_fcc | relaxed | — | — | — | — |
-| si_diamond | clamped | — | — | — | — |
-| si_diamond | relaxed | — | — | — | — |
-
-### Harmonic phonons (min Gamma frequency, ASR-corrected; min over supercell/displacement variants)
-
-| system | mace | dpa | grace | uma | robust imaginary |
-|---|---|---|---|---|---|
-| cu_fcc | — | — | — | — |  |
-| si_diamond | — | — | — | — |  |
-
-### Harmonic thermodynamics (per phonon unit cell, q-averaged over the 8x8x8 MP grid; worst variant shown)
-
-| system | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| cu_fcc | — | — | — | — |
-| si_diamond | — | — | — | — |
-
-### Cu vacancy energy (relaxed, eV; finite-size trend)
-
-| supercell | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| Cu 2x2x2 | — | — | — | — |
-| Cu 3x3x3 | — | — | — | — |
-| Cu 4x4x4 | — | — | — | — |
-
-### Cu(111) surface energy (relaxed, J/m^2)
-
-| slab | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| 4L_10A | — | — | — | — |
-| 4L_15A | — | — | — | — |
-| 6L_10A | — | — | — | — |
-| 6L_15A | — | — | — | — |
-| 8L_10A | — | — | — | — |
-| 8L_15A | — | — | — | — |
-
-### Conditional reference energies (OMat24 exact refs)
-
-| case | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| Cu cohesive | not_run | not_run | not_run | not_run |
-| formation (exact refs) | not_run | not_run | not_run | not_run |
+Historical evidence exists for this tier; it is listed in the historical section and is not part of this campaign's claim.
 
 ## T5: NEB and saddle validation
 
@@ -238,6 +164,25 @@ dpa: T std 50.8 K, drift -0.000485 eV/atom/ps<br>grace: T std 49.3 K, drift 0.00
 |---|---|---|---|---|
 | 128 | 19 / 2.43e+03 | 6.31 / 808 | 76.3 / 9.76e+03 | 8.14 / 1.04e+03 |
 | 512 | 7.1 / 3.63e+03 | 5.96 / 3.05e+03 | 32.3 / 1.66e+04 | 4.66 / 2.38e+03 |
+
+## Historical evidence not in this campaign
+
+| tier | records | campaign | software commit | reason |
+|---|---|---|---|---|
+| t1 | 3 | untagged | `360e1d2034e7...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t1 | 12 | untagged | `7cfce9f908fe...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t2 | 120 | untagged | `05e548c41f8e...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t2fd | 41 | untagged | `05e548c41f8e...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t3 | 4 | untagged | `7b22280d5eb7...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t4 | 112 | untagged | `293c1ed36f6a...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t4 | 200 | untagged | `38abb85d87c9...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t5 | 36 | untagged | `e08ab41788ee...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t6 | 6 | untagged | `b79f0d0c7947...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t6 | 18 | untagged | `c676c7d2f1ac...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t7 | 40 | untagged | `293c1ed36f6a...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t8 | 20 | untagged | `7cfce9f908fe...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+
+These records are metadata only: they are not rendered in the current tier tables and do not support a current-commit claim.
 
 ## Support matrix (section 39 classification)
 

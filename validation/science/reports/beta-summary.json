@@ -4,14 +4,16 @@
   "code_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
   "versions": {
     "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-    "validation_code_commit": "a0d677b0660b76aee9a3e90ae08e5e24873124a4",
-    "report_generator_commit": "a0d677b0660b76aee9a3e90ae08e5e24873124a4",
+    "target_software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+    "validation_code_commit": "42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee",
+    "report_generator_commit": "42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee",
     "evidence_campaign": "20260913-current-head-5f8d91d",
     "evidence_source_commits": [
       "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
     ],
-    "scientific_revalidation_status": "current_head_revalidated",
+    "scientific_revalidation_status": "target_commit_revalidated",
     "status_reason": "campaign manifest declares completion and every record was produced at the target software commit",
+    "repository_head_at_render_time": "42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee",
     "validation_logic_version": 1
   },
   "model_profiles": {
@@ -22,54 +24,189 @@
   },
   "tiers": {
     "t1": {
+      "scope": "current_campaign",
       "records": 12,
       "by_status": {
         "pass": 12
-      }
+      },
+      "campaign_id": "20260913-current-head-5f8d91d",
+      "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+      "historical_records": 15,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "360e1d2034e74d55133cb6e152d062c24867245b",
+          "records": 3,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        },
+        {
+          "campaign_id": "untagged",
+          "software_commit": "7cfce9f908feedcc64e790d6eb893fe3b02b6e5d",
+          "records": 12,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "12 current-campaign record(s)"
     },
     "t2": {
+      "scope": "historical_reuse",
       "records": 0,
-      "by_status": {}
+      "by_status": {},
+      "campaign_id": null,
+      "software_commit": null,
+      "historical_records": 120,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "05e548c41f8e863f0121702d2c8cc3c60ca8add0",
+          "records": 120,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "not run in this campaign; 120 historical record(s) kept out of the current tables"
     },
     "t2fd": {
+      "scope": "current_campaign",
       "records": 32,
       "by_status": {
         "characterized": 32
-      }
+      },
+      "campaign_id": "20260913-current-head-5f8d91d",
+      "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+      "historical_records": 41,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "05e548c41f8e863f0121702d2c8cc3c60ca8add0",
+          "records": 41,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "32 current-campaign record(s)"
     },
     "t3": {
+      "scope": "historical_reuse",
       "records": 0,
-      "by_status": {}
+      "by_status": {},
+      "campaign_id": null,
+      "software_commit": null,
+      "historical_records": 4,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "7b22280d5eb723a0a9edde0ebf8d925bf410a341",
+          "records": 4,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "not run in this campaign; 4 historical record(s) kept out of the current tables"
     },
     "t4": {
+      "scope": "historical_reuse",
       "records": 0,
-      "by_status": {}
+      "by_status": {},
+      "campaign_id": null,
+      "software_commit": null,
+      "historical_records": 312,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc",
+          "records": 112,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        },
+        {
+          "campaign_id": "untagged",
+          "software_commit": "38abb85d87c92799b9b370758c9f920b4e982cbc",
+          "records": 200,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "not run in this campaign; 312 historical record(s) kept out of the current tables"
     },
     "t5": {
+      "scope": "current_campaign",
       "records": 12,
       "by_status": {
         "pass": 12
-      }
+      },
+      "campaign_id": "20260913-current-head-5f8d91d",
+      "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+      "historical_records": 36,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "e08ab41788ee17aa2dc924271230ae21ad01c4e8",
+          "records": 36,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "12 current-campaign record(s)"
     },
     "t6": {
+      "scope": "current_campaign",
       "records": 8,
       "by_status": {
         "characterized": 3,
         "pass": 5
-      }
+      },
+      "campaign_id": "20260913-current-head-5f8d91d",
+      "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+      "historical_records": 24,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "b79f0d0c7947ccada2cd60b384a2701060e7d2f2",
+          "records": 6,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        },
+        {
+          "campaign_id": "untagged",
+          "software_commit": "c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f",
+          "records": 18,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "8 current-campaign record(s)"
     },
     "t7": {
+      "scope": "current_campaign",
       "records": 12,
       "by_status": {
         "characterized": 8,
         "pass": 4
-      }
+      },
+      "campaign_id": "20260913-current-head-5f8d91d",
+      "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+      "historical_records": 40,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc",
+          "records": 40,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "12 current-campaign record(s)"
     },
     "t8": {
+      "scope": "current_campaign",
       "records": 20,
       "by_status": {
         "pass": 20
-      }
+      },
+      "campaign_id": "20260913-current-head-5f8d91d",
+      "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+      "historical_records": 20,
+      "historical_sources": [
+        {
+          "campaign_id": "untagged",
+          "software_commit": "7cfce9f908feedcc64e790d6eb893fe3b02b6e5d",
+          "records": 20,
+          "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
+        }
+      ],
+      "summary": "20 current-campaign record(s)"
     }
   },
   "omat24": {},
@@ -864,61 +1001,61 @@
       "workflow": "Ionic relaxation",
       "mliport_status": "native",
       "beta_status": "not_run",
-      "evidence": "Cu/Si/MgO/Na3PS4"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Cell relaxation",
       "mliport_status": "native when stress + 3D PBC",
       "beta_status": "not_run",
-      "evidence": "FrechetCellFilter cases"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "EOS / bulk modulus",
       "mliport_status": "validation recipe",
       "beta_status": "not_run",
-      "evidence": "Cu/Si/MgO"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Elastic constants",
       "mliport_status": "validation recipe",
       "beta_status": "not_run",
-      "evidence": "cubic finite strain, clamped vs relaxed ions"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Harmonic phonons",
       "mliport_status": "validation recipe",
       "beta_status": "not_run",
-      "evidence": "Cu/Si"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Vibrational thermodynamics",
       "mliport_status": "validation recipe",
       "beta_status": "not_run",
-      "evidence": "harmonic only, q-averaged"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Vacancy energy",
       "mliport_status": "validation recipe",
       "beta_status": "not_run",
-      "evidence": "Cu finite-size trend"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Interstitial",
       "mliport_status": "characterization",
       "beta_status": "not_run",
-      "evidence": "optional OOD; not exercised in beta"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Surface energy",
       "mliport_status": "characterization",
       "beta_status": "not_run",
-      "evidence": "Cu(111) convergence"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Formation energy",
       "mliport_status": "conditional",
       "beta_status": "not_run",
-      "evidence": "only exact OMat references"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "NEB",
@@ -936,7 +1073,7 @@
       "workflow": "Saddle Hessian",
       "mliport_status": "validation recipe",
       "beta_status": "not_run",
-      "evidence": "Cu vacancy candidate"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "NVE MD",
@@ -978,7 +1115,7 @@
       "workflow": "Arrhenius",
       "mliport_status": "native analysis",
       "beta_status": "not_run",
-      "evidence": "synthetic; physical conditional"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "Band structure/DOS",

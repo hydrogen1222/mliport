@@ -2,11 +2,11 @@
 
 由 `.validation-work` 下的证据记录生成；证据对应提交 `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`。本文档全部表格由 `validation/science/scripts/generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成并 diff，不要手工编辑。
 
-重新认证状态：**current_head_revalidated** —— campaign manifest declares completion and every record was produced at the target software commit
+重新认证状态：**target_commit_revalidated** —— campaign manifest declares completion and every record was produced at the target software commit
 
 - software_commit（声称被验证）：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
-- validation_code_commit：`a0d677b0660b76aee9a3e90ae08e5e24873124a4`
-- report_generator_commit：`a0d677b0660b76aee9a3e90ae08e5e24873124a4`
+- validation_code_commit：`42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee`
+- report_generator_commit：`42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee`
 - evidence_campaign：`20260913-current-head-5f8d91d`
 - evidence_source_commits：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
 
@@ -18,34 +18,34 @@
 - 被验证软件提交：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
 - 证据 campaign：`20260913-current-head-5f8d91d`，96 条记录（53 pass / 43 characterized / 0 fail / 0 blocked）
 
-| # | 条目 | 状态 | 证据 |
-|---|---|---|---|
-| 1 | 新项目名无已知同领域 namespace collision | ✅ | `mliport` 在 PyPI 镜像与 GitHub 搜索均可用；仓库已改名 `hydrogen1222/mliport` |
-| 2 | Python package / CLI / repo identity 完成迁移 | ✅ | 改名提交链；clean break，旧 `mlipx` import 不再发布 |
-| 3 | 目标提交 CI 3.10/3.11/3.12 全绿 | ✅ | `5f8d91d4` 及后续提交的 tests/lint/package-build 全绿 |
-| 4 | wheel clean install 全绿 | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke |
-| 5 | strict evidence loader 唯一 | ✅ | `validation/science/evidence/` + report 不得直接读 raw record 的静态测试 |
-| 6 | report/README 不再直接解释 raw records | ✅ | 报告与 figures 全部消费 `load_evidence`；README block 机器渲染 |
-| 7 | malformed evidence fail-closed | ✅ | V01-T5/T6/T7 测试；report 退出码 2/3；archive builder 拒绝 |
-| 8 | profile identity 不混 precision/model/commit | ✅ | V01-T2/T3/T4；engine 单元格显示 `mixed` 并附 `worst_status` |
-| 9 | current campaign manifest 固定 | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` |
-| 10 | MACE/DPA/GRACE/UMA current-head GPU smoke | ✅ | 4 个后端 x t1/t2/t2fd/t3/t4/t5/t6/t7/t8 |
-| 11 | repeat inference current-head | ✅ | T1 记录包含各后端的 repeat inference 指标 |
-| 12 | FD current-head / 证据重分类 | ✅ | T2FD：32 条记录 |
-| 13 | saddle 当前语义 | ⚠️ | CPU/解析 known-answer 层全绿；GPU `t5h` 未纳入四后端 smoke |
-| 14 | NEB fixed-band validation | ✅ | 全 image 约束校验 + 回归测试 |
-| 15 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract 测试；T7 transport 使用 `exact_unwrapped`（12 条） |
-| 16 | GEMDAT backend error 不再变物理 0 | ✅ | PR-C 状态合同；T7 12 条记录 |
-| 17 | alpha weighting/validity 收口 | ✅ | local Δlog(t) 权重 + finite & valid summary |
-| 18 | analysis version bump | ✅ | alpha estimator `/2`；task revision msd 7 / transport 6 |
-| 19 | T7 transport 重算 | ✅ | 12 条 T7 记录（md/transport/gemdat） |
-| 20 | T8 按新身份重跑/重建 | ✅ | 20 条 T8 记录 |
-| 21 | historical reused evidence 明确标识 | ✅ | version block + campaign scope 的 `not_in_scope` / `historical_reuse` |
-| 22 | report 可从正式 evidence archive 重建 | ✅ | sha256 `bb6b1b06bb3e891e…`，96 条记录，https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst |
-| 23 | README 声明与证据一致 | ✅ | 生成块 + 明确的历史 T3/T4 声明 |
-| 24 | 无 secret/model weights/临时 probe/attic 污染发行包 | ✅ | hygiene/distribution 检查；archive 排除权重、轨迹与 attic |
+| # | 条目 | 状态 | 证据 | evidence query |
+|---|---|---|---|---|
+| 1 | 新项目名无已知同领域 namespace collision | ✅ | `mliport` 在 PyPI 镜像与 GitHub 搜索均可用；仓库已改名 `hydrogen1222/mliport` | `external=pypi:mliport,github:hydrogen1222/mliport` |
+| 2 | Python package / CLI / repo identity 完成迁移 | ✅ | 改名提交链；clean break，旧 `mlipx` import 不再发布 | `canonical=record_counts; scope=current_campaign` |
+| 3 | 目标提交 CI 3.10/3.11/3.12 全绿 | ✅ | `5f8d91d4` 及后续提交的 tests/lint/package-build 全绿 | `ci=github_actions:tests,lint,package-build; python=3.10,3.11,3.12; commit=5f8d91d4` |
+| 4 | wheel clean install 全绿 | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke | `ci=wheel-install-smoke; python=3.10,3.11,3.12` |
+| 5 | strict evidence loader 唯一 | ✅ | `validation/science/evidence/` + report 不得直接读 raw record 的静态测试 | `loader=evidence.load_evidence; raw_selection=forbidden` |
+| 6 | report/README 不再直接解释 raw records | ✅ | 报告与 figures 全部消费 `load_evidence`；README block 机器渲染 | `renderer=generate_beta_report; readme_block=generated` |
+| 7 | malformed evidence fail-closed | ✅ | V01-T5/T6/T7 测试；report 退出码 2/3；archive builder 拒绝 | `tests=V01-T5,V01-T6,V01-T7; exit_codes=2,3` |
+| 8 | profile identity 不混 precision/model/commit | ✅ | V01-T2/T3/T4；engine 单元格显示 `mixed` 并附 `worst_status` | `tests=V01-T2,V01-T3,V01-T4; identity=precision,model,commit` |
+| 9 | current campaign manifest 固定 | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` | `campaign_manifest=20260913-current-head-5f8d91d; status=complete` |
+| 10 | MACE/DPA/GRACE/UMA target-commit GPU smoke | ✅ | 4 个后端 x t1/t2fd/t5/t6/t7/t8 | `tier_records=t1,t2fd,t5,t6,t7,t8; engines=DPA,GRACE,MACE,UMA` |
+| 11 | repeat inference target-commit | ✅ | T1 记录包含各后端的 repeat inference 指标 | `tier=t1; metric=repeat_inference` |
+| 12 | FD target-commit / 证据重分类 | ✅ | T2FD：32 条记录 | `tier=t2fd; records=32` |
+| 13 | saddle 当前语义 | ⚠️ | CPU/解析 known-answer 层全绿；GPU `t5h` 未纳入四后端 smoke | `workflow=t5h; layer=cpu_known_answer` |
+| 14 | NEB fixed-band validation | ✅ | 全 image 约束校验 + 回归测试 | `tier=t5; checks=fixed_band,constraint` |
+| 15 | kinisi skew / exact-unwrap known-answer | ✅ | PR-E contract 测试；T7 transport 使用 `exact_unwrapped`（12 条） | `tests=PR-E; tier=t7; contract=exact_unwrapped` |
+| 16 | GEMDAT backend error 不再变物理 0 | ✅ | PR-C 状态合同；T7 12 条记录 | `tier=t7; status_contract=gemdat_backend_error` |
+| 17 | alpha weighting/validity 收口 | ✅ | local Δlog(t) 权重 + finite & valid summary | `analysis=alpha; version=2` |
+| 18 | analysis version bump | ✅ | alpha estimator `/2`；task revision msd 7 / transport 6 | `analysis=msd,transport; revisions=msd:7,transport:6` |
+| 19 | T7 transport 重算 | ✅ | 12 条 T7 记录（md/transport/gemdat） | `tier=t7; records=12` |
+| 20 | T8 按新身份重跑/重建 | ✅ | 20 条 T8 记录 | `tier=t8; records=20` |
+| 21 | historical reused evidence 明确标识 | ✅ | version block + campaign scope 的 `not_in_scope` / `historical_reuse` | `tiers=historical_reuse:t2,t3,t4; scope=explicit` |
+| 22 | report 可从正式 evidence archive 重建 | ✅ | sha256 `bb6b1b06bb3e891e…`，96 条记录，https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst | `archive_manifest; sha256=bb6b1b06bb3e891e; url=https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst` |
+| 23 | README 声明与证据一致 | ✅ | 生成块 + 明确的历史 T3/T4 声明 | `summary=beta-summary.json; readme_block=README_VALIDATION.md` |
+| 24 | 无 secret/model weights/临时 probe/attic 污染发行包 | ✅ | hygiene/distribution 检查；archive 排除权重、轨迹与 attic | `hygiene=repository_hygiene,distribution_manifest,rename_guard` |
 
-范围说明：T3 精度与 T4 静态工作流保持历史证据，不作为 current-HEAD 声明；GPU `t5h` saddle 工作流不在四后端 smoke 范围内，其语义由 CPU/解析 known-answer 层覆盖。
+范围说明:tier `t2, t3, t4` 不在当前 campaign 内运行或不产出当前记录,其历史记录只列在 historical 小节,不作为当前提交声明;GPU `t5h` saddle 工作流不在四后端 smoke 范围内,其语义由 CPU/解析 known-answer 层覆盖。
 
 ## T1: inference (energy / forces / stress)
 
@@ -58,12 +58,9 @@
 
 ## T2: invariance, repeatability, A→B→A
 
-Tolerance policy: `max(10 x measured repeatability floor, absolute floor 1e-10 eV / 1e-9 eV/A / 1e-9 eV/A^3)`. The floors are measured per system/profile from repeated identical inference before any transformed comparison.
+Not run in this campaign.
 
-Recorded outcome: the float64 profile (MACE) passes every check bitwise. The upstream-float32 builds (DPA, UMA) show 1e-7..1e-6 eV coordinate-order arithmetic noise across most transformed comparisons. GRACE passes all four-system invariance checks with the mliport neighbor cache ON (energy deltas 0..1e-14 eV); with the cache OFF the same noise appears on most checks. These failures are recorded as-is, not hidden.
-
-| profile | records | by status |
-|---|---|---|
+Historical evidence exists for this tier; it is listed in the historical section and is not part of this campaign's claim.
 
 ## T2fd: force/stress vs finite-difference derivatives
 
@@ -76,86 +73,15 @@ Recorded outcome: the float64 profile (MACE) passes every check bitwise. The ups
 
 ## T3: OMat24 held-out evaluation
 
-not_run.
+Not run in this campaign.
+
+Historical evidence exists for this tier; it is listed in the historical section and is not part of this campaign's claim.
 
 ## T4: static workflows
 
-Two harness defects were found while rendering this report and fixed with regression tests; the affected records were archived under `.validation-work/attic/` and regenerated on CPU (the `device` field of each fresh record says cpu): (1) t4_thermo once summed the 8x8x8 q-grid without the 1/N_q normalization, inflating ZPE/Cv/S/F by 512x -- the phonon normal modes themselves were never affected; (2) the relaxed-ion elastic path once discarded the relaxed structure, making the t4d relaxed-ion records duplicate the clamped-ion values.
+Not run in this campaign.
 
-### Ionic relaxation (fixed cell, FIRE / LBFGS)
-
-| system | FIRE: status (fmax, steps) | LBFGS: status (fmax, steps) | optimizer agreement |
-|---|---|---|---|
-| cu_fcc | — | — | not_run (dE None eV, both converged None) |
-| si_diamond | — | — | not_run (dE None eV, both converged None) |
-| mgo_rocksalt | — | — | not_run (dE None eV, both converged None) |
-| na3ps4 | — | — | not_run (dE None eV, both converged None) |
-
-### Cell relaxation (FrechetCellFilter, requires stress + 3D PBC)
-
-| system | status (dV, dE) |
-|---|---|
-| cu_fcc | not_run |
-| si_diamond | not_run |
-| mgo_rocksalt | not_run |
-| na3ps4 | not_run |
-
-### Equation of state (Birch-Murnaghan B0 in GPa / V0 in A^3)
-
-| system | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| cu_fcc | — | — | — | — |
-| si_diamond | — | — | — | — |
-| mgo_rocksalt | — | — | — | — |
-
-### Cubic elastic constants (GPa, finite-strain fits)
-
-| system | variant | mace | dpa | grace | uma |
-|---|---|---|---|---|---|
-| cu_fcc | clamped | — | — | — | — |
-| cu_fcc | relaxed | — | — | — | — |
-| si_diamond | clamped | — | — | — | — |
-| si_diamond | relaxed | — | — | — | — |
-
-### Harmonic phonons (min Gamma frequency, ASR-corrected; min over supercell/displacement variants)
-
-| system | mace | dpa | grace | uma | robust imaginary |
-|---|---|---|---|---|---|
-| cu_fcc | — | — | — | — |  |
-| si_diamond | — | — | — | — |  |
-
-### Harmonic thermodynamics (per phonon unit cell, q-averaged over the 8x8x8 MP grid; worst variant shown)
-
-| system | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| cu_fcc | — | — | — | — |
-| si_diamond | — | — | — | — |
-
-### Cu vacancy energy (relaxed, eV; finite-size trend)
-
-| supercell | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| Cu 2x2x2 | — | — | — | — |
-| Cu 3x3x3 | — | — | — | — |
-| Cu 4x4x4 | — | — | — | — |
-
-### Cu(111) surface energy (relaxed, J/m^2)
-
-| slab | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| 4L_10A | — | — | — | — |
-| 4L_15A | — | — | — | — |
-| 6L_10A | — | — | — | — |
-| 6L_15A | — | — | — | — |
-| 8L_10A | — | — | — | — |
-| 8L_15A | — | — | — | — |
-
-### Conditional reference energies (OMat24 exact refs)
-
-| case | mace | dpa | grace | uma |
-|---|---|---|---|---|
-| Cu cohesive | not_run | not_run | not_run | not_run |
-| formation (exact refs) | not_run | not_run | not_run | not_run |
+Historical evidence exists for this tier; it is listed in the historical section and is not part of this campaign's claim.
 
 ## T5: NEB and saddle validation
 
@@ -236,6 +162,25 @@ dpa: T std 50.8 K, drift -0.000485 eV/atom/ps<br>grace: T std 49.3 K, drift 0.00
 |---|---|---|---|---|
 | 128 | 19 / 2.43e+03 | 6.31 / 808 | 76.3 / 9.76e+03 | 8.14 / 1.04e+03 |
 | 512 | 7.1 / 3.63e+03 | 5.96 / 3.05e+03 | 32.3 / 1.66e+04 | 4.66 / 2.38e+03 |
+
+## 不在当前 campaign 内的历史证据
+
+| tier | 记录数 | campaign | software commit | 未重跑原因 |
+|---|---|---|---|---|
+| t1 | 3 | untagged | `360e1d2034e7...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t1 | 12 | untagged | `7cfce9f908fe...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t2 | 120 | untagged | `05e548c41f8e...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t2fd | 41 | untagged | `05e548c41f8e...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t3 | 4 | untagged | `7b22280d5eb7...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t4 | 112 | untagged | `293c1ed36f6a...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t4 | 200 | untagged | `38abb85d87c9...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t5 | 36 | untagged | `e08ab41788ee...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t6 | 6 | untagged | `b79f0d0c7947...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t6 | 18 | untagged | `c676c7d2f1ac...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t7 | 40 | untagged | `293c1ed36f6a...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+| t8 | 20 | untagged | `7cfce9f908fe...` | not re-run in the current campaign; kept as historical evidence and excluded from current tables |
+
+这些记录仅作为元数据列出:不会渲染进当前 tier 表格,也不构成对当前提交的验证声明。
 
 ## Support matrix (section 39 classification)
 

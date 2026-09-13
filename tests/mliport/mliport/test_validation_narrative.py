@@ -239,3 +239,83 @@ def test_every_go_item_has_a_resolvable_evidence_query(generated_report):
     )
     for tier in historical:
         assert tier in historical_note, tier
+
+# ------------------------------------------------- real committed artifacts
+def _committed_summary() -> dict:
+    return json.loads(
+        (REPO / "validation" / "science" / "reports" / "beta-summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+
+def _readme_block(text: str) -> str:
+    start_marker = (
+        "<!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->"
+    )
+    end_marker = "<!-- END GENERATED -->"
+    start = text.index(start_marker)
+    end = text.index(end_marker, start)
+    return text[start:end]
+
+
+def test_committed_report_uses_target_commit_naming_and_scopes():
+    summary = _committed_summary()
+    versions = summary["versions"]
+    assert versions["scientific_revalidation_status"] == "target_commit_revalidated"
+    assert versions["target_software_commit"] == "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
+    assert versions["evidence_campaign"] == "20260913-current-head-5f8d91d"
+    assert versions["repository_head_at_render_time"]
+    for tier in ("t2", "t3", "t4"):
+        assert summary["tiers"][tier]["scope"] == "historical_reuse", tier
+        assert summary["tiers"][tier]["records"] == 0, tier
+        assert summary["tiers"][tier]["historical_records"] > 0, tier
+        assert summary["tiers"][tier]["historical_sources"], tier
+    for tier in ("t1", "t2fd", "t5", "t6", "t7", "t8"):
+        assert summary["tiers"][tier]["scope"] == "current_campaign", tier
+
+
+def test_committed_report_keeps_historical_narrative_out_of_current_tiers():
+    english = (REPO / "validation" / "science" / "reports" / "BETA_VALIDATION.md").read_text(
+        encoding="utf-8"
+    )
+    assert "current_head_revalidated" not in english
+    t2 = _section(english, "## T2:", "## T2fd:")
+    assert "Not run in this campaign." in t2
+    assert "bitwise" not in t2 and "arithmetic noise" not in t2
+    t3 = _section(english, "## T3:", "## T4:")
+    assert "Not run in this campaign." in t3
+    assert "MAE" not in t3
+    t4 = _section(english, "## T4:", "## T5:")
+    assert "Not run in this campaign." in t4
+    assert "harness defects" not in t4 and "| system |" not in t4
+    historical = _section(
+        english, "## Historical evidence not in this campaign", "## Support matrix"
+    )
+    for tier in ("t2", "t3", "t4"):
+        assert f"| {tier} |" in historical, tier
+    assert "excluded from current tables" in historical
+
+
+def test_committed_readmes_consume_the_generated_metadata():
+    summary = _committed_summary()
+    versions = summary["versions"]
+    for name in ("README.md", "README_CN.md"):
+        text = (REPO / name).read_text(encoding="utf-8")
+        block = _readme_block(text)
+        assert versions["evidence_campaign"] in block, name
+        assert versions["target_software_commit"][:8] in block, name
+        prose = text.replace(block, "")
+        assert "current_head_revalidated" not in prose, name
+        for contradiction in ("T8 historical", "T3 current", "current-HEAD"):
+            assert contradiction not in prose, name
+
+
+def test_committed_summary_matches_generated_report_block():
+    summary = _committed_summary()
+    snippet = (
+        REPO / "validation" / "science" / "reports" / "README_VALIDATION.md"
+    ).read_text(encoding="utf-8")
+    assert summary["versions"]["evidence_campaign"] in snippet
+    assert summary["versions"]["target_software_commit"][:8] in snippet
+    assert "current_head_revalidated" not in snippet
