@@ -125,7 +125,9 @@ class ConfigScreen(Screen):
                         ("DPA (DeepMD-kit)", "dpa"),
                         ("GRACE", "grace"),
                     ],
-                    value=self.app.get_config("model_type", "uma"),
+                    prompt="Select a backend (required)",
+                    allow_blank=True,
+                    value=self.app.get_config("model_type") or Select.NULL,
                     id="model-type-select",
                 )
 
@@ -285,25 +287,26 @@ class ConfigScreen(Screen):
                 return str(sel.value)
         except Exception:
             pass
-        return str(self.app.get_config("model_type", "uma"))
+        return str(self.app.get_config("model_type", "") or "")
 
     def _task_options(self):
         """Task options for the current model engine."""
         return (
             self.UMA_TASKS
-            if self._current_model_type() == "uma"
+            if self._current_model_type() in {"uma", "fairchem"}
             else self.GENERIC_TASKS
         )
 
-    def _default_task_value(self) -> str:
-        """Default task value for the current model engine."""
-        current = str(self.app.get_config("task", "omat"))
+    def _default_task_value(self):
+        """Default task value for the current engine (blank if no backend)."""
+        current = str(self.app.get_config("task", "") or "")
         valid = {v for _, v in self._task_options()}
-        return (
-            current
-            if current in valid
-            else ("omat" if self._current_model_type() == "uma" else "bulk")
-        )
+        if current in valid:
+            return current
+        model_type = self._current_model_type()
+        if not model_type:
+            return Select.NULL
+        return "omat" if model_type in {"uma", "fairchem"} else "bulk"
 
     def _current_task(self) -> str:
         """Task from the select widget (or app config fallback)."""

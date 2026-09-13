@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from mliport.backend_selection import default_task_for, normalize_model_type
 from mliport.config.provenance import SourceLocation
 
 if TYPE_CHECKING:
@@ -88,9 +89,20 @@ def parse_model_aliases(
         if not name:
             continue
         items = _parse_section_items(dict(parser.items(section)))
-        engine = str(items.pop("engine", "uma")).lower()
+        engine_raw = items.pop("engine", None)
+        if engine_raw is None or not str(engine_raw).strip():
+            raise ValueError(
+                f"model alias [{section}] must declare "
+                "engine = uma|mace|dpa|grace (there is no default backend)"
+            )
+        engine = normalize_model_type(engine_raw)
         path = str(items.pop("path", ""))
-        task = str(items.pop("task", "bulk")).lower()
+        task_raw = items.pop("task", None)
+        task = (
+            str(task_raw).strip().lower()
+            if task_raw is not None and str(task_raw).strip()
+            else default_task_for(engine)
+        )
         value_origins: dict[str, SourceLocation] = {}
         origin_map = origins or {}
         for raw_key, canonical in (

@@ -31,15 +31,16 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mliport.backend_selection import (
+    SUPPORTED_TYPES,
+    UMA_ALIASES,
+    require_model_type,
+)
 from mliport.base_calculator import BaseMLIPCalculator
 
 if TYPE_CHECKING:
     from typing import Any
 
-
-# Engine type aliases. ``fairchem`` is accepted as a synonym for ``uma``.
-UMA_ALIASES = {"uma", "fairchem"}
-SUPPORTED_TYPES = {"uma", "fairchem", "mace", "dpa", "grace"}
 
 # Calculator-option keys each engine actually consumes. Keys that belong to a
 # *different* engine are dropped with a warning (benign cross-engine leftover);
@@ -140,7 +141,7 @@ class CalculatorFactory:
             ValueError: If ``model_type`` is not supported, or (in strict mode)
                 an unknown engine-specific option is supplied.
         """
-        m_type = (model_type or "uma").lower()
+        m_type = require_model_type(model_type)
         kwargs = _check_unknown_kwargs(m_type, kwargs, strict=strict)
         normalized_task = str(task).strip().lower()
         if m_type not in UMA_ALIASES and normalized_task not in {
@@ -154,7 +155,7 @@ class CalculatorFactory:
             )
 
         if m_type in UMA_ALIASES:
-            from mliport.calculator import UMACalculator  # noqa: PLC0415
+            from mliport.calculators.uma import UMACalculator  # noqa: PLC0415
 
             return UMACalculator(
                 model_path=model_path,

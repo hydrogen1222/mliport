@@ -385,6 +385,8 @@ def test_neb_command_uses_typed_resolver_and_public_engine(
             str(final),
             "--model",
             str(model),
+            "--model-type",
+            "uma",
             "--images",
             "1",
             "--output",
@@ -498,6 +500,12 @@ def test_config_show() -> None:
         old = os.getcwd()
         try:
             os.chdir(d)
+            # the backend contract is fail-closed: no implicit UMA
+            assert main(["config", "show"]) == 1
+            Path("settings.ini").write_text(
+                "[md]\nMODEL_TYPE = UMA\nMODEL_PATH = model.pt\nTASK = omat\n",
+                encoding="utf-8",
+            )
             rc = main(["config", "show"])
             assert rc == 0
         finally:
@@ -573,6 +581,8 @@ def test_md_prints_banner_once(tmp_path, monkeypatch, capsys) -> None:
             str(structure),
             "--model",
             str(model),
+            "--model-type",
+            "uma",
             "--steps",
             "0",
             "--output",
@@ -758,6 +768,7 @@ def test_run_incar_calculation_neb_uses_endpoint_paths(
     incar = tmp_path / "INCAR.mliport"
     incar.write_text(
         "CALCULATION = NEB\n"
+        "MODEL_TYPE = UMA\n"
         "MODEL_PATH = model.pt\n"
         "TASK = omat\n"
         "NEB_INITIAL = POSCAR\n"
@@ -827,6 +838,8 @@ def _run_opt_with_engine(tmp_path, monkeypatch, engine, capsys):
             str(structure),
             "--model",
             str(model),
+            "--model-type",
+            "uma",
             "--output",
             str(tmp_path / "results"),
         ]
@@ -905,6 +918,7 @@ def test_run_incar_unconverged_opt_exits_2(tmp_path, monkeypatch, capsys):
         incar = dpath / "INCAR.mliport"
         incar.write_text(
             "CALC_TYPE = OPT\n"
+            "MODEL_TYPE = UMA\n"
             "MODEL_PATH = model.pt\n"
             "TASK = omat\n"
             "MAX_STEPS = 0\n"
@@ -940,6 +954,7 @@ def test_incar_output_dir_is_supported_and_written_into_job_dir(
     incar = tmp_path / "INCAR.mliport"
     incar.write_text(
         "CALC_TYPE = SP\n"
+        "MODEL_TYPE = UMA\n"
         "MODEL_PATH = model.pt\n"
         "TASK = omat\n"
         "JOB_NAME = job1\n"
@@ -985,6 +1000,7 @@ def test_two_jobs_keep_their_own_resolved_configs(tmp_path, monkeypatch):
         incar = tmp_path / f"INCAR.{name}"
         incar.write_text(
             "CALC_TYPE = SP\n"
+            "MODEL_TYPE = UMA\n"
             "MODEL_PATH = model.pt\n"
             "TASK = omat\n"
             f"JOB_NAME = {name}\n"

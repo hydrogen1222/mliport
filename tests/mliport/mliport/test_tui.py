@@ -151,6 +151,9 @@ async def test_cpu_tui_run_screen_queues_without_mount_error(tmp_path: Path) -> 
             "calc_type": "sp",
             "structure_file": str(structure),
             "model_file": str(model),
+            # explicit backend: the TUI has no implicit UMA default
+            "model_type": "uma",
+            "task": "omat",
             "device": "cpu",
             "output_dir": str(tmp_path / "results"),
         }
@@ -178,6 +181,9 @@ async def test_md_ensemble_and_options_persisted(tmp_path: Path) -> None:
 
     app = MliportApp()
     app.update_config("calc_type", "md")
+    # explicit backend: the TUI has no implicit UMA default
+    app.update_config("model_type", "uma")
+    app.update_config("task", "omat")
 
     async with app.run_test(size=(80, 80)) as pilot:
         config_screen = ConfigScreen()
@@ -276,6 +282,9 @@ async def test_md_values_loaded_from_config() -> None:
 async def test_backend_resource_controls_follow_selected_engine() -> None:
     """TUI exposes resource controls without forwarding invalid cross-engine options."""
     app = MliportApp()
+    # start from an explicit UMA selection, then switch to DPA below
+    app.update_config("model_type", "uma")
+    app.update_config("task", "omat")
 
     async with app.run_test(size=(100, 100)) as pilot:
         config_screen = ConfigScreen()
@@ -352,6 +361,9 @@ async def test_molecular_charge_and_spin_controls_are_task_aware(
     structure.write_text("")
     model.write_text("")
     app = MliportApp()
+    # "omol" is a UMA task family: select the backend explicitly
+    app.update_config("model_type", "uma")
+    app.update_config("task", "omat")
 
     async with app.run_test(size=(100, 100)) as pilot:
         config_screen = ConfigScreen()
@@ -480,6 +492,9 @@ async def test_run_command_contains_only_active_nhc_options() -> None:
 async def test_md_thermostat_controls_are_dynamic_and_task_label_is_accurate() -> None:
     app = MliportApp()
     app.update_config("calc_type", "md")
+    # "Task Type" is the UMA label; select UMA explicitly (then switch to DPA)
+    app.update_config("model_type", "uma")
+    app.update_config("task", "omat")
 
     async with app.run_test(size=(100, 100)) as pilot:
         screen = ConfigScreen()

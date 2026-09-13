@@ -174,8 +174,9 @@ class MliportApp(App):
             "calc_type": "sp",  # sp, opt, md
             "structure_file": None,
             "model_file": None,
-            "model_type": "uma",
-            "task": "omat",
+            # No implicit backend: the user must choose one explicitly.
+            "model_type": "",
+            "task": "",
             "device": "cpu",
             # Molecular electronic state. None preserves structure metadata;
             # UMA omol then falls back to charge=0 / spin multiplicity=1.

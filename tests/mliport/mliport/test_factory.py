@@ -524,8 +524,12 @@ class TestDpaGraceDevice:
 class TestEngineModelType:
     """Tests that EngineConfig model_type flows to the factory."""
 
-    def test_engine_config_has_model_type_default(self):
-        cfg = EngineConfig(calc_type="sp", model_path=Path("uma-s-1.pt"))
+    def test_engine_config_requires_explicit_model_type(self):
+        with pytest.raises(ValueError, match="No MLIP backend was selected"):
+            EngineConfig(calc_type="sp", model_path=Path("uma-s-1.pt"))
+        cfg = EngineConfig(
+            calc_type="sp", model_path=Path("uma-s-1.pt"), model_type="uma"
+        )
         assert cfg.model_type == "uma"
 
     def test_engine_config_custom_model_type(self):

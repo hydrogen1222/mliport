@@ -228,7 +228,11 @@ def test_resolver_path_nve_pre_relax_off():
     for ens, expect in [("NVE", False), ("NVT", True)]:
         resolved = resolve_config(
             calc_type="md",
-            cli={"model_path": "uma-s-1.pt", "ensemble": ens},
+            cli={
+                "model_type": "uma",
+                "model_path": "uma-s-1.pt",
+                "ensemble": ens,
+            },
         )
         # The resolver must not force pre_relax into run_options.
         assert "pre_relax" not in resolved.run_options

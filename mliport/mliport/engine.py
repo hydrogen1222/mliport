@@ -69,8 +69,10 @@ class EngineConfig:
 
     calc_type: Literal["sp", "opt", "md", "neb", "batch"]
     model_path: Path
-    model_type: str = "uma"
-    task: str = "omat"
+    # No implicit backend: EngineConfig() without a model_type fails closed.
+    model_type: str = ""
+    # Task default follows the backend (UMA: omat; others: explicit PBC bulk).
+    task: str = ""
     device: str = "cpu"
     inference_mode: str = "default"
     output_dir: Path = field(default_factory=lambda: Path("./results"))
@@ -84,6 +86,23 @@ class EngineConfig:
     activation_checkpointing: bool | None = None
     strict_config: bool = False
     detach: bool = False
+
+    def __post_init__(self) -> None:
+        from mliport.backend_selection import (  # noqa: PLC0415
+            UMA_ALIASES,
+            default_task_for,
+            require_model_type,
+        )
+
+        self.model_type = require_model_type(self.model_type)
+        task = str(self.task).strip().lower()
+        self.task = task if task else default_task_for(self.model_type)
+        if self.model_type not in UMA_ALIASES and self.task not in {"bulk", "molecule"}:
+            raise ValueError(
+                f"Invalid task {self.task!r} for engine {self.model_type!r}. "
+                "Non-UMA engines require the explicit PBC semantic 'bulk' or "
+                "'molecule'."
+            )
 
     @classmethod
     def from_resolved(cls, resolved: Any) -> EngineConfig:

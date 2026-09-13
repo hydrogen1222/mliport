@@ -17,8 +17,31 @@ from __future__ import annotations
 from mliport.base_calculator import BaseMLIPCalculator
 from mliport.calculators.factory import CalculatorFactory, SUPPORTED_TYPES
 
+# All four backend wrappers are exported symmetrically; they are loaded
+# lazily so importing this package never imports a backend framework.
+_BACKEND_EXPORTS = {
+    "UMACalculator": ".uma",
+    "MACECalculatorWrapper": ".mace_calc",
+    "DPACalculatorWrapper": ".dpa_calc",
+    "GRACECalculatorWrapper": ".grace_calc",
+}
+
+
+def __getattr__(name: str):
+    module = _BACKEND_EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib  # noqa: PLC0415
+
+    return getattr(importlib.import_module(module, __package__), name)
+
+
 __all__ = [
     "BaseMLIPCalculator",
     "CalculatorFactory",
+    "DPACalculatorWrapper",
+    "GRACECalculatorWrapper",
+    "MACECalculatorWrapper",
     "SUPPORTED_TYPES",
+    "UMACalculator",
 ]

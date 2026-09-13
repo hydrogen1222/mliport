@@ -883,6 +883,15 @@ Examples:
         help="Type of template to generate",
     )
     template_parser.add_argument(
+        "--engine",
+        choices=["uma", "fairchem", "mace", "dpa", "grace"],
+        default=None,
+        help=(
+            "Render backend-specific model fields. Omit for a "
+            "backend-neutral template (no implicit UMA default)."
+        ),
+    )
+    template_parser.add_argument(
         "-o",
         "--output",
         type=str,
@@ -2140,7 +2149,7 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 def cmd_template(args: argparse.Namespace) -> int:
     """Execute 'template' command."""
-    config = get_default_config(args.type)
+    config = get_default_config(args.type, engine=args.engine)
 
     output_file = args.output
     if output_file is None:
@@ -2638,7 +2647,13 @@ def _main(argv: list[str] | None = None) -> int:
         print(f"Error: Unknown command: {args.command}")
         return 1
 
-    return handler(args)
+    try:
+        return handler(args)
+    except ValueError as exc:
+        # Configuration/argument errors (including the fail-closed
+        # "no MLIP backend was selected") are user-facing, never a traceback.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

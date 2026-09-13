@@ -31,6 +31,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from mliport.backend_selection import (
+    NO_BACKEND_SELECTED_MESSAGE,
+    default_task_for,
+    normalize_model_type,
+    require_model_type,
+)
 from mliport.config.aliases import (
     resolve_model_alias,
     resolve_profile,
@@ -147,8 +153,10 @@ _CALCULATOR_KEYS_BY_ENGINE: dict[str, set[str]] = {
 }
 
 
-def _is_calculator_key(key: str, model_type: str) -> bool:
-    engine = (model_type or "uma").lower()
+def _is_calculator_key(key: str, model_type: str | None) -> bool:
+    engine = "" if model_type is None else str(model_type).strip().lower()
+    if not engine:
+        return False
     return key in _CALCULATOR_KEYS_BY_ENGINE.get(engine, set())
 
 
@@ -384,7 +392,7 @@ def resolve_config(
     # [engine:*] settings were merged; factory fallbacks such as MACE dtype and
     # GRACE cache policy therefore affected execution but were absent from
     # resolved_config.json.
-    engine_name = "uma"
+    engine_name: str | None = None
     for candidate in (
         settings_layer,
         alias_layer,
@@ -393,7 +401,9 @@ def resolve_config(
         cli_layer,
     ):
         if "model_type" in candidate:
-            engine_name = str(candidate["model_type"].value).lower()
+            engine_name = normalize_model_type(candidate["model_type"].value)
+    if engine_name is None:
+        raise ValueError(NO_BACKEND_SELECTED_MESSAGE)
     engine_builtin_scope = f"calculator.{engine_name}"
     _merge_layer(
         sources,
@@ -439,18 +449,15 @@ def resolve_config(
     _resolve_declared_paths(sources, schema)
 
     # ---- Finalise model-level fields. ----
-    model_type = str(
-        sources.get("model_type", ResolvedValue("uma", "built-in defaults")).value
-    ).lower()
+    model_type = require_model_type(
+        sources["model_type"].value if "model_type" in sources else None
+    )
     model_path_value = sources.get("model_path")
     model_path = str(model_path_value.value) if model_path_value is not None else ""
     task = str(
         sources.get(
             "task",
-            ResolvedValue(
-                "omat" if model_type in {"uma", "fairchem"} else "bulk",
-                "built-in defaults",
-            ),
+            ResolvedValue(default_task_for(model_type), "built-in defaults"),
         ).value
     ).lower()
     device = str(

@@ -165,16 +165,71 @@ def get_default(calc_type: str | None, key: str, default: Any = None) -> Any:
     return default
 
 
-def build_incar_default(calc_type: str) -> str:
+def _neutral_model_section() -> list[str]:
+    """Backend-neutral model section: no implicit UMA (task book 5.2/5.3)."""
+    return [
+        "# No MLIP backend is selected by default. Choose one explicitly:",
+        "MODEL_TYPE = REQUIRED",
+        "MODEL_PATH = REQUIRED",
+        "#",
+        "# Backend examples (fairchem is an alias for uma):",
+        "#   MODEL_TYPE = UMA    TASK = omat    # UMA task family: omat/omol/...",
+        "#   MODEL_TYPE = MACE   TASK = bulk    # optional: HEAD, DEFAULT_DTYPE",
+        "#   MODEL_TYPE = DPA    TASK = bulk    HEAD = Omat24",
+        "#   MODEL_TYPE = GRACE  TASK = bulk    # optional: NEIGHBOR_CACHE",
+    ]
+
+
+def _engine_model_section(engine: str, calc_type: str) -> list[str]:
+    """Engine-specific model fields (only what that backend really needs)."""
+    from mliport.backend_selection import is_uma  # noqa: PLC0415
+
+    normalized = str(engine).strip().lower()
+    lines = [f"MODEL_TYPE = {'UMA' if is_uma(normalized) else normalized.upper()}"]
+    lines.append(
+        "MODEL_PATH = REQUIRED  # absolute path or path relative to settings.ini"
+    )
+    if is_uma(normalized):
+        lines.append("TASK = omat")
+        lines.append("# Molecular tasks only: CHARGE = 0")
+        lines.append("# UMA omol spin multiplicity: SPIN = 1")
+        if calc_type == "md":
+            lines.append("INFERENCE_MODE = turbo")
+        else:
+            lines.append("INFERENCE_MODE = default")
+    elif normalized == "mace":
+        lines.append("TASK = bulk")
+        lines.append("# Optional MACE fields:")
+        lines.append("# HEAD = default")
+        lines.append("# DEFAULT_DTYPE = float64")
+    elif normalized == "dpa":
+        lines.append("TASK = bulk")
+        lines.append("HEAD = Omat24  # branch of the multi-task checkpoint")
+    elif normalized == "grace":
+        lines.append("TASK = bulk")
+        lines.append("# Optional GRACE fields:")
+        lines.append("# NEIGHBOR_CACHE = true")
+        lines.append("# NEIGHBOR_SKIN = 1.5")
+    else:  # pragma: no cover - require_model_type validates before this point
+        lines.append("TASK = bulk")
+    return lines
+
+
+def build_incar_default(calc_type: str, engine: str | None = None) -> str:
     """Build the INCAR template text for ``calc_type`` from the single source.
 
-    Replaces the previously hand-written ``DEFAULT_SP_CONFIG`` /
-    ``DEFAULT_OPT_CONFIG`` / ``DEFAULT_MD_CONFIG`` strings so there is only one
-    place that owns the values (plan section 17.7).
+    ``engine=None`` renders a backend-neutral template: no implicit UMA, the
+    user must select one of the four runtimes.  A specific ``engine`` renders
+    only the fields that backend actually needs (UMA task family vs the
+    explicit ``bulk``/``molecule`` PBC semantics of MACE/DPA/GRACE).
     """
+    from mliport.backend_selection import normalize_model_type  # noqa: PLC0415
+
     calc_type = calc_type.lower()
     if calc_type not in {"sp", "opt", "md", "neb"}:
         raise ValueError(f"Unknown calculation type: {calc_type}")
+    if engine is not None:
+        engine = normalize_model_type(engine)
 
     lines: list[str] = []
     lines.append("# mliport Calculation Settings")
@@ -184,19 +239,14 @@ def build_incar_default(calc_type: str) -> str:
     lines.append("")
     calculation_key = "CALCULATION" if calc_type == "neb" else "CALC_TYPE"
     lines.append(f"{calculation_key} = {calc_type.upper()}")
-    lines.append("TASK = omat")
     lines.append("")
     lines.append("# Model Settings")
-    lines.append("MODEL_TYPE = UMA")
-    lines.append("MODEL_PATH = uma-s-1p2p1.pt")
+    if engine is None:
+        lines.extend(_neutral_model_section())
+    else:
+        lines.extend(_engine_model_section(engine, calc_type))
     device = DEFAULT_DEVICE_BY_CALC_TYPE.get(calc_type, "cpu")
     lines.append(f"DEVICE = {device}")
-    lines.append("# Molecular tasks only: CHARGE = 0")
-    lines.append("# UMA omol spin multiplicity: SPIN = 1")
-    if calc_type == "md":
-        lines.append("INFERENCE_MODE = turbo")
-    else:
-        lines.append("INFERENCE_MODE = default")
     lines.append("")
 
     if calc_type == "opt":
@@ -264,8 +314,11 @@ def _bool(value: bool) -> str:
     return ".TRUE." if value else ".FALSE."
 
 
-def get_default_config(calc_type: str) -> IncarConfig:
-    """Return an :class:`IncarConfig` built from the single source of defaults."""
+def get_default_config(calc_type: str, engine: str | None = None) -> IncarConfig:
+    """Return an :class:`IncarConfig` built from the single source of defaults.
+
+    ``engine=None`` yields the backend-neutral template (no implicit UMA).
+    """
     from mliport.config.incar import IncarConfig  # noqa: PLC0415
 
-    return IncarConfig.from_string(build_incar_default(calc_type))
+    return IncarConfig.from_string(build_incar_default(calc_type, engine=engine))

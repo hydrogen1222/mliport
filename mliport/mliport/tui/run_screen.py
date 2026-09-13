@@ -132,7 +132,7 @@ class RunScreen(Screen):
         """Build the argv for the background calculation via the shared
         queue helper, so the TUI and `mliport queue submit` cannot drift."""
         calc_type = self.app.get_config("calc_type", "sp")
-        model_type = self.app.get_config("model_type", "uma")
+        model_type = self.app.get_config("model_type", "") or ""
         structure_file = self.app.get_config("structure_file")
         model_file = self.app.get_config("model_file")
         resume_path = self.app.get_config("neb_resume") if calc_type == "neb" else None
@@ -140,6 +140,11 @@ class RunScreen(Screen):
         # stringified into the argv list as the literal ``--model None``, which
         # made the child process fail later with a confusing "model not found"
         # error instead of surfacing the real problem in the TUI.
+        if not model_type:
+            raise ValueError(
+                "No MLIP backend selected; go back and choose UMA, MACE, "
+                "DPA or GRACE."
+            )
         if not model_file and not resume_path:
             raise ValueError("No model file configured; go back and set it.")
         if not structure_file and not resume_path:

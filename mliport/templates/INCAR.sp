@@ -1,6 +1,6 @@
 # Single Point Calculation Settings
 # mliport - VASP-style input
-# Supports engines: UMA (default), MACE, DPA, GRACE
+# Select one engine explicitly: UMA, MACE, DPA or GRACE (fairchem is an alias for uma)
 
 # Calculation Type
 CALC_TYPE = SP
@@ -8,7 +8,7 @@ TASK = omat
 
 # Model Settings
 MODEL_PATH = uma-s-1.pt
-MODEL_TYPE = uma          # uma (default), mace, dpa, grace
+MODEL_TYPE = REQUIRED     # choose: uma | mace | dpa | grace
 DEVICE = cpu
 INFERENCE_MODE = default  # UMA only; ignored by other engines
 

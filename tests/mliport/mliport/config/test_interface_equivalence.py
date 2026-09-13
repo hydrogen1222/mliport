@@ -9,9 +9,23 @@ from pathlib import Path
 import pytest
 
 from mliport.api import _build_api_cli
+from mliport.backend_selection import NO_BACKEND_SELECTED_MESSAGE
 from mliport.cli import _build_cli_opts, create_parser
-from mliport.config import IncarConfig, resolve_config
+from mliport.config import IncarConfig
+from mliport.config import resolve_config as _resolve_config
 from mliport.queue import parse_task_file
+
+
+def resolve_config(*, calc_type, **kwargs):
+    """Legacy equivalence tests: UMA is an explicit test fixture choice."""
+    try:
+        return _resolve_config(calc_type=calc_type, **kwargs)
+    except ValueError as exc:
+        if NO_BACKEND_SELECTED_MESSAGE not in str(exc):
+            raise
+        cli = dict(kwargs.pop("cli", None) or {})
+        cli["model_type"] = "uma"
+        return _resolve_config(calc_type=calc_type, cli=cli, **kwargs)
 
 
 def _fingerprint(resolved) -> dict:

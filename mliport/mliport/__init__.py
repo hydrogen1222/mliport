@@ -37,7 +37,6 @@ __all__ = [
     "ProgressEvent",
     "SinglePointRunner",
     "SUPPORTED_TYPES",
-    "UMACalculator",
     "calculate_energy",
     "run_md",
     "run_neb",
@@ -53,7 +52,6 @@ def __getattr__(name: str):
     _imports = {
         "IncarConfig": ".config",
         "BaseMLIPCalculator": ".base_calculator",
-        "UMACalculator": ".calculator",
         "CalculatorFactory": ".calculators.factory",
         "SUPPORTED_TYPES": ".calculators.factory",
         "OptimizationRunner": ".runners.optimization",

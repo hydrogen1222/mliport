@@ -8,9 +8,26 @@ from pathlib import Path
 
 import pytest
 
+from mliport.backend_selection import NO_BACKEND_SELECTED_MESSAGE
 from mliport.config.incar import IncarConfig
-from mliport.config.resolver import ResolvedValue, resolve_config
+from mliport.config.resolver import ResolvedValue
+from mliport.config.resolver import resolve_config as _resolve_config
 from mliport.config.settings import load_settings
+
+
+def resolve_config(*, calc_type, **kwargs):
+    """Legacy resolver tests: UMA is selected explicitly when the fixture
+    does not provide a backend, because there is no implicit default anymore.
+    """
+    try:
+        return _resolve_config(calc_type=calc_type, **kwargs)
+    except ValueError as exc:
+        if NO_BACKEND_SELECTED_MESSAGE not in str(exc):
+            raise
+        cli = dict(kwargs.pop("cli", None) or {})
+        cli["model_type"] = "uma"
+        return _resolve_config(calc_type=calc_type, cli=cli, **kwargs)
+
 
 # ---------------------------------------------------------------------------
 # Basic resolution (built-in only)

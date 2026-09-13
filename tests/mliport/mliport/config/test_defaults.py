@@ -102,17 +102,27 @@ def test_get_default_no_calc_type() -> None:
 
 
 def test_build_incar_default_sp() -> None:
-    text = build_incar_default("sp")
-    assert "CALC_TYPE = SP" in text
-    assert "DEVICE = cpu" in text
-    assert "INFERENCE_MODE = default" in text
+    neutral = build_incar_default("sp")
+    assert "CALC_TYPE = SP" in neutral
+    assert "DEVICE = cpu" in neutral
+    # no implicit backend or UMA-only inference mode in the neutral template
+    assert "MODEL_TYPE = REQUIRED" in neutral
+    assert "INFERENCE_MODE" not in neutral
+
+    uma = build_incar_default("sp", engine="uma")
+    assert "MODEL_TYPE = UMA" in uma
+    assert "TASK = omat" in uma
+    assert "INFERENCE_MODE = default" in uma
 
 
 def test_build_incar_default_md() -> None:
-    text = build_incar_default("md")
-    assert "CALC_TYPE = MD" in text
-    assert "DEVICE = cuda" in text
-    assert "INFERENCE_MODE = turbo" in text
+    neutral = build_incar_default("md")
+    assert "CALC_TYPE = MD" in neutral
+    assert "DEVICE = cuda" in neutral
+    assert "MODEL_TYPE = REQUIRED" in neutral
+
+    uma = build_incar_default("md", engine="uma")
+    assert "INFERENCE_MODE = turbo" in uma
 
 
 def test_build_incar_default_neb() -> None:

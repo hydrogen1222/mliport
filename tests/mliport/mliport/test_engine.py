@@ -20,6 +20,7 @@ class TestEngineConfig:
         from mliport.engine import EngineConfig
 
         config = EngineConfig(
+            model_type="uma",
             calc_type="sp",
             model_path=Path("model.pt"),
             task="omat",
@@ -35,6 +36,7 @@ class TestEngineConfig:
         from mliport.engine import EngineConfig
 
         config = EngineConfig(
+            model_type="uma",
             calc_type="opt",
             model_path=Path("model.pt"),
             task="omat",
@@ -50,6 +52,7 @@ class TestEngineConfig:
         from mliport.engine import EngineConfig
 
         config = EngineConfig(
+            model_type="uma",
             calc_type="sp",
             model_path=Path("model.pt"),
             task="omat",
@@ -64,7 +67,9 @@ class TestEngineConfig:
         from mliport.config.resolver import resolve_config
         from mliport.engine import EngineConfig
 
-        resolved = resolve_config(calc_type="md")
+        resolved = resolve_config(
+            calc_type="md", cli={"model_type": "uma", "model_path": "model.pt"}
+        )
         config = EngineConfig.from_resolved(resolved)
         assert config.run_options["fmax_abort"] == 20.0
 
@@ -72,7 +77,9 @@ class TestEngineConfig:
         from mliport.config.resolver import resolve_config
         from mliport.engine import EngineConfig
 
-        resolved = resolve_config(calc_type="neb")
+        resolved = resolve_config(
+            calc_type="neb", cli={"model_type": "uma", "model_path": "model.pt"}
+        )
         config = EngineConfig.from_resolved(resolved)
         assert config.run_options["fmax_abort"] == 20.0
 
@@ -115,6 +122,7 @@ class TestCalculationEngineSetup:
         from mliport.engine import CalculationEngine, EngineConfig
 
         config = EngineConfig(
+            model_type="uma",
             calc_type="sp",
             model_path=Path("model.pt"),
             task="omat",
@@ -130,6 +138,7 @@ class TestCalculationEngineSetup:
         from mliport.engine import CalculationEngine, EngineConfig
 
         config = EngineConfig(
+            model_type="uma",
             calc_type="invalid",
             model_path=Path("model.pt"),
             task="omat",
@@ -145,6 +154,7 @@ class TestCalculationEngineSetup:
         from mliport.engine import CalculationEngine, EngineConfig
 
         config = EngineConfig(
+            model_type="uma",
             calc_type="sp",
             model_path=Path("model.pt"),
             task="omat",
@@ -208,6 +218,7 @@ class TestCalculationEngineSetup:
         from mliport.engine import CalculationEngine, EngineConfig
 
         config = EngineConfig(
+            model_type="uma",
             calc_type="md",
             model_path=Path("model.pt"),
             output_dir=tmp_path,
@@ -256,6 +267,7 @@ def test_engine_creates_live_log_and_tail_hint(tmp_path):
     from mliport.engine import CalculationEngine, EngineConfig
 
     config = EngineConfig(
+        model_type="uma",
         calc_type="sp",
         model_path=Path("model.pt"),
         output_dir=tmp_path,
