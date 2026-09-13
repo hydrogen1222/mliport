@@ -1,0 +1,43 @@
+{
+  "campaign_id": "20260913-current-head-5f8d91d",
+  "created_at": "2026-09-13T07:40:02+00:00",
+  "evidence_source_commits": [
+    "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
+  ],
+  "schema": "mliport.beta-campaign/1",
+  "scope": {
+    "description": "current-HEAD four-backend real-GPU smoke (task book section 17.2)",
+    "device": "Tesla V100-SXM2-16GB (driver 580.173.02; not upgraded by this campaign)",
+    "engines": [
+      "mace",
+      "dpa",
+      "grace",
+      "uma"
+    ],
+    "evidence_root": ".validation-work (local; archived per validation/science/archive_manifest.json)",
+    "harness_note": "T1/T2FD/T5/T6/T7-md ran at software commit 5f8d91d; the T7 transport/gemdat analysis ran with the harness fix 34f894b and MLIPORT_SOFTWARE_COMMIT=5f8d91d because the trajectories were produced by the product code at that commit.",
+    "historical_reuse": "Pre-rename and pre-current-HEAD records remain historical evidence and are never claimed as current-HEAD.",
+    "not_in_scope": [
+      "T3 OMat24 accuracy: unchanged historical evidence",
+      "T4 static workflows: unchanged historical evidence",
+      "T8 performance: unchanged historical evidence"
+    ],
+    "records": {
+      "blocked": 0,
+      "characterized": 43,
+      "fail": 0,
+      "pass": 33,
+      "total": 76
+    },
+    "tiers": {
+      "t1": "single-point inference + repeat inference + stress/dtype/task/head/model hash",
+      "t2fd": "small finite-difference force/stress known-answer sweep",
+      "t5": "NEB endpoints, path initialisation and a real CI-NEB-5 band",
+      "t6": "short NVE timestep sweep and Langevin NVT",
+      "t7": "one 700 K / 15 ps production trajectory, MSD/alpha, kinisi transport, GEMDAT"
+    }
+  },
+  "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+  "status": "complete",
+  "validation_commit": "34f894ba454c4889a66bf9d9f6601fe56dd33725"
+}
