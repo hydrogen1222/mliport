@@ -58,6 +58,84 @@ def _require_gemdat():
     return Trajectory, Species, Structure, gemdat_version
 
 
+GEMDAT_STATUS_SUCCESS = "success"
+GEMDAT_STATUS_NO_EVENTS = "no_events"
+GEMDAT_STATUS_UNSUPPORTED = "unsupported"
+GEMDAT_STATUS_BACKEND_ERROR = "backend_error"
+GEMDAT_STATUS_INVALID_INPUT = "invalid_input"
+
+#: Upstream GEMDAT 1.x fails while stacking an *empty* event collection for a
+#: trajectory with no transitions.  Only this specific failure pattern may be
+#: reinterpreted -- and only when an independent nearest-site check also finds
+#: no transitions (see ``gemdat_electrolyte``).
+_EMPTY_EVENT_ERROR_PATTERNS = (
+    "need at least one array to stack",
+    "need at least one array to concatenate",
+    "zero-dimensional arrays cannot be concatenated",
+)
+
+
+def _is_empty_event_collection_error(exc: BaseException) -> bool:
+    if not isinstance(exc, (ValueError, IndexError, TypeError)):
+        return False
+    text = str(exc).lower()
+    return any(pattern in text for pattern in _EMPTY_EVENT_ERROR_PATTERNS)
+
+
+def _nearest_site_change_count(
+    *,
+    view,
+    corrected_positions_A,
+    mobile,
+    sites,
+) -> int | None:
+    """Independent nearest-site transition count (``None`` = not computable).
+
+    Cross-check for the "valid empty transition collection" claim: a backend
+    that reports no events while atoms demonstrably change site is a backend
+    error, not a physical zero (task book PR-C).
+    """
+    try:
+        centers = np.asarray([site.coords for site in sites], dtype=float)
+        if centers.size == 0:
+            return 0
+        cell = np.asarray(view.cells[0], dtype=float)
+        inverse = np.linalg.inv(cell)
+        positions = np.asarray(corrected_positions_A, dtype=float)[:, mobile, :]
+        previous = None
+        changes = 0
+        for frame in positions:
+            fractional = frame @ inverse
+            delta = fractional[:, None, :] - centers[None, :, :]
+            delta -= np.round(delta)
+            cartesian = delta @ cell
+            nearest = np.argmin(np.linalg.norm(cartesian, axis=-1), axis=1)
+            if previous is not None:
+                changes += int(np.count_nonzero(nearest != previous))
+            previous = nearest
+        return changes
+    except Exception:  # noqa: BLE001 - cross-check must never mask the verdict
+        return None
+
+
+def _validate_site_geometry(sites, *, cell_A, mobile_species: str) -> None:
+    """Reject site geometries that cannot describe this trajectory."""
+    if not len(sites):
+        raise ValueError(
+            f"invalid site geometry: no sites for mobile species {mobile_species!r}"
+        )
+    cell = np.asarray(cell_A, dtype=float)
+    lattice = np.asarray(sites.lattice.matrix, dtype=float)
+    if not np.allclose(lattice, cell, rtol=1e-5, atol=1e-6):
+        raise ValueError(
+            "invalid site geometry: site lattice does not match the trajectory "
+            "cell within 1e-5"
+        )
+    coords = np.asarray(sites.cart_coords, dtype=float)
+    if not np.all(np.isfinite(coords)):
+        raise ValueError("invalid site geometry: non-finite site coordinates")
+
+
 def _validate_mechanism_dimensions(
     *, jump_dimensions: int, percolation_axes: str
 ) -> None:
@@ -327,10 +405,12 @@ def gemdat_electrolyte(
     mobile_trajectory = trajectory.filter(mobile_species)
     volume = mobile_trajectory.to_volume(resolution=resolution_A)
     discovery_warning: str | None = None
+    discovery_error: dict[str, Any] | None = None
     try:
         peaks = volume.find_peaks()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - classified below
         peaks = np.empty((0, 3), dtype=int)
+        discovery_error = {"type": type(exc).__name__, "message": str(exc)}
         discovery_warning = f"Automatic density peak detection failed: {exc}"
     if sites_path is not None:
         site_path = Path(sites_path).expanduser().resolve()
@@ -347,8 +427,9 @@ def gemdat_electrolyte(
                 return_occupancies=True,
                 n_frames=view.nframes,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - classified below
             sites = Structure(lattice=view.cells[0], species=[], coords=[])
+            discovery_error = {"type": type(exc).__name__, "message": str(exc)}
             discovery_warning = f"Automatic density site segmentation failed: {exc}"
         site_source = "exploratory automatic GEMDAT density peak segmentation"
     free_energy = volume.get_free_energy(temperature)
@@ -413,6 +494,34 @@ def gemdat_electrolyte(
             result.warnings.append(discovery_warning)
     if not len(sites):
         result.structures["occupancy"] = sites
+        if discovery_error is not None:
+            # Site discovery *failed*; this is not a physical "no sites" fact.
+            result.summary.update(
+                {
+                    "gemdat_transition_status": GEMDAT_STATUS_BACKEND_ERROR,
+                    "gemdat_transition_error": discovery_error,
+                    "gemdat_status_reason": (
+                        "GEMDAT site discovery failed; transition/jump metrics "
+                        "are unknown, not zero"
+                    ),
+                    "transition_events": None,
+                    "number_of_jumps": None,
+                    "occupancy_source": "not computed: site discovery failed",
+                }
+            )
+            result.warnings.append(
+                "GEMDAT site discovery failed; zero jumps would be fabricated."
+            )
+            result.summary["diagnostic_crosscheck"] = {
+                "publication_transport_authority": False,
+                "warning": "GEMDAT metrics unavailable because site discovery failed.",
+            }
+            return result
+        result.summary["gemdat_transition_status"] = GEMDAT_STATUS_NO_EVENTS
+        result.summary["gemdat_transition_error"] = None
+        result.summary["gemdat_status_reason"] = (
+            "no sites were available, so no transition can exist"
+        )
         result.summary["occupancy_source"] = "no detected sites"
         result.summary["diagnostic_crosscheck"] = {
             "publication_transport_authority": False,
@@ -455,18 +564,65 @@ def gemdat_electrolyte(
             ),
         }
 
+    transitions = None
+    transition_error: dict[str, Any] | None = None
+    transition_status = GEMDAT_STATUS_SUCCESS
+    status_reason: str | None = None
     try:
+        _validate_site_geometry(
+            sites,
+            cell_A=view.cells[0],
+            mobile_species=mobile_species,
+        )
         transitions = trajectory.transitions_between_sites(
             sites, mobile_species, site_radius=site_radius_A
         )
-    except Exception as exc:
-        # GEMDAT 1.x raises while stacking an empty event list for a valid
-        # no-transition trajectory. Preserve a valid, auditable result rather
-        # than writing a partially populated/corrupt mechanism output.
+    except Exception as exc:  # noqa: BLE001 - classified below, never zeroed
+        transition_error = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+        }
+        if _is_empty_event_collection_error(exc):
+            changes = _nearest_site_change_count(
+                view=view,
+                corrected_positions_A=corrected_positions,
+                mobile=mobile,
+                sites=sites,
+            )
+            if changes == 0:
+                transition_status = GEMDAT_STATUS_NO_EVENTS
+                status_reason = (
+                    "GEMDAT reported a valid empty transition collection and an "
+                    "independent nearest-site check found no site changes"
+                )
+                result.warnings.append(
+                    "GEMDAT transition detection reported no events for this "
+                    "trajectory; zero jumps is a physical result here."
+                )
+            else:
+                transition_status = GEMDAT_STATUS_BACKEND_ERROR
+                status_reason = (
+                    "GEMDAT reported an empty transition collection, but an "
+                    "independent nearest-site check found site changes; refusing "
+                    "to report zero jumps"
+                )
+        elif isinstance(exc, ValueError) and "invalid site geometry" in str(exc):
+            transition_status = GEMDAT_STATUS_INVALID_INPUT
+            status_reason = "site geometry is not compatible with the trajectory"
+        else:
+            transition_status = GEMDAT_STATUS_BACKEND_ERROR
+            status_reason = (
+                "GEMDAT transition detection failed; jump/transition metrics are "
+                "reported as unknown rather than zero"
+            )
         result.warnings.append(
-            "GEMDAT transition detection produced no usable events; "
-            f"residence/jump metrics were omitted: {exc}"
+            f"GEMDAT transitions {transition_status} ({type(exc).__name__}): {exc}"
         )
+
+    result.summary["gemdat_transition_status"] = transition_status
+    result.summary["gemdat_transition_error"] = transition_error
+    result.summary["gemdat_status_reason"] = status_reason
+    if transitions is None and transition_status == GEMDAT_STATUS_NO_EVENTS:
         result.summary.update(
             {
                 "transition_events": 0,
@@ -475,12 +631,11 @@ def gemdat_electrolyte(
                 "number_of_jumps": 0,
                 "jump_dimensions": jump_dimensions,
                 "percolation_axes": percolation_axes,
-                "occupancy_source": "explicit site geometry fallback; GEMDAT occupancy unavailable",
+                "occupancy_source": (
+                    "explicit site geometry; no transitions were observed"
+                ),
             }
         )
-        # Keep a valid occupancy structure artifact even when GEMDAT cannot
-        # construct an empty event table; it is the explicit site geometry,
-        # not a fabricated occupancy estimate.
         result.structures["occupancy"] = sites
         if discover_sites_from_density:
             result.structures["occupancy_sites"] = sites
@@ -494,6 +649,21 @@ def gemdat_electrolyte(
                 "residence_times": np.empty((0, 0)),
                 "jumps": np.empty((0, 0)),
                 "jump_rates": np.empty((0, 0)),
+            }
+        )
+    elif transitions is None:
+        # backend_error / invalid_input: never publish physical zero matrices.
+        result.summary.update(
+            {
+                "transition_events": None,
+                "number_of_jumps": None,
+                "occupancy_by_site_type": {},
+                "atom_locations": {},
+                "jump_dimensions": jump_dimensions,
+                "percolation_axes": percolation_axes,
+                "occupancy_source": (
+                    "not computed: GEMDAT transition detection did not succeed"
+                ),
             }
         )
     else:
@@ -528,25 +698,25 @@ def gemdat_electrolyte(
                 percolation_axes=percolation_axes,
             )
         )
-        if jumps.n_jumps:
-            n_parts = min(10, max(2, view.nframes // 4))
-            if n_parts <= view.nframes:
-                try:
-                    rates = jumps.rates(n_parts=n_parts)
-                except Exception as exc:  # noqa: BLE001 - GEMDAT backend failures vary
-                    result.tables["jump_rates"] = np.empty((0, 0))
-                    result.warnings.append(
-                        "GEMDAT jump-rate segmentation failed; jump-rate plotting "
-                        f"was disabled: {exc}"
-                    )
-                else:
-                    rate_table, rate_warning = _jump_rate_table_with_units(rates)
-                    result.tables["jump_rates"] = rate_table
-                    if rate_warning:
-                        result.warnings.append(rate_warning)
-            collective = jumps.collective()
-            result.summary["solo_jump_fraction"] = float(jumps.solo_fraction)
-            result.summary["collective_jump_count"] = int(collective.n_coll_jumps)
+    if transitions is not None and jumps.n_jumps:
+        n_parts = min(10, max(2, view.nframes // 4))
+        if n_parts <= view.nframes:
+            try:
+                rates = jumps.rates(n_parts=n_parts)
+            except Exception as exc:  # noqa: BLE001 - GEMDAT backend failures vary
+                result.tables["jump_rates"] = np.empty((0, 0))
+                result.warnings.append(
+                    "GEMDAT jump-rate segmentation failed; jump-rate plotting "
+                    f"was disabled: {exc}"
+                )
+            else:
+                rate_table, rate_warning = _jump_rate_table_with_units(rates)
+                result.tables["jump_rates"] = rate_table
+                if rate_warning:
+                    result.warnings.append(rate_warning)
+        collective = jumps.collective()
+        result.summary["solo_jump_fraction"] = float(jumps.solo_fraction)
+        result.summary["collective_jump_count"] = int(collective.n_coll_jumps)
     # GEMDAT trajectory metrics are deliberately namespaced as a diagnostic
     # cross-check. They never replace the kinisi transport authority.
     crosscheck: dict[str, Any] = {

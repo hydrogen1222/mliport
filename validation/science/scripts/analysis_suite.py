@@ -215,6 +215,17 @@ def _gemdat_diagnostic(dataset, args, temperature_k: float) -> dict[str, Any]:
         sites_path=str(sites_path),
         temperature_K=temperature_k,
     )
+    summary = result.summary
+    transition_status = summary.get("gemdat_transition_status")
+    # Legacy records may predate the status field; a recorded backend_error or
+    # invalid_input must never be downgraded to "0 transition events" (PR-C).
+    if transition_status not in (None, "success", "no_events"):
+        error = summary.get("gemdat_transition_error") or {}
+        raise RuntimeError(
+            "GEMDAT transition detection did not produce a physical result "
+            f"({transition_status}): "
+            f"{error.get('type', 'unknown')}: {error.get('message', '')}"
+        )
     tables = result.tables
     events = tables.get("transition_events")
     jumps = tables.get("jumps")
@@ -230,7 +241,8 @@ def _gemdat_diagnostic(dataset, args, temperature_k: float) -> dict[str, Any]:
     return {
         "site_source": str(sites_path.resolve()),
         "site_source_kind": "pinned_crystallographic_na_sites",
-        "summary": result.summary,
+        "summary": summary,
+        "gemdat_transition_status": transition_status or "legacy_unknown",
         "warnings": list(result.warnings),
         "n_transition_events": n_events,
         "n_jumps": int(len(jumps)) if jumps is not None else 0,
@@ -244,8 +256,11 @@ def _gemdat_diagnostic(dataset, args, temperature_k: float) -> dict[str, Any]:
     }
 
 
-def _arrhenius_fit(temperatures: list[float], diffusivities: list[float],
-                   uncertainties: list[float] | None) -> dict[str, Any]:
+def _arrhenius_fit(
+    temperatures: list[float],
+    diffusivities: list[float],
+    uncertainties: list[float] | None,
+) -> dict[str, Any]:
     from mlipx.analysis.arrhenius import fit_arrhenius
 
     result = fit_arrhenius(
@@ -277,9 +292,19 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _write(ctx, case_id, test_id, status, parameters, metrics,
-           diagnostics=None, structure_id=None, wall=0.0, peak_vram=None,
-           exception=None) -> int:
+def _write(
+    ctx,
+    case_id,
+    test_id,
+    status,
+    parameters,
+    metrics,
+    diagnostics=None,
+    structure_id=None,
+    wall=0.0,
+    peak_vram=None,
+    exception=None,
+) -> int:
     rec = common.result_record(
         case_id=case_id,
         test_id=test_id,
@@ -364,9 +389,7 @@ def run_md_case(ctx, args) -> int:
                 rows = _production_csv_rows(run_dir, equil_steps)
             t_vals = np.array([float(r["temperature_K"]) for r in rows])
             e_tot = np.array([float(r["total_energy_eV"]) for r in rows])
-            finite = bool(
-                np.all(np.isfinite(t_vals)) and np.all(np.isfinite(e_tot))
-            )
+            finite = bool(np.all(np.isfinite(t_vals)) and np.all(np.isfinite(e_tot)))
             metrics = {
                 "temperature_target_K": temperature,
                 "temperature_mean_K": float(np.mean(t_vals)),
@@ -457,9 +480,7 @@ def run_transport_case(ctx, args) -> int:
             finite = bool(np.all(np.isfinite(t_vals)) and np.all(np.isfinite(e_tot)))
 
             msd = _native_msd_diagnostic(dataset)
-            sufficient = bool(
-                finite and msd["D_diagnostic_m2_s"] >= MIN_MSD_SLOPE_M2_S
-            )
+            sufficient = bool(finite and msd["D_diagnostic_m2_s"] >= MIN_MSD_SLOPE_M2_S)
 
             metrics: dict[str, Any] = {
                 "temperature_target_K": temperature,
