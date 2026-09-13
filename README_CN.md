@@ -1,8 +1,7 @@
 # mliport
 
-mliport 用统一的、backend-neutral 的 CLI、TUI 与 Python API 运行 UMA
-(FAIRChem)、MACE、DPA (DeepMD-kit) 与 GRACE (tensorpotential) 等机器学习
-势。它提供 VASP 风格的输入/输出,支持单点、结构弛豫、分子动力学、NEB 与
+mliport 用统一的、backend-neutral 的 CLI、TUI 与 Python API 运行 MACE、
+DPA (DeepMD-kit)、GRACE (tensorpotential) 与 UMA (FAIRChem) 等机器学习势。它提供 VASP 风格的输入/输出,支持单点、结构弛豫、分子动力学、NEB 与
 轨迹分析,并显式记录 provenance、对配置 fail closed。
 
 **mliport 不是模型、不是训练器、也不是 DFT 程序。** 它运行第三方势;

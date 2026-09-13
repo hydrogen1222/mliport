@@ -85,7 +85,7 @@ class OutcarWriter:
             [
                 "=" * 80,
                 " MLIP CALCULATION RESULTS".center(80),
-                " (mliport - MLIP eXtended)".center(80),
+                " (mliport - backend-neutral MLIP workflows)".center(80),
                 "=" * 80,
                 "",
                 f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",

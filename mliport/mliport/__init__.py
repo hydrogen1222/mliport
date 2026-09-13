@@ -4,7 +4,7 @@ Copyright (c) Meta Platforms, Inc. and affiliates.
 This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 
-mliport - VASP-like interface for MLIP models (UMA, MACE, DPA, GRACE).
+mliport - backend-neutral MLIP workflow toolkit (MACE, DPA, GRACE, UMA).
 """
 
 from __future__ import annotations

@@ -1471,7 +1471,7 @@ def print_header():
     """Print mliport header."""
     print("=" * 80)
     print(" MLIPORT".center(80))
-    print(" (mliport - MLIP eXtended)".center(80))
+    print(" (mliport - backend-neutral MLIP workflows)".center(80))
     print("=" * 80)
     print()
 

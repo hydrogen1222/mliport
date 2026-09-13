@@ -76,10 +76,11 @@ results/
 /.local-plans/
 # Pre-rename local-only plans/reviews: kept ignored so the old namespace can
 # never leak a transient audit document into the repository.
-/mlipx_*development_plan*.md
-/mlipx_*NOT_FOR_REPO*.md
-/mlipx_review_*.md
-/mlipx_analysis_*.md
+/*_development_plan*.md
+/*_productization_*plan*.md
+/*_NOT_FOR_REPO*.md
+/*_review_*.md
+/*_analysis_*.md
 # Local wheelhouse / offline install sources
 /packages/
 /audit-local/

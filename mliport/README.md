@@ -2,8 +2,8 @@
 
 # mliport
 
-mliport runs UMA (FAIRChem), MACE, DPA (DeepMD-kit) and GRACE
-(tensorpotential) machine-learned interatomic potentials through one
+mliport runs MACE, DPA (DeepMD-kit), GRACE (tensorpotential) and UMA
+(FAIRChem) machine-learned interatomic potentials through one
 backend-neutral CLI, TUI and Python API. It provides VASP-shaped inputs and
 outputs for single points, relaxation, molecular dynamics, NEB and trajectory
 analysis — with explicit provenance and honest, fail-closed configuration.

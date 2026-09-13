@@ -591,7 +591,9 @@ def test_md_prints_banner_once(tmp_path, monkeypatch, capsys) -> None:
     )
 
     assert rc == 0
-    assert capsys.readouterr().out.count("(mliport - MLIP eXtended)") == 1
+    assert (
+        capsys.readouterr().out.count("(mliport - backend-neutral MLIP workflows)") == 1
+    )
 
 
 def test_batch_parser_basic_flags() -> None:

@@ -240,7 +240,7 @@ class MliportApp(App):
         """Compose the main UI."""
         yield Header(show_clock=True)
         yield Container(
-            Static("mliport - MLIP eXtended", id="title"),
+            Static("mliport - backend-neutral MLIP workflows", id="title"),
             Static("Interactive Configuration Interface", id="subtitle"),
             id="main-container",
         )

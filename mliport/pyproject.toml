@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mliport"
 version = "2.0.0b1"
-description = "VASP-like CLI/TUI interface for MLIP models (UMA, MACE, DPA, GRACE)"
+description = "Backend-neutral CLI/TUI/Python workflows for MLIP models (MACE, DPA, GRACE, UMA)"
 readme = "README.md"
 license = { text = "MIT License" }
 requires-python = ">=3.10, <3.13"
