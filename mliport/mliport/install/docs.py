@@ -10,7 +10,7 @@ compares the committed file against this renderer byte-for-byte.
 
 from __future__ import annotations
 
-from .compatibility import backend_environment_rows
+from .compatibility import BACKENDS, backend_environment_rows
 
 MARKER_BEGIN = "<!-- BEGIN GENERATED: backend compatibility matrix -->"
 MARKER_END = "<!-- END GENERATED -->"
@@ -29,6 +29,35 @@ def render_backend_matrix() -> str:
             f"| {row['runtime']} |"
         )
     lines.append(MARKER_END)
+    return "\n".join(lines)
+
+
+GPU_ROUTE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Maxwell", ("maxwell",)),
+    ("Pascal", ("pascal",)),
+    ("Volta / V100", ("volta",)),
+    ("Ada / RTX 4090", ("ada",)),
+    ("Other Turing+", ("turing", "ampere")),
+    ("Hopper / Blackwell", ("hopper", "blackwell")),
+)
+
+
+def render_gpu_route_table() -> str:
+    """Install-route states per engine and GPU family, from the registry.
+
+    States are the two honest install-route states only: ``experimental``
+    when any profile in the family is not upstream-supported, otherwise
+    ``needs runtime smoke test``.
+    """
+    header = "| Engine | " + " | ".join(name for name, _ in GPU_ROUTE_COLUMNS) + " |"
+    lines = [header, "|---" * (len(GPU_ROUTE_COLUMNS) + 1) + "|"]
+    for engine, backend in BACKENDS.items():
+        cells = []
+        for _, arch_keys in GPU_ROUTE_COLUMNS:
+            profiles = [backend.arch_profiles[key] for key in arch_keys]
+            experimental = any(not p.upstream_supported for p in profiles)
+            cells.append("experimental" if experimental else "needs runtime smoke test")
+        lines.append(f"| {engine.upper()} | " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 
@@ -115,6 +144,12 @@ The installer and `mliport doctor` choose the correct PyTorch/TensorFlow build
 for your GPU family (Maxwell/Pascal/Volta use the cu126 legacy channel,
 Turing and newer use cu128+). `mliport setup` prints the detected hardware and
 the matching route.
+
+{render_gpu_route_table()}
+
+`experimental` means the upstream framework does not test that family;
+`needs runtime smoke test` means a route exists but mliport has not promoted
+a runtime record for it. Neither state is a "verified" claim.
 """
 
 

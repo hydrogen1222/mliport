@@ -86,3 +86,14 @@ The installer and `mliport doctor` choose the correct PyTorch/TensorFlow build
 for your GPU family (Maxwell/Pascal/Volta use the cu126 legacy channel,
 Turing and newer use cu128+). `mliport setup` prints the detected hardware and
 the matching route.
+
+| Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
+|---|---|---|---|---|---|---|
+| UMA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| MACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
+| GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
+
+`experimental` means the upstream framework does not test that family;
+`needs runtime smoke test` means a route exists but mliport has not promoted
+a runtime record for it. Neither state is a "verified" claim.

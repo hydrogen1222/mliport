@@ -1,68 +1,51 @@
 # mliport
 
-mliport runs UMA, MACE, DPA and GRACE machine-learning interatomic
-potentials through one VASP-shaped CLI/TUI/Python workflow for single
-points, relaxation, molecular dynamics, NEB and trajectory analysis.
+mliport runs UMA (FAIRChem), MACE, DPA (DeepMD-kit) and GRACE
+(tensorpotential) machine-learned interatomic potentials through one
+backend-neutral CLI, TUI and Python API. It provides VASP-shaped inputs and
+outputs for single points, relaxation, molecular dynamics, NEB and trajectory
+analysis — with explicit provenance and honest, fail-closed configuration.
 
-Scope and boundary, stated directly:
+**mliport is not a model, not a trainer and not a DFT code.** It runs
+third-party potentials; model accuracy is not mliport accuracy.
 
-- mliport evaluates learned potential-energy surfaces (PES). It does not
-  perform DFT electronic-structure calculations.
-- "VASP-shaped" refers to the workflow and output conventions (INCAR-style
-  configuration, OUTCAR/OSZICAR/CONTCAR/XDATCAR files). It describes
-  interface familiarity, not physical equivalence to VASP.
-- Energies, forces and stresses come from the selected model. Their
-  accuracy is the model's accuracy on your chemistry, not mliport's.
+## Why mliport
 
-License: MIT. Status: **beta validation completed** at software commit
-`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (current-HEAD four-backend
-V100-SXM2-16GB smoke: T1/T2FD/T5/T6/T7 for MACE/DPA/GRACE/UMA, plus CI on
-Python 3.10-3.12 and clean wheel installs); the release itself remains a
-`2.0.0b1` beta candidate. T3 accuracy, T4 static workflows and T8
-performance are unchanged historical evidence and are explicitly *not*
-claimed as current-HEAD. The project was previously published as `mlipx`,
-which collided on PyPI/import with an unrelated BASF package of the same
-name; `mliport` is a clean-break rename (the old top-level import is
-deliberately not published). See [Validation](#validation) below.
-
-## What it can run
-
-| Task | Command | Notes |
-|---|---|---|
-| Single point | `mliport sp` | energy, forces, stress (stress if the model provides it) |
-| Ionic relaxation | `mliport opt` | fixed cell, FIRE/LBFGS/BFGS |
-| Cell + ionic relaxation | `mliport opt` | FrechetCellFilter; requires model stress + 3D PBC |
-| NVE MD | `mliport md` | velocity Verlet |
-| NVT MD | `mliport md` | Langevin, Bussi, Nosé-Hoover chain |
-| NEB / CI-NEB | `mliport neb` | fixed cell, IDPP pre-relaxation, two-stage climbing image |
-| Batch | `mliport batch` | many structures through one model load |
-| Trajectory analysis | `mliport analyze` | validate, thermo, rdf, rmsd, msd, vacf, spectrum, transport, density, arrhenius, GEMDAT mechanisms |
-| INCAR-driven runs | `mliport run -i INCAR.mliport` | the VASP-shaped entry point |
-| Queue | `mliport queue submit/start`, `mliport jobs` | background job execution |
-
-Everything ASE can read works as a structure input (POSCAR/CONTCAR, CIF,
-EXTXYZ, ...). Output formats are VASP-compatible text files plus JSON.
+- **Backend-neutral by construction.** No implicit UMA default: the backend
+  comes from `--model-type`, a model alias/profile, or the run fails closed.
+- **Honest provenance.** Every run records model identity (path, task, head,
+  dtype, SHA-256 when available), requested vs actual device, resolved
+  configuration sources and the software commit.
+- **VASP-shaped, not VASP.** INCAR-style keys and OUTCAR/OSZICAR/CONTCAR/
+  XDATCAR files for familiarity, with no SCF, k-points, ENCUT or numerical
+  VASP equivalence.
+- **Strict science config.** Misspelled or cross-backend options are fatal by
+  default (`--lenient-config` is the explicit opt-in).
+- **Evidence over adjectives.** Validation claims are tied to recorded
+  campaigns, commits and model identities — including `not_run`.
 
 ## What it cannot replace
 
-These require a DFT code or are absent by design:
+DFT reference calculations, model training/fine-tuning, k-point/ENCUT
+convergence studies, transition-state frequency verification, or the
+scientific judgement of whether a potential is valid for your chemistry.
+See [Scientific scope](#scientific-scope).
 
-| Property | Status in mliport |
+## Features
+
+| Area | What you get |
 |---|---|
-| Electronic band structure | not available |
-| Density of states | not available |
-| Charge density / Bader / ELF | not available |
-| Born charges | not available |
-| Dielectric response | not available |
-| k-point / ENCUT / SCF convergence | not applicable (no SCF) |
-| NPT molecular dynamics | not implemented |
+| Backends | MACE, DPA, GRACE, UMA (+ `fairchem` alias for UMA) |
+| Calculations | single point (`sp`), relaxation (`opt`), MD (`md`), NEB (`neb`), batch (`batch`), `run` from INCAR-style files |
+| Analysis | `msd`, `transport`, `electrolyte` (GEMDAT), `rdf`, `rmsd`, `vacf`, `spectrum`, `arrhenius`, `thermo`, `density`, `validate` |
+| Interfaces | CLI, Textual TUI (`tui`), Python API |
+| Operations | local `queue`, `jobs`, `kill`, `clean`, `doctor`, `setup`, `config`, `template` |
+| Outputs | VASP-shaped files, ASI trajectory, JSON result + artifact manifest |
 
 ## Installation
 
 mliport is installed **inside each backend's own Python environment**; it is
-not a cross-environment dispatcher. The tested path is the installer, which
-builds one isolated environment per backend (the four stacks have mutually
-exclusive dependencies):
+not a cross-environment dispatcher. The supported path is the installer:
 
 ```bash
 git clone https://github.com/hydrogen1222/mliport
@@ -70,252 +53,101 @@ cd mliport
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device auto
 ```
 
-What the installer does:
-
-- Detects the GPU architecture and pins compatible framework builds per
-  backend (Volta/V100 uses torch 2.8.0+cu126; Turing and newer use cu128
-  builds).
-- Creates one virtual environment per backend using the names from the
-  compatibility registry, and writes thin launchers `./bin/mliport-mace`,
-  `./bin/mliport-dpa`, `./bin/mliport-grace`, `./bin/mliport-uma` that only
-  exec the matching environment's CLI. The environment names, per-backend
-  Python ranges and runtime pins are machine-generated in
-  [docs/installation.md](docs/installation.md).
-- Selects Python per backend: `--python` must satisfy every requested
-  backend's `requires-python` (UMA needs >=3.11), otherwise the installer
-  fails closed before changing anything.
-- Downloads model checkpoints on first use; `--source` controls wheel
-  sources; `--dry-run` prints the plan without executing it.
-- Requires roughly 10-15 GB of disk for all four backends including torch
-  and model weights.
-- Runs `mliport doctor` in each environment at the end unless `--skip-doctor`
-  is given.
+Python support: core CI covers **3.10-3.12**; each backend has its own
+constraint (UMA needs >=3.11), and `--python` must satisfy every requested
+backend or the installer fails closed. Environment names, Python ranges and
+runtime pins are machine-generated in
+[docs/installation.md](docs/installation.md).
 
 Run the CLI from the environment (or launcher) of the backend you want:
 
 ```bash
 .venv-mace/bin/mliport sp structure.cif --model model.model --model-type mace
 .venv/bin/mliport      sp structure.cif --model uma.pt     --model-type uma
-./bin/mliport-mace     sp structure.cif --model model.model --model-type mace
+./bin/mliport-mace     ...   # generated launcher, runtime selection only
 ```
 
-On Windows each environment exposes `Scripts\mliport.exe`
-(`.venv-mace\Scripts\mliport.exe`); installing mliport once "globally" does
-not make it reach into the other backend environments.
+On Windows each environment exposes `Scripts\mliport.exe`. See
+[docs/installation.md](docs/installation.md) for CPU-only, all-backend,
+offline and manual options.
 
-<details>
-<summary>Manual installation (per backend)</summary>
+## 5-minute quick start
 
-Each backend environment needs the mliport package plus the engine's own
-stack. The authoritative version pins live in
-`mliport/mliport/install/compatibility.py`; the installer is the only path
-that keeps them consistent with your GPU architecture. If you install
-manually, create one environment per backend, install `./mliport` **into that
-environment**, then run `mliport doctor` and confirm every check passes before
-trusting results.
+MACE is used first only because its checkpoints are open and light; the
+other backends are equivalent.
 
-</details>
+```bash
+# 1. doctor (fails closed if the runtime cannot really run)
+.venv-mace/bin/mliport doctor --engine mace --device auto
 
+# 2. single point
+.venv-mace/bin/mliport sp structure.cif \
+  --model mace-omat-0-medium.model --model-type mace \
+  --output runs/mace-sp
 
-## GPU architecture compatibility
+# 3. short relaxation
+.venv-mace/bin/mliport opt structure.cif \
+  --model mace-omat-0-medium.model --model-type mace \
+  --fmax 0.05 --max-steps 50 --output runs/mace-opt
+```
 
-The installer and `mliport setup` choose the correct PyTorch/CUDA wheel
-automatically.
+Equivalent first runs:
 
-| GPU family | Examples | Compute capability | CUDA route |
+```bash
+.venv-dpa/bin/mliport   sp structure.cif --model DPA-3.1-3M.pt --model-type dpa --head Omat24
+.venv-grace/bin/mliport sp structure.cif --model GRACE-2L-OMAT-medium-base --model-type grace
+.venv/bin/mliport       sp structure.cif --model uma-s-1p2.pt --model-type uma --task omat
+```
+
+Then inspect `runs/mace-opt/mliport_results.json` and
+`runs/mace-opt/resolved_config.json`; see
+[docs/outputs.md](docs/outputs.md) for every file, unit and provenance field.
+
+## Choose a backend
+
+| Backend | Environment | Pinned example profile | Precision / head notes |
 |---|---|---|---|
-| Maxwell | GTX 960, TITAN X | sm_50/52 | cu126 Legacy (experimental) |
-| Pascal | Tesla P40, GTX 1080 Ti, P100 | sm_60/61 | cu126 Legacy |
-| Volta | V100 | sm_70 | cu126 Legacy |
-| Turing | RTX 20xx | sm_75 | cu128+ Modern |
-| Ampere | RTX 3080 Ti, 30xx | sm_80/86 | cu128+ Modern |
-| Ada | RTX 4090, 40xx | sm_89 | cu128+ Modern |
-| Hopper | H100 | sm_90 | cu128+ Modern |
-| Blackwell | RTX 50xx | sm_100/120 | cu128+ Modern |
-| none | CPU only | - | CPU wheels |
+| MACE | `.venv-mace` | `mace-omat-0-medium.model` (`mace_omat`) | float64 primary; float32 is a separate identity; `HEAD` optional |
+| DPA | `.venv-dpa` | `DPA-3.1-3M.pt` (`dpa_omat`) | multi-task checkpoints need an explicit `--head` (e.g. `Omat24`) |
+| GRACE | `.venv-grace` | `GRACE-2L-OMAT-medium-base` (`grace_omat`) | `--model` is the SavedModel directory |
+| UMA | `.venv` | `uma-s-1p2.pt` (`uma_omat`) | explicit UMA task family (`omat`/`omol`/...); `fairchem` is an alias |
 
-Why two CUDA routes: Maxwell/Pascal/Volta must use the cu126 legacy
-channel because PyTorch 2.8+ removed Maxwell/Pascal from cu128 builds
-and PyTorch 2.11+ removed Volta from cu128+. Turing and newer use the
-modern channel (cu128 for torch 2.8-2.10, cu130 for torch 2.12+).
-Maxwell is experimental because official TensorFlow 2.20 wheels start
-at sm_60.
+Per-backend details (profiles, stress/head semantics, citations,
+limitations): [docs/backends/](docs/backends/mace.md).
 
-**Architecture compatibility** (from `mliport/install/compatibility.py`; this
-describes the install route only - upstream package support, the pinned
-backend version, and the CUDA wheel channel - *not* workload
-certification). "Needs runtime smoke test" means the installer contract
-is consistent for that GPU family but mliport has not yet verified that
-exact engine + framework + GPU combination; "experimental" means
-upstream itself does not support or test it. Install-route smoke tests
-(engine installed, real model prediction) have been run on real V100 and
-RTX 4090 hardware; workload-level evidence exists only for the V100
-runtime below. P40 uses the corrected exact `+cu126` wheel pin but still
-needs a post-fix model smoke retest.
+## Main workflows
 
-| Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
-|---|---|---|---|---|---|---|
-| UMA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
-| MACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
-| DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
-| GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
+- [Single point](docs/workflows/single-point.md)
+- [Relaxation](docs/workflows/optimization.md)
+- [Molecular dynamics](docs/workflows/md.md)
+- [NEB / CI-NEB](docs/workflows/neb.md)
+- [Batch](docs/workflows/batch.md)
+- [Queue](docs/workflows/queue.md)
+- [Analysis overview](docs/analysis/overview.md)
 
-## First calculation
+## Scientific scope
 
-With a UMA environment installed and a structure file present:
+- No SCF, no k-points/ENCUT/POTCAR, no DFT numerical equivalence.
+- Absolute energies are model-specific; formation energies and barriers need
+  one model/head/reference combination.
+- OMat24 benchmark results characterise a pinned model on that benchmark and
+  do not automatically extrapolate to other chemistry.
+- MD-derived transport values depend on sampling; analyses record windows,
+  drift policy and uncertainties.
+- A converged NEB band gives a saddle *candidate*, not a verified transition
+  state.
 
-```bash
-mliport sp POSCAR --model uma-s-1p2.pt --model-type UMA \
-    --task omat --device cuda --output ./results
-```
+See [docs/models.md](docs/models.md) and [docs/validation.md](docs/validation.md).
 
-This writes `OUTCAR` (energy, forces, stress, model identity, device
-evidence) and a JSON record into `./results`. The same calculation in
-INCAR form:
+## Validation status
 
-```bash
-mliport template -o INCAR.mliport sp   # then edit MODEL_PATH/TASK/DEVICE
-mliport run -i INCAR.mliport
-```
+Release status: **beta candidate**.
 
-Configuration precedence: explicit CLI flags override the INCAR file,
-which overrides `settings.ini`, which overrides defaults. `mliport config
-show` prints the fully resolved configuration including where every
-value came from.
-
-## Choosing a model
-
-The four beta-validated profiles, all evaluated on a common OMat24
-subset in the validation suite:
-
-| Backend | Validated profile | Training domain | Task/head | Precision | Stress | Access |
-|---|---|---|---|---|---|---|
-| MACE | `mace-omat-0-medium.model` | OMat24 + MPtrj | bulk | float64 (also float32) | yes | meta-predictions download (CC BY 4.0) |
-| DPA | `DPA-3.1-3M.pt`, branch `Omat24` | OMat24 + MPtrj | `--head Omat24` | upstream-defined | yes | DeepModeling share |
-| GRACE | `GRACE-2L-OMAT-medium-base` | OMat24 | - | upstream-defined (fp32 build) | yes | open download (Intel) |
-| UMA | `uma-s-1p2.pt` | OMat + others, multi-head | `--task omat` | upstream-defined | yes | fairchem, meta download |
-
-These are the *common* profiles used across the whole validation suite.
-Domain-specific checkpoints (e.g. MACE models fitted to a specific
-chemistry, DPA branches other than Omat24) can be loaded the same way,
-but their beta validation coverage is not implied by this table, and
-their benchmark numbers must not be compared to the OMat24-family
-results above.
-
-> Energies from models trained to different reference calculations are
-> not on a common thermodynamic energy scale. Do not mix absolute
-> energies across models, tasks/heads, or reference levels. Relative
-> energies within one model/one task (formation energies against that
-> model's own elemental references, barriers from the same model) are
-> the safe currency.
-
-## Workflows
-
-### Single point
-
-`mliport sp` runs one structure through the calculator and writes
-energy/forces/stress. NaN/inf energies abort before any output file is
-written.
-
-### Relaxation
-
-`mliport opt` relaxes ionic positions at fixed cell (FIRE, LBFGS or BFGS).
-With model stress available and a 3D periodic cell, it relaxes cell and
-ions together through ASE's `FrechetCellFilter`. Convergence is reported
-as final fmax plus step counts; the CLI prints both initial and final
-volumes for cell relaxation.
-
-### Molecular dynamics
-
-`mliport md` supports NVE (velocity Verlet) and NVT with three
-thermostats: Langevin, Bussi stochastic velocity rescaling, and
-Nosé-Hoover chain. Trajectories are written as XDATCAR plus JSON with
-per-frame energies. The integration timestep and the save interval are
-independent; analysis commands read the save interval from trajectory
-metadata, so a save interval that is too coarse silently degrades
-transport analysis rather than corrupting it.
-
-### NEB / CI-NEB
-
-`mliport neb` computes minimum-energy paths with a fixed cell:
-
-- Endpoints can be validated as-is or pre-relaxed (`--endpoint-policy
-  validate|relax`).
-- Initial path: linear interpolation with periodic-image (winding)
-  handling, or IDPP pre-relaxation.
-- Two-stage climbing image: standard NEB to a force threshold, then
-  CI-NEB to convergence.
-- Checkpoints are written during the run; a restarted run resumes
-  geometry from the checkpoint with endpoint identity preserved.
-- Reported barrier: forward and reverse barrier from the sampled band
-  (`barrier_forward` / `barrier_reverse` in the JSON record).
-
-> A converged CI image is a saddle-point candidate until a Hessian
-> validates it. Use the saddle Hessian diagnostic (one imaginary mode
-> expected along the reaction coordinate) before quoting a transition
-> state.
-
-### Analysis
-
-`mliport analyze` operates on mliport trajectories or external ones with an
-explicit coordinate convention (`--positions-convention`). The
-hierarchy for diffusion problems:
-
-1. `msd` — windowed, direction-resolved MSD diagnostic.
-2. `transport` — quantitative tracer diffusion via kinisi
-   (posterior D with credible intervals) and Nernst-Einstein
-   conductivity from ionic charges; requires a fixed cell (NVT/NVE).
-3. `electrolyte` — GEMDAT site mapping, jump mechanisms and percolation
-   as a mechanism-level crosscheck of the transport picture.
-
-Uncertainty semantics: kinisi reports posterior means with 95%
-credible intervals; the Nernst-Einstein conductivity is exact only in
-the dilute, uncorrelated-hopping limit. The Haven ratio between tracer
-and collective transport is not assumed.
-
-## Scientific semantics
-
-- **Energy**: eV, total for the cell as read. Per-atom values are
-  labelled per atom in outputs.
-- **Forces**: eV/Å.
-- **Stress**: ASE Voigt order (`xx, yy, zz, yz, xz, xy`); written in
-  eV/Å³ with a GPa conversion line in OUTCAR.
-- **Task/head identity**: the model's task or head (e.g. UMA `omat`,
-  DPA `Omat24`) selects the reference-energy level inside the model.
-  It is recorded in every output and must not be changed between
-  energies you intend to subtract.
-- **Force-energy consistency**: forces are analytic derivatives of the
-  model energy. The beta suite cross-checks them against finite
-  differences; per-model results are in the validation report.
-- **Stress-energy consistency**: stress is the analytic strain
-  derivative where the model provides it, cross-checked by finite
-  difference in the beta suite.
-- **PBC and winding**: minimum-image conventions are applied with
-  explicit winding handling in NEB interpolation and displacement
-  analysis; analysis commands reject external trajectories whose
-  coordinate convention conflicts with artifact metadata.
-- **Constraints**: ASE constraints (FixAtoms, FixSymmetry) are honored
-  in relaxation and MD; constraint exactness is regression-tested
-  (fixed-atom DOF remain fixed to machine precision).
-- **MD timestep**: you choose it. The beta suite runs a timestep sweep
-  per system (0.25-2.0 fs on Cu) and gates on NVE energy-drift slopes;
-  results in the validation report show which timesteps were stable.
-  There is no global "safe" timestep.
-- **Save interval vs timestep**: analysis operates on saved frames; the
-  saved-frame interval must be short enough to resolve the process you
-  are measuring. `mliport analyze validate` checks this and reports
-  insufficient sampling rather than returning a number.
-- **Fixed-cell requirement for transport**: kinisi transport analysis
-  requires NVT/NVE trajectories. NPT is not implemented, and analysis
-  of a barostatted trajectory is therefore not offered.
-
-## Validation
-
-The numbers below are rendered from the beta evidence records; they are
-not handwritten. The generated block between the markers is produced by
-`validation/science/scripts/generate_beta_report.py` from
-`validation/science/reports/beta-summary.json`, and a repository test
-fails if the README block drifts from the generator output.
+Advanced explicit atom mapping/image-shift control is available through
+API/direct CLI/TUI only; the INCAR-style key set deliberately does not expose
+`neb_atom_map`/`neb_image_shifts`. The machine-readable capability matrix,
+including these expressibility states, is
+`validation/science/capability_matrix.json`.
 
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
 Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).
@@ -350,175 +182,41 @@ Held-out OMat24 accuracy: not run on this evidence set.
 `*` = CI software test only, no model involved. A cell lists the recorded statuses for that workload; per-workload rows reuse the same evidence tiers, so row counts are not additive. Full per-test tables and limitations: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md). Model identities pinned in `validation/science/model_manifest.json`.
 <!-- END GENERATED -->
 
-### Interface capability matrix
-
-Interfaces are not claimed to be equivalent. The machine-readable
-`validation/science/capability_matrix.json` records, per feature, whether the
-Python API, the direct CLI, the INCAR-style key set and the TUI can express
-it. Advanced explicit atom mapping/image-shift control is available through
-API/direct CLI/TUI only; the INCAR-style key set deliberately has no
-`neb_atom_map` or `neb_image_shifts` keys.
-
-What the tiers mean: t1 four-backend inference on the common subset,
-t2 invariance and caching, t2fd finite-difference stress, t3 OMat24
-label comparison, t4 static workflows (relaxation, EOS, elastic,
-phonons, thermo, defects, surfaces), t5 NEB, t6 MD, t7 analysis, t8
-performance. Full per-test tables, including every recorded failure:
-[validation/science/reports/BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
-
-Known limitations recorded by the suite (not hidden): upstream-float32
-builds (DPA, UMA, GRACE-cache-off) show 1e-7..1e-6 eV arithmetic noise
-on coordinate-invariance checks; small-supercell phonons on the 2x2x2
-grid show small imaginary acoustic branches; cohesive and formation
-energies are recorded as unsupported because they need elemental
-reference energies outside the common comparison.
-
-
-**Installer-contract runtime smoke (single V100-SXM2-16GB, sm_70, driver
-580.173.02)** - short real-model runs with hard timeouts on one GPU, each
-against the *exact* runtime the installer produces. Sanitized records
-live in [validation/runtime/v100/](validation/runtime/v100/) (the GPU is
-identified only by a SHA-256 of its UUID); each status maps to exactly
-one record. The MACE records were revalidated on the current installer
-contract (`mace-torch 0.3.16` + `torch 2.8.0+cu126`); earlier torch
-2.6.0+cu124 evidence remains in git history.
-
-| Backend / model | SP | Short MD | E–F gradient | NEB smoke | GRACE cache | Records |
-|---|---|---|---|---|---|---|
-| UMA | not run | not run | not run | not run | n/a | [uma.json](validation/runtime/v100/uma.json) (no offline wheelhouse on this machine) |
-| MACE float64 | passed | passed | passed | passed | n/a | [mace.json](validation/runtime/v100/mace.json) |
-| MACE float32 | passed | passed | passed | passed | n/a | [mace-float32.json](validation/runtime/v100/mace-float32.json) |
-| DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](validation/runtime/v100/dpa.json) |
-| GRACE float32 | passed | passed | passed | passed | passed (ON and OFF) | [grace.json](validation/runtime/v100/grace.json), [grace-nocache.json](validation/runtime/v100/grace-nocache.json) |
-
-The NEB smoke is a short 5-image fixed-cell run on a 4-atom Cu cell with
-`saddle_validation: not_performed` - see [NEB / CI-NEB](#neb--ci-neb) for
-what that implies. This installer smoke evidence predates the beta
-suite; the beta suite is the workload-level evidence base for the
-models as configured in [Choosing a model](#choosing-a-model).
-
-## DFT-style validation recipes
-
-The validation suite contains EOS, elastic-constant, harmonic phonon,
-thermodynamic, defect and surface recipes built on the same calculators
-and ASE. They are beta validation recipes with reproducible scripts
-(`validation/science/scripts/`), not stable CLI commands; the CLI does
-not expose them as first-class subcommands.
-
-## Outputs and reproducibility
-
-A run directory contains:
-
-```
-results/
-├── OUTCAR        # energy/forces/stress, model identity, device, versions
-├── OSZICAR       # per-step log (relaxation, MD)
-├── CONTCAR       # final structure (relaxation)
-├── XDATCAR       # trajectory (MD)
-└── *.json        # machine-readable record incl. provenance
-```
-
-Every record carries: model path + SHA-256, task/head, dtype, device
-(requested vs actual, GPU UUID hash), mliport/framework versions, git
-commit and scientific suite revision, and the result schema version.
-NEB and MD runs write checkpoints; analysis results are keyed by a
-request hash so identical requests are served from cache and changed
-requests recompute.
-
 ## Python API
 
-The public surface (`mliport.api`):
-
 ```python
-from mliport.api import calculate_energy, run_single_point
+from mliport import run_single_point, run_optimization, run_md, run_neb
+from mliport import calculate_energy
 
-energy = calculate_energy("POSCAR", model_path="mace-omat-0-medium.model",
-                          model_type="MACE", device="cpu")
-results = run_single_point("POSCAR", model_path="mace-omat-0-medium.model",
-                           model_type="MACE", output_dir="./results")
+result = run_single_point(
+    structure="structure.cif",
+    model="mace-omat-0-medium.model",
+    model_type="mace",
+)
 ```
 
-Also exported: `run_optimization`, `run_md`, `run_neb`. Every snippet
-above executes in the repository's test suite; snippets that drift from
-the real signatures fail CI.
+The backend is explicit in the API too; the same resolver and provenance
+rules apply as for the CLI.
 
-## Configuration precedence
+## Documentation
 
-CLI flags > INCAR file > `settings.ini` > built-in defaults. Path
-provenance is printed by `mliport config show`; `mliport config schema`
-lists every recognized key. The TUI (`mliport tui`) exposes the same
-configuration space interactively.
-
-## Troubleshooting
-
-Observed, diagnosable failures:
-
-- **Model download/auth fails** (UMA, MACE meta checkpoints): the
-  download requires network access and, for some checkpoints, accepting
-  the license. The error from the downloader is passed through.
-- **Wrong DPA branch**: DPA-3.1-3M is multi-head. Without `--head`/TASK
-  matching the training branch, results are silently from the wrong
-  head. The record's `head` field shows what was used; the installer
-  profile pins `Omat24`.
-- **Model lacks stress**: cell relaxation, elastic recipes and NPT-style
-  analysis require stress. mliport fails closed with an explicit message
-  instead of fabricating stress.
-- **GPU architecture mismatch** (e.g. Volta with a cu128-only torch
-  build): `mliport doctor` reports the compute capability and the
-  installer pins the matching build; a manual install that ignores this
-  fails at first kernel launch.
-- **GRACE memory**: the GRACE build is the most memory-hungry of the
-  four on large cells; batch runs should lower `--batch-size` before
-  assuming a bug.
-- **Capability evidence mismatch**: the README tables and the curated
-  capability registry are cross-checked by tests; a runtime contract
-  change without revalidation fails CI rather than shipping stale
-  claims.
-- **Insufficient transport sampling**: `mliport analyze transport`
-  reports when the trajectory is too short or the save interval too
-  coarse for the fit window; it does not return a number in that case.
-
-## Limitations
-
-- Learned PES quality is domain-dependent; surfaces, defects and
-  transition states can be out-of-distribution for any model. The beta
-  suite records per-model behavior on a fixed recipe set; it does not
-  certify your chemistry.
-- No electronic structure (see the table above).
-- Absolute energies are not interchangeable across models, tasks/heads
-  or reference levels.
-- Physical transport numbers need much longer trajectories than the
-  beta demonstration runs; the suite labels its transport results
-  `demonstration_not_converged`.
-- No NPT ensemble.
-- Model predictive uncertainty is not implemented.
-- Historical beta validation covers one GPU architecture (V100, sm_70) and
-  CPU, and predates the current validator semantics. It does not prove
-  every GPU architecture; use `mliport doctor` on your hardware before
-  trusting a first run.
+Full documentation lives in [docs/](docs/index.md): installation,
+configuration, models/backends, workflows, analysis, outputs, validation,
+troubleshooting and the [mlipx migration guide](docs/migration-from-mlipx.md).
 
 ## Citation
 
-mliport has no DOI of its own yet. Cite this repository and the version you
-used (metadata in [`CITATION.cff`](CITATION.cff)), and cite the upstream
-software/model publications for every backend or analysis library you
-actually used — see [docs/citations.md](docs/citations.md). An upstream DOI
-is never mliport's DOI.
+mliport has no DOI of its own yet. Cite mliport (see
+[docs/citations.md](docs/citations.md)) **and** the upstream model/software
+you actually ran; upstream DOIs never belong to mliport. Machine-readable
+metadata: [CITATION.cff](CITATION.cff).
+
+## License
+
+MIT. See [LICENSE.md](LICENSE.md). Upstream models and frameworks keep their
+own licenses; check them before redistribution or commercial use.
 
 ## Credits
 
-- [FAIR-Chem / UMA](https://github.com/facebookresearch/fairchem)
-- [MACE](https://github.com/ACEsuit/mace)
-- [DeePMD-kit / DPA](https://github.com/deepmodeling/deepmd-kit)
-- [GRACE / tensorpotential](https://github.com/ICAMS/grace-tensorpotential)
-- [ASE](https://wiki.fysik.dtu.dk/ase/)
-- [kinisi](https://github.com/bjmorgan/kinisi)
-- [GEMDAT](https://github.com/GEMDAT-repos/GEMDAT)
-- [OMat24 / Meta](https://ai.meta.com/blog/open-source-climate-modeling/)
-
-Per-backend citation guidance (mliport itself, ASE, fairchem/UMA, MACE,
-DeePMD/DPA, GRACE, kinisi, GEMDAT) is collected in
-[docs/citations.md](docs/citations.md).
-
-This project (`hydrogen1222/mliport`) is unrelated to the other project
-also named `mliport` on PyPI.
+mliport (`hydrogen1222/mliport`) is an independent project and is unrelated
+to the other project also named `mliport` on PyPI.

@@ -1,9 +1,11 @@
-"""README verification-state consistency (release-candidate audit RC-03).
+"""Verification-state consistency of the canonical docs (release audit RC-03).
 
-The README runtime-validation table may only claim ``passed`` for runtimes
-whose sanitized records exist in the repository *and* whose primary evidence
-is promoted in the curated capability registry. The compatibility table may
-only use the two honest install-route states from
+After the documentation restructure (task book section 8) the runtime table
+lives in ``docs/validation.md`` and the GPU install-route table is generated
+into ``docs/installation.md``. The runtime table may only claim ``passed`` for
+runtimes whose sanitized records exist in the repository *and* whose primary
+evidence is promoted in the curated capability registry. The compatibility
+table may only use the two honest install-route states from
 ``mliport/install/compatibility.py`` (``experimental`` / ``needs runtime smoke
 test``). This guards against documentation drift when a runtime contract
 changes without revalidation.
@@ -30,8 +32,10 @@ _ALLOWED_COMPAT_STATES = {"experimental", "needs runtime smoke test"}
 
 
 def _runtime_table_rows() -> list[list[str]]:
-    """Rows of the README runtime-validation table (cells, links intact)."""
-    lines = (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    """Rows of the docs/validation.md runtime table (cells, links intact)."""
+    lines = (
+        (REPO_ROOT / "docs" / "validation.md").read_text(encoding="utf-8").splitlines()
+    )
     start = lines.index(RUNTIME_TABLE_HEADER)
     rows = []
     for line in lines[start + 2 :]:  # skip the |---| separator row
@@ -61,7 +65,8 @@ def test_runtime_table_rows_are_backed_by_records() -> None:
         label = row[0]
         statuses = row[1:6]
         record_links = re.findall(
-            r"\]\((validation/runtime/v100/[^)]+)\)", " | ".join(row)
+            r"\]\((?:\.\./)?(validation/runtime/v100/[^)]+)\)",
+            " | ".join(row),
         )
         has_passed = "passed" in statuses
 
@@ -103,7 +108,11 @@ def test_uma_stays_fail_closed_in_readme() -> None:
 
 
 def test_compatibility_table_does_not_claim_verified() -> None:
-    lines = (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    lines = (
+        (REPO_ROOT / "docs" / "installation.md")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     start = lines.index(
         "| Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |"
     )
