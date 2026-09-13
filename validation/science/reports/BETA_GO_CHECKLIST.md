@@ -34,7 +34,7 @@
 | 19 | T7 transport recomputed | ✅ | 4 engines × (MSD→alpha→kinisi→GEMDAT) at the new identity |
 | 20 | T8 re-run or rebuilt under the new identity | ✅ | 20 T8 records (5 cases × 4 engines) re-run at `5f8d91d`; SP latency/VRAM scaling and NVE MD throughput all pass |
 | 21 | Historical reused evidence explicitly marked | ✅ | version block + campaign manifest scope (`not_in_scope`, `historical_reuse`) |
-| 22 | Report rebuildable from a formal evidence archive | ⚠️ | archive built (81 KiB, 76 records, sha256 `ff99b8e0…`) and re-render verified; hosting URL still pending |
+| 22 | Report rebuildable from a formal evidence archive | ✅ | archive published on the [v2.0.0b1 release](https://github.com/hydrogen1222/mliport/releases/tag/v2.0.0b1) (86 KiB, 96 records, sha256 `bb6b1b06…`), re-render verified |
 | 23 | README statements match the evidence | ✅ | READMEs state the completed four-backend smoke and the historical T3/T4/T8 |
 | 24 | No secrets/model weights/temporary probes/attic in the release | ✅ | repository-hygiene and distribution checks; archive excludes weights/trajectories/attic |
 
@@ -55,13 +55,11 @@
 
 ## Residuals before an unconditional GO
 
-1. **Archive hosting**: the archive exists and its sha256 is committed;
-   `archive_url` is filled in when the GitHub Release is published.
-2. **GPU saddle-Hessian workflow (`t5h`)** was not part of the four-backend
+1. **GPU saddle-Hessian workflow (`t5h`)** was not part of the four-backend
    smoke; its semantics are covered by the CPU/analytic known-answer layer.
 
 Verdict: **GO for beta** for the scoped, explicitly stated evidence:
 current-HEAD four-backend V100 smoke (T1/T2FD/T5/T6/T7/T8) + CI + clean
-wheel installs, with T3/T4 carried as historical evidence. Item 22 completes
-when the archive is published; the GPU `t5h` note above is a statement of
+wheel installs, with T3/T4 carried as historical evidence and a published,
+sha256-pinned evidence archive. The GPU `t5h` note above is a statement of
 scope, not a NO-GO trigger.

@@ -1,7 +1,7 @@
 {
   "archive_bytes": 85972,
   "archive_sha256": "bb6b1b06bb3e891ef2afc054338e27ce44803c0ba2ae7cfbc88ce7cf3638fae4",
-  "archive_url": null,
+  "archive_url": "https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst",
   "by_status": {
     "characterized": 43,
     "pass": 53
