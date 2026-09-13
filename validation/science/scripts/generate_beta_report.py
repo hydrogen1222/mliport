@@ -36,13 +36,20 @@ if str(_SCIENCE_ROOT) not in sys.path:
 
 from evidence import (  # noqa: E402
     TIER_NAMES,
+    BridgeArtifactError,
     CampaignManifestError,
     aggregate_records,
+    bridge_engine_checks,
     build_version_block,
+    latest_bridge_summary,
     load_archive_manifest,
+    load_bridge_archive_manifest,
+    load_bridge_summary,
     load_campaign_manifest,
     load_evidence,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 ENGINE_ORDER = ("mace", "dpa", "grace", "uma")
 ENGINE_LABELS = {
@@ -717,8 +724,23 @@ def readme_validation_snippet(
         "grace": "GRACE",
         "uma": "UMA",
     }
-    lines = [
-        status_snippet(versions),
+    versions = versions or {}
+    lines = [status_snippet(versions)]
+    if versions.get("release_candidate_commit"):
+        candidate = str(versions.get("release_candidate_commit"))
+        lines += [
+            "",
+            f"The full scientific beta campaign targets commit "
+            f"`{versions.get('scientific_campaign_target')}`. The release "
+            f"candidate `{candidate[:12]}` retains that validated scientific "
+            "implementation and adds productization/release-layer changes. A "
+            f"four-backend release-bridge smoke "
+            f"(`{versions.get('release_bridge_campaign')}`) was executed at "
+            "the release-candidate commit to verify configuration, backend "
+            "selection, model loading and single-point inference paths. No "
+            "long scientific trajectories were regenerated.",
+        ]
+    lines += [
         "",
         "Validation status per backend, rendered from the beta evidence "
         "records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 "
@@ -793,8 +815,42 @@ def _checklist_context(
     }
     tiers_present = sorted(current_tiers)
     archive = archive_manifest or {}
+    bridge = versions.get("_release_bridge") or {}
+    bridge_status = str(bridge.get("release_bridge_status") or "pending")
+    bridge_archive = bridge.get("archive") or {}
+    if bridge_status == "pass":
+        bridge_icon = _GO_STATUS
+    elif bridge_status in {"fail", "blocked"}:
+        bridge_icon = _GO_FAIL
+    else:
+        bridge_icon = _GO_WARN
     return {
         "software_commit": versions.get("software_commit") or "unknown",
+        "scientific_campaign_target": (
+            versions.get("scientific_campaign_target")
+            or versions.get("software_commit")
+            or "unknown"
+        ),
+        "release_candidate_commit": (
+            versions.get("release_candidate_commit") or "pending"
+        ),
+        "bridge_campaign": bridge.get("release_bridge_campaign") or "pending",
+        "bridge_status": bridge_status,
+        "bridge_icon": bridge_icon,
+        "bridge_engine_summary": ", ".join(
+            f"{eng}:{status}"
+            for eng, status in sorted((bridge.get("engines") or {}).items())
+        )
+        or "not run",
+        "bridge_negative_summary": ", ".join(
+            f"{name}:{status}"
+            for name, status in sorted((bridge.get("negative_checks") or {}).items())
+        )
+        or "not run",
+        "bridge_alias": bridge.get("fairchem_alias") or "not run",
+        "bridge_archive_sha": str(bridge_archive.get("sha256") or "n/a"),
+        "bridge_archive_url": bridge_archive.get("url") or "(pending)",
+        "bridge_archive_records": bridge_archive.get("records"),
         "software_short": str(versions.get("software_commit") or "unknown")[:8],
         "validation_commit": versions.get("validation_code_commit") or "unknown",
         "campaign": versions.get("evidence_campaign") or "none",
@@ -870,6 +926,9 @@ def _go_queries(ctx, views) -> list[str]:
         "tests=V01-T2,V01-T3,V01-T4; identity=precision,model,commit",
         f"campaign_manifest={ctx['campaign']}; status={ctx['campaign_manifest_status']}",
         f"tier_records={current}; engines={engines}",
+        f"release_bridge={ctx['bridge_campaign']}; "
+        f"release_commit={ctx['release_candidate_commit']}; "
+        f"engines={engines}; negatives=no_backend,strict_config; alias=fairchem",
         "tier=t1; metric=repeat_inference",
         f"tier=t2fd; records={t2fd}",
         "workflow=t5h; layer=cpu_known_answer",
@@ -942,9 +1001,18 @@ def _go_items_en(ctx):
             f"`{ctx['campaign']}` manifest status = `{ctx['campaign_manifest_status']}`",
         ),
         (
-            "MACE/DPA/GRACE/UMA target-commit GPU smoke",
+            "MACE/DPA/GRACE/UMA scientific-campaign GPU smoke",
             _GO_STATUS if full_engine_matrix else _GO_FAIL,
             f"{ctx['n_engines']} engines x " + "/".join(ctx["tiers_present"]),
+        ),
+        (
+            "Release-candidate bridge smoke",
+            ctx["bridge_icon"],
+            f"{ctx['bridge_campaign']} at `{ctx['release_candidate_commit']}`: "
+            f"{ctx['bridge_engine_summary']}; negatives "
+            f"{ctx['bridge_negative_summary']}; fairchem alias "
+            f"{ctx['bridge_alias']}; bridge archive "
+            f"`{ctx['bridge_archive_sha'][:16]}…` {ctx['bridge_archive_url']}",
         ),
         (
             "Repeat inference target-commit",
@@ -1076,9 +1144,18 @@ def _go_items_cn(ctx):
             f"`{ctx['campaign']}` manifest status = `{ctx['campaign_manifest_status']}`",
         ),
         (
-            "MACE/DPA/GRACE/UMA target-commit GPU smoke",
+            "MACE/DPA/GRACE/UMA scientific-campaign GPU smoke",
             _GO_STATUS if full_engine_matrix else _GO_FAIL,
             f"{ctx['n_engines']} 个后端 x " + "/".join(ctx["tiers_present"]),
+        ),
+        (
+            "Release-candidate bridge smoke",
+            ctx["bridge_icon"],
+            f"{ctx['bridge_campaign']} @ `{ctx['release_candidate_commit']}`: "
+            f"{ctx['bridge_engine_summary']}; negatives "
+            f"{ctx['bridge_negative_summary']}; fairchem alias "
+            f"{ctx['bridge_alias']}; bridge archive "
+            f"`{ctx['bridge_archive_sha'][:16]}…` {ctx['bridge_archive_url']}",
         ),
         (
             "repeat inference target-commit",
@@ -1155,8 +1232,10 @@ def md_go_checklist(
     archive_manifest,
     *,
     language: str = "en",
+    release_bridge: dict[str, Any] | None = None,
 ) -> str:
     """Render the section-28 GO/NO-GO checklist inside the single report."""
+    versions = {**(versions or {}), "_release_bridge": release_bridge or {}}
     ctx = _checklist_context(
         canonical, tiers, versions, campaign_manifest, archive_manifest
     )
@@ -1167,7 +1246,7 @@ def md_go_checklist(
     ), "every GO checklist item needs exactly one evidence query"
     # Tier-linked GO items cannot claim green when the tier produced no
     # current-campaign record: the status follows the evidence query.
-    tier_linked = {11: "t1", 12: "t2fd", 14: "t5", 15: "t7", 16: "t7", 19: "t7"}
+    tier_linked = {12: "t1", 13: "t2fd", 15: "t5", 16: "t7", 17: "t7", 20: "t7"}
     items = [
         (
             title,
@@ -1190,7 +1269,8 @@ def md_go_checklist(
             "## Beta GO / NO-GO 清单（任务书 §28）",
             "",
             f"- 结论：**{verdict}**（{n_ok} ✅ / {n_warn} ⚠️ / {n_fail} ❌）",
-            f"- 被验证软件提交：`{ctx['software_commit']}`",
+            f"- 科学 campaign target（full campaign）：`{ctx['scientific_campaign_target']}`",
+            f"- Release candidate commit（bridge）：`{ctx['release_candidate_commit']}`",
             f"- 证据 campaign：`{ctx['campaign']}`，{ctx['total']} 条记录"
             f"（{ctx['pass']} pass / {ctx['characterized']} characterized / "
             f"{ctx['fail']} fail / {ctx['blocked']} blocked）",
@@ -1203,7 +1283,10 @@ def md_go_checklist(
             "## Beta GO / NO-GO checklist (task book section 28)",
             "",
             f"- Verdict: **{verdict}** ({n_ok} ✅ / {n_warn} ⚠️ / {n_fail} ❌)",
-            f"- Validated software commit: `{ctx['software_commit']}`",
+            f"- Scientific campaign target (full campaign): "
+            f"`{ctx['scientific_campaign_target']}`",
+            f"- Release candidate commit (bridge): "
+            f"`{ctx['release_candidate_commit']}`",
             f"- Evidence campaign: `{ctx['campaign']}`, {ctx['total']} records"
             f" ({ctx['pass']} pass / {ctx['characterized']} characterized / "
             f"{ctx['fail']} fail / {ctx['blocked']} blocked)",
@@ -1231,6 +1314,99 @@ def md_go_checklist(
             "GPU `t5h` saddle workflow is outside the four-backend smoke and is "
             "covered by the CPU/analytic known-answer layer.",
         ]
+    lines.append("")
+    return "\n".join(lines)
+
+
+def md_release_bridge(
+    bridge: dict[str, Any] | None,
+    bridge_archive: dict[str, Any] | None,
+    cn: bool = False,
+) -> str:
+    """Exact-release bridge section (scientific target vs release candidate)."""
+    if cn:
+        title = "## Release bridge（精确 release candidate）"
+    else:
+        title = "## Release bridge (exact release candidate)"
+    lines = [title, ""]
+    if not bridge:
+        lines += [
+            "Not run in this evidence set." if not cn else "本证据集未运行。",
+            "",
+        ]
+        return "\n".join(lines)
+    engines = bridge.get("engines") or {}
+    negatives = bridge.get("negative_checks") or {}
+    target = bridge.get("scientific_campaign_target")
+    candidate = bridge.get("release_candidate_commit")
+    campaign = bridge.get("campaign_id")
+    if cn:
+        lines += [
+            f"完整科学 campaign 的目标提交是 `{target}`；release candidate "
+            f"`{candidate}` 含产品化/配置层改动，因此在该提交上执行了四后端 "
+            f"release bridge（campaign `{campaign}`）。bridge 只验证 backend "
+            "选择、模型加载、单点推断、strict config 与 no-backend fail-closed "
+            "路径，没有重新生成任何长时间科学轨迹。",
+            "",
+            "| 后端 | model load | SP | no-backend | strict config |",
+            "|---|---|---|---|---|",
+        ]
+    else:
+        lines += [
+            f"The full scientific campaign targets `{target}`; the release "
+            f"candidate `{candidate}` contains productization/configuration "
+            "changes, so a four-backend release bridge (campaign "
+            f"`{campaign}`) was executed at that commit. It verifies backend "
+            "selection, model loading, single-point inference, strict "
+            "configuration and the fail-closed no-backend path; no long "
+            "scientific trajectories were regenerated.",
+            "",
+            "| backend | model load | SP | no-backend | strict config |",
+            "|---|---|---|---|---|",
+        ]
+    engine_order = ("mace", "dpa", "grace", "uma")
+    campaign_dir = REPO_ROOT / "validation" / "science" / "bridge" / str(campaign)
+
+    def _check_status(check_map: dict[str, Any], name: str, fallback: str) -> str:
+        return str((check_map.get(name) or {}).get("status") or fallback)
+
+    for engine in engine_order:
+        checks = bridge_engine_checks(campaign_dir, engine)
+        status = engines.get(engine, "pending")
+        lines.append(
+            f"| {engine.upper()} "
+            f"| {_check_status(checks, 'model_load', status)} "
+            f"| {_check_status(checks, 'single_point', status)} "
+            f"| {_check_status(checks, 'no_implicit_fallback', status)} "
+            f"| {_check_status(checks, 'strict_config', status)} |"
+        )
+    lines.append("")
+    alias = bridge.get("fairchem_alias")
+    alias_status = alias.get("status") if isinstance(alias, dict) else alias
+    negative_text = ", ".join(
+        f"{name}={status}" for name, status in sorted(negatives.items())
+    )
+    lines.append(
+        f"Negative checks: {negative_text or 'not run'}; "
+        f"fairchem alias: {alias_status or 'not run'}."
+        if not cn
+        else f"负例检查：{negative_text or 'not run'}；fairchem alias："
+        f"{alias_status or 'not run'}。"
+    )
+    if bridge_archive:
+        if cn:
+            archive_line = (
+                f"Bridge archive：`{bridge_archive.get('archive_sha256', 'n/a')}`"
+                f"（{bridge_archive.get('records', '?')} 条）"
+                f"{bridge_archive.get('archive_url', '(pending)')}"
+            )
+        else:
+            archive_line = (
+                f"Bridge archive: `{bridge_archive.get('archive_sha256', 'n/a')}` "
+                f"({bridge_archive.get('records', '?')} records) "
+                f"{bridge_archive.get('archive_url', '(pending)')}"
+            )
+        lines.append(archive_line)
     lines.append("")
     return "\n".join(lines)
 
@@ -2379,6 +2555,7 @@ def _summary_json(
     canonical: dict | None = None,
     versions: dict | None = None,
     tier_views: dict[str, TierView] | None = None,
+    release_bridge: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     t3 = tiers["t3"]
     omat = {}
@@ -2404,6 +2581,9 @@ def _summary_json(
         "generated_from": str(root),
         "code_commit": evidence_commits(tiers),
         "versions": versions,
+        # Section 14: the scientific campaign target and the release-candidate
+        # bridge are separate evidence layers and must never be conflated.
+        "release_bridge": release_bridge,
         "model_profiles": {eng: ENGINE_LABELS[eng] for eng in ENGINE_ORDER},
         "tiers": {
             tier: (
@@ -2489,6 +2669,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--bridge-summary",
+        default=None,
+        help=(
+            "release-bridge summary.json; default: latest under "
+            "validation/science/bridge/"
+        ),
+    )
+    parser.add_argument(
         "--update-readmes",
         action="store_true",
         help=(
@@ -2540,6 +2728,58 @@ def main() -> int:
         print(f"[report] refusing to render: {exc}", file=sys.stderr)
         return 2
     versions_dict = versions.as_dict()
+    versions_dict["scientific_campaign_target"] = versions_dict.get("software_commit")
+
+    bridge_summary = None
+    bridge_archive = None
+    bridge_path = Path(args.bridge_summary) if args.bridge_summary else None
+    if bridge_path is None:
+        bridge_path = latest_bridge_summary(
+            REPO_ROOT / "validation" / "science" / "bridge"
+        )
+    if bridge_path is not None and bridge_path.is_file():
+        try:
+            bridge_summary = load_bridge_summary(bridge_path)
+        except BridgeArtifactError:
+            bridge_summary = None
+        archive_path = bridge_path.parent / "archive_manifest.json"
+        if archive_path.is_file():
+            try:
+                bridge_archive = load_bridge_archive_manifest(archive_path)
+            except BridgeArtifactError:
+                bridge_archive = None
+    bridge_block = None
+    if bridge_summary:
+        alias = bridge_summary.get("fairchem_alias")
+        bridge_block = {
+            "scientific_campaign_target": versions_dict.get(
+                "scientific_campaign_target"
+            ),
+            "release_candidate_commit": bridge_summary.get("release_candidate_commit"),
+            "release_bridge_campaign": bridge_summary.get("campaign_id"),
+            "release_bridge_status": bridge_summary.get("status"),
+            "engines": bridge_summary.get("engines"),
+            "negative_checks": bridge_summary.get("negative_checks"),
+            "fairchem_alias": (alias or {}).get("status")
+            if isinstance(alias, dict)
+            else alias,
+            "archive": (
+                {
+                    "sha256": bridge_archive.get("archive_sha256"),
+                    "url": bridge_archive.get("archive_url"),
+                    "records": bridge_archive.get("records"),
+                }
+                if bridge_archive
+                else None
+            ),
+        }
+        versions_dict["release_candidate_commit"] = bridge_block[
+            "release_candidate_commit"
+        ]
+        versions_dict["release_bridge_campaign"] = bridge_block[
+            "release_bridge_campaign"
+        ]
+        versions_dict["release_bridge_status"] = bridge_block["release_bridge_status"]
 
     tiers = {tier: bundle.tier(tier) for tier in TIER_NAMES}
     all_tiers = evidence_tiers(root, campaign=None).by_tier()
@@ -2560,6 +2800,7 @@ def main() -> int:
         canonical,
         versions_dict,
         tier_views=tier_views,
+        release_bridge=bridge_block,
     )
     (out / "beta-summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
@@ -2574,7 +2815,9 @@ def main() -> int:
             campaign_manifest=campaign_manifest_dict,
             archive_manifest=archive_manifest,
             language="en",
+            release_bridge=bridge_block,
         ),
+        md_release_bridge(bridge_summary, bridge_archive),
         md_tier("t1", tier_views["t1"], md_t1),
         md_tier("t2", tier_views["t2"], md_t2),
         md_tier("t2fd", tier_views["t2fd"], md_t2fd),
@@ -2627,7 +2870,9 @@ def main() -> int:
             campaign_manifest=campaign_manifest_dict,
             archive_manifest=archive_manifest,
             language="cn",
+            release_bridge=bridge_block,
         ),
+        md_release_bridge(bridge_summary, bridge_archive, cn=True),
         md_tier("t1", tier_views["t1"], md_t1),
         md_tier("t2", tier_views["t2"], md_t2),
         md_tier("t2fd", tier_views["t2fd"], md_t2fd),

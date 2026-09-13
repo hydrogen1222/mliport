@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.0b3
+
+Recovery/release-bridge beta polish:
+
+- reconciles the productization tree with the validation-report lineage; Git
+  forensics proved `v2.0.0b2`/`0f53dbb` is an ancestor of `main`, so no
+  history rewrite or force-push was required;
+- locks the productization invariants with behavior-level CI tests
+  (backend-neutral selection, strict config, project-scoped citation, docs
+  installer matrix, rename hygiene, package metadata);
+- preserves the corrected citation/docs/installer contracts and the
+  per-backend installation model;
+- consolidates current vs historical validation reporting
+  (`target_commit_revalidated`, tier scopes, historical section, GO evidence
+  queries) and adds the exact-release four-backend bridge smoke with its own
+  archive;
+- refines the T7 estimator audit with two deterministic OLS windows on the
+  same trajectory and an explicit estimator-model difference flag, without
+  forcing kinisi and OLS to agree;
+- retains the T8 startup/warm benchmark separation and records warmup stop
+  reasons plus the actual backend GPU-synchronization method.
+
 ## 2.0.0b2
 
 Beta polish after `2.0.0b1`:

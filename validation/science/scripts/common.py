@@ -40,13 +40,20 @@ _SCIENCE_ROOT = Path(__file__).resolve().parent.parent
 if str(_SCIENCE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCIENCE_ROOT))
 
-from evidence.constants import (  # noqa: E402
+# Several constants are re-exported for the test suite; keep them even
+# though this module does not use every name directly.
+from evidence.constants import (  # noqa: E402, F401
     ALLOWED_WRAPPER_MODULES,
     BETA_VALIDATION_SUITE_REVISION,
     DATA_MANIFEST_SCHEMA,
     MODEL_MANIFEST_SCHEMA,
     RESULT_SCHEMA,
+    RESULT_SCHEMA_V1,
+    RESULT_SCHEMAS,
     STATUSES,
+    SUMMARY_SCHEMA,
+    SUMMARY_SCHEMA_V1,
+    VOLATILE_RECORD_FIELDS,
 )
 from evidence.identity import (  # noqa: E402
     canonical_json,

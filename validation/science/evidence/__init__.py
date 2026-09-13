@@ -16,6 +16,16 @@ Public API::
 
 from __future__ import annotations
 
+from .bridge import (
+    BRIDGE_ARCHIVE_SCHEMA,
+    BRIDGE_RECORD_SCHEMA,
+    BRIDGE_SUMMARY_SCHEMA,
+    BridgeArtifactError,
+    bridge_engine_checks,
+    latest_bridge_summary,
+    load_bridge_archive_manifest,
+    load_bridge_summary,
+)
 from .aggregate import (
     ENGINE_PROPERTIES,
     EXIT_HARNESS_VIOLATION,
@@ -103,7 +113,15 @@ __all__ = [
     "device_class",
     "exit_code",
     "harness_violations",
+    "BRIDGE_ARCHIVE_SCHEMA",
+    "BRIDGE_RECORD_SCHEMA",
+    "BRIDGE_SUMMARY_SCHEMA",
+    "BridgeArtifactError",
+    "bridge_engine_checks",
+    "latest_bridge_summary",
     "load_archive_manifest",
+    "load_bridge_archive_manifest",
+    "load_bridge_summary",
     "load_campaign_manifest",
     "load_evidence",
     "migrate_record",
