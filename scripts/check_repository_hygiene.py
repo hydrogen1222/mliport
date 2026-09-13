@@ -19,6 +19,7 @@ ROOT_MARKDOWN_ALLOWLIST = frozenset(
         "CONTRIBUTING.md",
         "LICENSE.md",
         "README.md",
+        "CHANGELOG.md",
         "README_CN.md",
     }
 )

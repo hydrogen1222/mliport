@@ -1,17 +1,17 @@
 {
-  "archive_bytes": 85972,
-  "archive_sha256": "bb6b1b06bb3e891ef2afc054338e27ce44803c0ba2ae7cfbc88ce7cf3638fae4",
-  "archive_url": "https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst",
+  "archive_bytes": 89663,
+  "archive_sha256": "e6a95777f471461f2b4c5cdc7dcd7179e34aa9793b9a2bc4d078908011320a83",
+  "archive_url": "https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b2/mliport-validation-20260913-current-head-5f8d91d.tar.zst",
   "by_status": {
     "characterized": 43,
-    "pass": 53
+    "pass": 58
   },
   "campaign_id": "20260913-current-head-5f8d91d",
   "data_manifest_sha256": "ce96a826567139b216d92ce9ab2bed54b394217892d25854c4559a949466bfd6",
-  "generated_at": "2026-09-13T08:09:33+00:00",
+  "generated_at": "2026-09-13T13:25:20+00:00",
   "model_manifest_sha256": "9aefc12228014933b2b71d244e6722ea07ba001c8d9a004f6c2c59f9faee6060",
-  "records": 96,
+  "records": 101,
   "schema": "mliport.beta-archive-manifest/1",
   "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-  "validation_commit": "5d67211f9c6ed894615beede5ecca17e50b1bbfa"
+  "validation_commit": "e8edcea36bae773df409d0cf67be5cd7bf8a4571"
 }

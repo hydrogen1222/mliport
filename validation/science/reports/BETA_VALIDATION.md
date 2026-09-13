@@ -7,8 +7,8 @@ Revalidation status: **target_commit_revalidated** -- campaign manifest declares
 | version identity | commit |
 |---|---|
 | software_commit (claimed validated) | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
-| validation_code_commit | `cf4ec6c7efd4e982bd6ad61b51b6af64e1d227e9` |
-| report_generator_commit | `cf4ec6c7efd4e982bd6ad61b51b6af64e1d227e9` |
+| validation_code_commit | `e8edcea36bae773df409d0cf67be5cd7bf8a4571` |
+| report_generator_commit | `e8edcea36bae773df409d0cf67be5cd7bf8a4571` |
 | evidence_campaign | `20260913-current-head-5f8d91d` |
 | evidence_source_commits | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
 
@@ -25,7 +25,7 @@ Model identities and artifact hashes are pinned in `validation/science/model_man
 | 1 | New name has no known same-domain namespace collision | ✅ | `mliport` free on the PyPI mirror and on GitHub search; repo renamed to `hydrogen1222/mliport` | `external=pypi:mliport,github:hydrogen1222/mliport` |
 | 2 | Python package / CLI / repo identity migrated | ✅ | rename commit chain; clean break, old `mlipx` import not published | `canonical=record_counts; scope=current_campaign` |
 | 3 | Target-commit CI green on Python 3.10/3.11/3.12 | ✅ | Actions tests/lint/package-build green at `5f8d91d4` and follow-ups | `ci=github_actions:tests,lint,package-build; python=3.10,3.11,3.12; commit=5f8d91d4` |
-| 4 | Clean wheel install green | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b1` capability smoke | `ci=wheel-install-smoke; python=3.10,3.11,3.12` |
+| 4 | Clean wheel install green | ✅ | wheel-install-smoke 3.10/3.11/3.12 + `mliport-2.0.0b2` capability smoke | `ci=wheel-install-smoke; python=3.10,3.11,3.12` |
 | 5 | Strict evidence loader is the only interpretation path | ✅ | `validation/science/evidence/` + no-raw-selection report tests | `loader=evidence.load_evidence; raw_selection=forbidden` |
 | 6 | Report/README do not interpret raw records | ✅ | report and figures consume `load_evidence`; README block machine-rendered | `renderer=generate_beta_report; readme_block=generated` |
 | 7 | Malformed evidence fails closed | ✅ | V01-T5/T6/T7 tests; report exits 2/3; archive builder refuses | `tests=V01-T5,V01-T6,V01-T7; exit_codes=2,3` |
@@ -43,7 +43,7 @@ Model identities and artifact hashes are pinned in `validation/science/model_man
 | 19 | T7 transport recomputed | ✅ | 12 T7 records (md/transport/gemdat) | `tier=t7; records=12` |
 | 20 | T8 re-run or rebuilt under the new identity | ✅ | 25 T8 records | `tier=t8; records=25` |
 | 21 | Historical reused evidence explicitly marked | ✅ | version block + campaign scope `not_in_scope` / `historical_reuse` | `tiers=historical_reuse:t2,t3,t4; scope=explicit` |
-| 22 | Report rebuildable from a formal evidence archive | ✅ | sha256 `bb6b1b06bb3e891e…`, 96 records, https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst | `archive_manifest; sha256=bb6b1b06bb3e891e; url=https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst` |
+| 22 | Report rebuildable from a formal evidence archive | ✅ | sha256 `e6a95777f471461f…`, 101 records, https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b2/mliport-validation-20260913-current-head-5f8d91d.tar.zst | `archive_manifest; sha256=e6a95777f471461f; url=https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b2/mliport-validation-20260913-current-head-5f8d91d.tar.zst` |
 | 23 | README statements match the evidence | ✅ | generated block plus explicit historical T3/T4 statement | `summary=beta-summary.json; readme_block=README_VALIDATION.md` |
 | 24 | No secrets/model weights/temporary probes/attic in the release | ✅ | hygiene/distribution checks; archive excludes weights, trajectories and attic | `hygiene=repository_hygiene,distribution_manifest,rename_guard` |
 

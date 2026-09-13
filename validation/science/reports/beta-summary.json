@@ -5,15 +5,15 @@
   "versions": {
     "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
     "target_software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-    "validation_code_commit": "cf4ec6c7efd4e982bd6ad61b51b6af64e1d227e9",
-    "report_generator_commit": "cf4ec6c7efd4e982bd6ad61b51b6af64e1d227e9",
+    "validation_code_commit": "e8edcea36bae773df409d0cf67be5cd7bf8a4571",
+    "report_generator_commit": "e8edcea36bae773df409d0cf67be5cd7bf8a4571",
     "evidence_campaign": "20260913-current-head-5f8d91d",
     "evidence_source_commits": [
       "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
     ],
     "scientific_revalidation_status": "target_commit_revalidated",
     "status_reason": "campaign manifest declares completion and every record was produced at the target software commit",
-    "repository_head_at_render_time": "cf4ec6c7efd4e982bd6ad61b51b6af64e1d227e9",
+    "repository_head_at_render_time": "e8edcea36bae773df409d0cf67be5cd7bf8a4571",
     "validation_logic_version": 1
   },
   "model_profiles": {

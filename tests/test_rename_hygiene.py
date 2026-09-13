@@ -28,6 +28,7 @@ PATTERNS = (
 #: Files where the old name is legitimate archaeology or a legacy-compat
 #: implementation detail.
 ALLOWED_FILES = {
+    "CHANGELOG.md",  # changelog mentions the old name as history
     "docs/migration-from-mlipx.md",  # the migration guide itself
     "docs/index.md",  # "migrate from the old mlipx name" table row
     "README.md",  # links to the migration guide
