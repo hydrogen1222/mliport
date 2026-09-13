@@ -9,10 +9,15 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8
         with:
           python-version: "3.12"
+          enable-cache: true
+          # This repository deliberately has no uv.lock; the real
+          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # key must hash that path (a uv.lock default never matched).
+          cache-dependency-glob: "mlipx/pyproject.toml"
       # Pin the ruff version the project actually enforces locally; an
       # unpinned `uv run ruff` drifts with new releases and fails on renamed
       # rules (e.g. TCH003 -> TC003) that the 0.5.1 baseline never checks.

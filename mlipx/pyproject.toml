@@ -48,6 +48,8 @@ dev = [
     "spglib",
     "ruff",
     "mypy",
+    # GitHub Actions workflow hygiene tests parse .github/workflows/*.yml
+    "pyyaml",
 ]
 
 [project.scripts]

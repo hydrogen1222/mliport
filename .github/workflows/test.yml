@@ -13,10 +13,15 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          # This repository deliberately has no uv.lock; the real
+          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # key must hash that path (a uv.lock default never matched).
+          cache-dependency-glob: "mlipx/pyproject.toml"
       - name: Install mlipx dev dependencies
         run: |
           uv venv .venv-dev --python ${{ matrix.python-version }}
@@ -34,10 +39,15 @@ jobs:
   analysis-backends:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8
         with:
           python-version: "3.12"
+          enable-cache: true
+          # This repository deliberately has no uv.lock; the real
+          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # key must hash that path (a uv.lock default never matched).
+          cache-dependency-glob: "mlipx/pyproject.toml"
       - name: Install all analysis backends
         run: |
           uv venv .venv-analysis --python 3.12
@@ -59,10 +69,15 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          # This repository deliberately has no uv.lock; the real
+          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # key must hash that path (a uv.lock default never matched).
+          cache-dependency-glob: "mlipx/pyproject.toml"
       - name: Build wheel
         run: uv build --wheel --out-dir dist ./mlipx
       - name: Install wheel into a clean pinned interpreter
