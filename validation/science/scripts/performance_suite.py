@@ -197,25 +197,33 @@ def _sp_record(
         return float(atoms.get_potential_energy())
 
     try:
-        _timing_energy, first_call_s = common.timed(_energy, device)
+        _timing_energy, first_call_s = common.timed(_energy, device, backend=ctx.engine)
         warm_times: list[float] = []
+        warmup_stop_reason = f"fixed_count:{WARMUP_MAX}"
         for _ in range(WARMUP_MAX):
-            _, warm_s = common.timed(_energy, device)
+            _, warm_s = common.timed(_energy, device, backend=ctx.engine)
             warm_times.append(warm_s)
             if (
                 len(warm_times) >= WARMUP_TARGET
                 and _relative_spread(warm_times[-3:]) <= WARMUP_STABILITY
             ):
+                warmup_stop_reason = f"stability:last3<={WARMUP_STABILITY}"
                 break
-        timed_times = [common.timed(_energy, device)[1] for _ in range(TIMED_REPS)]
+        timed_times = [
+            common.timed(_energy, device, backend=ctx.engine)[1]
+            for _ in range(TIMED_REPS)
+        ]
         stats = summarize_timings(timed_times)
+        gpu_sync_method = common.synchronize(device, backend=ctx.engine)
 
         # Timing is over. Restore the pinned geometry and take the reported
         # observables from a real inference on *that* structure, so energy,
         # forces, stress and the recorded structure hash are one identity.
         atoms.positions = pristine_positions
         with common.InferenceProbe(atoms) as probe:
-            (energy, forces, stress), observable_s = common.timed(probe.run, device)
+            (energy, forces, stress), observable_s = common.timed(
+                probe.run, device, backend=ctx.engine
+            )
             observable_calls = probe.calls
     except Exception as exc:  # noqa: BLE001 - classified below
         if _is_oom(exc):
@@ -257,6 +265,8 @@ def _sp_record(
         "first_call_seconds": round(first_call_s, 4),
         "warmup_count": len(warm_times),
         "warmup_target": WARMUP_TARGET,
+        "warmup_stop_reason": warmup_stop_reason,
+        "gpu_sync_method": gpu_sync_method,
         "n_timed": stats["n_timed"],
         "median_ms": stats["median_ms"],
         "mean_ms": stats["mean_ms"],
@@ -362,7 +372,7 @@ def _md_record(
             dyn.run(1)
         started = time.perf_counter()
         dyn.run(md_steps)
-        common.synchronize(device)
+        common.synchronize(device, backend=ctx.engine)
         wall_s = time.perf_counter() - started
     except Exception as exc:  # noqa: BLE001 - classified below
         if _is_oom(exc):
@@ -396,6 +406,8 @@ def _md_record(
         "timestep_fs": timestep_fs,
         "model_load_s": None if model_load_s is None else round(model_load_s, 4),
         "warmup_count": MD_WARMUP_STEPS,
+        "warmup_stop_reason": f"fixed_count:{MD_WARMUP_STEPS}",
+        "gpu_sync_method": common.synchronize(device, backend=ctx.engine),
         "n_timed": md_steps,
         "warmup_steps": MD_WARMUP_STEPS,
         "timed_steps": md_steps,

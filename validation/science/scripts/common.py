@@ -24,6 +24,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    import numpy as np
+
+
+if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ase import Atoms
@@ -42,20 +46,12 @@ from evidence.constants import (  # noqa: E402
     DATA_MANIFEST_SCHEMA,
     MODEL_MANIFEST_SCHEMA,
     RESULT_SCHEMA,
-    RESULT_SCHEMA_V1,
-    RESULT_SCHEMAS,
     STATUSES,
-    SUMMARY_SCHEMA,
-    SUMMARY_SCHEMA_V1,
-    VOLATILE_RECORD_FIELDS,
 )
 from evidence.identity import (  # noqa: E402
     canonical_json,
-    device_class,
-    migrate_record,
     new_run_id,
     profile_id_for,
-    profile_identity,
     record_fingerprint,
     record_id_for,
     seed_from,
@@ -103,24 +99,47 @@ def package_version(dist: str) -> str:
         return "not-installed"
 
 
-def synchronize(device: str) -> None:
-    """Block until queued work on ``device`` has completed (torch/TensorFlow)."""
-    if "cuda" in str(device):
+TORCH_ENGINES = frozenset({"mace", "dpa", "uma"})
+
+
+def synchronize(device: str, backend: str | None = None) -> str:
+    """Block until queued work on ``device`` has completed; return the method.
+
+    ``backend`` selects the runtime that must be synchronized: torch engines
+    (MACE/DPA/UMA), TensorFlow (GRACE), or ``None`` for the legacy
+    torch-first behavior.  TensorFlow 2.20 has no explicit device-sync API,
+    so the grace path performs a host round trip and reports
+    ``tensorflow:implicit-host-transfer``; the benchmark's timed call returns
+    host observables (energy/force conversions), which is the real
+    synchronization point.
+    """
+    device = str(device)
+    if "cuda" not in device:
+        return f"none({device})"
+    normalized = str(backend).lower() if backend else None
+    if normalized is None or normalized in TORCH_ENGINES:
         try:
             import torch
 
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-                return
+                return f"torch.cuda.synchronize({device})"
         except ImportError:
             pass
+    if normalized is None or normalized not in TORCH_ENGINES:
         try:
             import tensorflow as tf
 
-            for gpu in tf.config.list_physical_devices("GPU"):
-                tf.config.experimental.synchronize(gpu)
-        except (ImportError, AttributeError):
+            explicit = getattr(tf.config.experimental, "synchronize", None)
+            if callable(explicit):
+                for gpu in tf.config.list_physical_devices("GPU"):
+                    explicit(gpu)
+                return f"tensorflow.config.experimental.synchronize({device})"
+            tf.constant(0.0).numpy()
+            return f"tensorflow:implicit-host-transfer({device})"
+        except ImportError:
             pass
+    return f"none({device})"
 
 
 def peak_vram_mib() -> int | None:
@@ -336,12 +355,14 @@ class InferenceProbe:
         return energy, forces, stress
 
 
-def timed(fn: Callable[[], Any], device: str = "cpu") -> tuple[Any, float]:
+def timed(
+    fn: Callable[[], Any], device: str = "cpu", backend: str | None = None
+) -> tuple[Any, float]:
     """Run ``fn`` once and return ``(result, wall_seconds)`` with GPU sync."""
-    synchronize(device)
+    synchronize(device, backend)
     t0 = time.monotonic()
     out = fn()
-    synchronize(device)
+    synchronize(device, backend)
     return out, time.monotonic() - t0
 
 

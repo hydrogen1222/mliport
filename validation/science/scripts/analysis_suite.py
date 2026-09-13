@@ -234,8 +234,8 @@ def _native_msd_diagnostic(dataset) -> dict[str, Any]:
     }
 
 
-#: Aligned estimator protocol revision (PR8): plain OLS baseline + ratio.
-ESTIMATOR_PROTOCOL_REVISION = 2
+#: Estimator protocol revision (PR9): two OLS windows + estimator-model flag.
+ESTIMATOR_PROTOCOL_REVISION = 3
 #: kinisi/plain ratio outside this interval raises a diagnostic warning.
 DISAGREEMENT_RATIO_RANGE = (0.5, 2.0)
 
@@ -276,15 +276,32 @@ def _aligned_plain_ols(dataset, temperature_k: float) -> dict[str, Any]:
     result = calculate_msd(dataset, mobile_species=MOBILE_SPECIES)
     lag_ps = np.asarray(result["lag_time_ps"], dtype=float)
     msd_xyz = np.asarray(result["msd_by_axes_A2"]["xyz"], dtype=float)
-    fit_start = float(KINISI_FIT_START_PS)
     fit_stop = float(lag_ps[-1])
-    fit = diagnostic_linear_diffusion_fit(
-        lag_ps, msd_xyz, axes="xyz", fit_start_ps=fit_start, fit_stop_ps=fit_stop
+    kinisi_start = float(KINISI_FIT_START_PS)
+    native_start = float(lag_ps[len(lag_ps) // 2])
+    fit_kinisi = diagnostic_linear_diffusion_fit(
+        lag_ps, msd_xyz, axes="xyz", fit_start_ps=kinisi_start, fit_stop_ps=fit_stop
     )
-    slope_A2_ps = float(fit["slope_A2_ps"])
+    fit_native = diagnostic_linear_diffusion_fit(
+        lag_ps, msd_xyz, axes="xyz", fit_start_ps=native_start, fit_stop_ps=fit_stop
+    )
+    slope_A2_ps = float(fit_kinisi["slope_A2_ps"])
     diffusion_A2_ps = slope_A2_ps / 6.0  # 3 dimensions
     drift = result.get("drift_semantics") or result.get("drift_correction") or {}
     volumes = dataset.volumes_A3
+
+    def _window_fit(fit: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "D_m2_s": plain_ols_diffusion_m2_s(float(fit["slope_A2_ps"]), 3),
+            "window_ps": [
+                float(fit["actual_fit_start_ps"]),
+                float(fit["actual_fit_stop_ps"]),
+            ],
+            "slope_A2_per_ps": float(fit["slope_A2_ps"]),
+            "r_squared": fit.get("r_squared"),
+            "fit_points": fit.get("fit_points"),
+        }
+
     return {
         "estimator_protocol_revision": ESTIMATOR_PROTOCOL_REVISION,
         "species": MOBILE_SPECIES,
@@ -297,16 +314,28 @@ def _aligned_plain_ols(dataset, temperature_k: float) -> dict[str, Any]:
         "temperature_K": float(temperature_k),
         "mean_cell_A3": (float(np.mean(volumes)) if volumes is not None else None),
         "native_fit_window_ps": [
-            float(fit["actual_fit_start_ps"]),
-            float(fit["actual_fit_stop_ps"]),
+            float(fit_native["actual_fit_start_ps"]),
+            float(fit_native["actual_fit_stop_ps"]),
         ],
-        "kinisi_fit_window_ps": [fit_start, fit_stop],
+        "kinisi_fit_window_ps": [
+            float(fit_kinisi["actual_fit_start_ps"]),
+            float(fit_kinisi["actual_fit_stop_ps"]),
+        ],
         "slope_A2_per_ps": slope_A2_ps,
         "D_plain_ols_A2_per_ps": diffusion_A2_ps,
+        # ``D_plain_ols_m2_s`` keeps its PR8 meaning: OLS over the kinisi
+        # window.  The two explicit window values below answer how much of the
+        # estimator disagreement is a fit-window effect.
         "D_plain_ols_m2_s": plain_ols_diffusion_m2_s(slope_A2_ps, 3),
+        "D_ols_kinisi_window_m2_s": _window_fit(fit_kinisi)["D_m2_s"],
+        "D_ols_native_window_m2_s": _window_fit(fit_native)["D_m2_s"],
+        "ols_by_window": {
+            "kinisi": _window_fit(fit_kinisi),
+            "native": _window_fit(fit_native),
+        },
         "fit_quality": {
-            "r_squared": fit.get("r_squared"),
-            "fit_points": fit.get("fit_points"),
+            "r_squared": fit_kinisi.get("r_squared"),
+            "fit_points": fit_kinisi.get("fit_points"),
         },
         "drift_semantics": {
             "drift_mode": drift.get("drift_mode") or drift.get("mode"),
@@ -333,9 +362,16 @@ def _estimator_comparison(
     post = kinisi.get("D_posterior_m2_s") or {}
     kinisi_D = post.get("mean") if isinstance(post, dict) else post
     plain_D = aligned.get("D_plain_ols_m2_s")
+    same_window_ols = (aligned.get("ols_by_window") or {}).get("kinisi", {})
+    same_window_D = same_window_ols.get("D_m2_s", plain_D)
     ratio = (
         float(kinisi_D) / float(plain_D)
         if kinisi_D is not None and plain_D not in (None, 0)
+        else None
+    )
+    same_window_ratio = (
+        float(kinisi_D) / float(same_window_D)
+        if kinisi_D is not None and same_window_D not in (None, 0)
         else None
     )
     return {
@@ -346,6 +382,8 @@ def _estimator_comparison(
             "slope_A2_per_ps": aligned.get("slope_A2_per_ps"),
             "r_squared": (aligned.get("fit_quality") or {}).get("r_squared"),
         },
+        "same_window_ols": same_window_ols,
+        "ols_by_window": aligned.get("ols_by_window"),
         "native_msd_diagnostic": {
             "D_m2_s": native.get("D_diagnostic_m2_s"),
             "fit_window_ps": [
@@ -370,14 +408,27 @@ def _estimator_comparison(
             "definition": kinisi.get("nernst_einstein_definition"),
         },
         "kinisi_to_plain_D_ratio": ratio,
+        "kinisi_to_same_window_ols_ratio": same_window_ratio,
         "estimator_disagreement_warning": estimator_disagreement(ratio),
+        "estimator_model_difference": estimator_disagreement(same_window_ratio),
         "disagreement_ratio_range": list(DISAGREEMENT_RATIO_RANGE),
         "drift_definitions_match": cross_backend.get("definitions_match"),
         "note": (
             "plain OLS, the native MSD diagnostic and the kinisi posterior use "
-            "different windows/assumptions; the ratio is a diagnostic prompt, "
-            "not a pass/fail threshold and not proof that any estimator is "
-            "wrong"
+            "different windows/assumptions. The same-window OLS comparison "
+            "isolates the window effect: when kinisi still differs from OLS on "
+            "the same window, estimator_model_difference is recorded (kinisi's "
+            "statistical model, overlapping displacement correlations and "
+            "posterior inference versus a diagnostic OLS slope). The ratio is "
+            "a diagnostic prompt, not a pass/fail threshold and not proof that "
+            "any estimator is wrong."
+        ),
+        "uncertainty_note": (
+            "The kinisi credible interval is estimator/model uncertainty "
+            "conditional on the analysed trajectory; it does not include "
+            "independent initial-condition uncertainty, finite-size "
+            "convergence, MLIP model error, temperature sampling convergence "
+            "or long-time rare-event sampling."
         ),
     }
 

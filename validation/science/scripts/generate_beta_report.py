@@ -1949,8 +1949,8 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
         lines += [
             "### Tracer diffusion (kinisi; D in m^2/s)",
             "",
-            "| engine | T (K) | D | 95% CI | sigma_NE (S/m) | "
-            "fit window (ps) | native MSD diag |",
+            "| engine | T (K) | D | kinisi 95% credible interval "
+            "| sigma_NE (S/m) | fit window (ps) | native MSD diag |",
             "|---|---|---|---|---|" "---|---|",
         ]
         for eng in ENGINE_ORDER:
@@ -1981,9 +1981,18 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
                     continue
                 temp = key.rsplit("_T", 1)[-1].replace("K", "")
                 plain = comparison.get("plain_ols", {}) or {}
+                by_window = comparison.get("ols_by_window", {}) or {}
+                native_ols = by_window.get("native", {}) or {}
+                kinisi_ols = by_window.get("kinisi", {}) or {}
                 native_d = comparison.get("native_msd_diagnostic", {}) or {}
                 kinisi_d = comparison.get("kinisi_posterior", {}) or {}
                 ne = comparison.get("nernst_einstein", {}) or {}
+                flags = []
+                if comparison.get("estimator_disagreement_warning"):
+                    flags.append("estimator_disagreement_warning")
+                if comparison.get("estimator_model_difference"):
+                    flags.append("estimator_model_difference")
+                flag_text = ", ".join(flags) if flags else "ok"
 
                 def _ps(value: Any) -> str:
                     return "n/a" if value is None else f"{float(value):.1f}"
@@ -1995,34 +2004,45 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
                     f"{_ps((kinisi_d.get('effective_fit_window_ps') or [None])[0])}-"
                     f"{_ps((kinisi_d.get('effective_fit_window_ps') or [None, None])[1])}"
                 )
-                warning = (
-                    "estimator_disagreement_warning"
-                    if comparison.get("estimator_disagreement_warning")
-                    else "ok"
-                )
                 comparison_rows.append(
-                    f"| {eng} | {temp} | {_fmt(plain.get('D_m2_s'), 3)} "
+                    f"| {eng} | {temp} "
+                    f"| {_fmt(native_ols.get('D_m2_s'), 3)} "
+                    f"| {_fmt(kinisi_ols.get('D_m2_s'), 3)} "
                     f"| {_fmt(native_d.get('D_m2_s'), 3)} "
                     f"| {_fmt(kinisi_d.get('D_m2_s'), 3)} "
                     f"| {_fmt(comparison.get('kinisi_to_plain_D_ratio'), 3)} "
+                    f"| {_fmt(comparison.get('kinisi_to_same_window_ols_ratio'), 3)} "
                     f"| {_fmt(ne.get('sigma_S_m'), 3)} "
-                    f"| {window} | {warning} |"
+                    f"| {window} | {flag_text} |"
                 )
         if comparison_rows:
             lines += [
                 "### Estimator comparison (same trajectory)",
                 "",
-                "| engine | T (K) | plain OLS D (m^2/s) | native MSD diagnostic D "
-                "| kinisi posterior D | kinisi/plain | NE sigma (S/m) "
-                "| windows native/kinisi (ps) | warning |",
-                "|---|---|---|---|---|---|---|---|---|",
+                "| engine | T (K) | D_ols native window | D_ols kinisi window "
+                "| native MSD diagnostic D | kinisi posterior D | kinisi/plain "
+                "| kinisi/same-window OLS | NE sigma (S/m) "
+                "| windows native/kinisi (ps) | flags |",
+                "|---|---|---|---|---|---|---|---|---|---|---|",
                 *comparison_rows,
                 "",
                 "Units: ``D = slope(MSD)/(2d)`` with "
-                "``1 A^2/ps = 1e-8 m^2/s`` (known-answer audited). The three "
-                "estimators use different windows and assumptions; an "
-                "``estimator_disagreement_warning`` (ratio < 0.5 or > 2) is a "
-                "prompt to explain the difference, not a pass/fail verdict.",
+                "``1 A^2/ps = 1e-8 m^2/s`` (known-answer audited). The two "
+                "``D_ols`` columns use the native diagnostic window and the "
+                "kinisi fit window on the same trajectory, so the window "
+                "effect is separated from the estimator effect.",
+                "The kinisi 95% credible interval is estimator/model "
+                "uncertainty conditional on the analysed trajectory; it does "
+                "not include independent initial-condition uncertainty, "
+                "finite-size convergence, MLIP model error, temperature "
+                "sampling convergence or long-time rare-event sampling.",
+                "``estimator_disagreement_warning`` (kinisi/plain < 0.5 or "
+                "> 2) is a prompt to explain the difference. When kinisi still "
+                "differs from OLS on the same window, "
+                "``estimator_model_difference`` records that the remaining gap "
+                "comes from the estimator's statistical model (overlapping "
+                "displacement correlations, posterior inference) rather than "
+                "the fit interval; no estimator is forced to match another.",
                 "",
             ]
     md = g.get("t7_md__t7m0_na3ps4_T700K", [])
@@ -2181,6 +2201,34 @@ def md_t8(records: list[dict[str, Any]]) -> str:
                 )
             )
     lines.append("")
+    stop_reasons: dict[str, int] = {}
+    sync_methods: dict[str, int] = {}
+    for record in records:
+        metrics = record.get("metrics", {})
+        reason = metrics.get("warmup_stop_reason")
+        if reason:
+            stop_reasons[str(reason)] = stop_reasons.get(str(reason), 0) + 1
+        sync = metrics.get("gpu_sync_method")
+        if sync:
+            sync_methods[str(sync)] = sync_methods.get(str(sync), 0) + 1
+    if stop_reasons or sync_methods:
+        lines += [
+            "Benchmark provenance: "
+            + "; ".join(
+                f"warmup stop `{reason}` x{count}"
+                for reason, count in sorted(stop_reasons.items())
+            )
+            + ("; " if stop_reasons and sync_methods else "")
+            + "; ".join(
+                f"GPU sync `{method}` x{count}"
+                for method, count in sorted(sync_methods.items())
+            )
+            + ". Startup (`model_load_s`, `first_inference_ms`) is measured "
+            "separately and excluded from the warm median. TensorFlow 2.20 has "
+            "no explicit device-sync API, so GRACE reports its implicit "
+            "host-transfer synchronization.",
+            "",
+        ]
     flagged = [
         record
         for record in records

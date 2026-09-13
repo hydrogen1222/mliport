@@ -102,6 +102,25 @@ def test_classify_scaling_ignores_within_noise_inversion():
     assert all("scaling_verdict" not in record["diagnostics"] for record in classified)
 
 
+def test_gpu_sync_method_label_is_explicit():
+    import importlib.util
+    import sys as _sys
+
+    _sys.path.insert(0, str(SCRIPTS))
+    import common
+
+    assert common.synchronize("cpu", backend="mace") == "none(cpu)"
+    assert common.synchronize("cpu", backend="grace") == "none(cpu)"
+    torch_label = common.synchronize("cuda:0", backend="mace")
+    if torch_label.startswith("torch.cuda.synchronize"):
+        assert torch_label == "torch.cuda.synchronize(cuda:0)"
+    # GRACE must never be synchronized/reported through torch
+    grace_label = common.synchronize("cuda:0", backend="grace")
+    assert not grace_label.startswith("torch.cuda.synchronize")
+    if importlib.util.find_spec("tensorflow") is not None:
+        assert grace_label.startswith("tensorflow:")
+
+
 def test_report_t8_renders_spread_and_anomaly():
     record = _sp_record(32, 0.5)
     record["metrics"].update(
@@ -148,6 +167,7 @@ def test_current_campaign_t8_records_carry_the_full_contract():
         for key in (
             "first_inference_ms",
             "warmup_count",
+            "warmup_stop_reason",
             "n_timed",
             "median_ms",
             "mean_ms",
@@ -155,10 +175,17 @@ def test_current_campaign_t8_records_carry_the_full_contract():
             "p95_ms",
             "min_ms",
             "max_ms",
+            "gpu_sync_method",
         ):
             assert key in metrics, f"{path.name}: missing {key}"
         assert metrics["n_timed"] >= perf.TIMED_REPS
         assert metrics["warmup_count"] >= perf.WARMUP_TARGET
+        if record["engine"] == "grace":
+            assert metrics["gpu_sync_method"].startswith("tensorflow:"), path.name
+        else:
+            assert metrics["gpu_sync_method"].startswith(
+                "torch.cuda.synchronize"
+            ), path.name
         checked += 1
     if checked == 0:
         return  # no PERF-01 records yet (rerun happens on the GPU host)
