@@ -5,8 +5,8 @@
 重新认证状态：**target_commit_revalidated** —— campaign manifest declares completion and every record was produced at the target software commit
 
 - software_commit（声称被验证）：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
-- validation_code_commit：`6e1a945f91c76a4f17be10ed189fba0232936514`
-- report_generator_commit：`6e1a945f91c76a4f17be10ed189fba0232936514`
+- validation_code_commit：`8957a53b997aceb4524d1553467b40bcfae3561d`
+- report_generator_commit：`8957a53b997aceb4524d1553467b40bcfae3561d`
 - evidence_campaign：`20260913-current-head-5f8d91d`
 - evidence_source_commits：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
 
@@ -31,7 +31,7 @@
 | 8 | profile identity 不混 precision/model/commit | ✅ | V01-T2/T3/T4；engine 单元格显示 `mixed` 并附 `worst_status` | `tests=V01-T2,V01-T3,V01-T4; identity=precision,model,commit` |
 | 9 | current campaign manifest 固定 | ✅ | `20260913-current-head-5f8d91d` manifest status = `complete` | `campaign_manifest=20260913-current-head-5f8d91d; status=complete` |
 | 10 | MACE/DPA/GRACE/UMA scientific-campaign GPU smoke | ✅ | 4 个后端 x t1/t2fd/t5/t6/t7/t8 | `tier_records=t1,t2fd,t5,t6,t7,t8; engines=DPA,GRACE,MACE,UMA` |
-| 11 | Release-candidate bridge smoke | ✅ | 20260913-release-bridge-6e1a945f @ `6e1a945f91c76a4f17be10ed189fba0232936514`: dpa:pass, grace:pass, mace:pass, uma:pass; negatives dpa:no_implicit_fallback:pass, dpa:strict_config:pass, grace:no_implicit_fallback:pass, grace:strict_config:pass, mace:no_implicit_fallback:pass, mace:strict_config:pass, uma:no_implicit_fallback:pass, uma:strict_config:pass; fairchem alias pass; bridge archive `4fadb6db5258e4b4…` https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst | `release_bridge=20260913-release-bridge-6e1a945f; release_commit=6e1a945f91c76a4f17be10ed189fba0232936514; engines=DPA,GRACE,MACE,UMA; negatives=no_backend,strict_config; alias=fairchem` |
+| 11 | Release-candidate bridge smoke | ✅ | 20260913-release-bridge-6e1a945f @ `6e1a945f91c76a4f17be10ed189fba0232936514`: dpa:pass, grace:pass, mace:pass, uma:pass; negatives dpa:no_implicit_fallback:pass, dpa:strict_config:pass, grace:no_implicit_fallback:pass, grace:strict_config:pass, mace:no_implicit_fallback:pass, mace:strict_config:pass, uma:no_implicit_fallback:pass, uma:strict_config:pass; fairchem alias pass; bridge archive `5fa31dcd3c205bf3…` https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst | `release_bridge=20260913-release-bridge-6e1a945f; release_commit=6e1a945f91c76a4f17be10ed189fba0232936514; engines=DPA,GRACE,MACE,UMA; negatives=no_backend,strict_config; alias=fairchem` |
 | 12 | repeat inference target-commit | ✅ | T1 记录包含各后端的 repeat inference 指标 | `tier=t1; metric=repeat_inference` |
 | 13 | FD target-commit / 证据重分类 | ✅ | T2FD：32 条记录 | `tier=t2fd; records=32` |
 | 14 | saddle 当前语义 | ⚠️ | CPU/解析 known-answer 层全绿；GPU `t5h` 未纳入四后端 smoke | `workflow=t5h; layer=cpu_known_answer` |
@@ -61,7 +61,7 @@
 | UMA | pass | pass | pass | pass |
 
 负例检查：dpa:no_implicit_fallback=pass, dpa:strict_config=pass, grace:no_implicit_fallback=pass, grace:strict_config=pass, mace:no_implicit_fallback=pass, mace:strict_config=pass, uma:no_implicit_fallback=pass, uma:strict_config=pass；fairchem alias：pass。
-Bridge archive：`4fadb6db5258e4b454d49b2fa804a4fb14cbb45eb3ec8dcf5b4e196da9065169`（4 条）https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst
+Bridge archive：`5fa31dcd3c205bf3a7e7adc62c3d56141f424268f6c3ca1a9f0446946d84c806`（4 条）https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b3/mliport-validation-release-bridge-6e1a945f.tar.zst
 
 ## T1: inference (energy / forces / stress)
 

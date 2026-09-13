@@ -36,6 +36,7 @@
     "grace/grace.json",
     "uma/uma.json"
   ],
+  "harness_commit": "8957a53b997aceb4524d1553467b40bcfae3561d",
   "environment": {
     "mace": {
       "venv": ".venv-mace",

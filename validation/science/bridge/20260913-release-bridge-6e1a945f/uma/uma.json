@@ -13,7 +13,7 @@
     "manifest_model_sha256": "ba5c0d912efa22dc238e5fb1b5b7f66ee2e68c48c1b95b7cfd7fe1da5938398b"
   },
   "model": {
-    "path": "/home/storm/others/mlipx/models/uma/uma-s-1p2.pt",
+    "path": "models/uma/uma-s-1p2.pt",
     "digest_kind": "file",
     "computed_sha256": "ba5c0d912efa22dc238e5fb1b5b7f66ee2e68c48c1b95b7cfd7fe1da5938398b"
   },
@@ -25,20 +25,21 @@
     "backend_version": "0.1.dev1316+gcac51938e"
   },
   "structure": {
-    "path": "/home/storm/others/mlipx/validation/science/bridge/20260913-release-bridge-6e1a945f/structure.vasp",
+    "path": "validation/science/bridge/20260913-release-bridge-6e1a945f/structure.vasp",
     "sha256": "78e72d9fc8458e12d72ad5f2f799ff5404f15b34c23229ff57d5ae733a732a8e"
   },
+  "harness_commit": "8957a53b997aceb4524d1553467b40bcfae3561d",
   "checks": {
     "model_load": {
       "status": "pass",
       "exit_code": 0,
-      "detail": "    Compute elapsed (model ready -> output writing): 0.79 s"
+      "detail": "    Compute elapsed (model ready -> output writing): 0.83 s"
     },
     "single_point": {
       "status": "pass",
       "reason": "",
       "energy_eV": -1.3585351435545157,
-      "fmax_eV_A": 4.382435392358275e-08,
+      "fmax_eV_A": 4.738731362863291e-08,
       "natoms": 4,
       "stress_supported": true,
       "requested_model_type": "uma",

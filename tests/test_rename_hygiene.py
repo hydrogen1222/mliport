@@ -46,6 +46,7 @@ ALLOWED_FILES = {
     "tests/test_rename_hygiene.py",  # this guard
     # negative assertions: these tests check the retired strings are absent
     "tests/test_productization_invariants.py",
+    "tests/test_release_bridge.py",
     # P0 recovery record: documents the strings that were investigated
     "validation/science/reports/MAIN_RECOVERY_20260913.md",
 }
