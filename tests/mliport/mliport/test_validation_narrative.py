@@ -25,7 +25,12 @@ import generate_beta_report as report  # noqa: E402
 
 
 def _device():
-    return {"requested": "cpu", "actual": "cpu", "gpu_name": None, "gpu_uuid_hash": None}
+    return {
+        "requested": "cpu",
+        "actual": "cpu",
+        "gpu_name": None,
+        "gpu_uuid_hash": None,
+    }
 
 
 def _record(*, case_id, test_id, git_commit, campaign_id):
@@ -187,9 +192,7 @@ _GO_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|(.*)\|\s*$")
 
 
 def _go_rows(english: str) -> list[tuple[str, dict[str, str]]]:
-    section = _section(
-        english, "## Beta GO / NO-GO checklist", "## T1: inference"
-    )
+    section = _section(english, "## Beta GO / NO-GO checklist", "## T1: inference")
     rows: list[tuple[str, dict[str, str]]] = []
     for line in section.splitlines():
         match = _GO_ROW_RE.match(line)
@@ -214,7 +217,9 @@ def test_every_go_item_has_a_resolvable_evidence_query(generated_report):
     assert rows, "GO checklist table not found"
     assert all(row["query"] for _title, row in rows), "GO item without query"
 
-    current = {name for name, data in tiers.items() if data["scope"] == "current_campaign"}
+    current = {
+        name for name, data in tiers.items() if data["scope"] == "current_campaign"
+    }
     historical = {
         name for name, data in tiers.items() if data["scope"] == "historical_reuse"
     }
@@ -240,6 +245,7 @@ def test_every_go_item_has_a_resolvable_evidence_query(generated_report):
     for tier in historical:
         assert tier in historical_note, tier
 
+
 # ------------------------------------------------- real committed artifacts
 def _committed_summary() -> dict:
     return json.loads(
@@ -263,7 +269,9 @@ def test_committed_report_uses_target_commit_naming_and_scopes():
     summary = _committed_summary()
     versions = summary["versions"]
     assert versions["scientific_revalidation_status"] == "target_commit_revalidated"
-    assert versions["target_software_commit"] == "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
+    assert (
+        versions["target_software_commit"] == "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
+    )
     assert versions["evidence_campaign"] == "20260913-current-head-5f8d91d"
     assert versions["repository_head_at_render_time"]
     for tier in ("t2", "t3", "t4"):
@@ -276,9 +284,9 @@ def test_committed_report_uses_target_commit_naming_and_scopes():
 
 
 def test_committed_report_keeps_historical_narrative_out_of_current_tiers():
-    english = (REPO / "validation" / "science" / "reports" / "BETA_VALIDATION.md").read_text(
-        encoding="utf-8"
-    )
+    english = (
+        REPO / "validation" / "science" / "reports" / "BETA_VALIDATION.md"
+    ).read_text(encoding="utf-8")
     assert "current_head_revalidated" not in english
     t2 = _section(english, "## T2:", "## T2fd:")
     assert "Not run in this campaign." in t2
