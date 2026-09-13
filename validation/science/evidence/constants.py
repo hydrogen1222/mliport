@@ -47,6 +47,7 @@ VOLATILE_RECORD_FIELDS = (
 
 ALLOWED_WRAPPER_MODULES = (
     "mliport.calculator",
+    "mliport.calculators.uma",
     "mliport.calculators.mace_calc",
     "mliport.calculators.dpa_calc",
     "mliport.calculators.grace_calc",

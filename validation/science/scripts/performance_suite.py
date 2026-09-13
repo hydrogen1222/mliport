@@ -299,11 +299,14 @@ def _sp_record(
             "warmup_max": WARMUP_MAX,
             "timed_reps": TIMED_REPS,
             "timing_perturbation_scale_A": 0.01,
-            "neighbor_cache": bool(args.neighbor_cache),
+            "neighbor_cache": bool(getattr(args, "neighbor_cache", True)),
             "harness_commit": _harness_commit(),
         },
         metrics=metrics,
-        diagnostics={**ctx.diagnostics, "neighbor_cache": bool(args.neighbor_cache)},
+        diagnostics={
+            **ctx.diagnostics,
+            "neighbor_cache": bool(getattr(args, "neighbor_cache", True)),
+        },
         wall_seconds=first_call_s + sum(warm_times) + observable_s,
         peak_vram=common.peak_vram_mib(),
     )

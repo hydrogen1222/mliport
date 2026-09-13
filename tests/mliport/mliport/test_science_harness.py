@@ -257,6 +257,9 @@ def test_aggregate_flags_foreign_wrapper(tmp_path):
     # The pre-rename "mlipx.calculators.*" paths are allowed as legacy history
     # only; no other namespace may appear.
     assert "mliport.calculators.mace_calc" in common.ALLOWED_WRAPPER_MODULES
+    # PR2 moved UMACalculator next to the other wrappers; the evidence
+    # identity guard must accept the new module path.
+    assert "mliport.calculators.uma" in common.ALLOWED_WRAPPER_MODULES
     assert "mliport.calculators.dpa_calc" in common.ALLOWED_WRAPPER_MODULES
     assert "mliport.calculators.grace_calc" in common.ALLOWED_WRAPPER_MODULES
     assert all(
@@ -1346,7 +1349,14 @@ def test_t8_observables_are_measured_on_restored_pristine_structure():
     assert metrics["observable_structure_restored"] is True
     # every timing sample plus the observable performed a real backend call,
     # so timing can never be a cache lookup
-    assert calc.calls == 1 + performance_suite.WARM_REPS + 1
+    # PERF-01: one untimed first call, WARMUP_TARGET..WARMUP_MAX untimed
+    # warmups, TIMED_REPS timed calls, then one observable inference.
+    assert calc.calls >= (
+        1 + performance_suite.WARMUP_TARGET + performance_suite.TIMED_REPS + 1
+    )
+    assert calc.calls <= (
+        1 + performance_suite.WARMUP_MAX + performance_suite.TIMED_REPS + 1
+    )
     # the reported energy is the pristine sample; the timed ones were perturbed
     assert calc.energies[-1] == pytest.approx(pristine_energy, abs=1e-9)
     assert any(
