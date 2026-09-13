@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from mlipx.analysis.drift import DRIFT_MODES, drift_semantics
 from mlipx.analysis.msd import unwrap_positions
 from mlipx.analysis.transport import (
     _production_positions_with_drift,
@@ -345,8 +346,11 @@ def gemdat_electrolyte(
     percolation_axes: str = "xyz",
     drift_reference: str = "none",
     drift_indices: Iterable[int] | None = None,
+    drift_mode: str = "arithmetic_mean",
 ) -> GemdatResult:
     """Run GEMDAT site mapping, transitions, jumps, and percolation."""
+    if drift_mode not in DRIFT_MODES:
+        raise ValueError(f"drift_mode must be one of {DRIFT_MODES}")
 
     # Mechanism analysis is always defined on production frames. Keep this as
     # the first dataset operation so an equilibration-inclusive caller cannot
@@ -394,6 +398,7 @@ def gemdat_electrolyte(
         mobile=mobile,
         drift_reference=drift_reference,
         drift_indices=drift_indices,
+        drift_mode=drift_mode,
     )
     _, _, Structure, gemdat_version = _require_gemdat()
     trajectory = _gemdat_trajectory(
@@ -455,13 +460,14 @@ def gemdat_electrolyte(
             "position_convention": view.positions_convention,
             "pbc_semantics": "fixed-cell 3-D PBC; wrapped fractional GEMDAT coordinates",
             "drift_correction": {
-                "mode": drift_reference,
-                "reference_indices": reference,
-                "reference_species": sorted(
-                    {view.symbols[index] for index in reference}
+                **drift_semantics(
+                    drift_mode=drift_mode,
+                    drift_reference=drift_reference,
+                    reference=reference,
+                    symbols=view.symbols,
                 ),
+                "mode": str(drift_reference).lower(),
                 "applied_once": True,
-                "definition": "unweighted mean production displacement of the selected framework/reference atoms",
             },
             "unwrap_diagnostics": unwrap_diagnostics,
             "position_semantics": position_semantics,

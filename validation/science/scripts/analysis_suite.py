@@ -170,6 +170,15 @@ def _kinisi_transport(dataset, temperature_k: float) -> dict[str, Any]:
         "sigma_NE_mS_cm": ne.get("sigma_NE_tracer_mS_cm"),
         "sigma_NE_posterior_mS_cm": ne.get("sigma_NE_tracer_posterior_mS_cm"),
         "nernst_einstein_definition": ne.get("definition"),
+        "drift_semantics": {
+            "drift_mode": (result.get("drift_correction") or {}).get("drift_mode"),
+            "drift_reference": (result.get("drift_correction") or {}).get(
+                "drift_reference"
+            ),
+            "center_definition": (result.get("drift_correction") or {}).get(
+                "center_definition"
+            ),
+        },
         "displacement_input_class": result.get("displacement_input_class"),
         "publication_grade": result.get("publication_grade"),
         "kinisi_position_semantics": result.get("kinisi_position_semantics"),
@@ -197,8 +206,14 @@ def _native_msd_diagnostic(dataset) -> dict[str, Any]:
         fit_start_ps=half_start,
         fit_stop_ps=float(lag_ps[-1]),
     )
+    drift = result.get("drift_semantics") or result.get("drift_correction") or {}
     return {
         "publication_grade": fit["publication_grade"],
+        "drift_semantics": {
+            "drift_mode": drift.get("drift_mode") or drift.get("mode"),
+            "drift_reference": drift.get("drift_reference"),
+            "center_definition": drift.get("center_definition"),
+        },
         "diagnostic_fit": fit,
         "D_diagnostic_m2_s": fit["D_diagnostic_m2_s"],
         "mean_log_log_alpha_in_fit": fit["mean_log_log_alpha_in_fit"],
@@ -464,6 +479,31 @@ def _classify_transport_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
     return "fail", {}
 
 
+def _drift_comparability(
+    native: dict[str, Any], kinisi: dict[str, Any]
+) -> dict[str, Any]:
+    """Cross-backend drift-definition comparison (PR-F section 8.3).
+
+    A native-MSD/kinisi numerical comparison is only meaningful when both
+    backends used the same centre definition and reference selection; this
+    records the comparison instead of silently claiming agreement.
+    """
+    from mlipx.analysis.drift import drift_definitions_match
+
+    native_drift = native.get("drift_semantics") or {}
+    kinisi_drift = kinisi.get("drift_semantics") or {}
+    return {
+        "definitions_match": drift_definitions_match(native_drift, kinisi_drift),
+        "native_msd": native_drift,
+        "kinisi_transport": kinisi_drift,
+        "note": (
+            "cross-backend numerical agreement may only be claimed when "
+            "definitions_match is true; the sampling sufficiency gate is "
+            "independent of this comparison"
+        ),
+    }
+
+
 def run_transport_case(ctx, args) -> int:
     """t7a: kinisi + NE + native-MSD sufficiency per temperature (loads MD runs)."""
     temperatures = [float(t) for t in args.temperatures.split(",")]
@@ -526,6 +566,7 @@ def run_transport_case(ctx, args) -> int:
             if sufficient:
                 kin = _kinisi_transport(dataset, temperature)
                 metrics["kinisi_transport"] = kin
+                metrics["cross_backend_drift"] = _drift_comparability(msd, kin)
                 post = kin["D_posterior_m2_s"]
                 d_mean = post["mean"] if isinstance(post, dict) else post
                 d_std = post.get("std", 0.0) if isinstance(post, dict) else 0.0

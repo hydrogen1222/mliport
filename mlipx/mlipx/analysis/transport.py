@@ -28,6 +28,12 @@ if TYPE_CHECKING:
     from typing import Any
 
     from mlipx.analysis.dataset import TrajectoryDataset
+from mlipx.analysis.drift import (
+    DRIFT_MODES,
+    drift_displacement,
+    drift_semantics,
+    reference_indices as drift_reference_indices,
+)
 
 
 DEFAULT_MAX_NATIVE_KINISI_LAG_POINTS = 1000
@@ -365,6 +371,7 @@ def _kinisi_frames_and_indices(
     mobile: np.ndarray,
     drift_reference: str,
     drift_indices: Iterable[int] | None,
+    drift_mode: str = "arithmetic_mean",
 ) -> _KinisiFrames:
     """Build mobile-only frames with explicit unweighted drift correction.
 
@@ -382,6 +389,7 @@ def _kinisi_frames_and_indices(
         mobile=mobile,
         drift_reference=drift_reference,
         drift_indices=drift_indices,
+        drift_mode=drift_mode,
     )
     frames: list[Atoms] = []
     symbols = [dataset.symbols[index] for index in mobile]
@@ -509,31 +517,25 @@ def _production_positions_with_drift(
     mobile: np.ndarray,
     drift_reference: str,
     drift_indices: Iterable[int] | None,
+    drift_mode: str = "arithmetic_mean",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return production positions after one explicit framework correction.
 
-    The correction is intentionally the same unweighted reference displacement
-    used by the kinisi adapter.  The returned array still contains every atom;
-    this lets mechanism analysis construct a provenance-preserving GEMDAT
-    trajectory without applying a second correction.
+    Both the reference selection (``drift_reference``) and the centre
+    definition (``drift_mode``) are explicit and recorded; no backend decides
+    the physical definition silently (task book PR-F).  The returned array
+    still contains every atom; this lets mechanism analysis construct a
+    provenance-preserving GEMDAT trajectory without applying a second
+    correction.
     """
-    mode = drift_reference.lower()
-    if mode == "none":
-        reference = np.asarray([], dtype=int)
-    elif mode == "nonmobile":
-        reference = np.setdiff1d(np.arange(dataset.natoms), mobile)
-        if not len(reference):
-            raise ValueError(
-                "drift_reference=nonmobile requires at least one framework atom"
-            )
-    elif mode == "indices":
-        if drift_indices is None:
-            raise ValueError("drift_reference=indices requires drift_indices")
-        reference = dataset.select(indices=drift_indices)
-        if np.intersect1d(mobile, reference).size:
-            raise ValueError("Drift reference indices overlap the mobile selection")
-    else:
-        raise ValueError("drift_reference must be none, indices, or nonmobile")
+    if drift_mode not in DRIFT_MODES:
+        raise ValueError(f"drift_mode must be one of {DRIFT_MODES}")
+    reference = drift_reference_indices(
+        dataset,
+        mobile=mobile,
+        drift_reference=drift_reference,
+        drift_indices=drift_indices,
+    )
     continuous, unwrap_diagnostics = unwrap_positions(dataset)
     source_class = displacement_input_class(dataset, unwrap_diagnostics)
     if source_class == DISPLACEMENT_INSUFFICIENT:
@@ -545,11 +547,12 @@ def _production_positions_with_drift(
             f"{_WRAPPED_UNWRAP_SAFETY_LIMIT:g}); save frames more frequently or "
             "provide exact unwrapped coordinates/image counters."
         )
-    if len(reference):
-        reference_displacement = continuous[:, reference] - continuous[0, reference]
-        drift = np.mean(reference_displacement, axis=1)
-    else:
-        drift = np.zeros((dataset.nframes, 3), dtype=float)
+    drift = drift_displacement(
+        continuous,
+        reference=reference,
+        masses=dataset.masses,
+        drift_mode=drift_mode,
+    )
     corrected = continuous - drift[:, None, :]
     if source_class == DISPLACEMENT_RECONSTRUCTABLE_WRAPPED:
         # Only the wrapped/reconstructed path needs the alias/MIC safety check.
@@ -860,6 +863,7 @@ def kinisi_transport(
     n_thin: int = 10,
     parser_memory_limit_gib: float = 4.0,
     allow_reconstructed_fallback: bool = False,
+    drift_mode: str = "arithmetic_mean",
 ) -> dict[str, Any]:
     """Estimate production-phase transport with the kinisi 2.x ASE adapters.
 
@@ -902,6 +906,8 @@ def kinisi_transport(
     collective_system_particles = int(collective_system_particles)
     if not np.isfinite(parser_memory_limit_gib) or parser_memory_limit_gib <= 0:
         raise ValueError("parser_memory_limit_gib must be finite and positive")
+    if drift_mode not in DRIFT_MODES:
+        raise ValueError(f"drift_mode must be one of {DRIFT_MODES}")
     require_analysis(dataset, "transport")
     view = dataset.analysis_view(include_equilibration=False)
     total_duration_ps = (view.times_fs[-1] - view.times_fs[0]) / 1000.0
@@ -976,6 +982,7 @@ def kinisi_transport(
         mobile=mobile,
         drift_reference=drift_reference,
         drift_indices=drift_indices,
+        drift_mode=drift_mode,
     )
     frames = kinisi_frames.frames
     local_mobile = kinisi_frames.local_mobile
@@ -1133,12 +1140,18 @@ def kinisi_transport(
             "source": mapping_source,
         },
         "drift_correction": {
-            "mode": drift_reference,
-            "reference_indices": reference,
-            "reference_species": sorted({view.symbols[index] for index in reference}),
+            **drift_semantics(
+                drift_mode=drift_mode,
+                drift_reference=drift_reference,
+                reference=reference,
+                symbols=view.symbols,
+            ),
+            "mode": str(drift_reference).lower(),
             "backend_semantics": (
-                "mlipx unweighted mean framework displacement (kinisi "
-                "definition), pre-applied once; kinisi receives mobile atoms only"
+                "mlipx pre-applies the explicitly recorded definition once and "
+                "passes mobile atoms only; kinisi's internal unweighted "
+                "non-mobile mean therefore sees an empty complement and cannot "
+                "silently change the physical definition"
             ),
         },
         "unwrap_diagnostics": unwrap_diagnostics,

@@ -1006,8 +1006,18 @@ Examples:
     )
     msd_parser.add_argument(
         "--drift-reference",
-        choices=["none", "nonmobile", "indices"],
+        choices=["none", "nonmobile", "all", "indices"],
         default="none",
+    )
+    msd_parser.add_argument(
+        "--drift-mode",
+        choices=["none", "arithmetic_mean", "mass_weighted_com"],
+        default="mass_weighted_com",
+        help=(
+            "Explicit native-MSD centre definition (default mass-weighted COM); "
+            "the recorded definition must match kinisi for cross-backend "
+            "comparison."
+        ),
     )
     msd_parser.add_argument("--drift-indices", default=None)
     msd_parser.add_argument("--method", choices=["fft", "direct"], default="fft")
@@ -1105,8 +1115,18 @@ Examples:
     transport_parser.add_argument("--dimensions", default="xyz")
     transport_parser.add_argument(
         "--drift-reference",
-        choices=["none", "nonmobile", "indices"],
+        choices=["none", "nonmobile", "all", "indices"],
         default="none",
+    )
+    transport_parser.add_argument(
+        "--drift-mode",
+        choices=["none", "arithmetic_mean", "mass_weighted_com"],
+        default="arithmetic_mean",
+        help=(
+            "Explicit framework-drift centre definition. kinisi transport "
+            "pre-applies it once and records it; cross-backend comparisons "
+            "require matching definitions."
+        ),
     )
     transport_parser.add_argument("--drift-indices", default=None)
     transport_parser.add_argument("--temperature-K", type=float, default=None)
@@ -1206,8 +1226,14 @@ Examples:
     electrolyte_parser.add_argument("--minimal-residence", type=int, default=0)
     electrolyte_parser.add_argument(
         "--drift-reference",
-        choices=["none", "nonmobile", "indices"],
+        choices=["none", "nonmobile", "all", "indices"],
         default="none",
+    )
+    electrolyte_parser.add_argument(
+        "--drift-mode",
+        choices=["none", "arithmetic_mean", "mass_weighted_com"],
+        default="arithmetic_mean",
+        help="Explicit GEMDAT framework-drift centre definition.",
     )
     electrolyte_parser.add_argument("--drift-indices", default=None)
     electrolyte_parser.add_argument(

@@ -12,6 +12,11 @@ from mlipx.analysis.units import (
     diffusion_A2_fs_to_m2_s,
     diffusion_m2_s_to_cm2_s,
 )
+from mlipx.analysis.drift import (
+    drift_displacement,
+    drift_semantics,
+    reference_indices,
+)
 from mlipx.analysis.validation import require_analysis
 
 if TYPE_CHECKING:
@@ -99,53 +104,51 @@ def displacement_trajectory(
     mobile_indices: Iterable[int],
     drift_reference: str = "none",
     drift_indices: Iterable[int] | None = None,
+    drift_mode: str = "mass_weighted_com",
 ) -> dict[str, Any]:
-    """Build raw/corrected mobile displacements with explicit drift semantics."""
+    """Build raw/corrected mobile displacements with explicit drift semantics.
+
+    The native MSD centre definition is the mass-weighted center of mass
+    (``drift_mode="mass_weighted_com"``); it is recorded alongside the
+    arithmetic-mean definition used by the kinisi transport backend so a
+    cross-backend comparison can check that both agree (task book PR-F).
+    """
 
     mobile = dataset.select(indices=mobile_indices)
     continuous, diagnostics = unwrap_positions(dataset)
-    mode = str(drift_reference).lower()
-    if mode not in {"none", "indices", "nonmobile"}:
-        raise ValueError("drift_reference must be none, indices, or nonmobile")
-    if mode == "none":
-        if drift_indices is not None:
-            raise ValueError("drift_indices is only valid with drift_reference=indices")
-        reference = np.asarray([], dtype=int)
-        drift = np.zeros((dataset.nframes, 3), dtype=float)
-    elif mode == "indices":
-        if drift_indices is None:
-            raise ValueError("drift_reference=indices requires drift_indices")
-        reference = dataset.select(indices=drift_indices)
-        if np.intersect1d(mobile, reference).size:
-            raise ValueError("Drift reference indices overlap the mobile selection")
-        reference_displacement = continuous[:, reference] - continuous[0, reference]
-        weights = dataset.masses[reference]
-        drift = np.average(reference_displacement, axis=1, weights=weights)
-    else:
-        reference = np.setdiff1d(np.arange(dataset.natoms), mobile)
-        if len(reference) == 0:
-            raise ValueError(
-                "drift_reference=nonmobile requires at least one nonmobile atom"
-            )
-        reference_displacement = continuous[:, reference] - continuous[0, reference]
-        weights = dataset.masses[reference]
-        drift = np.average(reference_displacement, axis=1, weights=weights)
-
+    reference = reference_indices(
+        dataset,
+        mobile=mobile,
+        drift_reference=drift_reference,
+        drift_indices=drift_indices,
+    )
+    drift = drift_displacement(
+        continuous,
+        reference=reference,
+        masses=dataset.masses,
+        drift_mode=drift_mode,
+    )
     raw_mobile_displacements = continuous[:, mobile] - continuous[0, mobile]
     corrected = raw_mobile_displacements - drift[:, None, :]
-    reference_species = sorted({dataset.symbols[index] for index in reference})
+    semantics = drift_semantics(
+        drift_mode=drift_mode,
+        drift_reference=drift_reference,
+        reference=reference,
+        symbols=dataset.symbols,
+    )
     return {
         "continuous_positions_A": continuous,
         "raw_mobile_displacements_A": raw_mobile_displacements,
         "mobile_displacements_A": corrected,
         "framework_drift_A": drift,
         "mobile_indices": mobile,
+        # ``mode`` keeps its historical meaning (the reference selection)
+        # for downstream consumers; the centre definition is ``drift_mode``.
         "drift_correction": {
-            "mode": mode,
-            "reference_indices": reference,
-            "reference_species": reference_species,
-            "center_definition": "mass-weighted center-of-mass translation",
+            **semantics,
+            "mode": str(drift_reference).lower(),
         },
+        "drift_semantics": semantics,
         "unwrap_diagnostics": diagnostics,
     }
 
@@ -716,6 +719,7 @@ def calculate_msd(
     axes: str | Iterable[str] = "xyz",
     drift_reference: str = "none",
     drift_indices: Iterable[int] | None = None,
+    drift_mode: str = "mass_weighted_com",
     method: str = "fft",
     include_equilibration: bool = False,
     start: int | None = None,
@@ -752,6 +756,7 @@ def calculate_msd(
         mobile_indices=mobile,
         drift_reference=drift_reference,
         drift_indices=drift_indices,
+        drift_mode=drift_mode,
     )
     if method == "fft":
         components = fft_windowed_msd_components(prepared["mobile_displacements_A"])
@@ -820,6 +825,7 @@ def calculate_msd(
         "selected_axes": selected_axes,
         "analysis_phase": "all" if include_equilibration else "production",
         "drift_correction": prepared["drift_correction"],
+        "drift_semantics": prepared["drift_semantics"],
         "framework_drift_A": prepared["framework_drift_A"],
         "unwrap_diagnostics": prepared["unwrap_diagnostics"],
     }
