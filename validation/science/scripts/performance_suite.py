@@ -63,6 +63,9 @@ WARMUP_STABILITY = 0.05  # relative max-min of the last three warm calls
 TIMED_REPS = 20
 WARM_REPS = WARMUP_TARGET  # backward-compatible name
 ANOMALY_RATIO = 5.0
+#: A larger cell must not be faster than a smaller one by more than this
+#: factor; smaller inversions are measurement noise, not a scaling warning.
+SCALING_TOLERANCE = 0.8
 MD_WARMUP_STEPS = 5
 
 
@@ -117,7 +120,8 @@ def classify_scaling(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         32 in medians and 128 in medians and medians[32] > ANOMALY_RATIO * medians[128]
     )
     non_monotonic = any(
-        medians[later] < medians[earlier] for earlier, later in pairwise(sizes)
+        medians[later] < SCALING_TOLERANCE * medians[earlier]
+        for earlier, later in pairwise(sizes)
     )
     if not anomaly and not non_monotonic:
         return records
@@ -534,7 +538,6 @@ def main() -> int:
                 exception=f"{type(exc).__name__}: {exc}",
             )
         records.append(rec)
-        common.write_result(rec, out_dir, tag=args.tag)
         summary = {
             key: rec["metrics"].get(key)
             for key in (
@@ -556,7 +559,8 @@ def main() -> int:
         for record in records
         if str(record.get("case_id", "")).startswith("t8_sp_scaling_")
     ]
-    for record in classify_scaling(sp_records):
+    classify_scaling(sp_records)
+    for record in records:
         common.write_result(record, out_dir, tag=args.tag)
     flagged = [
         record["case_id"]

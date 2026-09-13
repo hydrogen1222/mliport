@@ -90,6 +90,18 @@ def test_classify_scaling_keeps_healthy_scaling_clean():
     assert all("benchmark_anomaly" not in rec["diagnostics"] for rec in classified)
 
 
+def test_classify_scaling_ignores_within_noise_inversion():
+    """A ~2% inversion (UMA 128 vs 32 atoms) is noise, not a warning."""
+    records = [
+        _sp_record(32, 0.1292),
+        _sp_record(128, 0.1267),
+        _sp_record(512, 0.2229),
+    ]
+    classified = perf.classify_scaling(records)
+    assert all(record["status"] == "pass" for record in classified)
+    assert all("scaling_verdict" not in record["diagnostics"] for record in classified)
+
+
 def test_report_t8_renders_spread_and_anomaly():
     record = _sp_record(32, 0.5)
     record["metrics"].update(
