@@ -23,6 +23,7 @@ import collections
 import json
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +35,8 @@ if str(_SCIENCE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCIENCE_ROOT))
 
 from evidence import (  # noqa: E402
-    CampaignManifestError,
     TIER_NAMES,
+    CampaignManifestError,
     aggregate_records,
     build_version_block,
     load_archive_manifest,
@@ -65,6 +66,185 @@ def load_tier(root: Path, tier: str) -> list[dict[str, Any]]:
 def evidence_tiers(root: Path, campaign: str | None = None):
     """Load the full evidence root once through the canonical loader."""
     return load_evidence(root, campaign=campaign)
+
+
+# Tier narrative scopes (task book sections 17/20).  A tier section is
+# rendered from the current campaign only; records from other campaigns are
+# listed in the historical section and never leak into current tables.
+SCOPE_CURRENT = "current_campaign"
+SCOPE_HISTORICAL = "historical_reuse"
+SCOPE_NOT_RUN = "not_run"
+
+TIER_HEADINGS: dict[str, str] = {
+    "t1": "T1: inference (energy / forces / stress)",
+    "t2": "T2: invariance, repeatability, A→B→A",
+    "t2fd": "T2fd: force/stress vs finite-difference derivatives",
+    "t3": "T3: OMat24 held-out evaluation",
+    "t4": "T4: static workflows",
+    "t5": "T5: NEB and saddle validation",
+    "t6": "T6: molecular dynamics (Cu32)",
+    "t7": "T7: transport and mechanism analysis (alpha-Na3PS4)",
+    "t8": "T8: performance (V100-16GB)",
+}
+
+
+@dataclass
+class TierView:
+    """One tier's current records + its out-of-campaign evidence sources."""
+
+    tier: str
+    scope: str
+    records: list[dict[str, Any]] = field(default_factory=list)
+    historical: list[dict[str, Any]] = field(default_factory=list)
+    campaign_id: str | None = None
+    software_commit: str | None = None
+    summary: str = ""
+
+    @property
+    def historical_sources(self) -> list[dict[str, Any]]:
+        grouped: dict[tuple[str, str], int] = collections.Counter()
+        for record in self.historical:
+            campaign = str(record.get("campaign_id") or "untagged")
+            commit = str(record.get("git_commit") or "unknown")
+            grouped[(campaign, commit)] += 1
+        return [
+            {
+                "campaign_id": campaign,
+                "software_commit": commit,
+                "records": count,
+                "reason": (
+                    "not re-run in the current campaign; kept as historical "
+                    "evidence and excluded from current tables"
+                ),
+            }
+            for (campaign, commit), count in sorted(grouped.items())
+        ]
+
+    def as_summary(self) -> dict[str, Any]:
+        return {
+            "scope": self.scope,
+            "records": len(self.records),
+            "by_status": status_counts(self.records),
+            "campaign_id": self.campaign_id,
+            "software_commit": self.software_commit,
+            "historical_records": len(self.historical),
+            "historical_sources": self.historical_sources,
+            "summary": self.summary,
+        }
+
+
+def build_tier_views(
+    current_tiers: dict[str, list[dict[str, Any]]],
+    all_tiers: dict[str, list[dict[str, Any]]],
+    versions: dict[str, Any],
+) -> dict[str, TierView]:
+    """Classify every tier as current_campaign / historical_reuse / not_run.
+
+    Current records come from the campaign-filtered canonical load; the
+    historical pool is the unfiltered canonical load with the current
+    campaign removed.  The renderer never has to guess from record presence:
+    ``scope`` is explicit in the summary data model.
+    """
+    campaign = versions.get("evidence_campaign")
+    target = versions.get("target_software_commit") or versions.get("software_commit")
+    views: dict[str, TierView] = {}
+    for tier in TIER_NAMES:
+        current = list(current_tiers.get(tier, []))
+        others = (
+            []
+            if campaign is None
+            else [
+                record
+                for record in all_tiers.get(tier, [])
+                if str(record.get("campaign_id")) != str(campaign)
+            ]
+        )
+        if current:
+            scope = SCOPE_CURRENT
+            summary = f"{len(current)} current-campaign record(s)"
+        elif others:
+            scope = SCOPE_HISTORICAL
+            summary = (
+                f"not run in this campaign; {len(others)} historical record(s) "
+                "kept out of the current tables"
+            )
+        else:
+            scope = SCOPE_NOT_RUN
+            summary = "not run in this campaign; no historical evidence found"
+        views[tier] = TierView(
+            tier=tier,
+            scope=scope,
+            records=current,
+            historical=others,
+            campaign_id=campaign if scope == SCOPE_CURRENT else None,
+            software_commit=target if scope == SCOPE_CURRENT else None,
+            summary=summary,
+        )
+    return views
+
+
+def md_tier(tier: str, view: TierView, render_current) -> str:
+    """VAL-01 renderer contract: non-current tiers cannot render narrative."""
+    if view.scope == SCOPE_CURRENT:
+        return render_current(view.records)
+    lines = [f"## {TIER_HEADINGS[tier]}", "", "Not run in this campaign."]
+    if view.scope == SCOPE_HISTORICAL:
+        lines += [
+            "",
+            "Historical evidence exists for this tier; it is listed in the "
+            "historical section and is not part of this campaign's claim.",
+        ]
+    lines.append("")
+    return "\n".join(lines)
+
+
+def md_historical(views: dict[str, TierView], versions: dict[str, Any], cn: bool = False) -> str:
+    """Historical evidence explicitly excluded from the current campaign."""
+    rows = [
+        (tier, view) for tier, view in views.items() if view.historical_sources
+    ]
+    if cn:
+        lines = ["## 不在当前 campaign 内的历史证据", ""]
+    else:
+        lines = ["## Historical evidence not in this campaign", ""]
+    if not rows:
+        lines.append(
+            "None: every rendered tier comes from the current campaign."
+            if not cn
+            else "无:所有渲染 tier 均来自当前 campaign。"
+        )
+        lines.append("")
+        return "\n".join(lines)
+    if cn:
+        lines += [
+            "| tier | 记录数 | campaign | software commit | 未重跑原因 |",
+            "|---|---|---|---|---|",
+        ]
+    else:
+        lines += [
+            "| tier | records | campaign | software commit | reason |",
+            "|---|---|---|---|---|",
+        ]
+    for tier, view in rows:
+        for source in view.historical_sources:
+            commit = str(source["software_commit"])
+            short = commit[:12] + ("..." if len(commit) > 12 else "")
+            lines.append(
+                f"| {tier} | {source['records']} | {source['campaign_id']} "
+                f"| `{short}` | {source['reason']} |"
+            )
+    lines += [
+        "",
+        (
+            "These records are metadata only: they are not rendered in the "
+            "current tier tables and do not support a current-commit claim."
+            if not cn
+            else "这些记录仅作为元数据列出:不会渲染进当前 tier 表格,也不构成"
+            "对当前提交的验证声明。"
+        ),
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def profile_of(rec: dict[str, Any]) -> str:
@@ -382,13 +562,20 @@ def build_coverage_table(tiers: dict[str, list]) -> list[dict[str, str]]:
         ("k-point/ENCUT/SCF convergence", "DFT-reference-only", [], "not an MLIP test"),
     ]
     table = []
-    for name, status, records, evidence in rows:
+    for name, status, records, evidence_text in rows:
+        beta_status = _coverage_status(records)
+        evidence_cell = evidence_text
+        if beta_status == "not_run" and status not in {
+            "unsupported",
+            "DFT-reference-only",
+        }:
+            evidence_cell = "not run in this campaign"
         table.append(
             {
                 "workflow": name,
                 "mliport_status": status,
-                "beta_status": _coverage_status(records),
-                "evidence": evidence,
+                "beta_status": beta_status,
+                "evidence": evidence_cell,
             }
         )
     return table
@@ -471,13 +658,13 @@ def update_readme_blocks(repo_root: Path, snippet: str) -> list[Path]:
 def status_snippet(versions: dict[str, Any] | None) -> str:
     """Status wording governed by the revalidation semantics (PR-B).
 
-    Only a completed current-head campaign may say "beta validation
+    Only a completed target-commit campaign may say "beta validation
     completed"; anything else must state that historical evidence is being
-    reclassified and current-HEAD revalidation is pending.
+    reclassified and target-commit revalidation is pending.
     """
     versions = versions or {}
     status = versions.get("scientific_revalidation_status") or "no_evidence"
-    if status == "current_head_revalidated":
+    if status == "target_commit_revalidated":
         commit = str(versions.get("software_commit") or "unknown")
         return (
             f"Status: beta validation completed at software commit `{commit}` "
@@ -487,7 +674,7 @@ def status_snippet(versions: dict[str, Any] | None) -> str:
         "Status: post-fix beta candidate. Software CI is validated on "
         "Python 3.10-3.12. Historical scientific evidence has been retained "
         "and is being reclassified under the current validation semantics. "
-        "Current-HEAD scientific revalidation is pending."
+        "Target-commit scientific revalidation is pending."
     )
 
 
@@ -577,18 +764,32 @@ def readme_validation_snippet(
 # ------------------------------------------------------------ md sections
 
 
-def _checklist_context(canonical, tiers, versions, campaign_manifest, archive_manifest):
+def _checklist_context(canonical, tier_views, versions, campaign_manifest, archive_manifest):
     counts = (canonical or {}).get("record_counts", {})
     by_status = counts.get("by_status", {})
     engine_tiers: dict[str, set[str]] = collections.defaultdict(set)
-    for tier, records in (tiers or {}).items():
+    tier_counts: dict[str, int] = {}
+    current_tiers: list[str] = []
+    historical_tiers: list[str] = []
+    for tier, view in (tier_views or {}).items():
+        if isinstance(view, TierView):
+            records = view.records
+            scope = view.scope
+        else:  # raw record lists (legacy callers/tests)
+            records = list(view or [])
+            scope = SCOPE_CURRENT if records else SCOPE_NOT_RUN
+        tier_counts[tier] = len(records)
+        if scope == SCOPE_CURRENT:
+            current_tiers.append(tier)
+        elif scope == SCOPE_HISTORICAL:
+            historical_tiers.append(tier)
         for record in records:
             engine_tiers[str(record.get("engine"))].add(tier)
     engines = sorted(engine_tiers)
     engine_tier_map = {
         engine: sorted(t for t in found) for engine, found in engine_tiers.items()
     }
-    tiers_present = sorted((tiers or {}).keys())
+    tiers_present = sorted(current_tiers)
     archive = archive_manifest or {}
     return {
         "software_commit": versions.get("software_commit") or "unknown",
@@ -603,8 +804,10 @@ def _checklist_context(canonical, tiers, versions, campaign_manifest, archive_ma
         "engines": engines,
         "engine_tiers": engine_tier_map,
         "n_engines": len(engines),
-        "t8_records": len((tiers or {}).get("t8", [])),
-        "tier_counts": {tier: len(records) for tier, records in (tiers or {}).items()},
+        "t8_records": tier_counts.get("t8", 0),
+        "tier_counts": tier_counts,
+        "current_tiers": tiers_present,
+        "historical_tiers": sorted(historical_tiers),
         "campaign_manifest_status": (
             (campaign_manifest or {}).get("status") or "missing"
         ),
@@ -621,6 +824,47 @@ def _checklist_context(canonical, tiers, versions, campaign_manifest, archive_ma
 _GO_STATUS = "✅"
 _GO_WARN = "⚠️"
 _GO_FAIL = "❌"
+
+
+def _go_queries(ctx, views) -> list[str]:
+    """Concrete evidence query for every GO item (task book section 17.3).
+
+    The order matches ``_go_items_en`` / ``_go_items_cn``.  Each query names
+    the machine-readable selectors the item's status was derived from, so a
+    hard-coded tier list can never silently drift from the evidence.
+    """
+    engines = ",".join(engine.upper() for engine in ctx["engines"]) or "none"
+    current = ",".join(ctx["current_tiers"]) or "none"
+    historical = ",".join(ctx["historical_tiers"]) or "none"
+    t7 = ctx["tier_counts"].get("t7", 0)
+    t8 = ctx["tier_counts"].get("t8", 0)
+    t2fd = ctx["tier_counts"].get("t2fd", 0)
+    return [
+        "external=pypi:mliport,github:hydrogen1222/mliport",
+        "canonical=record_counts; scope=current_campaign",
+        f"ci=github_actions:tests,lint,package-build; python=3.10,3.11,3.12; commit={ctx['software_short']}",
+        "ci=wheel-install-smoke; python=3.10,3.11,3.12",
+        "loader=evidence.load_evidence; raw_selection=forbidden",
+        "renderer=generate_beta_report; readme_block=generated",
+        "tests=V01-T5,V01-T6,V01-T7; exit_codes=2,3",
+        "tests=V01-T2,V01-T3,V01-T4; identity=precision,model,commit",
+        f"campaign_manifest={ctx['campaign']}; status={ctx['campaign_manifest_status']}",
+        f"tier_records={current}; engines={engines}",
+        "tier=t1; metric=repeat_inference",
+        f"tier=t2fd; records={t2fd}",
+        "workflow=t5h; layer=cpu_known_answer",
+        "tier=t5; checks=fixed_band,constraint",
+        "tests=PR-E; tier=t7; contract=exact_unwrapped",
+        "tier=t7; status_contract=gemdat_backend_error",
+        "analysis=alpha; version=2",
+        "analysis=msd,transport; revisions=msd:7,transport:6",
+        f"tier=t7; records={t7}",
+        f"tier=t8; records={t8}",
+        f"tiers=historical_reuse:{historical}; scope=explicit",
+        f"archive_manifest; sha256={ctx['archive_sha']}; url={ctx['archive_url']}",
+        "summary=beta-summary.json; readme_block=README_VALIDATION.md",
+        "hygiene=repository_hygiene,distribution_manifest,rename_guard",
+    ]
 
 
 def _go_items_en(ctx):
@@ -677,17 +921,17 @@ def _go_items_en(ctx):
             f"`{ctx['campaign']}` manifest status = `{ctx['campaign_manifest_status']}`",
         ),
         (
-            "MACE/DPA/GRACE/UMA current-head GPU smoke",
+            "MACE/DPA/GRACE/UMA target-commit GPU smoke",
             _GO_STATUS if full_engine_matrix else _GO_FAIL,
             f"{ctx['n_engines']} engines x " + "/".join(ctx["tiers_present"]),
         ),
         (
-            "Repeat inference current-head",
+            "Repeat inference target-commit",
             _GO_STATUS,
             "T1 records carry repeat-inference metrics per engine",
         ),
         (
-            "FD current-head / reclassified evidence",
+            "FD target-commit / reclassified evidence",
             _GO_STATUS,
             f"T2FD: {ctx['tier_counts'].get('t2fd', 0)} records",
         ),
@@ -810,17 +1054,17 @@ def _go_items_cn(ctx):
             f"`{ctx['campaign']}` manifest status = `{ctx['campaign_manifest_status']}`",
         ),
         (
-            "MACE/DPA/GRACE/UMA current-head GPU smoke",
+            "MACE/DPA/GRACE/UMA target-commit GPU smoke",
             _GO_STATUS if full_engine_matrix else _GO_FAIL,
             f"{ctx['n_engines']} 个后端 x " + "/".join(ctx["tiers_present"]),
         ),
         (
-            "repeat inference current-head",
+            "repeat inference target-commit",
             _GO_STATUS,
             "T1 记录包含各后端的 repeat inference 指标",
         ),
         (
-            "FD current-head / 证据重分类",
+            "FD target-commit / 证据重分类",
             _GO_STATUS,
             f"T2FD：{ctx['tier_counts'].get('t2fd', 0)} 条记录",
         ),
@@ -895,6 +1139,25 @@ def md_go_checklist(
         canonical, tiers, versions, campaign_manifest, archive_manifest
     )
     items = _go_items_cn(ctx) if language == "cn" else _go_items_en(ctx)
+    queries = _go_queries(ctx, tiers)
+    assert len(queries) == len(items), (
+        "every GO checklist item needs exactly one evidence query"
+    )
+    # Tier-linked GO items cannot claim green when the tier produced no
+    # current-campaign record: the status follows the evidence query.
+    tier_linked = {11: "t1", 12: "t2fd", 14: "t5", 15: "t7", 16: "t7", 19: "t7"}
+    items = [
+        (
+            title,
+            _GO_STATUS
+            if ctx["tier_counts"].get(tier_linked[index], 0)
+            else _GO_WARN,
+            evidence,
+        )
+        if index in tier_linked
+        else (title, status, evidence)
+        for index, (title, status, evidence) in enumerate(items, start=1)
+    ]
     n_ok = sum(1 for _item, status, _ev in items if status == _GO_STATUS)
     n_warn = sum(1 for _item, status, _ev in items if status == _GO_WARN)
     n_fail = sum(1 for _item, status, _ev in items if status == _GO_FAIL)
@@ -912,8 +1175,8 @@ def md_go_checklist(
             f"（{ctx['pass']} pass / {ctx['characterized']} characterized / "
             f"{ctx['fail']} fail / {ctx['blocked']} blocked）",
             "",
-            "| # | 条目 | 状态 | 证据 |",
-            "|---|---|---|---|",
+            "| # | 条目 | 状态 | 证据 | evidence query |",
+            "|---|---|---|---|---|",
         ]
     else:
         lines = [
@@ -925,24 +1188,28 @@ def md_go_checklist(
             f" ({ctx['pass']} pass / {ctx['characterized']} characterized / "
             f"{ctx['fail']} fail / {ctx['blocked']} blocked)",
             "",
-            "| # | Item | Status | Evidence |",
-            "|---|---|---|---|",
+            "| # | Item | Status | Evidence | evidence query |",
+            "|---|---|---|---|---|",
         ]
-    for index, (item, status, evidence) in enumerate(items, start=1):
-        lines.append(f"| {index} | {item} | {status} | {evidence} |")
+    for index, ((item, status, evidence), query) in enumerate(
+        zip(items, queries, strict=True), start=1
+    ):
+        lines.append(f"| {index} | {item} | {status} | {evidence} | `{query}` |")
     lines.append("")
+    historical = ", ".join(ctx["historical_tiers"]) or "none"
     if language == "cn":
         lines += [
-            "范围说明：T3 精度与 T4 静态工作流保持历史证据，不作为 current-HEAD 声明；"
-            "GPU `t5h` saddle 工作流不在四后端 smoke 范围内，其语义由 CPU/解析 "
-            "known-answer 层覆盖。",
+            f"范围说明:tier `{historical}` 不在当前 campaign 内运行或不产出当前记录,"
+            "其历史记录只列在 historical 小节,不作为当前提交声明;GPU `t5h` saddle "
+            "工作流不在四后端 smoke 范围内,其语义由 CPU/解析 known-answer 层覆盖。",
         ]
     else:
         lines += [
-            "Scope note: T3 accuracy and T4 static workflows remain historical "
-            "evidence and are not claimed as current-HEAD; the GPU `t5h` saddle "
-            "workflow is outside the four-backend smoke and is covered by the "
-            "CPU/analytic known-answer layer.",
+            f"Scope note: tier(s) `{historical}` were not run in this campaign "
+            "or produced no current records; their historical evidence is "
+            "listed separately and is not part of the current-commit claim. The "
+            "GPU `t5h` saddle workflow is outside the four-backend smoke and is "
+            "covered by the CPU/analytic known-answer layer.",
         ]
     lines.append("")
     return "\n".join(lines)
@@ -1791,13 +2058,12 @@ def md_t8(records: list[dict[str, Any]]) -> str:
         ]
         lines.append(f"| {n} | " + " | ".join(cells) + " |")
     lines.append("")
-    vram_parts = []
     table = _profile_records(g, "t8_sp_scaling_512__t8_performance")
-    for rec in _engine_profiles(table):
-        if rec["metrics"].get("peak_vram_mib") is not None:
-            vram_parts.append(
-                f"{profile_label(rec)} " f"{_fmt(rec['metrics']['peak_vram_mib'])} MiB"
-            )
+    vram_parts = [
+        f"{profile_label(rec)} {_fmt(rec['metrics']['peak_vram_mib'])} MiB"
+        for rec in _engine_profiles(table)
+        if rec["metrics"].get("peak_vram_mib") is not None
+    ]
     if vram_parts:
         lines.append("Peak VRAM at 512 atoms: " + ", ".join(vram_parts) + ".")
         lines.append("")
@@ -1913,6 +2179,7 @@ def _summary_json(
     bundle=None,
     canonical: dict | None = None,
     versions: dict | None = None,
+    tier_views: dict[str, TierView] | None = None,
 ) -> dict[str, Any]:
     t3 = tiers["t3"]
     omat = {}
@@ -1940,10 +2207,14 @@ def _summary_json(
         "versions": versions,
         "model_profiles": {eng: ENGINE_LABELS[eng] for eng in ENGINE_ORDER},
         "tiers": {
-            tier: {
-                "records": len(records),
-                "by_status": status_counts(records),
-            }
+            tier: (
+                tier_views[tier].as_summary()
+                if tier_views is not None and tier in tier_views
+                else {
+                    "records": len(records),
+                    "by_status": status_counts(records),
+                }
+            )
             for tier, records in tiers.items()
         },
         "omat24": omat,
@@ -2056,13 +2327,15 @@ def main() -> int:
         archive_manifest_path = Path(args.archive_manifest)
         if archive_manifest_path.is_file():
             archive_manifest = load_archive_manifest(archive_manifest_path)
+        render_head = git_commit()
         versions = build_version_block(
             bundle.records,
             software_commit=args.software_commit,
-            validation_code_commit=git_commit(),
-            report_generator_commit=git_commit(),
+            validation_code_commit=render_head,
+            report_generator_commit=render_head,
             evidence_campaign=args.campaign,
             campaign_manifest=campaign_manifest_dict,
+            repository_head_at_render_time=render_head,
         )
     except CampaignManifestError as exc:
         print(f"[report] refusing to render: {exc}", file=sys.stderr)
@@ -2070,6 +2343,8 @@ def main() -> int:
     versions_dict = versions.as_dict()
 
     tiers = {tier: bundle.tier(tier) for tier in TIER_NAMES}
+    all_tiers = evidence_tiers(root, campaign=None).by_tier()
+    tier_views = build_tier_views(tiers, all_tiers, versions_dict)
     canonical = aggregate_records(
         bundle.records, loader=bundle, versions=version_payload(versions_dict)
     )
@@ -2077,7 +2352,15 @@ def main() -> int:
     coverage = build_coverage_table(tiers)
 
     summary = _summary_json(
-        root, out, tiers, matrix, coverage, bundle, canonical, versions_dict
+        root,
+        out,
+        tiers,
+        matrix,
+        coverage,
+        bundle,
+        canonical,
+        versions_dict,
+        tier_views=tier_views,
     )
     (out / "beta-summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
@@ -2087,21 +2370,22 @@ def main() -> int:
         md_provenance(root, out, summary["code_commit"], versions_dict),
         md_go_checklist(
             canonical,
-            tiers,
+            tier_views,
             versions_dict,
             campaign_manifest=campaign_manifest_dict,
             archive_manifest=archive_manifest,
             language="en",
         ),
-        md_t1(tiers["t1"]),
-        md_t2(tiers["t2"]),
-        md_t2fd(tiers["t2fd"]),
-        md_t3(tiers["t3"], root / "t3"),
-        md_t4(tiers["t4"]),
-        md_t5(tiers["t5"]),
-        md_t6(tiers["t6"]),
-        md_t7(tiers["t7"]),
-        md_t8(tiers["t8"]),
+        md_tier("t1", tier_views["t1"], md_t1),
+        md_tier("t2", tier_views["t2"], md_t2),
+        md_tier("t2fd", tier_views["t2fd"], md_t2fd),
+        md_tier("t3", tier_views["t3"], lambda records: md_t3(records, root / "t3")),
+        md_tier("t4", tier_views["t4"], md_t4),
+        md_tier("t5", tier_views["t5"], md_t5),
+        md_tier("t6", tier_views["t6"], md_t6),
+        md_tier("t7", tier_views["t7"], md_t7),
+        md_tier("t8", tier_views["t8"], md_t8),
+        md_historical(tier_views, versions_dict),
         md_support_matrix(matrix),
         md_limitations(),
     ]
@@ -2139,21 +2423,22 @@ def main() -> int:
         "",
         md_go_checklist(
             canonical,
-            tiers,
+            tier_views,
             versions_dict,
             campaign_manifest=campaign_manifest_dict,
             archive_manifest=archive_manifest,
             language="cn",
         ),
-        md_t1(tiers["t1"]),
-        md_t2(tiers["t2"]),
-        md_t2fd(tiers["t2fd"]),
-        md_t3(tiers["t3"], root / "t3"),
-        md_t4(tiers["t4"]),
-        md_t5(tiers["t5"]),
-        md_t6(tiers["t6"]),
-        md_t7(tiers["t7"], cn=True),
-        md_t8(tiers["t8"]),
+        md_tier("t1", tier_views["t1"], md_t1),
+        md_tier("t2", tier_views["t2"], md_t2),
+        md_tier("t2fd", tier_views["t2fd"], md_t2fd),
+        md_tier("t3", tier_views["t3"], lambda records: md_t3(records, root / "t3")),
+        md_tier("t4", tier_views["t4"], md_t4),
+        md_tier("t5", tier_views["t5"], md_t5),
+        md_tier("t6", tier_views["t6"], md_t6),
+        md_tier("t7", tier_views["t7"], lambda records: md_t7(records, cn=True)),
+        md_tier("t8", tier_views["t8"], md_t8),
+        md_historical(tier_views, versions_dict, cn=True),
         md_support_matrix(matrix),
         md_limitations(),
     ]

@@ -12,11 +12,11 @@ HEAD.  Four commits are tracked separately:
 
 * ``no_evidence``              -- nothing to interpret;
 * ``partial_reaggregation``    -- historical evidence re-aggregated under the
-  current validation semantics; NOT current-HEAD validation;
-* ``current_head_revalidated`` -- every record was produced at
+  current validation semantics; NOT target-commit validation;
+* ``target_commit_revalidated`` -- every record was produced at
   ``software_commit`` and a campaign manifest declares completion.
 
-The current-head status can only come from an explicit campaign manifest
+The target-commit status can only come from an explicit campaign manifest
 (``mliport.beta-campaign/1``), never from the mere presence of records.
 """
 
@@ -35,7 +35,7 @@ ARCHIVE_MANIFEST_SCHEMA = "mliport.beta-archive-manifest/1"
 REVALIDATION_STATUSES = (
     "no_evidence",
     "partial_reaggregation",
-    "current_head_revalidated",
+    "target_commit_revalidated",
 )
 
 CAMPAIGN_MANIFEST_FIELDS = (
@@ -59,23 +59,37 @@ class VersionBlock:
     evidence_source_commits: tuple[str, ...]
     scientific_revalidation_status: str
     status_reason: str
+    #: Repository HEAD at render time. Informational only: it is NOT the
+    #: scientific target commit and must never be used as a validation claim.
+    repository_head_at_render_time: str | None = None
     validation_logic_version: int = VALIDATION_LOGIC_VERSION
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            # ``software_commit`` is kept for backward compatibility with the
+            # existing summary schema; ``target_software_commit`` is the
+            # explicit scientific target (task book section 18).
             "software_commit": self.software_commit,
+            "target_software_commit": self.software_commit,
             "validation_code_commit": self.validation_code_commit,
             "report_generator_commit": self.report_generator_commit,
             "evidence_campaign": self.evidence_campaign,
             "evidence_source_commits": list(self.evidence_source_commits),
             "scientific_revalidation_status": self.scientific_revalidation_status,
             "status_reason": self.status_reason,
+            "repository_head_at_render_time": self.repository_head_at_render_time,
             "validation_logic_version": self.validation_logic_version,
         }
 
     @property
+    def is_target_commit_revalidated(self) -> bool:
+        return self.scientific_revalidation_status == "target_commit_revalidated"
+
+    # Backward-compatible alias (name only); prefer
+    # ``is_target_commit_revalidated``.
+    @property
     def is_current_head(self) -> bool:
-        return self.scientific_revalidation_status == "current_head_revalidated"
+        return self.is_target_commit_revalidated
 
 
 class CampaignManifestError(RuntimeError):
@@ -146,6 +160,7 @@ def build_version_block(
     evidence_campaign: str | None = None,
     campaign_manifest: dict[str, Any] | None = None,
     campaign_manifest_path: str | Path | None = None,
+    repository_head_at_render_time: str | None = None,
 ) -> VersionBlock:
     """Classify how far the evidence actually revalidates the current HEAD."""
     source_commits = tuple(
@@ -188,6 +203,7 @@ def build_version_block(
             report_generator_commit=report_generator_commit,
             evidence_campaign=evidence_campaign,
             evidence_source_commits=(),
+            repository_head_at_render_time=repository_head_at_render_time,
             scientific_revalidation_status="no_evidence",
             status_reason="no result records were loaded",
         )
@@ -199,11 +215,12 @@ def build_version_block(
             report_generator_commit=report_generator_commit,
             evidence_campaign=evidence_campaign,
             evidence_source_commits=source_commits,
+            repository_head_at_render_time=repository_head_at_render_time,
             scientific_revalidation_status="partial_reaggregation",
             status_reason=(
                 "historical evidence re-aggregated under the current validation "
-                "semantics; no completed current-head campaign manifest was "
-                "provided, so this is NOT current-HEAD validation"
+                "semantics; no completed target-commit campaign manifest was "
+                "provided, so this is NOT target-commit validation"
             ),
         )
 
@@ -215,6 +232,7 @@ def build_version_block(
             report_generator_commit=report_generator_commit,
             evidence_campaign=evidence_campaign,
             evidence_source_commits=source_commits,
+            repository_head_at_render_time=repository_head_at_render_time,
             scientific_revalidation_status="partial_reaggregation",
             status_reason=(
                 f"campaign manifest status is {manifest_status!r}, not 'complete'"
@@ -225,7 +243,7 @@ def build_version_block(
         msg = (
             "campaign manifest declares completion at "
             f"{software_commit!r}, but the loaded evidence was produced at "
-            f"{list(source_commits)}; a current-head claim requires every "
+            f"{list(source_commits)}; a target-commit claim requires every "
             "record to come from the target commit"
         )
         raise CampaignManifestError(msg)
@@ -235,7 +253,7 @@ def build_version_block(
     if undeclared:
         msg = (
             f"evidence commits {undeclared} are not declared by the campaign "
-            "manifest; unreviewed evidence cannot be part of a current-head "
+            "manifest; unreviewed evidence cannot be part of a target-commit "
             "claim"
         )
         raise CampaignManifestError(msg)
@@ -246,7 +264,8 @@ def build_version_block(
         report_generator_commit=report_generator_commit,
         evidence_campaign=evidence_campaign,
         evidence_source_commits=source_commits,
-        scientific_revalidation_status="current_head_revalidated",
+        repository_head_at_render_time=repository_head_at_render_time,
+        scientific_revalidation_status="target_commit_revalidated",
         status_reason=(
             "campaign manifest declares completion and every record was "
             "produced at the target software commit"

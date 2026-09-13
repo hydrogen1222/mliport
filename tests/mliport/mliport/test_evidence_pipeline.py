@@ -402,7 +402,7 @@ def test_prb_historical_evidence_is_partial_reaggregation(tmp_path):
         report.build_support_matrix({}), [], versions.as_dict()
     )
     assert "post-fix beta candidate" in snippet
-    assert "Current-HEAD scientific revalidation is pending" in snippet
+    assert "Target-commit scientific revalidation is pending" in snippet
     assert "beta validation completed" not in snippet
 
 
@@ -439,7 +439,7 @@ def test_prb_current_head_status_only_with_complete_campaign(tmp_path):
         evidence_campaign="c1",
         campaign_manifest_path=complete,
     )
-    assert versions.scientific_revalidation_status == "current_head_revalidated"
+    assert versions.scientific_revalidation_status == "target_commit_revalidated"
     snippet = report.readme_validation_snippet(
         report.build_support_matrix({}), [], versions.as_dict()
     )
@@ -485,7 +485,7 @@ def test_prb_generator_writes_version_block_and_pending_status(tmp_path, monkeyp
         "partial_reaggregation"
     )
     snippet = (out / "README_VALIDATION.md").read_text(encoding="utf-8")
-    assert "Current-HEAD scientific revalidation is pending" in snippet
+    assert "Target-commit scientific revalidation is pending" in snippet
     assert "beta validation completed" not in snippet
 
     # a complete manifest for the wrong commit must make the render fail closed
@@ -548,7 +548,7 @@ def test_prb_generator_allows_go_wording_only_for_complete_campaign(
     assert report.main() == 0
     beta = json.loads((out / "beta-summary.json").read_text(encoding="utf-8"))
     versions = beta["versions"]
-    assert versions["scientific_revalidation_status"] == "current_head_revalidated"
+    assert versions["scientific_revalidation_status"] == "target_commit_revalidated"
     assert versions["software_commit"] == "a" * 40
     assert versions["evidence_campaign"] == "c1"
     snippet = (out / "README_VALIDATION.md").read_text(encoding="utf-8")
