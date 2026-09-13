@@ -47,6 +47,7 @@ from mlipx.analysis.transport import (
     particle_number_density_m3,
 )
 from mlipx.analysis.validation import (
+    InsufficientTrajectoryInformationError,
     InvalidTrajectoryError,
     UnsupportedAnalysisError,
     require_analysis,
@@ -664,7 +665,9 @@ def test_kinisi_transport_rejects_large_unsafe_wrapped_steps():
         for k in range(n_frames)
     ]
     dataset = _dataset(frames, np.arange(n_frames) * 100.0)
-    with pytest.raises(UnsupportedAnalysisError, match="unwrap safety ratio"):
+    with pytest.raises(
+        InsufficientTrajectoryInformationError, match="unwrap safety ratio"
+    ) as excinfo:
         kinisi_transport(
             dataset,
             mobile_species="Na",
@@ -677,6 +680,7 @@ def test_kinisi_transport_rejects_large_unsafe_wrapped_steps():
             n_burn=10,
             n_thin=10,
         )
+    assert excinfo.value.status == "insufficient_trajectory_information"
 
 
 # ---------------------------------------------------------------------------

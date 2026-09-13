@@ -170,6 +170,8 @@ def _kinisi_transport(dataset, temperature_k: float) -> dict[str, Any]:
         "sigma_NE_mS_cm": ne.get("sigma_NE_tracer_mS_cm"),
         "sigma_NE_posterior_mS_cm": ne.get("sigma_NE_tracer_posterior_mS_cm"),
         "nernst_einstein_definition": ne.get("definition"),
+        "displacement_input_class": result.get("displacement_input_class"),
+        "publication_grade": result.get("publication_grade"),
         "kinisi_position_semantics": result.get("kinisi_position_semantics"),
     }
 
@@ -440,6 +442,28 @@ def run_md_case(ctx, args) -> int:
     return failures
 
 
+def _classify_transport_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
+    """Honest classification for transport case failures.
+
+    A trajectory whose saved interval cannot be uniquely unwrapped is
+    'unsupported' with the explicit insufficient_trajectory_information
+    reason, not a generic product failure (PR-E section 7.4).
+    """
+    from mlipx.analysis.validation import (
+        InsufficientTrajectoryInformationError,
+        UnsupportedAnalysisError,
+    )
+
+    if isinstance(exc, InsufficientTrajectoryInformationError):
+        return "unsupported", {
+            "reason": "insufficient_trajectory_information",
+            "exception": str(exc),
+        }
+    if isinstance(exc, UnsupportedAnalysisError):
+        return "unsupported", {"reason": "product_refused", "exception": str(exc)}
+    return "fail", {}
+
+
 def run_transport_case(ctx, args) -> int:
     """t7a: kinisi + NE + native-MSD sufficiency per temperature (loads MD runs)."""
     temperatures = [float(t) for t in args.temperatures.split(",")]
@@ -528,14 +552,15 @@ def run_transport_case(ctx, args) -> int:
                 peak_vram=peak_vram,
             )
         except Exception as exc:  # noqa: BLE001 - record and continue
+            status, reason = _classify_transport_failure(exc)
             failures += _write(
                 ctx,
                 "t7_transport",
                 f"t7a_na3ps4_T{temperature:g}K",
-                "fail",
+                status,
                 common_params,
                 {},
-                {"traceback": traceback.format_exc()},
+                {**reason, "traceback": traceback.format_exc()},
                 structure_id=atoms_id,
                 wall=time.perf_counter() - t0,
                 exception=f"{type(exc).__name__}: {exc}",

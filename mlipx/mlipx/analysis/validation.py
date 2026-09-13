@@ -25,6 +25,17 @@ class UnsupportedAnalysisError(AnalysisError):
     """The requested analysis has no unambiguous supported definition."""
 
 
+class InsufficientTrajectoryInformationError(UnsupportedAnalysisError):
+    """Saved frames cannot uniquely reconstruct continuous displacements.
+
+    The wrapped interval is too coarse (or the corrected path crosses aliases)
+    to recover the image history; transport must refuse instead of fabricating
+    an unwrap (task book PR-E section 7.4).
+    """
+
+    status = "insufficient_trajectory_information"
+
+
 class OptionalDependencyError(AnalysisError):
     """An explicitly requested optional backend is unavailable."""
 

@@ -1075,6 +1075,8 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
                 "fit_stop_ps": result["tracer_diffusion"]["fit_stop_ps"],
                 "lag_grid": result["tracer_diffusion"]["lag_grid"],
                 "kinisi_position_semantics": result["kinisi_position_semantics"],
+                "displacement_input_class": result.get("displacement_input_class"),
+                "publication_grade": result.get("publication_grade"),
                 "temperature_source": result.get("temperature_source"),
                 "drift_correction": result.get("drift_correction"),
                 "dimensions": result.get("dimensions"),

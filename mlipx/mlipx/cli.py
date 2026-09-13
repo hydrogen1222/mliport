@@ -1139,6 +1139,16 @@ Examples:
             "peak exceeds this many GiB (default: 4)."
         ),
     )
+    transport_parser.add_argument(
+        "--allow-reconstructed-fallback",
+        action="store_true",
+        help=(
+            "Diagnostic only: permit transport to fall back to kinisi's "
+            "unverified from_ase displacement reconstruction when the exact "
+            "adapter is unavailable. Results are marked "
+            "publication_grade=false."
+        ),
+    )
 
     density_parser = analyze_sub.add_parser(
         "density", help="Periodic 3-D mobile-ion density map"

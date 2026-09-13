@@ -456,7 +456,10 @@ def test_transport_tracer_and_collective_share_custom_dt(monkeypatch) -> None:
         n_walkers=16,
         n_burn=10,
         n_thin=1,
+        allow_reconstructed_fallback=True,
     )
+    assert result["publication_grade"] is False
+    assert result["kinisi_position_semantics"]["backend_displacement_verified"] is False
     tracer_dt = FakeDiffusionAnalyzer.calls[0]["dt"]
     collective_dt = FakeConductivityAnalyzer.calls[0]["dt"]
     assert tracer_dt is collective_dt
@@ -708,55 +711,57 @@ def test_kinisi_position_semantics_safe_unwrapped_is_equivalent() -> None:
     semantics = _validate_kinisi_periodic_reconstruction(
         dataset, {"unwrap_safety_level": "not_applicable_exact_unwrapped_source"}
     )
+    assert semantics["displacement_input_class"] == "exact_unwrapped"
     assert semantics["source_positions_convention"] == "unwrapped"
-    assert semantics["exact_unwrapped_preserved_directly"] is False
+    assert semantics["exact_unwrapped_preserved_directly"] is True
     assert semantics["exact_unwrapped_reconstruction_equivalent"] is True
+    assert semantics["exact_unwrapped_intervals_beyond_mic"] == 0
     assert semantics["checked_saved_intervals"] == 5
     assert semantics["maximum_exact_vs_mic_difference_A"] < 1.0e-6
 
 
-def test_kinisi_position_semantics_hidden_image_crossing_fails_closed() -> None:
-    """4.2: an exact unwrapped step larger than half a cell must fail closed."""
+def test_kinisi_position_semantics_beyond_mic_stays_exact() -> None:
+    """PR-E 7.3: an exact unwrapped step > half a cell is physical, not an error."""
 
     # frame 0 x=1 A, frame 1 x=7 A in a 10 A cell: exact +6 A, MIC -4 A.
     positions = np.zeros((6, 1, 3), dtype=float)
     positions[0, 0, 0] = 1.0
     positions[1:, 0, 0] = 1.0 + np.arange(1, 6) * 6.0
     dataset = _unwrapped_dataset(positions, cell=10.0)
-    with pytest.raises(
-        UnsupportedAnalysisError, match="exact image history would be lost"
-    ):
-        _validate_kinisi_periodic_reconstruction(
-            dataset, {"unwrap_safety_level": "not_applicable_exact_unwrapped_source"}
-        )
+    semantics = _validate_kinisi_periodic_reconstruction(
+        dataset, {"unwrap_safety_level": "not_applicable_exact_unwrapped_source"}
+    )
+    assert semantics["displacement_input_class"] == "exact_unwrapped"
+    assert semantics["exact_unwrapped_preserved_directly"] is True
+    assert semantics["exact_unwrapped_intervals_beyond_mic"] == 5
+    assert semantics["exact_unwrapped_reconstruction_equivalent"] is False
+    assert semantics["maximum_exact_vs_mic_difference_A"] > 4.0
 
 
-def test_kinisi_transport_refuses_image_crossing_before_kinisi(
-    monkeypatch,
-) -> None:
-    """4.2: DiffusionAnalyzer.from_ase is never reached for a crossing trajectory."""
+def test_kinisi_transport_consumes_exact_crossing_without_mic_gate() -> None:
+    """PR-E 7.3: the exact adapter consumes a >half-cell step directly."""
 
+    pytest.importorskip("kinisi")
     positions = np.zeros((6, 1, 3), dtype=float)
     positions[0, 0, 0] = 1.0
     positions[1:, 0, 0] = 1.0 + np.arange(1, 6) * 6.0
     dataset = _unwrapped_dataset(positions, cell=10.0)
-    monkeypatch.setattr(
-        transport_module,
-        "_require_kinisi",
-        lambda: pytest.fail("kinisi must not be imported for a crossing trajectory"),
+    result = kinisi_transport(
+        dataset,
+        mobile_species="Li",
+        ionic_charge_e=1,
+        fit_start_ps=0.0,
+        lag_step_ps=0.01,
+        lag_stop_ps=0.04,
+        temperature_K=600.0,
     )
-    with pytest.raises(
-        UnsupportedAnalysisError, match="exact image history would be lost"
-    ):
-        kinisi_transport(
-            dataset,
-            mobile_species="Li",
-            ionic_charge_e=1,
-            fit_start_ps=0.0,
-            lag_step_ps=0.01,
-            lag_stop_ps=0.04,
-            temperature_K=600.0,
-        )
+    assert result["displacement_input_class"] == "exact_unwrapped"
+    semantics = result["kinisi_position_semantics"]
+    assert semantics["publication_grade"] is True
+    assert semantics["backend_displacement_verified"] is True
+    assert semantics["exact_unwrapped_preserved_directly"] is True
+    assert semantics["exact_unwrapped_intervals_beyond_mic"] == 5
+    assert semantics["backend_displacement_max_abs_difference_A"] <= 1.0e-6
 
 
 def test_kinisi_position_semantics_wrapped_records_heuristic_safety() -> None:
@@ -834,15 +839,21 @@ def test_kinisi_transport_safe_unwrapped_records_backend_semantics(monkeypatch) 
         lag_step_ps=0.02,
         lag_stop_ps=0.2,
         temperature_K=600.0,
+        allow_reconstructed_fallback=True,
     )
     semantics = result["kinisi_position_semantics"]
+    assert semantics["displacement_input_class"] == "exact_unwrapped"
     assert semantics["source_positions_convention"] == "unwrapped"
     assert semantics["exact_unwrapped_reconstruction_equivalent"] is True
-    assert semantics["exact_unwrapped_preserved_directly"] is False
+    assert semantics["exact_unwrapped_preserved_directly"] is True
     assert (
         semantics["backend_reconstruction"]
-        == "kinisi periodic displacement reconstruction"
+        == "mlipx exact continuous displacement array"
     )
+    # a non-kinisi analyzer cannot claim the verified exact path
+    assert semantics["exact_displacement_adapter"] is False
+    assert semantics["backend_displacement_verified"] is False
+    assert result["publication_grade"] is False
 
 
 def _write_transport_run(path) -> None:
@@ -954,6 +965,7 @@ def test_transport_runner_writes_summary_csv_plot_and_arrays(
                 "lag_step_ps": 0.1,
                 "lag_stop_ps": 0.5,
                 "temperature_K": 600.0,
+                "allow_reconstructed_fallback": True,
             },
         )
     )

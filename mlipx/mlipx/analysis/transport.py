@@ -17,6 +17,7 @@ from mlipx.analysis.units import (
     S_M_TO_S_CM,
 )
 from mlipx.analysis.validation import (
+    InsufficientTrajectoryInformationError,
     OptionalDependencyError,
     UnsupportedAnalysisError,
     require_analysis,
@@ -37,6 +38,35 @@ _FRAME_OFFSET_RTOL = 1.0e-9
 # crossing differs by ~half a cell. 1e-6 A sits safely above roundoff and
 # well below any physical image loss.
 _KINISI_RECONSTRUCTION_ATOL_A = 1.0e-6
+
+#: Displacement input classes (task book PR-E section 7.1).  Only the exact
+#: class may skip the MIC discrepancy requirement; only the reconstructable
+#: wrapped class runs the alias/MIC safety logic.
+DISPLACEMENT_EXACT_UNWRAPPED = "exact_unwrapped"
+DISPLACEMENT_RECONSTRUCTABLE_WRAPPED = "reconstructable_wrapped"
+DISPLACEMENT_INSUFFICIENT = "insufficient_trajectory_information"
+
+#: Wrapped saved-frame steps above this fraction of the minimum cell height
+#: cannot be uniquely unwrapped by the general minimum-image heuristic.
+_WRAPPED_UNWRAP_SAFETY_LIMIT = 0.8
+
+
+def displacement_input_class(
+    dataset: TrajectoryDataset, unwrap_diagnostics: dict[str, Any]
+) -> str:
+    """Classify the displacement contract of a trajectory (never guesses)."""
+    if dataset.positions_convention == "unwrapped":
+        return DISPLACEMENT_EXACT_UNWRAPPED
+    if dataset.positions_convention != "wrapped":
+        raise ValueError(
+            "displacement contract requires an explicit wrapped or unwrapped "
+            "position convention"
+        )
+    ratio = unwrap_diagnostics.get("unwrap_safety_ratio")
+    ratio = float(ratio) if ratio is not None else 1.0
+    if ratio >= _WRAPPED_UNWRAP_SAFETY_LIMIT:
+        return DISPLACEMENT_INSUFFICIENT
+    return DISPLACEMENT_RECONSTRUCTABLE_WRAPPED
 
 
 def particle_number_density_m3(
@@ -504,31 +534,47 @@ def _production_positions_with_drift(
             raise ValueError("Drift reference indices overlap the mobile selection")
     else:
         raise ValueError("drift_reference must be none, indices, or nonmobile")
-    continuous, _ = unwrap_positions(dataset)
+    continuous, unwrap_diagnostics = unwrap_positions(dataset)
+    source_class = displacement_input_class(dataset, unwrap_diagnostics)
+    if source_class == DISPLACEMENT_INSUFFICIENT:
+        raise InsufficientTrajectoryInformationError(
+            "Wrapped trajectory cannot be uniquely unwrapped: the maximum saved "
+            "frame step is "
+            f"{float(unwrap_diagnostics['unwrap_safety_ratio']):.3f} of the "
+            "minimum cell height (limit "
+            f"{_WRAPPED_UNWRAP_SAFETY_LIMIT:g}); save frames more frequently or "
+            "provide exact unwrapped coordinates/image counters."
+        )
     if len(reference):
         reference_displacement = continuous[:, reference] - continuous[0, reference]
         drift = np.mean(reference_displacement, axis=1)
     else:
         drift = np.zeros((dataset.nframes, 3), dtype=float)
     corrected = continuous - drift[:, None, :]
-    corrected_steps = np.diff(corrected[:, mobile], axis=0)
-    if corrected_steps.size:
-        mic_steps, _ = find_mic(
-            corrected_steps.reshape(-1, 3),
-            np.asarray(dataset.cells[0], dtype=float),
-            pbc=np.asarray(dataset.pbc, dtype=bool),
-        )
-        difference = np.linalg.norm(
-            corrected_steps - np.asarray(mic_steps).reshape(corrected_steps.shape),
-            axis=-1,
-        )
-        maximum = float(np.max(difference))
-        if maximum > _KINISI_RECONSTRUCTION_ATOL_A:
-            raise UnsupportedAnalysisError(
-                "Framework-corrected mobile displacements cannot be reconstructed "
-                "from wrapped saved frames without losing an image crossing. Save "
-                "the trajectory more frequently."
+    if source_class == DISPLACEMENT_RECONSTRUCTABLE_WRAPPED:
+        # Only the wrapped/reconstructed path needs the alias/MIC safety check.
+        # An exact unwrapped source may legitimately cross more than half a
+        # cell between saved frames; the adapter compares its consumed
+        # displacement against the stored exact displacement instead.
+        corrected_steps = np.diff(corrected[:, mobile], axis=0)
+        if corrected_steps.size:
+            mic_steps, _ = find_mic(
+                corrected_steps.reshape(-1, 3),
+                np.asarray(dataset.cells[0], dtype=float),
+                pbc=np.asarray(dataset.pbc, dtype=bool),
             )
+            difference = np.linalg.norm(
+                corrected_steps - np.asarray(mic_steps).reshape(corrected_steps.shape),
+                axis=-1,
+            )
+            maximum = float(np.max(difference))
+            if maximum > _KINISI_RECONSTRUCTION_ATOL_A:
+                raise InsufficientTrajectoryInformationError(
+                    "Framework-corrected mobile displacements cannot be "
+                    "reconstructed from wrapped saved frames without losing an "
+                    "image crossing (max discrepancy "
+                    f"{maximum:g} A); save the trajectory more frequently."
+                )
     return corrected, reference
 
 
@@ -569,6 +615,7 @@ def _build_kinisi_analyzer(
     dimensions: str,
     from_ase_kwargs: dict[str, Any],
     allow_exact_adapter: bool,
+    production: bool = True,
     dg_kind: str = "msd",
     system_particles: int = 1,
     ionic_charge: Any = None,
@@ -576,10 +623,14 @@ def _build_kinisi_analyzer(
     """Construct a kinisi analyzer on exact displacements when possible.
 
     Real kinisi 2.x exposes ``ASEParser``/``calculate_msd``: the exact adapter
-    is used and its displacement array is verified before the fit.  A
-    third-party/plugin backend without that surface falls back to
-    ``from_ase`` and records ``exact_displacement_adapter: false`` so the
-    provenance can never claim exactness it did not have.
+    is used and its displacement array is verified before the fit.
+
+    Production calls (``production=True``, the default) fail closed when the
+    exact adapter is unavailable or the analyzer is not a real kinisi class.
+    ``production=False`` is the explicit diagnostic/testing mode: it may fall
+    back to ``from_ase`` but records ``backend_displacement_verified: false``
+    and ``publication_grade: false`` so provenance can never claim exactness
+    it did not have (task book PR-E section 7.2).
     """
     use_exact_adapter = bool(allow_exact_adapter)
     if use_exact_adapter:
@@ -630,8 +681,17 @@ def _build_kinisi_analyzer(
             )
         audit = dict(parser._mlipx_exact_displacement_audit)
         audit["exact_displacement_adapter"] = True
+        audit["publication_grade"] = True
         return analyzer, audit
 
+    if production:
+        raise UnsupportedAnalysisError(
+            "Exact-displacement kinisi adapter is unavailable for this "
+            "analyzer/backend; refusing production transport because the "
+            "reconstructed displacement array cannot be verified. Use "
+            "allow_reconstructed_fallback=True only for diagnostic/testing "
+            "runs, whose results are marked publication_grade=false."
+        )
     analyzer = analyzer_cls.from_ase(**from_ase_kwargs)
     return analyzer, {
         "backend_displacements_source": (
@@ -641,6 +701,8 @@ def _build_kinisi_analyzer(
         "backend_displacement_max_abs_difference_A": None,
         "backend_displacement_checked_before_fit": False,
         "exact_displacement_adapter": False,
+        "publication_grade": False,
+        "fallback_reason": "exact adapter unavailable; diagnostic mode only",
     }
 
 
@@ -662,6 +724,7 @@ def _validate_kinisi_periodic_reconstruction(
     """
 
     convention = dataset.positions_convention
+    input_class = displacement_input_class(dataset, unwrap_diagnostics)
     if convention == "unwrapped":
         positions = dataset.positions
         if positions.shape[0] < 2:
@@ -677,26 +740,20 @@ def _validate_kinisi_periodic_reconstruction(
         mic_steps = mic_flat.reshape(exact_steps.shape)
         differences = np.linalg.norm(exact_steps - mic_steps, axis=-1)
         max_difference = float(np.max(differences)) if differences.size else 0.0
-        n_intervals = int(exact_steps.shape[0])
-        if max_difference > _KINISI_RECONSTRUCTION_ATOL_A:
-            raise UnsupportedAnalysisError(
-                "The source contains exact unwrapped image information, but "
-                "kinisi's ASE backend reconstructs periodic displacements from "
-                "wrapped/scaled coordinates. At least one saved-frame "
-                "displacement is not equal to its minimum-image reconstruction, "
-                "so exact image history would be lost.\n\n"
-                "Use a denser saved trajectory or a future exact-displacement "
-                "transport backend. Native mlipx MSD can still use the exact "
-                "unwrapped coordinates."
-            )
+        n_crossing = int(np.count_nonzero(differences > _KINISI_RECONSTRUCTION_ATOL_A))
+        # Exact unwrapped input is consumed directly by the exact adapter; a
+        # step larger than half a cell is physical, not an error.  The
+        # adapter still proves consumed == stored before the fit (section 7.3).
         return {
+            "displacement_input_class": input_class,
             "source_positions_convention": "unwrapped",
             "backend_input": "exact continuous positions",
             "backend_input_frames_wrapped_for_kinisi": True,
-            "backend_reconstruction": "kinisi periodic displacement reconstruction",
-            "exact_unwrapped_preserved_directly": False,
-            "exact_unwrapped_reconstruction_equivalent": True,
-            "checked_saved_intervals": n_intervals,
+            "backend_reconstruction": "mlipx exact continuous displacement array",
+            "exact_unwrapped_preserved_directly": True,
+            "exact_unwrapped_reconstruction_equivalent": bool(n_crossing == 0),
+            "exact_unwrapped_intervals_beyond_mic": n_crossing,
+            "checked_saved_intervals": int(exact_steps.shape[0]),
             "maximum_exact_vs_mic_difference_A": max_difference,
         }
     if convention != "wrapped":
@@ -705,12 +762,13 @@ def _validate_kinisi_periodic_reconstruction(
             "position convention."
         )
     return {
+        "displacement_input_class": input_class,
         "source_positions_convention": "wrapped",
         "backend_input": (
             "wrapped frames plus mlipx MIC-reconstructed continuous positions"
         ),
         "backend_input_frames_wrapped_for_kinisi": True,
-        "backend_reconstruction": "kinisi periodic displacement reconstruction",
+        "backend_reconstruction": "mlipx MIC reconstruction of wrapped frames",
         "exact_unwrapped_preserved_directly": False,
         "exact_unwrapped_reconstruction_equivalent": None,
         "wrapped_source_safety": unwrap_diagnostics.get("unwrap_safety_level"),
@@ -801,14 +859,23 @@ def kinisi_transport(
     n_burn: int = 500,
     n_thin: int = 10,
     parser_memory_limit_gib: float = 4.0,
+    allow_reconstructed_fallback: bool = False,
 ) -> dict[str, Any]:
     """Estimate production-phase transport with the kinisi 2.x ASE adapters.
 
     The primary result is covariance-aware Bayesian tracer diffusion for the
     explicitly selected mobile species and Cartesian dimensions. The saved
     frame interval is passed to kinisi without changing units or silently
-    resampling frames, and periodic reconstruction is rejected when exact
-    unwrapped image information would be lost.
+    resampling frames.
+
+    Displacement contract (PR-E): exact unwrapped sources are consumed by the
+    exact-displacement adapter and verified step by step, so a physical step
+    larger than half a cell is fine; wrapped sources use the MIC safety gate
+    and are refused with ``insufficient_trajectory_information`` when the
+    saved interval cannot be uniquely unwrapped.  Production refuses to fall
+    back to an unverified ``from_ase`` reconstruction;
+    ``allow_reconstructed_fallback=True`` is diagnostic-only and marks the
+    result ``publication_grade=false``.
 
     When requested, ``ConductivityAnalyzer`` provides collective Einstein
     conductivity for the explicit ionic charge model and
@@ -869,14 +936,14 @@ def kinisi_transport(
         covariance_memory_limit_bytes=parser_limit_bytes,
     )
     _, unwrap_diagnostics = unwrap_positions(view)
-    if (
-        view.positions_convention == "wrapped"
-        and unwrap_diagnostics["unwrap_safety_ratio"] > 0.8
-    ):
-        raise UnsupportedAnalysisError(
+    input_class = displacement_input_class(view, unwrap_diagnostics)
+    if input_class == DISPLACEMENT_INSUFFICIENT:
+        raise InsufficientTrajectoryInformationError(
             "Publication transport refused: wrapped-frame unwrap safety ratio "
-            "exceeds 0.8. Save frames more frequently or provide exact unwrapped "
-            "positions/image counters."
+            f"{float(unwrap_diagnostics['unwrap_safety_ratio']):.3f} exceeds "
+            f"{_WRAPPED_UNWRAP_SAFETY_LIMIT:g} of the minimum cell height; the "
+            "image history cannot be uniquely reconstructed. Save frames more "
+            "frequently or provide exact unwrapped positions/image counters."
         )
     position_semantics = _validate_kinisi_periodic_reconstruction(
         view, unwrap_diagnostics
@@ -964,6 +1031,7 @@ def kinisi_transport(
             "specie_indices": indices_variable,
         },
         allow_exact_adapter=True,
+        production=not allow_reconstructed_fallback,
         dg_kind="msd",
     )
     position_semantics.update(displacement_audit)
@@ -1074,6 +1142,8 @@ def kinisi_transport(
             ),
         },
         "unwrap_diagnostics": unwrap_diagnostics,
+        "displacement_input_class": input_class,
+        "publication_grade": bool(position_semantics.get("publication_grade", False)),
         "kinisi_position_semantics": position_semantics,
         "kinisi_resource_diagnostics": {
             "n_lag_points_total": n_lag_points_total,
@@ -1127,6 +1197,7 @@ def kinisi_transport(
                 "system_particles": collective_system_particles,
             },
             allow_exact_adapter=collective_system_particles == 1,
+            production=not allow_reconstructed_fallback,
             dg_kind="mstd",
             system_particles=collective_system_particles,
             ionic_charge=float(ionic_charge_e) * sc.Unit("e"),
@@ -1308,6 +1379,7 @@ def kinisi_transport(
                 "system_particles": collective_system_particles,
             },
             allow_exact_adapter=collective_system_particles == 1,
+            production=not allow_reconstructed_fallback,
             dg_kind="mstd",
             system_particles=collective_system_particles,
         )

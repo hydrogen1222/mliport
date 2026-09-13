@@ -236,6 +236,8 @@ def _run_ne_transport(monkeypatch, *, ionic_charge_e: float) -> dict:
         lag_step_ps=0.02,
         lag_stop_ps=0.12,
         temperature_K=600.0,
+        # the fake analyzer cannot provide the verified exact adapter
+        allow_reconstructed_fallback=True,
     )
 
 
