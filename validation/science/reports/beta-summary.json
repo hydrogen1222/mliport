@@ -5,15 +5,15 @@
   "versions": {
     "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
     "target_software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-    "validation_code_commit": "42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee",
-    "report_generator_commit": "42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee",
+    "validation_code_commit": "ed5e7930f558dc297a070ab001e3637dabe2ef08",
+    "report_generator_commit": "ed5e7930f558dc297a070ab001e3637dabe2ef08",
     "evidence_campaign": "20260913-current-head-5f8d91d",
     "evidence_source_commits": [
       "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
     ],
     "scientific_revalidation_status": "target_commit_revalidated",
     "status_reason": "campaign manifest declares completion and every record was produced at the target software commit",
-    "repository_head_at_render_time": "42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee",
+    "repository_head_at_render_time": "ed5e7930f558dc297a070ab001e3637dabe2ef08",
     "validation_logic_version": 1
   },
   "model_profiles": {
@@ -191,9 +191,9 @@
     },
     "t8": {
       "scope": "current_campaign",
-      "records": 20,
+      "records": 25,
       "by_status": {
-        "pass": 20
+        "pass": 25
       },
       "campaign_id": "20260913-current-head-5f8d91d",
       "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
@@ -206,7 +206,7 @@
           "reason": "not re-run in the current campaign; kept as historical evidence and excluded from current tables"
         }
       ],
-      "summary": "20 current-campaign record(s)"
+      "summary": "25 current-campaign record(s)"
     }
   },
   "omat24": {},
@@ -938,9 +938,9 @@
         "labels": [
           "software_validated"
         ],
-        "records": 5,
+        "records": 10,
         "by_status": {
-          "pass": 5
+          "pass": 10
         }
       },
       "uma": {
@@ -1146,10 +1146,10 @@
   "problems": [],
   "canonical_summary": {
     "record_counts": {
-      "total": 96,
+      "total": 101,
       "by_status": {
         "characterized": 43,
-        "pass": 53
+        "pass": 58
       },
       "by_profile": {
         "dpa-engine-defined-299bc42910": 1,
@@ -1159,11 +1159,12 @@
         "grace-engine-defined-5301c5dbab": 1,
         "grace-engine-defined-ed5bbf59f7": 1,
         "grace-upstream-model-defined-7ca4f2b23c": 3,
-        "grace-upstream-model-defined-efb19e2b17": 19,
+        "grace-upstream-model-defined-efb19e2b17": 24,
         "mace-engine-defined-67d361187e": 1,
         "mace-engine-defined-883d6d20c8": 1,
-        "mace-float64-c1f5e8c71f": 19,
+        "mace-float64-c1f5e8c71f": 14,
         "mace-float64-e04abab7eb": 3,
+        "mace-upstream-model-defined-af1c527f4b": 5,
         "uma-engine-defined-00db931fe2": 1,
         "uma-engine-defined-bf3d816200": 1,
         "uma-upstream-model-defined-1d1a751b0b": 19,
@@ -1333,7 +1334,7 @@
         "git_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
         "seed": null,
         "profile_id": "grace-upstream-model-defined-efb19e2b17",
-        "runs": 19,
+        "runs": 24,
         "records": [
           "t1_cu_fcc/t1_real_inference",
           "t1_mgo_rocksalt/t1_real_inference",
@@ -1405,7 +1406,7 @@
         "git_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
         "seed": null,
         "profile_id": "mace-float64-c1f5e8c71f",
-        "runs": 19,
+        "runs": 14,
         "records": [
           "t1_cu_fcc/t1_real_inference",
           "t1_mgo_rocksalt/t1_real_inference",
@@ -1420,12 +1421,7 @@
           "t2fd_si_diamond_prim/t2_stress_fd",
           "t5_endpoints/t5a_cu_vacancy_endpoints",
           "t5_neb/t5d_cu_vacancy_ci_neb5",
-          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp",
-          "t8_md_throughput_128/t8_performance",
-          "t8_md_throughput_512/t8_performance",
-          "t8_sp_scaling_128/t8_performance",
-          "t8_sp_scaling_32/t8_performance",
-          "t8_sp_scaling_512/t8_performance"
+          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp"
         ]
       },
       "mace-float64-e04abab7eb": {
@@ -1446,6 +1442,28 @@
           "t6_langevin/t6b_cu32_nvt_langevin",
           "t6_nve/t6a_cu32_nve_timestep_sweep",
           "t7_md/t7m0_na3ps4_T700K"
+        ]
+      },
+      "mace-upstream-model-defined-af1c527f4b": {
+        "campaign_id": "20260913-current-head-5f8d91d",
+        "engine": "mace",
+        "model_identity": "MACE-OMAT-0 medium, float64 inference",
+        "model_sha256": "d4b14be9afa294eebdbe31a0280b26a0fa29715771e978cbfd3ca24e0d90307a",
+        "dtype": "upstream/model-defined",
+        "task": "bulk",
+        "head": null,
+        "inference_mode": null,
+        "device_class": "cuda",
+        "git_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
+        "seed": null,
+        "profile_id": "mace-upstream-model-defined-af1c527f4b",
+        "runs": 5,
+        "records": [
+          "t8_md_throughput_128/t8_performance",
+          "t8_md_throughput_512/t8_performance",
+          "t8_sp_scaling_128/t8_performance",
+          "t8_sp_scaling_32/t8_performance",
+          "t8_sp_scaling_512/t8_performance"
         ]
       },
       "uma-engine-defined-00db931fe2": {
@@ -1685,7 +1703,7 @@
     "problems": [],
     "harness_violations": [],
     "import_summary": {
-      "records": 96,
+      "records": 101,
       "migrated_records": 621,
       "legacy_namespace_records": 624,
       "ancillary_files": 928,
@@ -1693,7 +1711,7 @@
     }
   },
   "canonical_loader": {
-    "scanned_files": 1648,
+    "scanned_files": 1653,
     "ancillary_files": 928,
     "migrated_records": 621,
     "out_of_scope_records": 624,

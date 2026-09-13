@@ -2013,6 +2013,16 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _benchmark_variant(record: dict[str, Any]) -> str:
+    """GRACE neighbor-cache ON/OFF variants must stay distinguishable."""
+    if record.get("engine") != "grace":
+        return ""
+    parameters = record.get("parameters", {})
+    if "neighbor_cache" not in parameters:
+        return ""
+    return "cache on" if parameters["neighbor_cache"] else "cache off"
+
+
 def _sp_latency_cell(record: dict[str, Any]) -> str:
     metrics = record["metrics"]
     median = metrics.get("median_ms")
@@ -2024,11 +2034,26 @@ def _sp_latency_cell(record: dict[str, Any]) -> str:
             f" [{_fmt(metrics.get('p05_ms'), 3)}-{_fmt(metrics.get('p95_ms'), 3)}]"
             f" n={metrics.get('n_timed')}"
         )
+    variant = _benchmark_variant(record)
+    if variant:
+        text += f" ({variant})"
     diagnostics = record.get("diagnostics", {})
     if diagnostics.get("benchmark_anomaly"):
         text += " **benchmark_anomaly**"
     elif diagnostics.get("scaling_verdict"):
         text += f" ({diagnostics['scaling_verdict']})"
+    return text
+
+
+def _md_throughput_cell(record: dict[str, Any]) -> str:
+    metrics = record["metrics"]
+    text = (
+        f"{_fmt(metrics.get('steps_per_second'), 3)} / "
+        f"{_fmt(metrics.get('atom_steps_per_second'), 3)}"
+    )
+    variant = _benchmark_variant(record)
+    if variant:
+        text += f" ({variant})"
     return text
 
 
@@ -2049,9 +2074,10 @@ def md_t8(records: list[dict[str, Any]]) -> str:
     lines += [
         "### Single-point startup and spread (per engine/size)",
         "",
-        "| engine | atoms | model_load_s | first_inference_ms | warmup | n_timed "
-        "| median_ms | mean_ms | p05_ms | p95_ms | min_ms | max_ms | atoms/s |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| engine | variant | atoms | model_load_s | first_inference_ms | warmup "
+        "| n_timed | median_ms | mean_ms | p05_ms | p95_ms | min_ms | max_ms "
+        "| atoms/s |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for n in (32, 128, 512):
         table = _profile_records(g, f"t8_sp_scaling_{n}__t8_performance")
@@ -2062,9 +2088,11 @@ def md_t8(records: list[dict[str, Any]]) -> str:
             ):
                 continue
             lines.append(
-                "| {engine} | {atoms} | {load} | {first} | {warmup} | {n_timed} "
-                "| {median} | {mean} | {p05} | {p95} | {min} | {max} | {aps} |".format(
+                "| {engine} | {variant} | {atoms} | {load} | {first} | {warmup} "
+                "| {n_timed} | {median} | {mean} | {p05} | {p95} | {min} | {max} "
+                "| {aps} |".format(
                     engine=record.get("engine"),
+                    variant=_benchmark_variant(record) or "default",
                     atoms=metrics.get("natoms", n),
                     load=_fmt(metrics.get("model_load_s"), 3),
                     first=_fmt(metrics.get("first_inference_ms"), 3),
@@ -2105,17 +2133,7 @@ def md_t8(records: list[dict[str, Any]]) -> str:
     ]
     for n in (128, 512):
         table = _profile_records(g, f"t8_md_throughput_{n}__t8_performance")
-        cells = [
-            _engine_cell(
-                table,
-                eng,
-                lambda rec: (
-                    f"{_fmt(rec['metrics'].get('steps_per_second'), 3)} / "
-                    f"{_fmt(rec['metrics'].get('atom_steps_per_second'), 3)}"
-                ),
-            )
-            for eng in ENGINE_ORDER
-        ]
+        cells = [_engine_cell(table, eng, _md_throughput_cell) for eng in ENGINE_ORDER]
         lines.append(f"| {n} | " + " | ".join(cells) + " |")
     lines.append("")
     table = _profile_records(g, "t8_sp_scaling_512__t8_performance")

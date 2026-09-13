@@ -5,8 +5,8 @@
 重新认证状态：**target_commit_revalidated** —— campaign manifest declares completion and every record was produced at the target software commit
 
 - software_commit（声称被验证）：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
-- validation_code_commit：`42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee`
-- report_generator_commit：`42de06a8c923dd1d4dcdd37e213614b0a7ffa6ee`
+- validation_code_commit：`ed5e7930f558dc297a070ab001e3637dabe2ef08`
+- report_generator_commit：`ed5e7930f558dc297a070ab001e3637dabe2ef08`
 - evidence_campaign：`20260913-current-head-5f8d91d`
 - evidence_source_commits：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
 
@@ -16,7 +16,7 @@
 
 - 结论：**beta GO**（23 ✅ / 1 ⚠️ / 0 ❌）
 - 被验证软件提交：`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
-- 证据 campaign：`20260913-current-head-5f8d91d`，96 条记录（53 pass / 43 characterized / 0 fail / 0 blocked）
+- 证据 campaign：`20260913-current-head-5f8d91d`，101 条记录（58 pass / 43 characterized / 0 fail / 0 blocked）
 
 | # | 条目 | 状态 | 证据 | evidence query |
 |---|---|---|---|---|
@@ -39,7 +39,7 @@
 | 17 | alpha weighting/validity 收口 | ✅ | local Δlog(t) 权重 + finite & valid summary | `analysis=alpha; version=2` |
 | 18 | analysis version bump | ✅ | alpha estimator `/2`；task revision msd 7 / transport 6 | `analysis=msd,transport; revisions=msd:7,transport:6` |
 | 19 | T7 transport 重算 | ✅ | 12 条 T7 记录（md/transport/gemdat） | `tier=t7; records=12` |
-| 20 | T8 按新身份重跑/重建 | ✅ | 20 条 T8 记录 | `tier=t8; records=20` |
+| 20 | T8 按新身份重跑/重建 | ✅ | 25 条 T8 记录 | `tier=t8; records=25` |
 | 21 | historical reused evidence 明确标识 | ✅ | version block + campaign scope 的 `not_in_scope` / `historical_reuse` | `tiers=historical_reuse:t2,t3,t4; scope=explicit` |
 | 22 | report 可从正式 evidence archive 重建 | ✅ | sha256 `bb6b1b06bb3e891e…`，96 条记录，https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst | `archive_manifest; sha256=bb6b1b06bb3e891e; url=https://github.com/hydrogen1222/mliport/releases/download/v2.0.0b1/mliport-validation-20260913-current-head-5f8d91d.tar.zst` |
 | 23 | README 声明与证据一致 | ✅ | 生成块 + 明确的历史 T3/T4 声明 | `summary=beta-summary.json; readme_block=README_VALIDATION.md` |
@@ -148,20 +148,40 @@ dpa: T std 50.8 K, drift -0.000485 eV/atom/ps<br>grace: T std 49.3 K, drift 0.00
 
 ## T8: performance (V100-16GB)
 
-### Single-point warm latency (median ms)
+### Single-point warm latency (median [p05-p95] ms, n timed)
 
 | atoms | mace | dpa | grace | uma |
 |---|---|---|---|---|
-| 32 | 700 | 1.07e+04 | 9.2 | 123 |
-| 128 | 51.9 | 163 | 12.8 | 123 |
-| 512 | 139 | 177 | 30.9 | 212 |
+| 32 | 42.8 [42.4-44.3] n=20 | 154 [153-156] n=20 | grace/upstream/model-defined#efb19e: 8.4 [8.35-8.53] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 9.53 [9.15-10.1] n=20 (cache off) | 122 [121-124] n=20 |
+| 128 | 46.3 [45.8-48.4] n=20 | 156 [155-160] n=20 | grace/upstream/model-defined#efb19e: 13.5 [13.3-14.5] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 16 [15.6-16.5] n=20 (cache off) | 123 [122-124] n=20 |
+| 512 | 139 [139-141] n=20 | 166 [165-167] n=20 | grace/upstream/model-defined#efb19e: 31.2 [31-31.6] n=20 (cache on)<br>grace/upstream/model-defined#efb19e: 42.7 [41.5-44.9] n=20 (cache off) | 222 [220-224] n=20 |
+
+### Single-point startup and spread (per engine/size)
+
+| engine | variant | atoms | model_load_s | first_inference_ms | warmup | n_timed | median_ms | mean_ms | p05_ms | p95_ms | min_ms | max_ms | atoms/s |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| mace | default | 32 | 3.85 | 547 | 7 | 20 | 42.8 | 43.1 | 42.4 | 44.3 | 42.3 | 44.7 | 7e+02 |
+| dpa | default | 32 | 5.87 | 5.29e+03 | 8 | 20 | 154 | 154 | 153 | 156 | 153 | 156 | 2e+02 |
+| grace | cache on | 32 | 10.3 | 8.8e+03 | 5 | 20 | 8.4 | 8.46 | 8.35 | 8.53 | 8.33 | 9.49 | 4e+03 |
+| grace | cache off | 32 | 10.9 | 9.04e+03 | 5 | 20 | 9.53 | 9.66 | 9.15 | 10.1 | 9.13 | 11.7 | 3e+03 |
+| uma | default | 32 | 9.38 | 818 | 6 | 20 | 122 | 122 | 121 | 124 | 121 | 125 | 3e+02 |
+| mace | default | 128 | 3.85 | 50.6 | 5 | 20 | 46.3 | 46.7 | 45.8 | 48.4 | 45.7 | 51.6 | 3e+03 |
+| dpa | default | 128 | 5.87 | 193 | 5 | 20 | 156 | 156 | 155 | 160 | 155 | 160 | 8e+02 |
+| grace | cache on | 128 | 10.3 | 9.61e+03 | 5 | 20 | 13.5 | 13.7 | 13.3 | 14.5 | 13.3 | 15.8 | 9e+03 |
+| grace | cache off | 128 | 10.9 | 1e+04 | 6 | 20 | 16 | 16 | 15.6 | 16.5 | 15.5 | 16.5 | 8e+03 |
+| uma | default | 128 | 9.38 | 129 | 5 | 20 | 123 | 123 | 122 | 124 | 122 | 126 | 1e+03 |
+| mace | default | 512 | 3.85 | 141 | 5 | 20 | 139 | 140 | 139 | 141 | 139 | 142 | 4e+03 |
+| dpa | default | 512 | 5.87 | 229 | 5 | 20 | 166 | 166 | 165 | 167 | 165 | 168 | 3e+03 |
+| grace | cache on | 512 | 10.3 | 9.97e+03 | 5 | 20 | 31.2 | 31.2 | 31 | 31.6 | 31 | 32 | 2e+04 |
+| grace | cache off | 512 | 10.9 | 9.64e+03 | 5 | 20 | 42.7 | 43.5 | 41.5 | 44.9 | 41.4 | 62.1 | 1e+04 |
+| uma | default | 512 | 9.38 | 223 | 5 | 20 | 222 | 222 | 220 | 224 | 220 | 224 | 2e+03 |
 
 ### NVE MD throughput (steps/s / atom-steps/s)
 
 | atoms | mace | dpa | grace | uma |
 |---|---|---|---|---|
-| 128 | 19 / 2.43e+03 | 6.31 / 808 | 76.3 / 9.76e+03 | 8.14 / 1.04e+03 |
-| 512 | 7.1 / 3.63e+03 | 5.96 / 3.05e+03 | 32.3 / 1.66e+04 | 4.66 / 2.38e+03 |
+| 128 | 21.7 / 2.77e+03 | 6.38 / 816 | grace/upstream/model-defined#efb19e: 76.2 / 9.75e+03<br>grace/upstream/model-defined#efb19e: 62.1 / 7.94e+03 | 8.1 / 1.04e+03 |
+| 512 | 7.17 / 3.67e+03 | 6.01 / 3.08e+03 | grace/upstream/model-defined#efb19e: 32.1 / 1.65e+04<br>grace/upstream/model-defined#efb19e: 23.4 / 1.2e+04 | 4.53 / 2.32e+03 |
 
 ## 不在当前 campaign 内的历史证据
 
