@@ -35,7 +35,13 @@ _SCIENCE_ROOT = Path(__file__).resolve().parent.parent
 if str(_SCIENCE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCIENCE_ROOT))
 
-from evidence import STATUS_RANK, TIER_NAMES, load_evidence  # noqa: E402
+from evidence import (  # noqa: E402
+    STATUS_RANK,
+    TIER_NAMES,
+    CampaignManifestError,
+    build_version_block,
+    load_evidence,
+)
 
 import matplotlib as mpl
 
@@ -804,10 +810,18 @@ def main() -> int:
         "record metrics.stress)"
     )
 
+    try:
+        versions = build_version_block(
+            bundle.records, evidence_campaign=bundle.campaign
+        )
+    except CampaignManifestError as exc:  # pragma: no cover - no manifest here
+        print(f"[figures] refusing to render: {exc}", file=sys.stderr)
+        return 2
     manifest = {
         "schema": "mlipx.beta-figures/1",
         "evidence_root": str(root),
         "campaign": bundle.campaign,
+        "versions": versions.as_dict(),
         "validation_logic_version": bundle.records[0]["_identity"][
             "validation_logic_version"
         ],

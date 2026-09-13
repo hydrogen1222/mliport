@@ -1,11 +1,13 @@
+Status: post-fix beta candidate. Software CI is validated on Python 3.10-3.12. Historical scientific evidence has been retained and is being reclassified under the current validation semantics. Current-HEAD scientific revalidation is pending.
+
 Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mlipx integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
 
 | Workflow | MACE | DPA | GRACE | UMA |
 |---|---|---|---|---|
 | Install & doctor (CI software tests) | software_validated* | software_validated* | software_validated* | software_validated* |
-| Single-point inference (4 structures) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) |
+| Single-point inference (4 structures) | software_validated (passx26) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) |
 | Energy-forces consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
-| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx8, passx3) | model_characterized (characterizedx4, passx3) |
+| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx6) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx8, passx3) | model_characterized (characterizedx4, passx3) |
 | Stress-energy consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
 | Coordinate invariance & cache | model_characterized (characterizedx4, passx20) | model_characterized (characterizedx4, failx18, passx2) | model_characterized (characterizedx8, failx18, passx22) | model_characterized (characterizedx4, failx18, passx2) |
 | Fixed-cell relaxation | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) |

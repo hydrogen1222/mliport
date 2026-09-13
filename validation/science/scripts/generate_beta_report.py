@@ -33,7 +33,13 @@ _SCIENCE_ROOT = Path(__file__).resolve().parent.parent
 if str(_SCIENCE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCIENCE_ROOT))
 
-from evidence import TIER_NAMES, aggregate_records, load_evidence  # noqa: E402
+from evidence import (  # noqa: E402
+    CampaignManifestError,
+    TIER_NAMES,
+    aggregate_records,
+    build_version_block,
+    load_evidence,
+)
 
 ENGINE_ORDER = ("mace", "dpa", "grace", "uma")
 ENGINE_LABELS = {
@@ -421,9 +427,74 @@ def t3_accuracy_line(t3_records: list[dict[str, Any]]) -> str:
     )
 
 
+def version_payload(versions: dict[str, Any]) -> dict[str, Any]:
+    """Compact version block for the canonical summary."""
+    return {
+        key: versions.get(key)
+        for key in (
+            "software_commit",
+            "validation_code_commit",
+            "report_generator_commit",
+            "evidence_campaign",
+            "evidence_source_commits",
+            "scientific_revalidation_status",
+            "status_reason",
+            "validation_logic_version",
+        )
+    }
+
+
+def update_readme_blocks(repo_root: Path, snippet: str) -> list[Path]:
+    """Replace the generated validation block in both READMEs."""
+    begin = (
+        "<!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->"
+    )
+    end = "<!-- END GENERATED -->"
+    updated: list[Path] = []
+    for name in ("README.md", "README_CN.md"):
+        path = repo_root / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if begin not in text or end not in text:
+            continue
+        start = text.index(begin) + len(begin)
+        stop = text.index(end, start)
+        path.write_text(
+            text[:start] + "\n" + snippet.rstrip() + "\n" + text[stop:],
+            encoding="utf-8",
+        )
+        updated.append(path)
+    return updated
+
+
+def status_snippet(versions: dict[str, Any] | None) -> str:
+    """Status wording governed by the revalidation semantics (PR-B).
+
+    Only a completed current-head campaign may say "beta validation
+    completed"; anything else must state that historical evidence is being
+    reclassified and current-HEAD revalidation is pending.
+    """
+    versions = versions or {}
+    status = versions.get("scientific_revalidation_status") or "no_evidence"
+    if status == "current_head_revalidated":
+        commit = str(versions.get("software_commit") or "unknown")
+        return (
+            f"Status: beta validation completed at software commit `{commit}` "
+            f"(campaign `{versions.get('evidence_campaign')}`)."
+        )
+    return (
+        "Status: post-fix beta candidate. Software CI is validated on "
+        "Python 3.10-3.12. Historical scientific evidence has been retained "
+        "and is being reclassified under the current validation semantics. "
+        "Current-HEAD scientific revalidation is pending."
+    )
+
+
 def readme_validation_snippet(
     matrix: dict[str, Any],
     t3_records: list[dict[str, Any]],
+    versions: dict[str, Any] | None = None,
 ) -> str:
     """Generated validation block embedded in both READMEs (section 41.9).
 
@@ -460,6 +531,8 @@ def readme_validation_snippet(
         "uma": "UMA",
     }
     lines = [
+        status_snippet(versions),
+        "",
         "Validation status per backend, rendered from the beta evidence "
         "records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 "
         "common subset). `software_validated` means the mlipx integration "
@@ -504,7 +577,10 @@ def readme_validation_snippet(
 # ------------------------------------------------------------ md sections
 
 
-def md_provenance(root: Path, out_dir: Path, commits: str) -> str:
+def md_provenance(
+    root: Path, out_dir: Path, commits: str, versions: dict | None = None
+) -> str:
+    versions = versions or {}
     lines = [
         "# mlipx beta scientific validation report",
         "",
@@ -513,6 +589,20 @@ def md_provenance(root: Path, out_dir: Path, commits: str) -> str:
         "result JSON by `validation/science/scripts/"
         "generate_beta_report.py`; regenerate and diff instead of "
         "editing.",
+        "",
+        f"Revalidation status: **{versions.get('scientific_revalidation_status')}**"
+        f" -- {versions.get('status_reason')}",
+        "",
+        "| version identity | commit |",
+        "|---|---|",
+        f"| software_commit (claimed validated) | "
+        f"`{versions.get('software_commit')}` |",
+        f"| validation_code_commit | `{versions.get('validation_code_commit')}` |",
+        f"| report_generator_commit | "
+        f"`{versions.get('report_generator_commit')}` |",
+        f"| evidence_campaign | `{versions.get('evidence_campaign')}` |",
+        f"| evidence_source_commits | "
+        f"`{', '.join(versions.get('evidence_source_commits') or [])}` |",
         "",
         "Model identities and artifact hashes are pinned in "
         "`validation/science/model_manifest.json`; the OMat24 "
@@ -1451,6 +1541,7 @@ def _summary_json(
     coverage: list,
     bundle=None,
     canonical: dict | None = None,
+    versions: dict | None = None,
 ) -> dict[str, Any]:
     t3 = tiers["t3"]
     omat = {}
@@ -1475,6 +1566,7 @@ def _summary_json(
         "schema": "mlipx.beta-validation-summary/1",
         "generated_from": str(root),
         "code_commit": evidence_commits(tiers),
+        "versions": versions,
         "model_profiles": {eng: ENGINE_LABELS[eng] for eng in ENGINE_ORDER},
         "tiers": {
             tier: {
@@ -1531,6 +1623,30 @@ def main() -> int:
             "records for other campaigns are out of scope"
         ),
     )
+    parser.add_argument(
+        "--software-commit",
+        default=None,
+        help=(
+            "commit being claimed validated; without it the report is "
+            "explicitly a partial re-aggregation of historical evidence"
+        ),
+    )
+    parser.add_argument(
+        "--campaign-manifest",
+        default=None,
+        help=(
+            "mlipx.beta-campaign/1 manifest that declares the campaign "
+            "target, status and evidence commits"
+        ),
+    )
+    parser.add_argument(
+        "--update-readmes",
+        action="store_true",
+        help=(
+            "rewrite the generated block between the BEGIN/END markers of "
+            "README.md and README_CN.md from README_VALIDATION.md"
+        ),
+    )
     args = parser.parse_args()
     root = Path(args.evidence_root)
     out = Path(args.out)
@@ -1553,18 +1669,36 @@ def main() -> int:
         return 3
     out.mkdir(parents=True, exist_ok=True)
 
+    try:
+        versions = build_version_block(
+            bundle.records,
+            software_commit=args.software_commit,
+            validation_code_commit=git_commit(),
+            report_generator_commit=git_commit(),
+            evidence_campaign=args.campaign,
+            campaign_manifest_path=args.campaign_manifest,
+        )
+    except CampaignManifestError as exc:
+        print(f"[report] refusing to render: {exc}", file=sys.stderr)
+        return 2
+    versions_dict = versions.as_dict()
+
     tiers = {tier: bundle.tier(tier) for tier in TIER_NAMES}
-    canonical = aggregate_records(bundle.records, loader=bundle)
+    canonical = aggregate_records(
+        bundle.records, loader=bundle, versions=version_payload(versions_dict)
+    )
     matrix = build_support_matrix(tiers)
     coverage = build_coverage_table(tiers)
 
-    summary = _summary_json(root, out, tiers, matrix, coverage, bundle, canonical)
+    summary = _summary_json(
+        root, out, tiers, matrix, coverage, bundle, canonical, versions_dict
+    )
     (out / "beta-summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
     )
 
     sections_en = [
-        md_provenance(root, out, summary["code_commit"]),
+        md_provenance(root, out, summary["code_commit"], versions_dict),
         md_t1(tiers["t1"]),
         md_t2(tiers["t2"]),
         md_t2fd(tiers["t2fd"]),
@@ -1578,9 +1712,16 @@ def main() -> int:
         md_limitations(),
     ]
     (out / "BETA_VALIDATION.md").write_text("\n".join(sections_en), encoding="utf-8")
-    (out / "README_VALIDATION.md").write_text(
-        readme_validation_snippet(matrix, tiers.get("t3", [])) + "\n", encoding="utf-8"
-    )
+    snippet = readme_validation_snippet(
+        matrix, tiers.get("t3", []), versions_dict
+    ) + "\n"
+    (out / "README_VALIDATION.md").write_text(snippet, encoding="utf-8")
+    if args.update_readmes:
+        updated = update_readme_blocks(
+            Path(__file__).resolve().parents[3], snippet
+        )
+        for path in updated:
+            print(f"[report] updated generated block in {path}")
 
     sections_cn = [
         "# mlipx beta 科学验证报告",
@@ -1589,6 +1730,17 @@ def main() -> int:
         "本文档全部表格由 `validation/science/scripts/"
         "generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成"
         "并 diff，不要手工编辑。",
+        "",
+        f"重新认证状态：**{versions_dict.get('scientific_revalidation_status')}**"
+        f" —— {versions_dict.get('status_reason')}",
+        "",
+        f"- software_commit（声称被验证）：`{versions_dict.get('software_commit')}`",
+        f"- validation_code_commit：`{versions_dict.get('validation_code_commit')}`",
+        f"- report_generator_commit：`{versions_dict.get('report_generator_commit')}`",
+        f"- evidence_campaign：`{versions_dict.get('evidence_campaign')}`",
+        "- evidence_source_commits：`"
+        + ", ".join(versions_dict.get("evidence_source_commits") or [])
+        + "`",
         "",
         "模型身份与产物哈希固定在 `validation/science/model_manifest.json`；"
         "OMat24 评估子集见 `validation/science/data/`（种子 20260911）。",

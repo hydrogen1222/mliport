@@ -11,6 +11,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / "validation" / "science" / "scripts"
 if str(SCRIPTS) not in sys.path:
@@ -358,3 +360,196 @@ def test_campaign_id_is_part_of_the_profile_identity(tmp_path):
     summary = aggregate.build_summary(tmp_path, None)
     assert summary["support_matrix"]["mace"]["energy"]["status"] == "mixed"
     assert len(summary["profiles"]) == 2
+
+
+# ------------------------------------------------- PR-B version semantics
+from evidence import (  # noqa: E402
+    CampaignManifestError,
+    build_version_block,
+)
+
+
+def _campaign_manifest(tmp_path, *, campaign_id, status, commit, sources):
+    path = tmp_path / "campaign.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "mlipx.beta-campaign/1",
+                "campaign_id": campaign_id,
+                "software_commit": commit,
+                "validation_commit": commit,
+                "status": status,
+                "evidence_source_commits": sources,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_prb_historical_evidence_is_partial_reaggregation(tmp_path):
+    record = _record(git_commit="a" * 40)
+    versions = build_version_block(
+        [record],
+        software_commit=None,
+        validation_code_commit="v" * 40,
+        report_generator_commit="v" * 40,
+    )
+    assert versions.scientific_revalidation_status == "partial_reaggregation"
+    assert versions.is_current_head is False
+    snippet = report.readme_validation_snippet(
+        report.build_support_matrix({}), [], versions.as_dict()
+    )
+    assert "post-fix beta candidate" in snippet
+    assert "Current-HEAD scientific revalidation is pending" in snippet
+    assert "beta validation completed" not in snippet
+
+
+def test_prb_complete_manifest_rejects_mismatched_evidence(tmp_path):
+    record = _record(git_commit="a" * 40)
+    manifest = _campaign_manifest(
+        tmp_path,
+        campaign_id="c1",
+        status="complete",
+        commit="b" * 40,
+        sources=["b" * 40],
+    )
+    with pytest.raises(CampaignManifestError, match="every record"):
+        build_version_block(
+            [record],
+            validation_code_commit="v" * 40,
+            evidence_campaign="c1",
+            campaign_manifest_path=manifest,
+        )
+
+
+def test_prb_current_head_status_only_with_complete_campaign(tmp_path):
+    record = _record(git_commit="a" * 40)
+    complete = _campaign_manifest(
+        tmp_path,
+        campaign_id="c1",
+        status="complete",
+        commit="a" * 40,
+        sources=["a" * 40],
+    )
+    versions = build_version_block(
+        [record],
+        validation_code_commit="v" * 40,
+        evidence_campaign="c1",
+        campaign_manifest_path=complete,
+    )
+    assert versions.scientific_revalidation_status == "current_head_revalidated"
+    snippet = report.readme_validation_snippet(
+        report.build_support_matrix({}), [], versions.as_dict()
+    )
+    assert "beta validation completed at software commit" in snippet
+
+    in_progress = _campaign_manifest(
+        tmp_path / "in_progress",
+        campaign_id="c1",
+        status="in_progress",
+        commit="a" * 40,
+        sources=["a" * 40],
+    )
+    partial = build_version_block(
+        [record],
+        validation_code_commit="v" * 40,
+        evidence_campaign="c1",
+        campaign_manifest_path=in_progress,
+    )
+    assert partial.scientific_revalidation_status == "partial_reaggregation"
+
+
+def test_prb_generator_writes_version_block_and_pending_status(tmp_path, monkeypatch):
+    tagged = _record()
+    tagged["campaign_id"] = "c1"
+    tagged["profile_id"] = common.profile_id_for(tagged)
+    tagged["record_id"] = common.record_id_for(tagged)
+    _write(tmp_path / "t1", "a.json", tagged)
+    out = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_beta_report",
+            "--evidence-root",
+            str(tmp_path),
+            "--out",
+            str(out),
+        ],
+    )
+    assert report.main() == 0
+    beta = json.loads((out / "beta-summary.json").read_text(encoding="utf-8"))
+    assert beta["versions"]["scientific_revalidation_status"] == (
+        "partial_reaggregation"
+    )
+    snippet = (out / "README_VALIDATION.md").read_text(encoding="utf-8")
+    assert "Current-HEAD scientific revalidation is pending" in snippet
+    assert "beta validation completed" not in snippet
+
+    # a complete manifest for the wrong commit must make the render fail closed
+    manifest = _campaign_manifest(
+        tmp_path / "manifest",
+        campaign_id="c1",
+        status="complete",
+        commit="b" * 40,
+        sources=["b" * 40],
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_beta_report",
+            "--evidence-root",
+            str(tmp_path),
+            "--out",
+            str(out),
+            "--campaign",
+            "c1",
+            "--campaign-manifest",
+            str(manifest),
+        ],
+    )
+    assert report.main() == 2
+
+
+def test_prb_generator_allows_go_wording_only_for_complete_campaign(
+    tmp_path, monkeypatch
+):
+    record = _record(git_commit="a" * 40)
+    record["campaign_id"] = "c1"
+    record["profile_id"] = common.profile_id_for(record)
+    record["record_id"] = common.record_id_for(record)
+    _write(tmp_path / "t1", "a.json", record)
+    manifest = _campaign_manifest(
+        tmp_path / "manifest",
+        campaign_id="c1",
+        status="complete",
+        commit="a" * 40,
+        sources=["a" * 40],
+    )
+    out = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_beta_report",
+            "--evidence-root",
+            str(tmp_path),
+            "--out",
+            str(out),
+            "--campaign",
+            "c1",
+            "--campaign-manifest",
+            str(manifest),
+        ],
+    )
+    assert report.main() == 0
+    beta = json.loads((out / "beta-summary.json").read_text(encoding="utf-8"))
+    versions = beta["versions"]
+    assert versions["scientific_revalidation_status"] == "current_head_revalidated"
+    assert versions["software_commit"] == "a" * 40
+    assert versions["evidence_campaign"] == "c1"
+    snippet = (out / "README_VALIDATION.md").read_text(encoding="utf-8")
+    assert "beta validation completed at software commit" in snippet

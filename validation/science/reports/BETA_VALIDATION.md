@@ -1,6 +1,16 @@
 # mlipx beta scientific validation report
 
-Generated from evidence records under `.validation-work`; evidence commits: `05e548c41f8e863f0121702d2c8cc3c60ca8add0, 293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc, 38abb85d87c92799b9b370758c9f920b4e982cbc, 7b22280d5eb723a0a9edde0ebf8d925bf410a341, 7cfce9f908feedcc64e790d6eb893fe3b02b6e5d, b79f0d0c7947ccada2cd60b384a2701060e7d2f2, c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f, e08ab41788ee17aa2dc924271230ae21ad01c4e8`. Every table in this document is rendered from result JSON by `validation/science/scripts/generate_beta_report.py`; regenerate and diff instead of editing.
+Generated from evidence records under `.validation-work`; evidence commits: `05e548c41f8e863f0121702d2c8cc3c60ca8add0, 293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc, 360e1d2034e74d55133cb6e152d062c24867245b, 38abb85d87c92799b9b370758c9f920b4e982cbc, 7b22280d5eb723a0a9edde0ebf8d925bf410a341, 7cfce9f908feedcc64e790d6eb893fe3b02b6e5d, b79f0d0c7947ccada2cd60b384a2701060e7d2f2, c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f, e08ab41788ee17aa2dc924271230ae21ad01c4e8`. Every table in this document is rendered from result JSON by `validation/science/scripts/generate_beta_report.py`; regenerate and diff instead of editing.
+
+Revalidation status: **partial_reaggregation** -- historical evidence re-aggregated under the current validation semantics; no completed current-head campaign manifest was provided, so this is NOT current-HEAD validation
+
+| version identity | commit |
+|---|---|
+| software_commit (claimed validated) | `None` |
+| validation_code_commit | `219477b69285c1961424bc744e753a32f48306ed` |
+| report_generator_commit | `219477b69285c1961424bc744e753a32f48306ed` |
+| evidence_campaign | `None` |
+| evidence_source_commits | `05e548c41f8e863f0121702d2c8cc3c60ca8add0, 293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc, 360e1d2034e74d55133cb6e152d062c24867245b, 38abb85d87c92799b9b370758c9f920b4e982cbc, 651abde0efd15a9f5c09766132a0819b8a5ad8b2, 7b22280d5eb723a0a9edde0ebf8d925bf410a341, 7cfce9f908feedcc64e790d6eb893fe3b02b6e5d, b79f0d0c7947ccada2cd60b384a2701060e7d2f2, c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f, e08ab41788ee17aa2dc924271230ae21ad01c4e8` |
 
 Model identities and artifact hashes are pinned in `validation/science/model_manifest.json`; the OMat24 evaluation subset in `validation/science/data/` (seed 20260911).
 
@@ -8,7 +18,7 @@ Model identities and artifact hashes are pinned in `validation/science/model_man
 
 | engine | model identity | dtype | records | by status |
 |---|---|---|---|---|
-| mace | MACE-OMAT-0 medium, float64 inference | float64 | 3 | pass 3 |
+| mace | MACE-OMAT-0 medium, float64 inference | float64 | 6 | pass 6 |
 | dpa | DPA-3.1-3M, branch Omat24 | upstream/model-defined | 3 | pass 3 |
 | grace | GRACE-2L-OMAT-medium-base (upstream default precision build) | upstream/model-defined | 3 | pass 3 |
 | uma | UMA-s 1.2 (OMat task head) | upstream/model-defined | 3 | pass 3 |
@@ -66,10 +76,10 @@ Two harness defects were found while rendering this report and fixed with regres
 
 | system | FIRE: status (fmax, steps) | LBFGS: status (fmax, steps) | optimizer agreement |
 |---|---|---|---|
-| cu_fcc | pass (fmax 0.009756, 18 steps) | pass (fmax 0.001218, 6 steps) | pass (dE 1.54e-05 eV, both converged True) |
-| si_diamond | pass (fmax 0.009808, 25 steps) | pass (fmax 0.004673, 11 steps) | pass (dE 2.44e-05 eV, both converged True) |
-| mgo_rocksalt | pass (fmax 0.009676, 31 steps) | pass (fmax 0.004192, 9 steps) | pass (dE 6.56e-06 eV, both converged True) |
-| na3ps4 | pass (fmax 0.008422, 55 steps) | pass (fmax 0.009593, 30 steps) | pass (dE 1.1e-05 eV, both converged True) |
+| cu_fcc | pass (fmax 0.009932, 14 steps)<br>pass (fmax 0.009756, 18 steps)<br>pass (fmax 0.009746, 17 steps)<br>pass (fmax 0.009936, 14 steps) | pass (fmax 0.001085, 6 steps)<br>pass (fmax 0.001218, 6 steps)<br>pass (fmax 0.0008594, 6 steps)<br>pass (fmax 0.001366, 6 steps) | pass (dE 1.54e-05 eV, both converged True) |
+| si_diamond | pass (fmax 0.009965, 24 steps)<br>pass (fmax 0.009808, 25 steps)<br>pass (fmax 0.009906, 30 steps)<br>pass (fmax 0.009826, 33 steps) | pass (fmax 0.008766, 10 steps)<br>pass (fmax 0.004673, 11 steps)<br>pass (fmax 0.00993, 10 steps)<br>pass (fmax 0.009383, 10 steps) | pass (dE 2.44e-05 eV, both converged True) |
+| mgo_rocksalt | pass (fmax 0.009468, 31 steps)<br>pass (fmax 0.009676, 31 steps)<br>pass (fmax 0.009678, 33 steps)<br>pass (fmax 0.00971, 33 steps) | pass (fmax 0.004325, 9 steps)<br>pass (fmax 0.004192, 9 steps)<br>pass (fmax 0.004498, 9 steps)<br>pass (fmax 0.004539, 9 steps) | pass (dE 6.56e-06 eV, both converged True) |
+| na3ps4 | pass (fmax 0.008504, 54 steps)<br>pass (fmax 0.008422, 55 steps)<br>pass (fmax 0.009093, 53 steps)<br>pass (fmax 0.00885, 56 steps) | pass (fmax 0.009219, 32 steps)<br>pass (fmax 0.009593, 30 steps)<br>pass (fmax 0.006882, 26 steps)<br>pass (fmax 0.009296, 26 steps) | pass (dE 1.1e-05 eV, both converged True) |
 
 ### Cell relaxation (FrechetCellFilter, requires stress + 3D PBC)
 
@@ -92,10 +102,10 @@ Two harness defects were found while rendering this report and fixed with regres
 
 | system | variant | mace | dpa | grace | uma |
 |---|---|---|---|---|---|
-| cu_fcc | clamped | 181.4/130.9/79.85 | 175.6/124/82.49 | 167/108.2/79.9 | 181.9/127.1/76.84 | born: stable |
-| cu_fcc | relaxed | 181.4/130.9/79.85 | 175.6/124/82.49 | 167/108.2/79.9 | 181.9/127.1/76.84 | born: stable |
-| si_diamond | clamped | 131.5/65.5/99.74 | 131.7/61.21/84.83 | 134.7/68.22/96.64 | 155.3/65.26/102.5 | born: stable |
-| si_diamond | relaxed | 131.5/65.5/64.48 | 131.7/61.21/50.38 | 134.7/68.22/62.75 | 155.3/65.26/72.74 | born: stable |
+| cu_fcc | clamped | 181.4/130.9/79.85 (stable) | 175.6/124/82.49 (stable) | 167/108.2/79.9 (stable) | 181.9/127.1/76.84 (stable) |
+| cu_fcc | relaxed | 181.4/130.9/79.85 (stable) | 175.6/124/82.49 (stable) | 167/108.2/79.9 (stable) | 181.9/127.1/76.84 (stable) |
+| si_diamond | clamped | 131.5/65.5/99.74 (stable) | 131.7/61.21/84.83 (stable) | 134.7/68.22/96.64 (stable) | 155.3/65.26/102.5 (stable) |
+| si_diamond | relaxed | 131.5/65.5/64.48 (stable) | 131.7/61.21/50.38 (stable) | 134.7/68.22/62.75 (stable) | 155.3/65.26/72.74 (stable) |
 
 ### Harmonic phonons (min Gamma frequency, ASR-corrected; min over supercell/displacement variants)
 
@@ -141,7 +151,7 @@ Two harness defects were found while rendering this report and fixed with regres
 
 ### NEB endpoints (Cu vacancy, relaxed fmax)
 
-dpa: converged True, symmetry dE 5.96e-08 eV<br>grace: converged True, symmetry dE 7.153e-07 eV<br>mace: converged True, symmetry dE 2.842e-14 eV<br>uma: converged True, symmetry dE 1.2e-06 eV
+mace/float64#7e97fd: pass, converged True, symmetry dE 2.842e-14 eV<br>dpa/upstream/model-defined/Omat24#7e0825: pass, converged True, symmetry dE 5.96e-08 eV<br>grace/upstream/model-defined#51ac56: pass, converged True, symmetry dE 7.153e-07 eV<br>uma/upstream/model-defined#03bc77: pass, converged True, symmetry dE 1.2e-06 eV
 
 ### Path initialisation (linear vs IDPP)
 
@@ -183,7 +193,7 @@ endpoint identity True, atom map True, run id True, options fingerprint True; st
 | 1 | 9.82e-07 | 8.54e-07 | 8.17e-07 | 9.54e-07 | True |
 | 2 | 6.5e-06 | 7.43e-06 | 6.61e-06 | 5.49e-06 | True |
 
-Drift improves with smaller timestep: dpa True, grace True, mace True, uma True.
+Drift improves with smaller timestep: mace/float64#4a8d48 True, dpa/upstream/model-defined/Omat24#d31f94 True, grace/upstream/model-defined#4ff1fd True, uma/upstream/model-defined#589f9b True.
 
 ### NVT thermostats (300 K target)
 

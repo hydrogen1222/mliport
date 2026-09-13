@@ -13,8 +13,9 @@ mlipx 通过同一套 VASP 风格的 CLI/TUI/Python 工作流,运行 UMA、MACE�
 - 能量、力、应力全部来自所选模型。结果的精度取决于模型对你的化学体系
   的适用性,与 mlipx 本身无关。
 
-许可证:MIT。状态:beta 验证已在一种 GPU 架构(V100,sm_70)与 CPU 上
-完成,见下方[验证](#验证)一节。
+许可证:MIT。状态:修复后的 beta 候选版。软件 CI 已在 Python 3.10-3.12
+通过;历史科学证据(一种 GPU 架构 V100 sm_70 与 CPU)正在按当前验证语义
+重新分类,current-HEAD 科学重新认证尚未完成,见下方[验证](#验证)一节。
 
 ## 能运行什么
 
@@ -256,14 +257,16 @@ Bussi 随机速度重标定、Nosé-Hoover 链。轨迹写为 XDATCAR 加 JSON(�
 README 中的生成块与生成器输出逐字节比对,漂移即失败。
 
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
+Status: post-fix beta candidate. Software CI is validated on Python 3.10-3.12. Historical scientific evidence has been retained and is being reclassified under the current validation semantics. Current-HEAD scientific revalidation is pending.
+
 Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mlipx integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
 
 | Workflow | MACE | DPA | GRACE | UMA |
 |---|---|---|---|---|
 | Install & doctor (CI software tests) | software_validated* | software_validated* | software_validated* | software_validated* |
-| Single-point inference (4 structures) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) |
+| Single-point inference (4 structures) | software_validated (passx26) | software_validated (passx23) | software_validated (passx23) | software_validated (passx23) |
 | Energy-forces consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
-| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx8, passx3) | model_characterized (characterizedx4, passx3) |
+| Stress (finite-difference cross-check) | model_characterized (characterizedx4, passx6) | model_characterized (characterizedx4, passx3) | model_characterized (characterizedx8, passx3) | model_characterized (characterizedx4, passx3) |
 | Stress-energy consistency | model_characterized (characterizedx4) | model_characterized (characterizedx4) | model_characterized (characterizedx8) | model_characterized (characterizedx4) |
 | Coordinate invariance & cache | model_characterized (characterizedx4, passx20) | model_characterized (characterizedx4, failx18, passx2) | model_characterized (characterizedx8, failx18, passx22) | model_characterized (characterizedx4, failx18, passx2) |
 | Fixed-cell relaxation | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) | software_validated (passx12) |
@@ -399,7 +402,7 @@ show` 打印每个值的来源路径;`mlipx config schema` 列出全部可识别
   `demonstration_not_converged`。
 - 无 NPT 系综。
 - 未实现模型预测不确定度。
-- beta 验证覆盖一种 GPU 架构(V100,sm_70)与 CPU。它不证明所有
+- 历史 beta 验证覆盖一种 GPU 架构(V100,sm_70)与 CPU,且早于当前验证器语义。它不证明所有
   GPU 架构都可用;在你的硬件上,请先运行 `mlipx doctor` 再信任首次
   计算结果。
 

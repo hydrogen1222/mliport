@@ -213,6 +213,7 @@ def aggregate_records(
     manifest: dict[str, Any] | None = None,
     code_commit: str | None = None,
     loader: LoadedEvidence | None = None,
+    versions: Any = None,
 ) -> dict[str, Any]:
     """Build the canonical summary document for normalized records."""
     problems = list(loader.problems) if loader is not None else []
@@ -266,9 +267,13 @@ def aggregate_records(
         "untagged_records": loader.untagged_records if loader is not None else 0,
     }
 
+    version_payload = (
+        versions.as_dict() if hasattr(versions, "as_dict") else versions
+    )
     return {
         "schema": SUMMARY_SCHEMA,
         "suite_revision": BETA_VALIDATION_SUITE_REVISION,
+        "versions": version_payload,
         "validation_logic_version": VALIDATION_LOGIC_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "code_commit": code_commit,
