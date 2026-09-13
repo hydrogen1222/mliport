@@ -1,59 +1,46 @@
 cff-version: 1.2.0
-title: "mliport — universal MLIP inference and workflow framework"
+title: "mliport — backend-neutral MLIP inference and workflow framework"
 version: 2.0.0b1
 message: >-
-  If you use this software, please cite it using the metadata from this file.
-  mliport is built on FAIRChem (https://github.com/FAIR-Chem/fairchem); the
-  authors listed below are the original FAIRChem/UMA contributors whose work
-  mliport builds upon.
-doi: 10.5281/zenodo.15587498
+  If you use mliport, please cite this repository. mliport orchestrates
+  upstream MLIP backends and analysis libraries; cite the specific upstream
+  software and model publications you used as described in
+  docs/citations.md and in the references below. mliport does not have its
+  own DOI yet, and no upstream DOI is mliport's DOI.
 url: "https://github.com/hydrogen1222/mliport"
-repository-code: https://github.com/hydrogen1222/mliport
-license:
-- MIT
-authors:
-- affiliation: FAIR, Meta
-  family-names: Muhammed Shuaibi
-- affiliation: FAIR, Meta AI
-  family-names: Abhishek Das
-- affiliation: FAIR, Meta
-  family-names: Anuroop Sriram
-- family-names: Misko
-- affiliation: FAIR, Meta AI
-  family-names: Luis Barroso-Luque
-- family-names: Ray Gao
-- family-names: Siddharth Goyal
-- affiliation: FAIR, Meta AI
-  family-names: Zachary Ulissi
-- affiliation: FAIR, Meta
-  family-names: Brandon Wood
-- affiliation: Microsoft
-  family-names: Tian Xie
-- affiliation: Carnegie Mellon University
-  family-names: Junwoong Yoon
-- family-names: Brook Wander
-- affiliation: Radical AI
-  family-names: Adeesh Kolluru
-- family-names: Richard Barnes
-- affiliation: Carnegie Mellon University
-  family-names: Ethan Sunshine
-- affiliation: Toyota Research Institute
-  family-names: Kevin Tran
-- family-names: Xiang
-- affiliation: FAIR, Meta AI
-  family-names: Daniel Levine
-- family-names: Nima Shoghi
-- family-names: Ilias Chair
-- affiliation: FAIR, Meta AI
-- family-names: Janice Lan
-- affiliation: Georgia Institute of Technology
-  family-names: Kaylee Tian
-- affiliation: Carnegie Mellon University
-  family-names: Joseph Musielewicz
-- family-names: clz55
-- family-names: Weihua Hu
-- affiliation: FAIR, Meta AI
-- family-names: Kyle Michel
-- family-names: willis
-- family-names: vbttchr
+repository-code: "https://github.com/hydrogen1222/mliport"
+license: MIT
 type: software
+authors:
+  - alias: hydrogen1222
+    website: https://github.com/hydrogen1222
+references:
+  - type: software
+    title: "Atomic Simulation Environment (ASE)"
+    repository-code: https://gitlab.com/ase/ase
+    url: https://wiki.fysik.dtu.dk/ase/
+  - type: software
+    title: "fairchem / UMA (Meta FAIR)"
+    repository-code: https://github.com/facebookresearch/fairchem
+    url: https://fair-chem.github.io/
+  - type: software
+    title: "MACE"
+    repository-code: https://github.com/ACEsuit/mace
+  - type: software
+    title: "DeePMD-kit / DPA"
+    repository-code: https://github.com/deepmodeling/deepmd-kit
+    url: https://docs.deepmodeling.com/projects/deepmd
+  - type: software
+    title: "GRACE / tensorpotential (ICAMS)"
+    repository-code: https://github.com/ICAMS/grace-tensorpotential
+  - type: software
+    title: "kinisi"
+    repository-code: https://github.com/bjmorgan/kinisi
+    url: https://kinisi.rtfd.io
+  - type: software
+    title: "GEMDAT"
+    repository-code: https://github.com/GEMDAT-repos/GEMDAT
+    url: https://gemdat.readthedocs.io
+  - type: dataset
+    title: "OMat24 (Open Materials 2024) validation subset provenance"
+    url: https://ai.meta.com/blog/open-source-climate-modeling/

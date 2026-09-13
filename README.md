@@ -485,16 +485,28 @@ Observed, diagnosable failures:
   every GPU architecture; use `mliport doctor` on your hardware before
   trusting a first run.
 
+## Citation
+
+mliport has no DOI of its own yet. Cite this repository and the version you
+used (metadata in [`CITATION.cff`](CITATION.cff)), and cite the upstream
+software/model publications for every backend or analysis library you
+actually used — see [docs/citations.md](docs/citations.md). An upstream DOI
+is never mliport's DOI.
+
 ## Credits
 
 - [FAIR-Chem / UMA](https://github.com/facebookresearch/fairchem)
 - [MACE](https://github.com/ACEsuit/mace)
 - [DeePMD-kit / DPA](https://github.com/deepmodeling/deepmd-kit)
-- [GRACE](https://github.com/intel/grace)
+- [GRACE / tensorpotential](https://github.com/ICAMS/grace-tensorpotential)
 - [ASE](https://wiki.fysik.dtu.dk/ase/)
 - [kinisi](https://github.com/bjmorgan/kinisi)
 - [GEMDAT](https://github.com/GEMDAT-repos/GEMDAT)
 - [OMat24 / Meta](https://ai.meta.com/blog/open-source-climate-modeling/)
+
+Per-backend citation guidance (mliport itself, ASE, fairchem/UMA, MACE,
+DeePMD/DPA, GRACE, kinisi, GEMDAT) is collected in
+[docs/citations.md](docs/citations.md).
 
 This project (`hydrogen1222/mliport`) is unrelated to the other project
 also named `mliport` on PyPI.

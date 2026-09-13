@@ -419,12 +419,19 @@ show` 打印每个值的来源路径;`mliport config schema` 列出全部可识�
   GPU 架构都可用;在你的硬件上,请先运行 `mliport doctor` 再信任首次
   计算结果。
 
+## 引用
+
+mliport 目前没有自己的 DOI。请引用本仓库与你使用的版本
+(元数据见 [`CITATION.cff`](CITATION.cff)),并按实际使用的 backend/分析库
+分别引用对应上游软件与模型论文——见 [docs/citations.md](docs/citations.md)。
+上游 DOI 绝不代表 mliport 的 DOI。
+
 ## 致谢
 
 - [FAIR-Chem / UMA](https://github.com/facebookresearch/fairchem)
 - [MACE](https://github.com/ACEsuit/mace)
 - [DeePMD-kit / DPA](https://github.com/deepmodeling/deepmd-kit)
-- [GRACE](https://github.com/intel/grace)
+- [GRACE / tensorpotential](https://github.com/ICAMS/grace-tensorpotential)
 - [ASE](https://wiki.fysik.dtu.dk/ase/)
 - [kinisi](https://github.com/bjmorgan/kinisi)
 - [GEMDAT](https://github.com/GEMDAT-repos/GEMDAT)
