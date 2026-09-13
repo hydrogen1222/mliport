@@ -74,7 +74,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--python",
         default="3.12",
-        help="Python version for the isolated venvs (3.10-3.12).",
+        help=(
+            "Python version for the isolated venvs. It must satisfy every "
+            "requested backend's requires-python (for example UMA needs "
+            ">=3.11); an incompatible combination fails closed before "
+            "anything is installed."
+        ),
     )
     p.add_argument(
         "--clean",
@@ -237,9 +242,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 2
 
+    engine_list = [engine for engine in args.engines.split(",") if engine.strip()]
+
     if args.dry_run:
         print()
         print(render_plan_shell(plan))
+        for engine in engine_list:
+            print(f"[mliport] [launcher] would create bin/mliport-{engine.strip()}")
         return 0
 
     # Execute
@@ -266,6 +275,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if failures:
         return 1
+    from mliport.install.launcher import create_launchers  # noqa: PLC0415
+
+    for launcher in create_launchers(engine_list, cwd):
+        print(f"[mliport] [launcher] created {launcher}")
     print(f"[mliport] All {len(plan.steps)} steps completed.")
     return 0
 

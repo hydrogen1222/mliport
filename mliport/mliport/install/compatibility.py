@@ -33,6 +33,10 @@ from typing import Literal
 from packaging.specifiers import SpecifierSet
 
 PROJECT_REQUIRES_PYTHON = SpecifierSet(">=3.10,<3.13")
+#: Python versions mliport's installer may target.  Backend specs narrow this
+#: list; the installer fails closed when a requested version is incompatible
+#: with any requested backend.
+SUPPORTED_PYTHON_VERSIONS: tuple[str, ...] = ("3.10", "3.11", "3.12")
 # Fixed-version PyPI Requires-Python and published CPython wheel tags.
 # Update together with framework pins; an unknown pin requires a new audit.
 FRAMEWORK_PYTHON = {
@@ -597,3 +601,59 @@ def effective_cuda_channel(
     if bp.cuda_channel:
         return bp.cuda_channel
     return select_cuda_channel(arch, bp.framework_version)
+
+
+def framework_versions(backend: BackendSpec) -> tuple[str, ...]:
+    """Framework versions this backend is pinned to across architectures."""
+    return tuple(
+        sorted(
+            {profile.framework_version for profile in backend.arch_profiles.values()}
+        )
+    )
+
+
+def python_versions_for(engine: str) -> tuple[str, ...]:
+    """Supported Python versions for one backend (registry intersection).
+
+    Combines mliport's own range, the backend's ``requires-python`` and every
+    framework wheel's Python range.  The result is the authoritative list the
+    installer enforces and the docs render.
+    """
+    backend = BACKENDS[engine]
+    constraint = PROJECT_REQUIRES_PYTHON & backend.requires_python
+    for version in framework_versions(backend):
+        key = (backend.framework, version)
+        if key in FRAMEWORK_PYTHON:
+            constraint &= FRAMEWORK_PYTHON[key]
+    return tuple(v for v in SUPPORTED_PYTHON_VERSIONS if v in constraint)
+
+
+def backend_environment_rows() -> list[dict[str, str]]:
+    """One row per backend for the generated documentation matrix."""
+    rows: list[dict[str, str]] = []
+    for engine, backend in BACKENDS.items():
+        versions = python_versions_for(engine)
+        rows.append(
+            {
+                "engine": engine,
+                "label": backend.label,
+                "environment": backend.venv_name,
+                "python": ", ".join(versions),
+                "runtime": (
+                    f"`{backend.requirement}` "
+                    f"({backend.framework} {'/'.join(framework_versions(backend))})"
+                ),
+            }
+        )
+    return rows
+
+
+__all__ = [
+    "BACKENDS",
+    "FRAMEWORK_PYTHON",
+    "PROJECT_REQUIRES_PYTHON",
+    "SUPPORTED_PYTHON_VERSIONS",
+    "backend_environment_rows",
+    "framework_versions",
+    "python_versions_for",
+]

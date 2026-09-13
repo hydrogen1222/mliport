@@ -31,6 +31,7 @@ from mliport.install.compatibility import (
     BACKENDS,
     FRAMEWORK_PYTHON,
     PROJECT_REQUIRES_PYTHON,
+    SUPPORTED_PYTHON_VERSIONS,
     BackendSpec,
     effective_cuda_channel,
     get_backend_arch_profile,
@@ -44,7 +45,7 @@ from mliport.install.sources import (
 )
 
 # Python versions supported by mliport (requires-python >=3.10,<3.13).
-SUPPORTED_PYTHON_VERSIONS = ("3.10", "3.11", "3.12")
+
 
 # Known engine keys (for normalization).
 _ENGINE_KEYS = set(BACKENDS)

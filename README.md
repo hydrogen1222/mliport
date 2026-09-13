@@ -59,8 +59,10 @@ These require a DFT code or are absent by design:
 
 ## Installation
 
-The tested path is the installer, which builds one isolated environment
-per backend (the four stacks have mutually exclusive dependencies):
+mliport is installed **inside each backend's own Python environment**; it is
+not a cross-environment dispatcher. The tested path is the installer, which
+builds one isolated environment per backend (the four stacks have mutually
+exclusive dependencies):
 
 ```bash
 git clone https://github.com/hydrogen1222/mliport
@@ -70,26 +72,36 @@ cd mliport
 
 What the installer does:
 
-- Detects the GPU architecture from the driver and pins compatible
-  framework builds per backend (Volta/V100 uses torch 2.8.0+cu126;
-  Turing and newer use cu128 builds).
-- Creates one virtual environment per engine in the repository root
-  (`.venv-mace/`, `.venv-dpa/`, `.venv-grace/`, `.venv-uma/`).
-- Targets Python 3.10-3.12 (selected via `uv`; the default is 3.12).
+- Detects the GPU architecture and pins compatible framework builds per
+  backend (Volta/V100 uses torch 2.8.0+cu126; Turing and newer use cu128
+  builds).
+- Creates one virtual environment per backend using the names from the
+  compatibility registry, and writes thin launchers `./bin/mliport-mace`,
+  `./bin/mliport-dpa`, `./bin/mliport-grace`, `./bin/mliport-uma` that only
+  exec the matching environment's CLI. The environment names, per-backend
+  Python ranges and runtime pins are machine-generated in
+  [docs/installation.md](docs/installation.md).
+- Selects Python per backend: `--python` must satisfy every requested
+  backend's `requires-python` (UMA needs >=3.11), otherwise the installer
+  fails closed before changing anything.
 - Downloads model checkpoints on first use; `--source` controls wheel
-  sources, and offline/source builds are supported.
-- Requires roughly 10-15 GB of disk for all four backends including
-  torch and model weights.
-- Runs `mliport doctor` at the end unless `--skip-doctor` is given.
+  sources; `--dry-run` prints the plan without executing it.
+- Requires roughly 10-15 GB of disk for all four backends including torch
+  and model weights.
+- Runs `mliport doctor` in each environment at the end unless `--skip-doctor`
+  is given.
 
-Useful flags: `--dry-run` (print the plan, install nothing),
-`--non-interactive`, `--clean` (rebuild environments), `--python 3.10`.
-
-Then install the mliport CLI itself into your working environment:
+Run the CLI from the environment (or launcher) of the backend you want:
 
 ```bash
-pip install ./mliport
+.venv-mace/bin/mliport sp structure.cif --model model.model --model-type mace
+.venv/bin/mliport      sp structure.cif --model uma.pt     --model-type uma
+./bin/mliport-mace     sp structure.cif --model model.model --model-type mace
 ```
+
+On Windows each environment exposes `Scripts\mliport.exe`
+(`.venv-mace\Scripts\mliport.exe`); installing mliport once "globally" does
+not make it reach into the other backend environments.
 
 <details>
 <summary>Manual installation (per backend)</summary>
@@ -98,9 +110,9 @@ Each backend environment needs the mliport package plus the engine's own
 stack. The authoritative version pins live in
 `mliport/mliport/install/compatibility.py`; the installer is the only path
 that keeps them consistent with your GPU architecture. If you install
-manually, at minimum verify your torch build against your compute
-capability, then run `mliport doctor` and confirm every check passes
-before trusting results.
+manually, create one environment per backend, install `./mliport` **into that
+environment**, then run `mliport doctor` and confirm every check passes before
+trusting results.
 
 </details>
 

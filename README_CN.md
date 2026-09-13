@@ -56,8 +56,9 @@ ASE 能读的结构格式(POSCAR/CONTCAR、CIF、EXTXYZ 等)都可用作输入�
 
 ## 安装
 
-经过验证的安装路径是安装脚本,它为每个后端建立独立环境(四套依赖互斥,
-无法共用一个环境):
+mliport 安装在**每个后端自己的 Python 环境内**,它不是跨环境调度器。经过
+验证的安装路径是安装脚本,它为每个后端建立独立环境(四套依赖互斥,无法
+共用一个环境):
 
 ```bash
 git clone https://github.com/hydrogen1222/mliport
@@ -69,30 +70,39 @@ cd mliport
 
 - 从驱动读取 GPU 架构,按后端锁定兼容的框架版本(Volta/V100 用
   torch 2.8.0+cu126;Turing 及更新架构用 cu128 构建)。
-- 在仓库根目录为每个引擎建一个虚拟环境(`.venv-mace/`、`.venv-dpa/`、
-  `.venv-grace/`、`.venv-uma/`)。
-- Python 版本 3.10-3.12(通过 `uv` 选择,默认 3.12)。
-- 模型权重在首次使用时下载;`--source` 控制轮子来源,支持离线与源码
-  构建。
+- 按 compatibility registry 的环境名创建虚拟环境,并生成
+  `./bin/mliport-mace`、`./bin/mliport-dpa`、`./bin/mliport-grace`、
+  `./bin/mliport-uma` 薄 launcher(只 exec 对应环境的 CLI)。环境名、
+  每个后端的 Python 范围与运行时锁定由
+  [docs/installation.md](docs/installation.md) 机器生成。
+- Python 按后端选择:`--python` 必须满足每个请求后端的 `requires-python`
+  (UMA 需要 >=3.11),否则安装脚本在改动任何东西之前 fail closed,绝不
+  静默替换版本。
+- 模型权重在首次使用时下载;`--source` 控制轮子来源;`--dry-run` 只打印
+  计划不执行。
 - 四个后端连同 torch 与模型权重约需 10-15 GB 磁盘。
-- 结束时运行 `mliport doctor`,除非给出 `--skip-doctor`。
+- 结束时在每个环境运行 `mliport doctor`,除非给出 `--skip-doctor`。
 
-常用参数:`--dry-run`(只打印计划,不安装)、`--non-interactive`、
-`--clean`(重建环境)、`--python 3.10`。
-
-再把 mliport 本体装进你的工作环境:
+运行 CLI 时使用对应后端的环境(或 launcher):
 
 ```bash
-pip install ./mliport
+.venv-mace/bin/mliport sp structure.cif --model model.model --model-type mace
+.venv/bin/mliport      sp structure.cif --model uma.pt     --model-type uma
+./bin/mliport-mace     sp structure.cif --model model.model --model-type mace
 ```
+
+Windows 下每个环境提供 `Scripts\mliport.exe`
+(`.venv-mace\Scripts\mliport.exe`);把 mliport 安装到某个"全局"环境并不会
+让它去调用其他后端环境。
 
 <details>
 <summary>手动安装(按后端)</summary>
 
 每个后端环境需要 mliport 包加引擎自身的依赖栈。权威的版本锁定在
 `mliport/mliport/install/compatibility.py`;只有安装脚本会保证这些锁定与
-你的 GPU 架构一致。如果手动安装,至少要核对 torch 构建与算力是否匹配,
-然后运行 `mliport doctor` 并确认全部检查通过,再开始正式计算。
+你的 GPU 架构一致。如果手动安装,每个后端建一个环境,把 `./mliport` 安装
+**进那个环境**,然后运行 `mliport doctor` 并确认全部检查通过,再开始正式
+计算。
 
 </details>
 

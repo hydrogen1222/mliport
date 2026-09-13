@@ -21,6 +21,8 @@ jobs:
       # Pin the ruff version the project actually enforces locally; an
       # unpinned `uv run ruff` drifts with new releases and fails on renamed
       # rules (e.g. TCH003 -> TC003) that the 0.5.1 baseline never checks.
+      - name: Generated docs are in sync
+        run: uv run --no-project --with packaging python scripts/generate_docs.py --check
       - name: Ruff check
         run: uvx ruff@0.5.1 check mliport/mliport tests scripts
       - name: Ruff format check
