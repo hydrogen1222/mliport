@@ -69,6 +69,15 @@ class SchemaError(RuntimeError):
     """The schema document itself is invalid or uses unsupported keywords."""
 
 
+class SchemaDefinitionError(SchemaError):
+    """A schema document uses a keyword this validator does not implement.
+
+    Raised while *loading* the schema, so an unsupported keyword nested in an
+    optional branch fails immediately instead of waiting for an instance that
+    happens to reach it (task book PR-I section 11).
+    """
+
+
 def _check_keywords(schema: dict[str, Any], where: str) -> None:
     unknown = sorted(set(schema) - SUPPORTED_KEYWORDS)
     if unknown:
@@ -76,7 +85,33 @@ def _check_keywords(schema: dict[str, Any], where: str) -> None:
             f"{where}: unsupported JSON Schema keyword(s) {unknown}; extend "
             "evidence/schema.py deliberately instead of ignoring them"
         )
-        raise SchemaError(msg)
+        raise SchemaDefinitionError(msg)
+
+
+#: Keywords whose value is (or contains) a nested schema document.
+_SCHEMA_CHILD_KEYWORDS = ("properties", "items", "additionalProperties")
+
+
+def _audit_schema(schema: Any, where: str, path: str = "$") -> None:
+    """Recursively audit every schema node at load time.
+
+    Unknown keywords anywhere in the document -- including inside an optional
+    property that no instance will ever contain -- are a hard definition
+    error, never a silently ignored rule.
+    """
+    if not isinstance(schema, dict):
+        msg = f"{where}{path}: schema node must be an object"
+        raise SchemaDefinitionError(msg)
+    _check_keywords(schema, f"{where}{path}")
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for key, child in properties.items():
+            _audit_schema(child, where, f"{path}.properties.{key}")
+    if "items" in schema:
+        _audit_schema(schema["items"], where, f"{path}.items")
+    additional = schema.get("additionalProperties")
+    if isinstance(additional, dict):
+        _audit_schema(additional, where, f"{path}.additionalProperties")
 
 
 def _validate(node: Any, schema: dict[str, Any], path: str, errors: list[str]) -> None:
@@ -153,13 +188,23 @@ def validate(instance: Any, schema: dict[str, Any]) -> list[str]:
 
 
 def load_schema(path: str | Path) -> dict[str, Any]:
-    """Load and structurally check a committed schema document."""
+    """Load and recursively audit a committed schema document.
+
+    The whole document -- every nested ``properties``/``items``/
+    ``additionalProperties`` node -- is checked before it can validate any
+    instance, so an unsupported keyword in an optional branch fails here
+    rather than being discovered only when a record reaches it.
+    """
     path = Path(path)
-    schema = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        msg = f"{path}: schema document is unreadable ({exc})"
+        raise SchemaDefinitionError(msg) from exc
     if not isinstance(schema, dict):
         msg = f"{path}: schema document must be a JSON object"
-        raise SchemaError(msg)
-    _check_keywords(schema, str(path))
+        raise SchemaDefinitionError(msg)
+    _audit_schema(schema, str(path))
     return schema
 
 

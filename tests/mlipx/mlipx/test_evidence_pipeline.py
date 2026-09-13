@@ -553,3 +553,86 @@ def test_prb_generator_allows_go_wording_only_for_complete_campaign(
     assert versions["evidence_campaign"] == "c1"
     snippet = (out / "README_VALIDATION.md").read_text(encoding="utf-8")
     assert "beta validation completed at software commit" in snippet
+
+
+# ------------------------------------------------- PR-I schema hardening
+def test_pr_i_nested_unknown_keyword_fails_at_schema_load(tmp_path):
+    """The task book's misspelled `minLenght` inside an optional property."""
+    schema_path = tmp_path / "broken.schema.json"
+    schema_path.write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "optional_never_present": {
+                        "type": "string",
+                        "minLenght": 5,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    from evidence.schema import SchemaDefinitionError, load_schema
+
+    with pytest.raises(SchemaDefinitionError, match="minLenght"):
+        load_schema(schema_path)
+
+
+def test_pr_i_unknown_keyword_in_items_and_additional_properties(tmp_path):
+    from evidence.schema import SchemaDefinitionError, load_schema
+
+    items_path = tmp_path / "items.schema.json"
+    items_path.write_text(
+        json.dumps({"type": "array", "items": {"type": "string", "pattrn": "x"}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SchemaDefinitionError, match="pattrn"):
+        load_schema(items_path)
+
+    additional_path = tmp_path / "additional.schema.json"
+    additional_path.write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "additionalProperties": {"type": "number", "miximum": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(SchemaDefinitionError, match="miximum"):
+        load_schema(additional_path)
+
+
+def test_pr_i_committed_schemas_audit_clean_and_loader_fails_closed(
+    tmp_path, monkeypatch
+):
+    import evidence.schema as schema_module
+
+    for schema_file in sorted(schema_module.SCHEMA_DIR.glob("*.json")):
+        schema_module.load_schema(schema_file)
+    assert issubclass(schema_module.SchemaDefinitionError, schema_module.SchemaError)
+
+    # A broken schema file must make the loader report a problem, not pass.
+    good = _record()
+    _write(tmp_path, "t1/a.json", good)
+    broken_schema = tmp_path / "broken.json"
+    broken_schema.write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "properties": {"unused": {"type": "string", "minLenght": 5}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        schema_module,
+        "result_schema_path",
+        lambda _schema_id: broken_schema,
+    )
+    from evidence import load_evidence
+
+    loaded = load_evidence(tmp_path)
+    assert loaded.records == []
+    assert any("unusable" in problem for problem in loaded.problems)

@@ -17,6 +17,7 @@ if str(_SCIENCE_ROOT) not in sys.path:
 from evidence.schema import (  # noqa: E402
     SCHEMA_DIR,
     SUPPORTED_KEYWORDS,
+    SchemaDefinitionError,
     SchemaError,
     load_schema,
     validate,
@@ -26,6 +27,7 @@ from evidence.schema import (  # noqa: E402
 __all__ = [
     "SCHEMA_DIR",
     "SUPPORTED_KEYWORDS",
+    "SchemaDefinitionError",
     "SchemaError",
     "load_schema",
     "validate",
