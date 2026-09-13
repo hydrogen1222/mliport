@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 # Analysis output revisions are part of the request/cache identity. Bump the
 # changed scientific tasks while deliberately leaving the native MSD revision
 # untouched.
-_TASK_OUTPUT_REVISIONS = {"msd": 6, "transport": 5, "electrolyte": 3}
+_TASK_OUTPUT_REVISIONS = {"msd": 7, "transport": 6, "electrolyte": 3}
 _TASK_SCIENTIFIC_REVISIONS = {"transport": 5, "electrolyte": 3}
 
 

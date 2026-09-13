@@ -145,7 +145,7 @@ def test_analysis_runner_msd_defaults_to_production(tmp_path) -> None:
     assert len(outcome["results"]["lag_time_ps"]) == 4
     output = run / "analysis" / "msd" / outcome["analysis_id"]
     request = json.loads((output / "request.json").read_text(encoding="utf-8"))
-    assert request["task_output_revision"] == 6
+    assert request["task_output_revision"] == 7
     assert (output / "msd.csv").is_file()
     assert (output / "msd.png").is_file()
     assert (output / "msd.svg").is_file()
@@ -210,7 +210,7 @@ def test_transport_analysis_id_includes_lag_parameters_and_revision(
     provenance = json.loads(
         (first_output / "provenance.json").read_text(encoding="utf-8")
     )
-    assert request["task_output_revision"] == 5
+    assert request["task_output_revision"] == 6
     assert provenance["parameters"]["lag_step_ps"] == 1.0
     assert provenance["transport"]["lag_grid"]["requested_step_ps"] == 1.0
     reused = run_analysis(

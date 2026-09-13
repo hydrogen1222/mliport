@@ -414,8 +414,10 @@ def test_alpha_window_sensitivity_and_origin_support_are_reported() -> None:
     sensitivity = estimate["sensitivity"]
     assert set(sensitivity) == {"0.15", "0.25", "0.4"}
     for window in ("0.15", "0.25", "0.4"):
-        assert sensitivity[window]["valid_points"] > 0
+        assert sensitivity[window]["finite_points"] > 0
         assert sensitivity[window]["mean"] == pytest.approx(1.0, abs=1e-9)
+    assert estimate["uncertainty_status"] == "not_estimable"
+    assert estimate["time_origin_counts_available"] is True
     # late-lag support decays; with min_origins=8 the tail is insufficient
     assert not np.all(estimate["alpha_valid"])
     assert REGIME_INSUFFICIENT in estimate["regime_status"]

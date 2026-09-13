@@ -202,7 +202,7 @@ def _axis_msd(components: np.ndarray, axes: str) -> np.ndarray:
     return np.sum(components[:, columns], axis=1)
 
 
-ALPHA_ESTIMATOR_VERSION = "mlipx msd local exponent/1"
+ALPHA_ESTIMATOR_VERSION = "mlipx msd local exponent/2"
 #: Defaults for the local estimator.  These are configuration, not universal
 #: scientific thresholds (review section 2.4); every value is recorded in the
 #: result and therefore in the analysis cache fingerprint.
@@ -282,18 +282,24 @@ def _raw_alpha_with_reasons(
     return result, reasons
 
 
-def _decade_weights(log_time: np.ndarray) -> np.ndarray:
-    """Equal weight per base-10 decade (explicit log-spaced weighting).
+def _local_quadrature_weights(log_time: np.ndarray) -> np.ndarray:
+    """Local ``Δlog(t)`` quadrature weights for the current window (PR-H A01).
 
-    A linear lag grid packs many strongly correlated points into the long-lag
-    decades; unweighted OLS would treat them as independent evidence.  Each
-    point is weighted by ``1 / (points in its decade)`` so every decade
-    contributes equally within the local window (review section 2.4).
+    The weight of a point depends only on the local log-time spacing, not on
+    how many points the whole segment happens to place in its decade.  A
+    linear lag grid therefore contributes an integral over log time instead of
+    letting the densely packed long-lag tail dominate the regression by
+    population.
     """
-    log10_time = np.asarray(log_time, dtype=float) / np.log(10.0)
-    bins = np.floor(log10_time).astype(int)
-    counts = np.bincount(bins - bins.min())
-    return 1.0 / counts[bins - bins.min()].astype(float)
+    x = np.asarray(log_time, dtype=float)
+    if x.size < 2:
+        return np.ones_like(x)
+    edges = np.empty(x.size + 1, dtype=float)
+    edges[1:-1] = 0.5 * (x[:-1] + x[1:])
+    edges[0] = x[0] - 0.5 * (x[1] - x[0])
+    edges[-1] = x[-1] + 0.5 * (x[-1] - x[-2])
+    widths = np.diff(edges)
+    return np.maximum(widths, np.finfo(float).tiny)
 
 
 def _local_alpha_arrays(
@@ -334,7 +340,6 @@ def _local_alpha_arrays(
                     f"(< alpha_min_points={min_points})"
                 )
             continue
-        weights = _decade_weights(log_time[segment])
         for index in segment:
             offsets = np.abs(log_time[segment] - log_time[index])
             selected = offsets <= half_width
@@ -348,7 +353,8 @@ def _local_alpha_arrays(
                 continue
             x = log_time[segment][selected]
             y = log_msd[segment][selected]
-            weight = weights[selected]
+            # Local quadrature weights: depends only on this window's spacing.
+            weight = _local_quadrature_weights(x)
             if np.ptp(x) <= 0:
                 reasons[index] = "window contains no log-time spread"
                 continue
@@ -480,13 +486,14 @@ def alpha_local_analysis(
             "min_points": int(min_points),
             "min_origins": int(min_origins),
             "consistency_band": float(consistency_band),
-            "weighting": "1 / (points per base-10 decade bin)",
+            "weighting": ("local Δlog(t) quadrature weights inside the current window"),
             "sensitivity_windows_decades": windows,
             "max_lag_ps": None if max_lag_ps is None else float(max_lag_ps),
             "uncertainty_model": (
-                "none: no independent replicates or validated time blocks were "
-                "available, so no confidence interval is reported"
+                "not_estimable: no independent replicates or validated time "
+                "blocks were available, so no confidence interval is reported"
             ),
+            "uncertainty_status": "not_estimable",
         },
         "alpha_raw": raw,
         "alpha_raw_valid": np.isfinite(raw),
@@ -497,6 +504,7 @@ def alpha_local_analysis(
         "regime_status": regimes,
         "alpha_ci_low": None,
         "alpha_ci_high": None,
+        "uncertainty_status": "not_estimable",
         "log_window_width_decades": float(window_decades),
         "window_lag_min_ps": local["window_lag_min_ps"],
         "window_lag_max_ps": local["window_lag_max_ps"],
@@ -504,10 +512,11 @@ def alpha_local_analysis(
         "alpha_window_range": spread,
         "time_origin_counts": origins,
         "time_origin_counts_are_not_independent_samples": True,
+        "time_origin_counts_available": bool(np.any(np.isfinite(origins))),
         "sensitivity": {
             str(window): {
-                "valid_fraction": float(np.mean(np.isfinite(values))),
-                "valid_points": int(np.count_nonzero(np.isfinite(values))),
+                "finite_fraction": float(np.mean(np.isfinite(values))),
+                "finite_points": int(np.count_nonzero(np.isfinite(values))),
                 "mean": (
                     float(np.mean(values[np.isfinite(values)]))
                     if np.any(np.isfinite(values))
@@ -539,39 +548,79 @@ def _alpha_regime_summary(estimate: dict[str, Any]) -> dict[str, Any]:
     }
     local = np.asarray(estimate["alpha_local"], dtype=float)
     finite_mask = np.isfinite(local)
-    finite = local[finite_mask]
+    valid_mask = finite_mask & np.asarray(estimate["alpha_valid"], dtype=bool)
+    # Every summary statistic is computed on finite & alpha_valid only; a
+    # finite number that failed the validity contract must never enter a
+    # summary or trend (task book PR-H A02).
+    valid = local[valid_mask]
     origins = np.asarray(estimate["time_origin_counts"], dtype=float)
-    log_finite = np.isfinite(local) & (np.asarray(estimate["window_lag_min_ps"]) > 0)
-    trend = None
-    if np.count_nonzero(log_finite) >= 3:
-        x = np.log(
-            np.maximum(np.asarray(estimate["window_lag_max_ps"])[log_finite], 1e-300)
+    origins_available = bool(estimate.get("time_origin_counts_available", False))
+    if origins_available:
+        known_origins = origins[np.isfinite(origins)]
+        min_origins = float(estimate["parameters"]["min_origins"])
+        fraction_with_few_origins = (
+            float(np.mean(known_origins < min_origins)) if known_origins.size else None
         )
-        y = local[log_finite]
+        origins_support_status = "known"
+        origins_known_fraction = float(np.mean(np.isfinite(origins)))
+    else:
+        # NaN < threshold is False, so a naive computation would report 0%.
+        fraction_with_few_origins = None
+        origins_support_status = "unknown"
+        origins_known_fraction = 0.0
+    log_valid = valid_mask & (np.asarray(estimate["window_lag_min_ps"]) > 0)
+    trend = None
+    if np.count_nonzero(log_valid) >= 3:
+        x = np.log(
+            np.maximum(np.asarray(estimate["window_lag_max_ps"])[log_valid], 1e-300)
+        )
+        y = local[log_valid]
         if np.ptp(x) > 0:
             trend = float(np.polyfit(x, y, 1)[0])
+    n_total = int(local.size)
+    n_finite = int(np.count_nonzero(finite_mask))
+    n_valid = int(np.count_nonzero(valid_mask))
     return {
         "estimator_version": estimate["estimator_version"],
         "parameters": estimate["parameters"],
         "regime_fractions": {regime: counts[regime] / total for regime in counts},
-        "valid_fraction": float(np.mean(estimate["alpha_valid"])),
-        "valid_points": int(np.count_nonzero(estimate["alpha_valid"])),
-        "alpha_local_mean": float(np.mean(finite)) if finite.size else None,
-        "alpha_local_min": float(np.min(finite)) if finite.size else None,
-        "alpha_local_max": float(np.max(finite)) if finite.size else None,
+        "n_total": n_total,
+        "n_finite": n_finite,
+        "n_valid": n_valid,
+        "valid_fraction": float(n_valid / n_total) if n_total else 0.0,
+        "valid_points": n_valid,
+        "alpha_local_mean": float(np.mean(valid)) if valid.size else None,
+        "alpha_local_std": (float(np.std(valid, ddof=1)) if valid.size > 1 else None),
+        "alpha_local_median": (float(np.median(valid)) if valid.size else None),
+        "alpha_local_min": float(np.min(valid)) if valid.size else None,
+        "alpha_local_max": float(np.max(valid)) if valid.size else None,
         "alpha_local_trend_per_log_time": trend,
         "alpha_window_range_max": (
-            float(np.nanmax(np.asarray(estimate["alpha_window_range"], dtype=float)))
+            float(
+                np.nanmax(
+                    np.where(
+                        valid_mask,
+                        np.asarray(estimate["alpha_window_range"], dtype=float),
+                        np.nan,
+                    )
+                )
+            )
             if np.any(
-                np.isfinite(np.asarray(estimate["alpha_window_range"], dtype=float))
+                valid_mask
+                & np.isfinite(np.asarray(estimate["alpha_window_range"], dtype=float))
             )
             else None
         ),
-        "fraction_with_few_origins": float(
-            np.mean(origins < float(estimate["parameters"]["min_origins"]))
-        ),
+        "fraction_with_few_origins": fraction_with_few_origins,
+        "origins_support_status": origins_support_status,
+        "origins_known_fraction": origins_known_fraction,
         "time_origin_counts_are_not_independent_samples": True,
         "uncertainty_model": estimate["parameters"]["uncertainty_model"],
+        "uncertainty_status": estimate["parameters"].get(
+            "uncertainty_status", "not_estimable"
+        ),
+        "alpha_ci_low": None,
+        "alpha_ci_high": None,
     }
 
 
@@ -696,6 +745,11 @@ def diagnostic_linear_diffusion_fit(
             float(np.mean(fit_alpha_finite)) if fit_alpha_finite.size else None
         ),
         "alpha_local_valid_fraction_in_fit": (
+            float(np.mean(np.asarray(estimate["alpha_valid"], dtype=bool)[mask]))
+            if n_fit
+            else 0.0
+        ),
+        "alpha_local_finite_fraction_in_fit": (
             float(np.mean(np.isfinite(fit_alpha))) if n_fit else 0.0
         ),
         "regime_status": regime_status,
