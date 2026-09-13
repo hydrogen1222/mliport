@@ -973,6 +973,15 @@ def kinisi_transport(
             JumpDiffusionAnalyzer,
             kinisi_version,
         ) = kinisi_backend
+    experimental_components: list[str] = []
+    grouping_experimental = collective_system_particles > 1
+    if grouping_experimental:
+        experimental_components.append("collective_conductivity")
+        if jump_diffusion:
+            experimental_components.append("jump_diffusion")
+        # The exact adapter is only defined for system_particles == 1; the
+        # grouped path is deliberately built in the explicit non-publication
+        # mode and flagged below (task book PR-G section 9).
     if jump_diffusion and JumpDiffusionAnalyzer is None:
         raise OptionalDependencyError(
             "The installed kinisi adapter does not provide JumpDiffusionAnalyzer"
@@ -1210,7 +1219,7 @@ def kinisi_transport(
                 "system_particles": collective_system_particles,
             },
             allow_exact_adapter=collective_system_particles == 1,
-            production=not allow_reconstructed_fallback,
+            production=(not allow_reconstructed_fallback) and not grouping_experimental,
             dg_kind="mstd",
             system_particles=collective_system_particles,
             ionic_charge=float(ionic_charge_e) * sc.Unit("e"),
@@ -1272,6 +1281,13 @@ def kinisi_transport(
             "system_particles": collective_system_particles,
             "system_particles_semantics": (
                 "index-ordered statistical groups in kinisi, not independent MD replicas"
+            ),
+            "experimental": grouping_experimental,
+            "publication_grade": not grouping_experimental,
+            "warning": (
+                "cross-group correlations are not guaranteed to be preserved"
+                if grouping_experimental
+                else None
             ),
             "sigma_collective_posterior_S_m": sigma_collective_S_m,
             "sigma_collective_posterior_S_cm": sigma_collective_S_cm,
@@ -1392,7 +1408,7 @@ def kinisi_transport(
                 "system_particles": collective_system_particles,
             },
             allow_exact_adapter=collective_system_particles == 1,
-            production=not allow_reconstructed_fallback,
+            production=(not allow_reconstructed_fallback) and not grouping_experimental,
             dg_kind="mstd",
             system_particles=collective_system_particles,
         )
@@ -1408,6 +1424,13 @@ def kinisi_transport(
             "system_particles_semantics": (
                 "index-ordered statistical groups in kinisi, not independent MD replicas"
             ),
+            "experimental": grouping_experimental,
+            "publication_grade": not grouping_experimental,
+            "warning": (
+                "cross-group correlations are not guaranteed to be preserved"
+                if grouping_experimental
+                else None
+            ),
             "D_J_posterior_m2_s": _numeric_sample_summary(d_j_m2_s, unit="m^2/s"),
             "D_J_posterior_cm2_s": _numeric_sample_summary(
                 d_j_m2_s * 1.0e4, unit="cm^2/s"
@@ -1417,4 +1440,13 @@ def kinisi_transport(
         result["kinisi_mstd"] = _variable_values(jump.mstd)
         result["kinisi_mstd_variance"] = _variable_variances(jump.mstd)
         result["D_J_samples_m2_s"] = d_j_m2_s
+    if experimental_components:
+        # A result containing an experimental component is never labelled
+        # publication-grade as a whole.
+        result["publication_grade"] = False
+        result["experimental_components"] = experimental_components
+        result.setdefault("warnings", []).append(
+            "experimental grouping (collective_system_particles > 1): "
+            "cross-group correlations are not guaranteed to be preserved"
+        )
     return result
