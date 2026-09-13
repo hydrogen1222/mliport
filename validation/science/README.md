@@ -12,6 +12,7 @@ committed.
 | Path | Purpose |
 | --- | --- |
 | `model_manifest.json` | Pinned model identities (sha256 of the exact artifacts; no local paths) |
+| `capability_matrix.json` | Machine-readable interface capability matrix (API / direct CLI / INCAR / TUI); not an equivalence claim |
 | `data_manifest.json` | Pinned OMat24 validation-subset provenance (corrected 241220 files) |
 | `scripts/common.py` | Shared schemas, identity/UUID hashing, result records |
 | `evidence/` | Canonical evidence layer: strict loader, identity, schema dispatch and profile-aware aggregation. Report/README/figure generators only consume this package |

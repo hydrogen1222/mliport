@@ -289,6 +289,14 @@ Held-out OMat24 accuracy (E/atom MAE over 256 structures, no elemental offsets f
 `*` = CI software test only, no model involved. A cell lists the recorded statuses for that workload; per-workload rows reuse the same evidence tiers, so row counts are not additive. Full per-test tables and limitations: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md). Model identities pinned in `validation/science/model_manifest.json`.
 <!-- END GENERATED -->
 
+### 接口能力矩阵
+
+各入口不声称等价。机器可读的
+`validation/science/capability_matrix.json` 按功能记录 Python API、直接
+CLI、INCAR 式键集与 TUI 是否能表达该功能。高级的显式原子映射 / 晶格
+平移控制只通过 API/direct CLI/TUI 提供;INCAR 式键集刻意不包含
+`neb_atom_map` 与 `neb_image_shifts`。
+
 各 tier 含义:t1 四后端推理(公共子集)、t2 不变性与缓存、t2fd 有限
 差分应力、t3 OMat24 标签对比、t4 静态工作流(弛豫、EOS、弹性、声子、
 热力学、缺陷、表面)、t5 NEB、t6 MD、t7 分析、t8 性能。逐测试表格

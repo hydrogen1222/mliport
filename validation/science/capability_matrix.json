@@ -1,0 +1,123 @@
+{
+  "schema": "mlipx.capability-matrix/1",
+  "description": "Machine-readable interface capability matrix (task book section 12). Values describe whether an explicitly documented entry point can express a feature; they are not a claim of behavioural equivalence. 'no'/'partial' entries carry a note.",
+  "values": ["yes", "no", "partial", "not_applicable"],
+  "limitations": [
+    "Advanced explicit atom mapping/image-shift control is available through API/direct CLI/TUI only; the INCAR-style key set deliberately does not expose neb_atom_map or neb_image_shifts.",
+    "The interface capability matrix is not an equivalence claim: a 'yes' means the entry point can express the feature, not that every validation scenario is covered through it."
+  ],
+  "features": [
+    {
+      "feature": "neb_endpoints",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "prepare_band / NEBRunner; --initial/--final; neb_initial/neb_final; TUI initial/final inputs"
+    },
+    {
+      "feature": "neb_atom_map",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "no",
+      "tui": "yes",
+      "note": "INCAR has no neb_atom_map key; use --atom-map, the API atom_map argument, or the TUI atom-map field"
+    },
+    {
+      "feature": "neb_image_shifts",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "no",
+      "tui": "yes",
+      "note": "INCAR has no neb_image_shifts key; use --image-shifts, the API image_shifts argument, or the TUI image-shift field"
+    },
+    {
+      "feature": "neb_resume",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "no",
+      "tui": "yes",
+      "note": "resume is an execution command, not a persistent INCAR key; --resume / resume API / TUI resume field"
+    },
+    {
+      "feature": "neb_path_convention",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "path_convention = mic | unwrapped"
+    },
+    {
+      "feature": "neb_interpolation",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "linear | idpp with explicit convergence requirements"
+    },
+    {
+      "feature": "neb_method_climb",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "CI-NEB climbing-image flag"
+    },
+    {
+      "feature": "neb_pre_relaxation",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "endpoint_policy/fmax/steps and IDPP pre-relaxation"
+    },
+    {
+      "feature": "neb_min_distance_guard",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "explicit collision guard"
+    },
+    {
+      "feature": "msd_analysis",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "not_applicable",
+      "tui": "yes",
+      "note": "Analysis v2 task, not an INCAR key set"
+    },
+    {
+      "feature": "transport_analysis",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "not_applicable",
+      "tui": "yes",
+      "note": "kinisi transport via Analysis v2"
+    },
+    {
+      "feature": "electrolyte_analysis",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "not_applicable",
+      "tui": "yes",
+      "note": "GEMDAT mechanism analysis via Analysis v2"
+    },
+    {
+      "feature": "density_analysis",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "not_applicable",
+      "tui": "yes",
+      "note": "periodic density map via Analysis v2"
+    },
+    {
+      "feature": "queue_batch",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "job queue and batch INCAR scanning"
+    }
+  ]
+}

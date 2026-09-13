@@ -333,6 +333,15 @@ Held-out OMat24 accuracy (E/atom MAE over 256 structures, no elemental offsets f
 `*` = CI software test only, no model involved. A cell lists the recorded statuses for that workload; per-workload rows reuse the same evidence tiers, so row counts are not additive. Full per-test tables and limitations: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md). Model identities pinned in `validation/science/model_manifest.json`.
 <!-- END GENERATED -->
 
+### Interface capability matrix
+
+Interfaces are not claimed to be equivalent. The machine-readable
+`validation/science/capability_matrix.json` records, per feature, whether the
+Python API, the direct CLI, the INCAR-style key set and the TUI can express
+it. Advanced explicit atom mapping/image-shift control is available through
+API/direct CLI/TUI only; the INCAR-style key set deliberately has no
+`neb_atom_map` or `neb_image_shifts` keys.
+
 What the tiers mean: t1 four-backend inference on the common subset,
 t2 invariance and caching, t2fd finite-difference stress, t3 OMat24
 label comparison, t4 static workflows (relaxation, EOS, elastic,
