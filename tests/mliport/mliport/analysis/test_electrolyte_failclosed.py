@@ -18,6 +18,35 @@ from mliport.analysis.dataset import TrajectoryDataset
 from mliport.analysis.validation import OptionalDependencyError
 
 
+class _FakeSite:
+    def __init__(self, coord):
+        self.coords = np.asarray(coord, dtype=float)
+
+
+class _FakeLattice:
+    def __init__(self, matrix):
+        self.matrix = np.asarray(matrix, dtype=float)
+
+
+class _FakeStructure:
+    """Minimal pymatgen-like Structure surface used by the product code."""
+
+    def __init__(self, lattice, species, coords):
+        self.lattice = _FakeLattice(lattice)
+        self._coords = np.asarray(coords, dtype=float).reshape(-1, 3)
+        self.species = list(species)
+
+    def __len__(self):
+        return len(self._coords)
+
+    @property
+    def cart_coords(self):
+        return self._coords
+
+    def __iter__(self):
+        return iter([_FakeSite(coord) for coord in self._coords])
+
+
 def _dataset(n_frames: int = 12, *, mobile_dx: float = 0.0, mobile_x=None):
     """Small production dataset; mobile Li either sits still or hops."""
     positions = np.zeros((n_frames, 2, 3))
@@ -96,9 +125,7 @@ def _install_fakes(
     sites_coords=((1.0, 1.0, 1.0),),
     discovery_failure=None,
 ):
-    from pymatgen.core import Structure
-
-    sites = Structure(
+    sites = _FakeStructure(
         lattice=[[sites_cell, 0, 0], [0, sites_cell, 0], [0, 0, sites_cell]],
         species=["Li"] * len(sites_coords),
         coords=[list(coord) for coord in sites_coords],
@@ -107,7 +134,7 @@ def _install_fakes(
     monkeypatch.setattr(
         electrolyte,
         "_require_gemdat",
-        lambda: (object, object, Structure, "1.7.3"),
+        lambda: (object, object, _FakeStructure, "1.7.3"),
     )
     monkeypatch.setattr(electrolyte, "_gemdat_trajectory", lambda *a, **k: trajectory)
     return trajectory, sites
