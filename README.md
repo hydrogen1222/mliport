@@ -331,7 +331,7 @@ Validation status per backend, rendered from the beta evidence records (`beta-su
 | Short NVE / NVT MD | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) | software_validated (passx1) |
 | Transport analysis (demonstration) | model_characterized (characterizedx1, passx1) | model_characterized (characterizedx1, passx1) | model_characterized (characterizedx1, passx1) | model_characterized (characterizedx1, passx1) |
 | Mechanism analysis (GEMDAT) | model_characterized (characterizedx1) | model_characterized (characterizedx1) | model_characterized (characterizedx1) | model_characterized (characterizedx1) |
-| Performance (SP/MD scaling) | not_run | not_run | not_run | not_run |
+| Performance (SP/MD scaling) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) | software_validated (passx5) |
 
 Held-out OMat24 accuracy: not run on this evidence set.
 

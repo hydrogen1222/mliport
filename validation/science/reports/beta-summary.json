@@ -4,8 +4,8 @@
   "code_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
   "versions": {
     "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-    "validation_code_commit": "425a180acf0cf5adc684ead76d1d0dcd803f7e7b",
-    "report_generator_commit": "425a180acf0cf5adc684ead76d1d0dcd803f7e7b",
+    "validation_code_commit": "5d67211f9c6ed894615beede5ecca17e50b1bbfa",
+    "report_generator_commit": "5d67211f9c6ed894615beede5ecca17e50b1bbfa",
     "evidence_campaign": "20260913-current-head-5f8d91d",
     "evidence_source_commits": [
       "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
@@ -66,8 +66,10 @@
       }
     },
     "t8": {
-      "records": 0,
-      "by_status": {}
+      "records": 20,
+      "by_status": {
+        "pass": 20
+      }
     }
   },
   "omat24": {},
@@ -779,27 +781,39 @@
     "performance": {
       "mace": {
         "labels": [
-          "not_run"
+          "software_validated"
         ],
-        "records": 0
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
       },
       "dpa": {
         "labels": [
-          "not_run"
+          "software_validated"
         ],
-        "records": 0
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
       },
       "grace": {
         "labels": [
-          "not_run"
+          "software_validated"
         ],
-        "records": 0
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
       },
       "uma": {
         "labels": [
-          "not_run"
+          "software_validated"
         ],
-        "records": 0
+        "records": 5,
+        "by_status": {
+          "pass": 5
+        }
       }
     },
     "install": {
@@ -995,27 +1009,27 @@
   "problems": [],
   "canonical_summary": {
     "record_counts": {
-      "total": 76,
+      "total": 96,
       "by_status": {
         "characterized": 43,
-        "pass": 33
+        "pass": 53
       },
       "by_profile": {
         "dpa-engine-defined-299bc42910": 1,
         "dpa-engine-defined-c4813668fd": 1,
         "dpa-upstream-model-defined-71d42d7cb1": 3,
-        "dpa-upstream-model-defined-b8c0754f37": 14,
+        "dpa-upstream-model-defined-b8c0754f37": 19,
         "grace-engine-defined-5301c5dbab": 1,
         "grace-engine-defined-ed5bbf59f7": 1,
         "grace-upstream-model-defined-7ca4f2b23c": 3,
-        "grace-upstream-model-defined-efb19e2b17": 14,
+        "grace-upstream-model-defined-efb19e2b17": 19,
         "mace-engine-defined-67d361187e": 1,
         "mace-engine-defined-883d6d20c8": 1,
-        "mace-float64-c1f5e8c71f": 14,
+        "mace-float64-c1f5e8c71f": 19,
         "mace-float64-e04abab7eb": 3,
         "uma-engine-defined-00db931fe2": 1,
         "uma-engine-defined-bf3d816200": 1,
-        "uma-upstream-model-defined-1d1a751b0b": 14,
+        "uma-upstream-model-defined-1d1a751b0b": 19,
         "uma-upstream-model-defined-d4e03a1d58": 3
       },
       "expected_engines": []
@@ -1090,7 +1104,7 @@
         "git_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
         "seed": null,
         "profile_id": "dpa-upstream-model-defined-b8c0754f37",
-        "runs": 14,
+        "runs": 19,
         "records": [
           "t1_cu_fcc/t1_real_inference",
           "t1_mgo_rocksalt/t1_real_inference",
@@ -1105,7 +1119,12 @@
           "t2fd_si_diamond_prim/t2_stress_fd",
           "t5_endpoints/t5a_cu_vacancy_endpoints",
           "t5_neb/t5d_cu_vacancy_ci_neb5",
-          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp"
+          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp",
+          "t8_md_throughput_128/t8_performance",
+          "t8_md_throughput_512/t8_performance",
+          "t8_sp_scaling_128/t8_performance",
+          "t8_sp_scaling_32/t8_performance",
+          "t8_sp_scaling_512/t8_performance"
         ]
       },
       "grace-engine-defined-5301c5dbab": {
@@ -1177,7 +1196,7 @@
         "git_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
         "seed": null,
         "profile_id": "grace-upstream-model-defined-efb19e2b17",
-        "runs": 14,
+        "runs": 19,
         "records": [
           "t1_cu_fcc/t1_real_inference",
           "t1_mgo_rocksalt/t1_real_inference",
@@ -1192,7 +1211,12 @@
           "t2fd_si_diamond_prim/t2_stress_fd",
           "t5_endpoints/t5a_cu_vacancy_endpoints",
           "t5_neb/t5d_cu_vacancy_ci_neb5",
-          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp"
+          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp",
+          "t8_md_throughput_128/t8_performance",
+          "t8_md_throughput_512/t8_performance",
+          "t8_sp_scaling_128/t8_performance",
+          "t8_sp_scaling_32/t8_performance",
+          "t8_sp_scaling_512/t8_performance"
         ]
       },
       "mace-engine-defined-67d361187e": {
@@ -1244,7 +1268,7 @@
         "git_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
         "seed": null,
         "profile_id": "mace-float64-c1f5e8c71f",
-        "runs": 14,
+        "runs": 19,
         "records": [
           "t1_cu_fcc/t1_real_inference",
           "t1_mgo_rocksalt/t1_real_inference",
@@ -1259,7 +1283,12 @@
           "t2fd_si_diamond_prim/t2_stress_fd",
           "t5_endpoints/t5a_cu_vacancy_endpoints",
           "t5_neb/t5d_cu_vacancy_ci_neb5",
-          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp"
+          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp",
+          "t8_md_throughput_128/t8_performance",
+          "t8_md_throughput_512/t8_performance",
+          "t8_sp_scaling_128/t8_performance",
+          "t8_sp_scaling_32/t8_performance",
+          "t8_sp_scaling_512/t8_performance"
         ]
       },
       "mace-float64-e04abab7eb": {
@@ -1331,7 +1360,7 @@
         "git_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
         "seed": null,
         "profile_id": "uma-upstream-model-defined-1d1a751b0b",
-        "runs": 14,
+        "runs": 19,
         "records": [
           "t1_cu_fcc/t1_real_inference",
           "t1_mgo_rocksalt/t1_real_inference",
@@ -1346,7 +1375,12 @@
           "t2fd_si_diamond_prim/t2_stress_fd",
           "t5_endpoints/t5a_cu_vacancy_endpoints",
           "t5_neb/t5d_cu_vacancy_ci_neb5",
-          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp"
+          "t5_path_init/t5b_cu_vacancy_linear_vs_idpp",
+          "t8_md_throughput_128/t8_performance",
+          "t8_md_throughput_512/t8_performance",
+          "t8_sp_scaling_128/t8_performance",
+          "t8_sp_scaling_32/t8_performance",
+          "t8_sp_scaling_512/t8_performance"
         ]
       },
       "uma-upstream-model-defined-d4e03a1d58": {
@@ -1514,7 +1548,7 @@
     "problems": [],
     "harness_violations": [],
     "import_summary": {
-      "records": 76,
+      "records": 96,
       "migrated_records": 621,
       "legacy_namespace_records": 624,
       "ancillary_files": 928,
@@ -1522,7 +1556,7 @@
     }
   },
   "canonical_loader": {
-    "scanned_files": 1628,
+    "scanned_files": 1648,
     "ancillary_files": 928,
     "migrated_records": 621,
     "out_of_scope_records": 624,

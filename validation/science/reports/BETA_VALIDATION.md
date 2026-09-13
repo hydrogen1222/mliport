@@ -7,8 +7,8 @@ Revalidation status: **current_head_revalidated** -- campaign manifest declares 
 | version identity | commit |
 |---|---|
 | software_commit (claimed validated) | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
-| validation_code_commit | `425a180acf0cf5adc684ead76d1d0dcd803f7e7b` |
-| report_generator_commit | `425a180acf0cf5adc684ead76d1d0dcd803f7e7b` |
+| validation_code_commit | `5d67211f9c6ed894615beede5ecca17e50b1bbfa` |
+| report_generator_commit | `5d67211f9c6ed894615beede5ecca17e50b1bbfa` |
 | evidence_campaign | `20260913-current-head-5f8d91d` |
 | evidence_source_commits | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
 
@@ -193,16 +193,16 @@ dpa: T std 50.8 K, drift -0.000485 eV/atom/ps<br>grace: T std 49.3 K, drift 0.00
 
 | atoms | mace | dpa | grace | uma |
 |---|---|---|---|---|
-| 32 | — | — | — | — |
-| 128 | — | — | — | — |
-| 512 | — | — | — | — |
+| 32 | 700 | 1.07e+04 | 9.2 | 123 |
+| 128 | 51.9 | 163 | 12.8 | 123 |
+| 512 | 139 | 177 | 30.9 | 212 |
 
 ### NVE MD throughput (steps/s / atom-steps/s)
 
 | atoms | mace | dpa | grace | uma |
 |---|---|---|---|---|
-| 128 | — | — | — | — |
-| 512 | — | — | — | — |
+| 128 | 19 / 2.43e+03 | 6.31 / 808 | 76.3 / 9.76e+03 | 8.14 / 1.04e+03 |
+| 512 | 7.1 / 3.63e+03 | 5.96 / 3.05e+03 | 32.3 / 1.66e+04 | 4.66 / 2.38e+03 |
 
 ## Support matrix (section 39 classification)
 
@@ -233,7 +233,7 @@ dpa: T std 50.8 K, drift -0.000485 eV/atom/ps<br>grace: T std 49.3 K, drift 0.00
 | transport_demo | model_characterized | model_characterized | model_characterized | model_characterized |
 | mechanism_analysis | model_characterized | model_characterized | model_characterized | model_characterized |
 | arrhenius | not_run | not_run | not_run | not_run |
-| performance | not_run | not_run | not_run | not_run |
+| performance | software_validated | software_validated | software_validated | software_validated |
 
 \* install rows cover software validation only (installer, doctor, runtime validation in CI); no model is involved.
 
