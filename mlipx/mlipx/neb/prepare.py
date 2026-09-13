@@ -57,6 +57,8 @@ def _validate_common_geometry(images: list[Atoms], options: NEBOptions) -> None:
     if len(reference) == 0:
         raise NEBPreparationError("NEB structures must contain at least one atom")
     reference_symbols = tuple(reference.get_chemical_symbols())
+    reference_masses = np.asarray(reference.get_masses(), dtype=float)
+    reference_atom_ids = _atom_ids(reference)
     reference_pbc = np.asarray(reference.pbc, dtype=bool)
     if bool(reference_pbc.any()) and not bool(reference_pbc.all()):
         raise NEBPreparationError(
@@ -74,6 +76,24 @@ def _validate_common_geometry(images: list[Atoms], options: NEBOptions) -> None:
             raise NEBPreparationError(f"Image {index} changes atom count")
         if tuple(image.get_chemical_symbols()) != reference_symbols:
             raise NEBPreparationError(f"Image {index} changes atom identity/order")
+        image_masses = np.asarray(image.get_masses(), dtype=float)
+        if not np.allclose(image_masses, reference_masses, rtol=0.0, atol=1.0e-8):
+            raise NEBPreparationError(
+                f"Image {index} changes atomic masses; element identity alone "
+                "does not preserve the physical system"
+            )
+        image_atom_ids = _atom_ids(image)
+        if (reference_atom_ids is None) != (image_atom_ids is None):
+            raise NEBPreparationError(
+                f"Image {index} changes atom_id metadata presence; per-atom "
+                "mapping identity must be carried by every image"
+            )
+        if reference_atom_ids is not None and not np.array_equal(
+            image_atom_ids, reference_atom_ids
+        ):
+            raise NEBPreparationError(
+                f"Image {index} changes per-atom mapping identity (atom_id)"
+            )
         if not np.array_equal(np.asarray(image.pbc, dtype=bool), reference_pbc):
             raise NEBPreparationError(f"Image {index} changes PBC flags")
         cell = np.asarray(image.cell.array, dtype=float)
@@ -87,6 +107,20 @@ def _validate_common_geometry(images: list[Atoms], options: NEBOptions) -> None:
             raise NEBPreparationError(f"Image {index} positions contain NaN or Inf")
         if not np.array_equal(_fixed_indices(image), fixed):
             raise NEBPreparationError(f"Image {index} changes FixAtoms constraints")
+        if len(fixed):
+            # Explicit provided-band contract: a frozen atom must keep the
+            # exact same raw coordinate in EVERY image.  An equivalent lattice
+            # image is NOT accepted here, because the raw-coordinate spring
+            # convention would turn it into a spurious segment (task book
+            # PR-D / section 6.2).
+            movement = image.positions[fixed] - reference.positions[fixed]
+            if not np.allclose(movement, 0.0, rtol=0.0, atol=1.0e-8):
+                raise NEBPreparationError(
+                    f"Image {index} moves FixAtoms atom(s) {fixed.tolist()} by "
+                    f"up to {float(np.abs(movement).max()):g} A; every image "
+                    "must keep frozen atoms at the exact same coordinates "
+                    "(equivalent lattice images are rejected by contract)"
+                )
 
 
 def _validate_identity(initial: Atoms, final: Atoms, atom_map: np.ndarray) -> Atoms:
@@ -466,7 +500,14 @@ def prepare_band(
 
 
 def validate_band_images(images: Iterable[Atoms], options: NEBOptions) -> BandInput:
-    """Validate an existing complete band without re-interpolating it."""
+    """Validate an existing complete band without re-interpolating it.
+
+    Every image is checked against the first one for atom count, species
+    order, masses, atom_id mapping metadata, cell/PBC, FixAtoms indices and
+    frozen-atom coordinates; adjacent-image displacement and collision
+    contracts are checked as well.  Comparing only the endpoints is
+    explicitly not sufficient (task book PR-D).
+    """
 
     copied = tuple(image.copy() for image in images)
     if len(copied) != options.n_intermediate_images + 2:
