@@ -4,7 +4,7 @@
 - Validated software commit: `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`
 - Validation harness commits: `34f894ba454c4889a66bf9d9f6601fe56dd33725` (T7 analysis fix + explicit software-commit override), `425a180acf0cf5adc684ead76d1d0dcd803f7e7b` (campaign manifest + archive tooling)
 - Report/archive commit: `b179f7e`, README status commit: `46ef566`
-- Evidence campaign: `20260913-current-head-5f8d91d` (76 records: 33 pass, 43 characterized, 0 fail, 0 blocked)
+- Evidence campaign: `20260913-current-head-5f8d91d` (96 records: 53 pass, 43 characterized, 0 fail, 0 blocked)
 - Device: Tesla V100-SXM2-16GB, driver 580.173.02 (unchanged by the campaign)
 - Report: [BETA_VALIDATION.md](BETA_VALIDATION.md) / [BETA_VALIDATION_CN.md](BETA_VALIDATION_CN.md);
   machine-readable: [beta-summary.json](beta-summary.json)
@@ -32,7 +32,7 @@
 | 17 | Alpha weighting/validity closure | ✅ | `PR-H` local Δlog(t) weighting + finite & valid summaries |
 | 18 | Analysis version bump | ✅ | alpha estimator `/2`; task output revisions msd 7 / transport 6 |
 | 19 | T7 transport recomputed | ✅ | 4 engines × (MSD→alpha→kinisi→GEMDAT) at the new identity |
-| 20 | T8 re-run or rebuilt under the new identity | ❌ | T8 performance remains historical evidence, explicitly marked not-current-HEAD (not in the §17.2 campaign scope) |
+| 20 | T8 re-run or rebuilt under the new identity | ✅ | 20 T8 records (5 cases × 4 engines) re-run at `5f8d91d`; SP latency/VRAM scaling and NVE MD throughput all pass |
 | 21 | Historical reused evidence explicitly marked | ✅ | version block + campaign manifest scope (`not_in_scope`, `historical_reuse`) |
 | 22 | Report rebuildable from a formal evidence archive | ⚠️ | archive built (81 KiB, 76 records, sha256 `ff99b8e0…`) and re-render verified; hosting URL still pending |
 | 23 | README statements match the evidence | ✅ | READMEs state the completed four-backend smoke and the historical T3/T4/T8 |
@@ -55,15 +55,13 @@
 
 ## Residuals before an unconditional GO
 
-1. **T8 performance** has not been re-run under the new identity; it stays
-   historical until a current-HEAD performance campaign is executed.
-2. **Archive hosting**: the archive exists and its sha256 is committed, but
-   `archive_url` is `null` until a host (GitHub Release / Zenodo / OSF) is
-   chosen.
-3. **GPU saddle-Hessian workflow (`t5h`)** was not part of the four-backend
+1. **Archive hosting**: the archive exists and its sha256 is committed;
+   `archive_url` is filled in when the GitHub Release is published.
+2. **GPU saddle-Hessian workflow (`t5h`)** was not part of the four-backend
    smoke; its semantics are covered by the CPU/analytic known-answer layer.
 
 Verdict: **GO for beta** for the scoped, explicitly stated evidence:
-current-HEAD four-backend V100 smoke + CI + clean wheel installs, with T3/T4/T8
-carried as historical evidence. An unconditional GO requires closing items
-20/22 above.
+current-HEAD four-backend V100 smoke (T1/T2FD/T5/T6/T7/T8) + CI + clean
+wheel installs, with T3/T4 carried as historical evidence. Item 22 completes
+when the archive is published; the GPU `t5h` note above is a statement of
+scope, not a NO-GO trigger.

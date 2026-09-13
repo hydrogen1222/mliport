@@ -15,26 +15,26 @@
       "uma"
     ],
     "evidence_root": ".validation-work (local; archived per validation/science/archive_manifest.json)",
-    "harness_note": "T1/T2FD/T5/T6/T7-md ran at software commit 5f8d91d; the T7 transport/gemdat analysis ran with the harness fix 34f894b and MLIPORT_SOFTWARE_COMMIT=5f8d91d because the trajectories were produced by the product code at that commit.",
+    "harness_note": "T1/T2FD/T5/T6/T7-md ran at software commit 5f8d91d; the T7 transport/gemdat analysis and the T8 performance suite ran with the fixed harness and MLIPORT_SOFTWARE_COMMIT=5f8d91d because the product code under test is that commit.",
     "historical_reuse": "Pre-rename and pre-current-HEAD records remain historical evidence and are never claimed as current-HEAD.",
     "not_in_scope": [
       "T3 OMat24 accuracy: unchanged historical evidence",
-      "T4 static workflows: unchanged historical evidence",
-      "T8 performance: unchanged historical evidence"
+      "T4 static workflows: unchanged historical evidence"
     ],
     "records": {
       "blocked": 0,
       "characterized": 43,
       "fail": 0,
-      "pass": 33,
-      "total": 76
+      "pass": 53,
+      "total": 96
     },
     "tiers": {
       "t1": "single-point inference + repeat inference + stress/dtype/task/head/model hash",
       "t2fd": "small finite-difference force/stress known-answer sweep",
       "t5": "NEB endpoints, path initialisation and a real CI-NEB-5 band",
       "t6": "short NVE timestep sweep and Langevin NVT",
-      "t7": "one 700 K / 15 ps production trajectory, MSD/alpha, kinisi transport, GEMDAT"
+      "t7": "one 700 K / 15 ps production trajectory, MSD/alpha, kinisi transport, GEMDAT",
+      "t8": "single-point latency/VRAM scaling and NVE MD throughput"
     }
   },
   "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
