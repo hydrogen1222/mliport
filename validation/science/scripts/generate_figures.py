@@ -1,9 +1,10 @@
 """Generate the beta validation figures from machine-readable evidence.
 
-Taskbook section 38: every figure regenerates from result JSON/CSV under
-the evidence root (default ``.validation-work``); nothing is hand-edited.
-Figure metadata carries the source record IDs.  Engine colours are
-consistent across all figures.
+Taskbook section 38: every figure regenerates from records produced by
+the canonical evidence loader (``evidence.load_evidence``) plus immutable
+per-structure CSV files; nothing is hand-edited and no figure parses raw
+result JSON itself.  The figure manifest lists every contributing record
+path.  Engine colours are consistent across all figures.
 
 Usage::
 
@@ -27,6 +28,15 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+# Canonical evidence layer: figures never parse raw records themselves
+# (task book PR-A).  Every number they draw points at a record listed in the
+# figure manifest.
+_SCIENCE_ROOT = Path(__file__).resolve().parent.parent
+if str(_SCIENCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCIENCE_ROOT))
+
+from evidence import STATUS_RANK, TIER_NAMES, load_evidence  # noqa: E402
+
 import matplotlib as mpl
 
 mpl.use("Agg")
@@ -45,27 +55,67 @@ ENGINE_ORDER = ("mace", "dpa", "grace", "uma")
 DPI = 150
 
 
-def _load_records(tier_dir: Path) -> dict[str, dict[str, Any]]:
-    """case_id+engine -> record for one tier directory (flat layout)."""
-    records: dict[str, dict[str, Any]] = {}
-def _load_records(tier_dir: Path) -> dict[str, dict[str, Any]]:
-    """compound case key -> {engine: record} for one tier directory."""
-    records: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
-    if not tier_dir.is_dir():
-        return records
-    for path in sorted(tier_dir.glob("*.json")):
-        try:
-            rec = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        case_id = rec.get("case_id")
-        test_id = rec.get("test_id")
+def _representative(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Deterministic figure representative for one engine/case.
+
+    The newest non-failing profile wins; if every profile failed, the newest
+    failure is still plotted (and the manifest lists every record considered).
+    Never status-blind "prefer pass": a failure with no passing alternative
+    remains visible.
+    """
+    ranked = sorted(
+        records,
+        key=lambda rec: (
+            STATUS_RANK.get(str(rec.get("status")), -1) != STATUS_RANK["fail"],
+            str(rec.get("git_commit") or ""),
+            str(rec.get("_path") or ""),
+        ),
+        reverse=True,
+    )
+    return ranked[0]
+
+
+def _group_records(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """compound case key -> {engine: representative record}.
+
+    ``records`` must come from :func:`evidence.load_evidence`; the figure
+    manifest records every ``_path`` that contributed so a plotted number can
+    always be traced back to its immutable evidence.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        case_id = record.get("case_id")
+        test_id = record.get("test_id")
         if not case_id or not test_id:
-            continue  # summary files
-        engine = str(rec.get("engine", "?")).split("-")[0]
-        key = f"{case_id}__{test_id}"
-        records[key][engine] = rec
-    return dict(records)
+            continue
+        grouped[f"{case_id}__{test_id}"].append(record)
+    out: dict[str, dict[str, Any]] = {}
+    for key, entries in grouped.items():
+        per_engine: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for record in entries:
+            per_engine[str(record.get("engine", "?"))].append(record)
+        out[key] = {
+            engine: _representative(engine_records)
+            for engine, engine_records in per_engine.items()
+        }
+    return out
+
+
+def _record_label(record: dict[str, Any]) -> str:
+    """`engine/dtype#digest (path)` for one contributing record."""
+    engine = str(record.get("engine", "?"))
+    dtype = str(record.get("dtype", "?"))
+    digest = str(record.get("profile_id") or "").rsplit("-", 1)[-1][:6]
+    return f"{engine}/{dtype}#{digest} ({record.get('_path')})"
+
+
+def _all_profile_labels(records: list[dict[str, Any]]) -> list[str]:
+    """`record_label` for every record a figure series considered."""
+    return [
+        _record_label(record)
+        for record in sorted(records, key=lambda r: str(r.get("_path") or ""))
+    ]
+
 
 def _footer(fig: plt.Figure, sources: list[str]) -> None:
     fig.text(
@@ -77,11 +127,8 @@ def _footer(fig: plt.Figure, sources: list[str]) -> None:
     )
 
 
-
 def _style(engine: str) -> dict[str, str]:
-    return ENGINE_STYLE.get(
-        engine, {"color": "0.5", "label": engine}
-    )
+    return ENGINE_STYLE.get(engine, {"color": "0.5", "label": engine})
 
 
 def fig_omat24_energy(t3_dir: Path, out: Path) -> str | None:
@@ -92,22 +139,10 @@ def fig_omat24_energy(t3_dir: Path, out: Path) -> str | None:
         if not path.exists():
             continue
         rows = list(csv.DictReader(path.open()))
-        de = np.array(
-            [
-                float(r["de_per_atom_eV"])
-                for r in rows
-                if r["de_per_atom_eV"]
-            ]
-        )
-        e_ref = np.array(
-            [float(r["e_ref_eV"]) for r in rows if r["de_per_atom_eV"]]
-        )
-        e_mod = np.array(
-            [float(r["e_model_eV"]) for r in rows if r["de_per_atom_eV"]]
-        )
-        nat = np.array(
-            [float(r["natoms"]) for r in rows if r["de_per_atom_eV"]]
-        )
+        de = np.array([float(r["de_per_atom_eV"]) for r in rows if r["de_per_atom_eV"]])
+        e_ref = np.array([float(r["e_ref_eV"]) for r in rows if r["de_per_atom_eV"]])
+        e_mod = np.array([float(r["e_model_eV"]) for r in rows if r["de_per_atom_eV"]])
+        nat = np.array([float(r["natoms"]) for r in rows if r["de_per_atom_eV"]])
         series.append((eng, e_ref / nat, e_mod / nat, de, path.name))
     if not series:
         return None
@@ -118,8 +153,9 @@ def fig_omat24_energy(t3_dir: Path, out: Path) -> str | None:
     ax.plot([-lim, lim], [-lim, lim], "k-", lw=0.8, alpha=0.6)
     for eng, e_ref, e_mod, _de, _n in series:
         st = _style(eng)
-        ax.plot(e_ref, e_mod, ".", ms=3, color=st["color"], alpha=0.7,
-                label=st["label"])
+        ax.plot(
+            e_ref, e_mod, ".", ms=3, color=st["color"], alpha=0.7, label=st["label"]
+        )
     ax.set_xlabel("OMat24 reference energy (eV/atom)")
     ax.set_ylabel("model energy (eV/atom)")
     ax.set_title("energy parity")
@@ -128,8 +164,9 @@ def fig_omat24_energy(t3_dir: Path, out: Path) -> str | None:
     bins = np.linspace(-lim, lim, 60)
     for eng, _r, _m, de, _n in series:
         st = _style(eng)
-        ax.hist(de, bins=bins, histtype="step", lw=1.4,
-                color=st["color"], label=st["label"])
+        ax.hist(
+            de, bins=bins, histtype="step", lw=1.4, color=st["color"], label=st["label"]
+        )
     ax.axvline(0.0, color="k", lw=0.8, alpha=0.6)
     ax.set_xlabel(r"energy error, model $-$ DFT (eV/atom)")
     ax.set_ylabel("structures")
@@ -156,15 +193,9 @@ def fig_omat24_forces(t3_dir: Path, out: Path) -> str | None:
         if not path.exists():
             continue
         rows = list(csv.DictReader(path.open()))
-        frms = np.array(
-            [float(r["f_ref_rms_eV_A"]) for r in rows if r["ok"] == "1"]
-        )
+        frms = np.array([float(r["f_ref_rms_eV_A"]) for r in rows if r["ok"] == "1"])
         err = np.array(
-            [
-                float(r["f_component_mae_eV_A"])
-                for r in rows
-                if r["ok"] == "1"
-            ]
+            [float(r["f_component_mae_eV_A"]) for r in rows if r["ok"] == "1"]
         )
         edges = [0.0, 0.5, 1.0, 2.0, 4.0, 8.0, float("inf")]
         xs, ys = [], []
@@ -175,8 +206,7 @@ def fig_omat24_forces(t3_dir: Path, out: Path) -> str | None:
                 ys.append(np.median(err[sel]))
         if xs:
             st = _style(eng)
-            ax.plot(xs, ys, "o-", ms=4, lw=1.2, color=st["color"],
-                    label=st["label"])
+            ax.plot(xs, ys, "o-", ms=4, lw=1.2, color=st["color"], label=st["label"])
             plotted = True
         sources.append(path.name)
     if not plotted:
@@ -209,13 +239,10 @@ def fig_eos(t4_records: dict, out: Path) -> str | None:
             if rec is None:
                 continue
             v = np.array(rec["metrics"]["volumes_A3"], dtype=float)
-            e = np.array(
-                rec["metrics"]["energy_per_atom_eV"], dtype=float
-            )
+            e = np.array(rec["metrics"]["energy_per_atom_eV"], dtype=float)
             e = e - e.min()
             st = _style(eng)
-            ax.plot(v, e, "o-", ms=3.5, lw=1.2, color=st["color"],
-                    label=st["label"])
+            ax.plot(v, e, "o-", ms=3.5, lw=1.2, color=st["color"], label=st["label"])
             sources.append(f"{system}__{eng}")
             plotted = True
         ax.set_title(title)
@@ -252,9 +279,7 @@ def fig_elastic(t4_records: dict, out: Path) -> str | None:
             rec = per_engine.get(eng)
             if rec is None:
                 continue
-            vals = [
-                rec["metrics"].get(c, np.nan) for c in constants
-            ]
+            vals = [rec["metrics"].get(c, np.nan) for c in constants]
             offset = (i - (len(systems) - 1) / 2) * width
             ax.bar(
                 x + offset + (j - 1.5) * width / 4,
@@ -273,8 +298,7 @@ def fig_elastic(t4_records: dict, out: Path) -> str | None:
     ax.set_ylabel("elastic constant (GPa)")
     ax.set_title("T4: cubic elastic constants (finite strain)")
     handles = [
-        plt.Rectangle((0, 0), 1, 1, color=_style(e)["color"])
-        for e in ENGINE_ORDER
+        plt.Rectangle((0, 0), 1, 1, color=_style(e)["color"]) for e in ENGINE_ORDER
     ]
     ax.legend(handles, [_style(e)["label"] for e in ENGINE_ORDER], fontsize=7)
     _footer(fig, [case for case, _ in systems])
@@ -304,9 +328,7 @@ def fig_phonon(t4_records: dict, out: Path) -> str | None:
             if not omegas:
                 continue
             natoms_prim = int(
-                rec.get("parameters", {}).get("fixture", {}).get(
-                    "natoms_prim", 0
-                )
+                rec.get("parameters", {}).get("fixture", {}).get("natoms_prim", 0)
             )
             nbranch = 3 * natoms_prim
             if nbranch <= 0 or len(omegas) % nbranch:
@@ -315,8 +337,9 @@ def fig_phonon(t4_records: dict, out: Path) -> str | None:
             om = np.array(omegas, dtype=float).reshape(n_q, nbranch)
             st = _style(eng)
             for branch in om.T:
-                ax.plot(np.arange(n_q), branch, "-", lw=0.9,
-                        color=st["color"], alpha=0.85)
+                ax.plot(
+                    np.arange(n_q), branch, "-", lw=0.9, color=st["color"], alpha=0.85
+                )
             plotted = True
         ax.set_title(title)
         ax.set_xlabel("sampled path index (recorded 96-value subset)")
@@ -327,8 +350,7 @@ def fig_phonon(t4_records: dict, out: Path) -> str | None:
             plt.Line2D((0, 0), (0, 0), color=_style(e)["color"], lw=1.5)
             for e in ENGINE_ORDER
         ]
-        axes[0].legend(handles, [_style(e)["label"] for e in ENGINE_ORDER],
-                       fontsize=7)
+        axes[0].legend(handles, [_style(e)["label"] for e in ENGINE_ORDER], fontsize=7)
         fig.suptitle(
             "T4: harmonic phonon dispersions (finite-displacement, ASR)",
             fontsize=10,
@@ -361,8 +383,15 @@ def fig_vacancy(t4_records: dict, out: Path) -> str | None:
             ys.append(rec["metrics"]["evac_relaxed_eV"])
         if xs:
             st = _style(eng)
-            ax.plot(range(len(xs)), ys, "o-", ms=4, lw=1.2,
-                    color=st["color"], label=st["label"])
+            ax.plot(
+                range(len(xs)),
+                ys,
+                "o-",
+                ms=4,
+                lw=1.2,
+                color=st["color"],
+                label=st["label"],
+            )
             plotted = True
     if not plotted:
         plt.close(fig)
@@ -400,8 +429,9 @@ def fig_surface(t4_records: dict, out: Path) -> str | None:
                 ys.append(rec["metrics"]["gamma_relaxed_J_m2"])
             if xs:
                 st = _style(eng)
-                ax.plot(xs, ys, "o-", ms=4, lw=1.2, color=st["color"],
-                        label=st["label"])
+                ax.plot(
+                    xs, ys, "o-", ms=4, lw=1.2, color=st["color"], label=st["label"]
+                )
                 plotted = True
         ax.set_xticks(range(len(layers)))
         ax.set_xticklabels(layers)
@@ -435,8 +465,7 @@ def _neb_profiles(t5_records: dict, case: str) -> dict[str, np.ndarray]:
 def fig_neb(t5_records: dict, out: Path) -> str | None:
     panels = (
         ("t5_neb__t5d_cu_vacancy_ci_neb5", "Cu vacancy hop (CI-NEB 5 images)"),
-        ("t5_neb__t5i_na3ps4_na_hop_ci_neb5",
-         r"α-Na3PS4 Na hop (CI-NEB 5 images)"),
+        ("t5_neb__t5i_na3ps4_na_hop_ci_neb5", r"α-Na3PS4 Na hop (CI-NEB 5 images)"),
     )
     fig, axes = plt.subplots(1, 2, figsize=(9.5, 4.2))
     plotted = False
@@ -445,8 +474,9 @@ def fig_neb(t5_records: dict, out: Path) -> str | None:
         for eng, e in profiles.items():
             st = _style(eng)
             x = np.linspace(0, 1, len(e))
-            ax.plot(x, e - e.min(), "o-", ms=4, lw=1.2, color=st["color"],
-                    label=st["label"])
+            ax.plot(
+                x, e - e.min(), "o-", ms=4, lw=1.2, color=st["color"], label=st["label"]
+            )
             plotted = True
         ax.set_title(title, fontsize=9)
         ax.set_xlabel("reaction coordinate (image)")
@@ -482,8 +512,9 @@ def fig_saddle(t5_records: dict, out: Path) -> str | None:
             mins.append(m)
         if len(deltas) == len(mins) and deltas:
             st = _style(eng)
-            ax.plot(deltas, mins, "o-", ms=4, lw=1.2, color=st["color"],
-                    label=st["label"])
+            ax.plot(
+                deltas, mins, "o-", ms=4, lw=1.2, color=st["color"], label=st["label"]
+            )
             plotted = True
     if not plotted:
         plt.close(fig)
@@ -516,8 +547,9 @@ def fig_nve_drift(t6_records: dict, out: Path) -> str | None:
             slopes.append(abs(entry["drift_slope_eV_atom_ps"]))
         if dts:
             st = _style(eng)
-            ax.plot(dts, slopes, "o-", ms=4, lw=1.2, color=st["color"],
-                    label=st["label"])
+            ax.plot(
+                dts, slopes, "o-", ms=4, lw=1.2, color=st["color"], label=st["label"]
+            )
             plotted = True
     if not plotted:
         plt.close(fig)
@@ -538,12 +570,9 @@ def fig_nve_drift(t6_records: dict, out: Path) -> str | None:
 def fig_nvt_temperature(t6_dir: Path, out: Path) -> str | None:
     """Temperature trace + histogram from one NVT run directory."""
     run_root = t6_dir / "t6" / "md_runs"
-    run_dirs = sorted(
-        p for p in run_root.rglob("*") if p.is_dir()
-    )
+    run_dirs = sorted(p for p in run_root.rglob("*") if p.is_dir())
     bussi_dirs = [
-        p for p in run_dirs
-        if "t6c_bussi" in p.name and (p / "raw" / "md.csv").exists()
+        p for p in run_dirs if "t6c_bussi" in p.name and (p / "raw" / "md.csv").exists()
     ]
     if not bussi_dirs:
         return None
@@ -561,15 +590,16 @@ def fig_nvt_temperature(t6_dir: Path, out: Path) -> str | None:
     ax = axes[1]
     ax.hist(temp[prod], bins=40, color=_style("mace")["color"], alpha=0.8)
     ax.axvline(
-        float(temp[prod].mean()), color="k", lw=1.0,
+        float(temp[prod].mean()),
+        color="k",
+        lw=1.0,
         label=f"mean {temp[prod].mean():.1f} K",
     )
     ax.set_xlabel("temperature (K)")
     ax.set_ylabel("frames")
     ax.set_title("production-phase distribution", fontsize=9)
     ax.legend(fontsize=8)
-    fig.suptitle("T6: NVT thermostat behaviour (raw frames, no smoothing)",
-                 fontsize=10)
+    fig.suptitle("T6: NVT thermostat behaviour (raw frames, no smoothing)", fontsize=10)
     _footer(fig, [str(run.relative_to(t6_dir.parent))])
     fig.tight_layout(rect=(0, 0.03, 1, 0.93))
     fig.savefig(out / "fig13_nvt_temperature.png", dpi=DPI)
@@ -599,15 +629,17 @@ def fig_transport(t7_records: dict, out: Path) -> str | None:
         yerr = [[mean - ci[0]], [ci[1] - mean]]
         st = _style(eng)
         ax.errorbar(
-            i, mean * 1e8, yerr=np.array(yerr) * 1e8, fmt="o",
-            ms=5, capsize=4, color=st["color"],
+            i,
+            mean * 1e8,
+            yerr=np.array(yerr) * 1e8,
+            fmt="o",
+            ms=5,
+            capsize=4,
+            color=st["color"],
         )
-        native = (rec["metrics"].get("native_msd") or {}).get(
-            "D_diagnostic_m2_s"
-        )
+        native = (rec["metrics"].get("native_msd") or {}).get("D_diagnostic_m2_s")
         if native:
-            ax.plot(i, native * 1e8, "^", ms=5, mfc="none",
-                    color=st["color"])
+            ax.plot(i, native * 1e8, "^", ms=5, mfc="none", color=st["color"])
         plotted = True
     if not plotted:
         plt.close(fig)
@@ -617,9 +649,7 @@ def fig_transport(t7_records: dict, out: Path) -> str | None:
         [_style(e)["label"] for e in ENGINE_ORDER if e in per_engine],
         fontsize=8,
     )
-    ax.set_ylabel(
-        r"tracer $D$ at 700 K ($10^{-8}\,\mathrm{m^2/s}$)"
-    )
+    ax.set_ylabel(r"tracer $D$ at 700 K ($10^{-8}\,\mathrm{m^2/s}$)")
     ax.set_title(
         "T7: α-Na3PS4 transport at 700 K\n"
         "(circles: kinisi posterior mean ±95% CI; triangles: native MSD fit)",
@@ -648,8 +678,7 @@ def fig_performance(t8_records: dict, out: Path) -> str | None:
             ys.append(rec["metrics"]["warm_call_median_seconds"] * 1000.0)
         if xs:
             st = _style(eng)
-            ax.plot(xs, ys, "o-", ms=4, lw=1.2, color=st["color"],
-                    label=st["label"])
+            ax.plot(xs, ys, "o-", ms=4, lw=1.2, color=st["color"], label=st["label"])
             plotted = True
     ax.set_xlabel("atoms (α-Na3PS4 supercell)")
     ax.set_ylabel("warm SP median latency (ms)")
@@ -672,8 +701,12 @@ def fig_performance(t8_records: dict, out: Path) -> str | None:
             md_sizes.add(n)
         if xs:
             st = _style(eng)
-            ax.bar(np.array(xs, dtype=float) + (j - 1.5) * width, ys, width,
-                   color=st["color"])
+            ax.bar(
+                np.array(xs, dtype=float) + (j - 1.5) * width,
+                ys,
+                width,
+                color=st["color"],
+            )
             plotted = True
     ax.set_xlabel("atoms")
     ax.set_ylabel("NVE steps/s")
@@ -681,11 +714,9 @@ def fig_performance(t8_records: dict, out: Path) -> str | None:
     ax.set_title("MD throughput (VelocityVerlet)")
     if plotted:
         handles = [
-            plt.Rectangle((0, 0), 1, 1, color=_style(e)["color"])
-            for e in ENGINE_ORDER
+            plt.Rectangle((0, 0), 1, 1, color=_style(e)["color"]) for e in ENGINE_ORDER
         ]
-        axes[0].legend(handles, [_style(e)["label"] for e in ENGINE_ORDER],
-                       fontsize=7)
+        axes[0].legend(handles, [_style(e)["label"] for e in ENGINE_ORDER], fontsize=7)
         fig.suptitle("T8: GPU performance characterization", fontsize=10)
         _footer(fig, ["t8_sp_scaling_* / t8_md_throughput_* records"])
         fig.tight_layout(rect=(0, 0.03, 1, 0.93))
@@ -699,20 +730,41 @@ def fig_performance(t8_records: dict, out: Path) -> str | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-root", default=".validation-work")
+    parser.add_argument("--out", default="validation/science/reports/figures")
     parser.add_argument(
-        "--out", default="validation/science/reports/figures"
+        "--campaign",
+        default=None,
+        help="restrict figures to records tagged with this campaign id",
     )
     args = parser.parse_args()
     root = Path(args.evidence_root)
     out = Path(args.out)
+
+    bundle = load_evidence(root, campaign=args.campaign)
+    for problem in bundle.problems:
+        print(f"[figures] PROBLEM: {problem}", file=sys.stderr)
+    if bundle.problems:
+        print(
+            f"[figures] refusing to render: {len(bundle.problems)} evidence "
+            "problem(s)",
+            file=sys.stderr,
+        )
+        return 2
+    if not bundle.records:
+        print(
+            f"[figures] refusing to render: no result records under {root}",
+            file=sys.stderr,
+        )
+        return 3
     out.mkdir(parents=True, exist_ok=True)
 
+    tiers = {tier: bundle.tier(tier) for tier in TIER_NAMES}
     t3_dir = root / "t3"
-    t4_records = _load_records(root / "t4" / "t4")
-    t5_records = _load_records(root / "t5" / "t5")
-    t6_records = _load_records(root / "t6" / "t6")
-    t7_records = _load_records(root / "t7")
-    t8_records = _load_records(root / "t8")
+    t4_records = _group_records(tiers["t4"])
+    t5_records = _group_records(tiers["t5"])
+    t6_records = _group_records(tiers["t6"])
+    t7_records = _group_records(tiers["t7"])
+    t8_records = _group_records(tiers["t8"])
 
     generated: dict[str, str] = {}
     skipped: dict[str, str] = {}
@@ -755,6 +807,17 @@ def main() -> int:
     manifest = {
         "schema": "mlipx.beta-figures/1",
         "evidence_root": str(root),
+        "campaign": bundle.campaign,
+        "validation_logic_version": bundle.records[0]["_identity"][
+            "validation_logic_version"
+        ],
+        "selection_rule": (
+            "newest non-failing profile per engine/case key; when every "
+            "profile failed the newest failure is still plotted"
+        ),
+        "record_sources": {
+            tier: _all_profile_labels(tiers[tier]) for tier in TIER_NAMES
+        },
         "generated": generated,
         "skipped": skipped,
     }

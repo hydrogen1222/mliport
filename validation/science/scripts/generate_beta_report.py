@@ -1,8 +1,10 @@
 """Render the beta validation report and machine-readable summary.
 
 Taskbook sections 37-39, 41.9: status tables and numeric tables are
-rendered from the evidence records under the validation work root;
-nothing in the report is hand-typed.  Outputs:
+rendered from records produced by the canonical evidence loader
+(``evidence.load_evidence``); this module never globs or parses raw
+evidence itself, and every profile of a case stays visible.  Nothing in
+the report is hand-typed.  Outputs:
 
 - ``validation/science/reports/beta-summary.json``
 - ``validation/science/reports/BETA_VALIDATION.md``
@@ -24,6 +26,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Canonical evidence layer: the report never globs or parses raw records on
+# its own (task book PR-A).  Every record it renders comes from
+# ``evidence.load_evidence``.
+_SCIENCE_ROOT = Path(__file__).resolve().parent.parent
+if str(_SCIENCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCIENCE_ROOT))
+
+from evidence import TIER_NAMES, aggregate_records, load_evidence  # noqa: E402
+
 ENGINE_ORDER = ("mace", "dpa", "grace", "uma")
 ENGINE_LABELS = {
     "mace": "MACE-OMAT-0 medium (float64)",
@@ -32,39 +43,20 @@ ENGINE_LABELS = {
     "uma": "UMA-s 1.2 (OMat task)",
 }
 
-#: tier record locations relative to the evidence root
-TIER_GLOBS = {
-    "t1": ("t1", "*.json"),
-    "t2": ("t2", "*.json"),
-    "t2fd": ("t2fd", "*.json"),
-    "t3": ("t3", "t3_*.json"),
-    "t4": ("t4", "t4", "*.json"),
-    "t5": ("t5", "t5", "*.json"),
-    "t6": ("t6", "t6", "*.json"),
-    "t7": ("t7", "t7_*.json"),
-    "t8": ("t8", "t8_*.json"),
-}
-
 
 def load_tier(root: Path, tier: str) -> list[dict[str, Any]]:
-    """All result records for one tier (summaries and run dirs excluded)."""
-    if tier not in TIER_GLOBS:
-        return []
-    parts = TIER_GLOBS[tier]
-    base = root.joinpath(*parts[:-1])
-    pattern = parts[-1]
-    records: list[dict[str, Any]] = []
-    for path in sorted(base.glob(pattern)):
-        if not path.is_file():
-            continue
-        try:
-            rec = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(rec, dict) and rec.get("case_id") and rec.get("test_id"):
-            rec["_path"] = path.name
-            records.append(rec)
-    return records
+    """Deprecated wrapper around the canonical loader (kept for callers).
+
+    Report generation itself performs exactly one ``load_evidence`` call and
+    reuses its tiers, so no file is ever parsed twice or interpreted
+    differently by different consumers.
+    """
+    return load_evidence(root, tiers=(tier,)).records
+
+
+def evidence_tiers(root: Path, campaign: str | None = None):
+    """Load the full evidence root once through the canonical loader."""
+    return load_evidence(root, campaign=campaign)
 
 
 def profile_of(rec: dict[str, Any]) -> str:
@@ -134,25 +126,12 @@ def cases_with(records: list[dict[str, Any]], test_prefix: str):
     return grouped
 
 
-def metric_by_engine(records: list[dict[str, Any]], test_id: str, *path):
-    """metric value at `path` for each engine for one case."""
-    out: dict[str, Any] = {}
-    for r in records:
-        if r.get("test_id") != test_id:
-            continue
-        node: Any = r.get("metrics", {})
-        for key in path:
-            node = node.get(key) if isinstance(node, dict) else None
-        eng = str(r.get("engine", "?"))
-        if eng not in out or r.get("status") == "pass":
-            out[eng] = node
-    return out
-
-
 def git_commit() -> str | None:
     try:
         return subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
             check=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
@@ -170,6 +149,7 @@ def build_support_matrix(tiers: dict[str, list]) -> dict[str, Any]:
     behaviour was observed).  Matching is on the composite
     ``case_id__test_id`` key.
     """
+
     def sel(tier: str, *prefixes: str) -> list[dict[str, Any]]:
         recs = tiers.get(tier, [])
         if not prefixes:
@@ -182,9 +162,7 @@ def build_support_matrix(tiers: dict[str, list]) -> dict[str, Any]:
         return out
 
     def sel_test(tier: str, *test_ids: str) -> list[dict[str, Any]]:
-        return [
-            r for r in tiers.get(tier, []) if r.get("test_id") in test_ids
-        ]
+        return [r for r in tiers.get(tier, []) if r.get("test_id") in test_ids]
 
     workload_map = {
         "single_point": sel("t1") + sel("t4", "t4_singlepoint__"),
@@ -202,12 +180,17 @@ def build_support_matrix(tiers: dict[str, list]) -> dict[str, Any]:
         "defect": sel("t4", "t4_vacancy__"),
         "surface": sel("t4", "t4_surface__"),
         "formation_energy": sel("t4", "t4_energetics__t4i_formation"),
-        "neb": sel("t5", "t5_endpoints__", "t5_path_init__", "t5_neb__",
-                   "t5_resume__"),
+        "neb": sel("t5", "t5_endpoints__", "t5_path_init__", "t5_neb__", "t5_resume__"),
         "saddle_hessian": sel("t5", "t5_saddle__"),
         "short_nve": sel("t6", "t6_nve__"),
-        "short_nvt": sel("t6", "t6_langevin__", "t6_bussi__", "t6_nhc__",
-                         "t6_constraints__", "t6_force_safety__"),
+        "short_nvt": sel(
+            "t6",
+            "t6_langevin__",
+            "t6_bussi__",
+            "t6_nhc__",
+            "t6_constraints__",
+            "t6_force_safety__",
+        ),
         "transport_demo": sel("t7", "t7_md__", "t7_transport__"),
         "mechanism_analysis": sel("t7", "t7_gemdat__"),
         "arrhenius": sel("t7", "t7_arrhenius__"),
@@ -224,15 +207,14 @@ def build_support_matrix(tiers: dict[str, list]) -> dict[str, Any]:
             labels = []
             statuses = status_counts(recs)
             if statuses.get("pass") and not any(
-                s in statuses for s in ("fail", "characterized",
-                                        "unsupported", "blocked")
+                s in statuses
+                for s in ("fail", "characterized", "unsupported", "blocked")
             ):
                 labels.append("software_validated")
             else:
                 labels.append("model_characterized")
             labels += [
-                extra for extra in ("unsupported", "blocked")
-                if statuses.get(extra)
+                extra for extra in ("unsupported", "blocked") if statuses.get(extra)
             ]
             per_profile[eng] = {
                 "labels": labels,
@@ -242,13 +224,16 @@ def build_support_matrix(tiers: dict[str, list]) -> dict[str, Any]:
         matrix[workload] = per_profile
     # never-run-by-design workloads stay explicit
     matrix["install"] = {
-        eng: {"labels": ["software_validated"],
-              "records": 0,
-              "note": "CI software tests (installer, doctor, runtime "
-                      "validation); no model involved"}
+        eng: {
+            "labels": ["software_validated"],
+            "records": 0,
+            "note": "CI software tests (installer, doctor, runtime "
+            "validation); no model involved",
+        }
         for eng in ENGINE_ORDER
     }
     return matrix
+
 
 # --------------------------------------------------------------- coverage
 
@@ -274,6 +259,7 @@ def build_coverage_table(tiers: dict[str, list]) -> list[dict[str, str]]:
     t6 = tiers["t6"]
     t7 = tiers["t7"]
     t8 = tiers["t8"]
+
     def row(records, *prefixes):
         """Select records by case__test composite-key prefix."""
         if not prefixes:
@@ -281,75 +267,123 @@ def build_coverage_table(tiers: dict[str, list]) -> list[dict[str, str]]:
         return [
             r
             for r in records
-            if f"{r.get('case_id', '')}__{r.get('test_id', '')}".startswith(
-                prefixes
-            )
+            if f"{r.get('case_id', '')}__{r.get('test_id', '')}".startswith(prefixes)
         ]
 
     rows = [
-        ("Energy / forces", "native", t1 + t3,
-         "four-backend inference + OMat24 labels"),
-        ("Stress", "native when backend supports", t1 + t2fd,
-         "numerical strain derivative; OMat24 reference stress absent"),
-        ("Ionic relaxation", "native", row(t4, "t4_relax__"),
-         "Cu/Si/MgO/Na3PS4"),
-        ("Cell relaxation", "native when stress + 3D PBC",
-         row(t4, "t4_cellrelax__"), "FrechetCellFilter cases"),
-        ("EOS / bulk modulus", "validation recipe", row(t4, "t4_eos__"),
-         "Cu/Si/MgO"),
-        ("Elastic constants", "validation recipe", row(t4, "t4_elastic__"),
-         "cubic finite strain, clamped vs relaxed ions"),
-        ("Harmonic phonons", "validation recipe", row(t4, "t4_phonon__"),
-         "Cu/Si"),
-        ("Vibrational thermodynamics", "validation recipe",
-         row(t4, "t4_thermo__"), "harmonic only, q-averaged"),
-        ("Vacancy energy", "validation recipe", row(t4, "t4_vacancy__"),
-         "Cu finite-size trend"),
-        ("Interstitial", "characterization", [],
-         "optional OOD; not exercised in beta"),
-        ("Surface energy", "characterization", row(t4, "t4_surface__"),
-         "Cu(111) convergence"),
-        ("Formation energy", "conditional",
-         row(t4, "t4_energetics__t4i_formation"),
-         "only exact OMat references"),
-        ("NEB", "native",
-         row(t5, "t5_neb__", "t5_path_init__", "t5_endpoints__",
-             "t5_resume__"),
-         "Cu vacancy + Na3PS4"),
+        (
+            "Energy / forces",
+            "native",
+            t1 + t3,
+            "four-backend inference + OMat24 labels",
+        ),
+        (
+            "Stress",
+            "native when backend supports",
+            t1 + t2fd,
+            "numerical strain derivative; OMat24 reference stress absent",
+        ),
+        ("Ionic relaxation", "native", row(t4, "t4_relax__"), "Cu/Si/MgO/Na3PS4"),
+        (
+            "Cell relaxation",
+            "native when stress + 3D PBC",
+            row(t4, "t4_cellrelax__"),
+            "FrechetCellFilter cases",
+        ),
+        ("EOS / bulk modulus", "validation recipe", row(t4, "t4_eos__"), "Cu/Si/MgO"),
+        (
+            "Elastic constants",
+            "validation recipe",
+            row(t4, "t4_elastic__"),
+            "cubic finite strain, clamped vs relaxed ions",
+        ),
+        ("Harmonic phonons", "validation recipe", row(t4, "t4_phonon__"), "Cu/Si"),
+        (
+            "Vibrational thermodynamics",
+            "validation recipe",
+            row(t4, "t4_thermo__"),
+            "harmonic only, q-averaged",
+        ),
+        (
+            "Vacancy energy",
+            "validation recipe",
+            row(t4, "t4_vacancy__"),
+            "Cu finite-size trend",
+        ),
+        ("Interstitial", "characterization", [], "optional OOD; not exercised in beta"),
+        (
+            "Surface energy",
+            "characterization",
+            row(t4, "t4_surface__"),
+            "Cu(111) convergence",
+        ),
+        (
+            "Formation energy",
+            "conditional",
+            row(t4, "t4_energetics__t4i_formation"),
+            "only exact OMat references",
+        ),
+        (
+            "NEB",
+            "native",
+            row(t5, "t5_neb__", "t5_path_init__", "t5_endpoints__", "t5_resume__"),
+            "Cu vacancy + Na3PS4",
+        ),
         ("CI-NEB", "native", row(t5, "t5_neb__"), "same"),
-        ("Saddle Hessian", "validation recipe", row(t5, "t5_saddle__"),
-         "Cu vacancy candidate"),
+        (
+            "Saddle Hessian",
+            "validation recipe",
+            row(t5, "t5_saddle__"),
+            "Cu vacancy candidate",
+        ),
         ("NVE MD", "native", row(t6, "t6_nve__"), "timestep convergence"),
-        ("NVT MD", "native",
-         row(t6, "t6_langevin__", "t6_bussi__", "t6_nhc__"),
-         "Langevin/Bussi/NHC"),
+        (
+            "NVT MD",
+            "native",
+            row(t6, "t6_langevin__", "t6_bussi__", "t6_nhc__"),
+            "Langevin/Bussi/NHC",
+        ),
         ("NPT MD", "unsupported", [], "do not claim"),
-        ("RDF/MSD/VACF/density", "native analysis", row(t7, "t7_md__"),
-         "synthetic + real"),
-        ("Kinisi transport", "native optional analysis",
-         row(t7, "t7_transport__"), "synthetic + real"),
-        ("GEMDAT mechanism", "native optional analysis",
-         row(t7, "t7_gemdat__"), "real trajectory"),
-        ("Arrhenius", "native analysis", row(t7, "t7_arrhenius__"),
-         "synthetic; physical conditional"),
-        ("Band structure/DOS", "unsupported", [],
-         "electronic structure absent"),
+        (
+            "RDF/MSD/VACF/density",
+            "native analysis",
+            row(t7, "t7_md__"),
+            "synthetic + real",
+        ),
+        (
+            "Kinisi transport",
+            "native optional analysis",
+            row(t7, "t7_transport__"),
+            "synthetic + real",
+        ),
+        (
+            "GEMDAT mechanism",
+            "native optional analysis",
+            row(t7, "t7_gemdat__"),
+            "real trajectory",
+        ),
+        (
+            "Arrhenius",
+            "native analysis",
+            row(t7, "t7_arrhenius__"),
+            "synthetic; physical conditional",
+        ),
+        ("Band structure/DOS", "unsupported", [], "electronic structure absent"),
         ("Charge/Bader/ELF", "unsupported", [], "electronic density absent"),
-        ("Dielectric/Born/piezo", "unsupported", [],
-         "electric-field response absent"),
-        ("k-point/ENCUT/SCF convergence", "DFT-reference-only", [],
-         "not an MLIP test"),
+        ("Dielectric/Born/piezo", "unsupported", [], "electric-field response absent"),
+        ("k-point/ENCUT/SCF convergence", "DFT-reference-only", [], "not an MLIP test"),
     ]
     table = []
     for name, status, records, evidence in rows:
-        table.append({
-            "workflow": name,
-            "mlipx_status": status,
-            "beta_status": _coverage_status(records),
-            "evidence": evidence,
-        })
+        table.append(
+            {
+                "workflow": name,
+                "mlipx_status": status,
+                "beta_status": _coverage_status(records),
+                "evidence": evidence,
+            }
+        )
     return table
-
 
 
 # ---------------------------------------------------------- README snippet
@@ -380,14 +414,16 @@ def t3_accuracy_line(t3_records: list[dict[str, Any]]) -> str:
     return (
         "Held-out OMat24 accuracy (E/atom MAE"
         + (f" over {n} structures" if n is not None else "")
-        + ", no elemental offsets fitted): " + "; ".join(parts)
+        + ", no elemental offsets fitted): "
+        + "; ".join(parts)
         + ". Stress parity is not computable: the official OMat24 validation"
         " split carries no reference stress labels."
     )
 
 
 def readme_validation_snippet(
-    matrix: dict[str, Any], t3_records: list[dict[str, Any]],
+    matrix: dict[str, Any],
+    t3_records: list[dict[str, Any]],
 ) -> str:
     """Generated validation block embedded in both READMEs (section 41.9).
 
@@ -444,8 +480,7 @@ def readme_validation_snippet(
             text = "+".join(labels)
             if entry.get("by_status"):
                 parts = [
-                    f"{st}x{cnt}"
-                    for st, cnt in sorted(entry["by_status"].items())
+                    f"{st}x{cnt}" for st, cnt in sorted(entry["by_status"].items())
                 ]
                 text += f" ({', '.join(parts)})"
             if entry.get("note"):
@@ -491,7 +526,8 @@ def md_provenance(root: Path, out_dir: Path, commits: str) -> str:
 def md_t1(records: list[dict[str, Any]]) -> str:
     grouped = engine_records(records)
     lines = [
-        "## T1: inference (energy / forces / stress)", "",
+        "## T1: inference (energy / forces / stress)",
+        "",
         "| engine | model identity | dtype | records | by status |",
         "|---|---|---|---|---|",
     ]
@@ -503,20 +539,20 @@ def md_t1(records: list[dict[str, Any]]) -> str:
         dtype = recs[0].get("dtype", "?")
         counts = status_counts(recs)
         by = ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
-        lines.append(
-            f"| {eng} | {identity} | {dtype} | {len(recs)} | {by} |"
-        )
+        lines.append(f"| {eng} | {identity} | {dtype} | {len(recs)} | {by} |")
     lines.append("")
     return "\n".join(lines)
 
 
 def md_t2(records: list[dict[str, Any]]) -> str:
     lines = [
-        "## T2: invariance, repeatability, A→B→A", "",
+        "## T2: invariance, repeatability, A→B→A",
+        "",
         "Tolerance policy: `max(10 x measured repeatability floor, "
         "absolute floor 1e-10 eV / 1e-9 eV/A / 1e-9 eV/A^3)`. The "
         "floors are measured per system/profile from repeated "
-        "identical inference before any transformed comparison.", "",
+        "identical inference before any transformed comparison.",
+        "",
         "Recorded outcome: the float64 profile (MACE) passes every "
         "check bitwise. The upstream-float32 builds (DPA, UMA) show "
         "1e-7..1e-6 eV coordinate-order arithmetic noise across most "
@@ -524,7 +560,8 @@ def md_t2(records: list[dict[str, Any]]) -> str:
         "invariance checks with the mlipx neighbor cache ON (energy "
         "deltas 0..1e-14 eV); with the cache OFF the same noise "
         "appears on most checks. These failures are recorded as-is, "
-        "not hidden.", "",
+        "not hidden.",
+        "",
         "| profile | records | by status |",
         "|---|---|---|",
     ]
@@ -542,8 +579,10 @@ def md_t2(records: list[dict[str, Any]]) -> str:
 
 def md_t2fd(records: list[dict[str, Any]]) -> str:
     lines = [
-        "## T2fd: force/stress vs finite-difference derivatives", "",
-        "| profile | records | by status |", "|---|---|---|",
+        "## T2fd: force/stress vs finite-difference derivatives",
+        "",
+        "| profile | records | by status |",
+        "|---|---|---|",
     ]
     by_profile: dict[str, list] = collections.defaultdict(list)
     for r in records:
@@ -561,12 +600,14 @@ def md_t3(records: list[dict[str, Any]], t3_csv: Path) -> str:
     if not records:
         return "## T3: OMat24 held-out evaluation\n\nnot_run.\n"
     lines = [
-        "## T3: OMat24 held-out evaluation (256-structure subset)", "",
+        "## T3: OMat24 held-out evaluation (256-structure subset)",
+        "",
         "No elemental offsets are fitted; model energies are compared "
         "to the OMat24 reference energies directly. The official "
         "OMat24 validation split carries no reference stress labels, "
         "so stress parity is not computable and is recorded as "
-        "absent.", "",
+        "absent.",
+        "",
         "| engine | E/atom MAE (eV) | E/atom RMSE | median | p95 | "
         "F comp MAE (eV/A) | F cosine min | records |",
         "|---|---|---|---|---|---|---|---|",
@@ -595,17 +636,15 @@ def md_t3(records: list[dict[str, Any]], t3_csv: Path) -> str:
         if stress.get("reference_stress_available") is False:
             lines.append("")
             lines.insert(
-                -1, f"({eng}: reference stress absent in the official "
-                "validation split)"
+                -1,
+                f"({eng}: reference stress absent in the official " "validation split)",
             )
     lines.append("")
     if t3_csv.exists():
         names = sorted(p.name for p in t3_csv.glob("t3_errors_*.csv"))
         if names:
             lines.append(
-                "Per-structure errors: " + ", ".join(
-                    f"`t3/{n}`" for n in names
-                ) + "."
+                "Per-structure errors: " + ", ".join(f"`t3/{n}`" for n in names) + "."
             )
             lines.append("")
     return "\n".join(lines)
@@ -618,20 +657,78 @@ def _by_composite(records: list[dict[str, Any]]) -> dict[str, list]:
     return grouped
 
 
-def _passing(grouped: dict[str, list], key: str) -> dict[str, dict]:
-    """engine -> record (prefer passing) for one composite case key."""
-    out: dict[str, dict] = {}
-    for r in grouped.get(key, []):
-        eng = str(r.get("engine", "?"))
-        if eng not in out or r.get("status") == "pass":
-            out[eng] = r
+def _profile_records(grouped: dict[str, list], key: str) -> dict[str, list]:
+    """engine -> ALL records for one composite case key.
+
+    Never selects a "preferred" record: when a model/profile combination has
+    both a float32 failure and a float64 pass, both stay visible (task book
+    section 3.4).
+    """
+    out: dict[str, list] = {}
+    for record in grouped.get(key, []):
+        out.setdefault(str(record.get("engine", "?")), []).append(record)
+    for records in out.values():
+        records.sort(key=lambda r: (str(r.get("dtype", "")), str(r.get("_path", ""))))
     return out
+
+
+def profile_label(record: dict[str, Any]) -> str:
+    """Human-readable profile identity for report cells."""
+    engine = str(record.get("engine", "?"))
+    dtype = str(record.get("dtype", "?"))
+    head = record.get("head")
+    label = f"{engine}/{dtype}"
+    if head:
+        label += f"/{head}"
+    profile_id = str(record.get("profile_id") or "")
+    if profile_id:
+        label += f"#{profile_id.rsplit('-', 1)[-1][:6]}"
+    return label
+
+
+def _engine_profiles(table: dict[str, list]) -> list[dict[str, Any]]:
+    """All records in engine order, with their profile labels."""
+    return [record for engine in ENGINE_ORDER for record in table.get(engine, [])]
+
+
+def _cell_profiles(table: dict[str, list], render) -> str:
+    """Render every profile as `label: value`, joining with ``<br>``."""
+    parts = []
+    for engine in ENGINE_ORDER:
+        records = table.get(engine, [])
+        for record in records:
+            value = render(record)
+            if value is None:
+                continue
+            if len(records) == 1:
+                parts.append(str(value))
+            else:
+                parts.append(f"{profile_label(record)}: {value}")
+    return "<br>".join(parts) if parts else "\u2014"
+
+
+def _engine_cell(table: dict[str, list], engine: str, render) -> str:
+    """Render one engine column, keeping every profile of that engine."""
+    records = table.get(engine, [])
+    if not records:
+        return "\u2014"
+    return _cell_profiles({engine: records}, render)
+
+
+def _verdicts(table: dict[str, list]) -> str:
+    """`label: status` for every record of a composite key."""
+    parts = [
+        f"{profile_label(record)}: {record.get('status')}"
+        for record in _engine_profiles(table)
+    ]
+    return "<br>".join(parts) if parts else "not_run"
 
 
 def md_t4(records: list[dict[str, Any]]) -> str:
     g = _by_composite(records)
     lines = [
-        "## T4: static workflows", "",
+        "## T4: static workflows",
+        "",
         "Two harness defects were found while rendering this report "
         "and fixed with regression tests; the affected records were "
         "archived under `.validation-work/attic/` and regenerated on "
@@ -647,26 +744,28 @@ def md_t4(records: list[dict[str, Any]]) -> str:
     # relax
     systems = ("cu_fcc", "si_diamond", "mgo_rocksalt", "na3ps4")
     lines += [
-        "### Ionic relaxation (fixed cell, FIRE / LBFGS)", "",
+        "### Ionic relaxation (fixed cell, FIRE / LBFGS)",
+        "",
         "| system | FIRE: status (fmax, steps) | LBFGS: status (fmax, "
         "steps) | optimizer agreement |",
         "|---|---|---|---|",
     ]
+
+    def _relax_cell(table):
+        return _cell_profiles(
+            table,
+            lambda rec: (
+                f"{rec.get('status')} "
+                f"(fmax {_fmt(rec['metrics'].get('fmax_final'))}, "
+                f"{rec['metrics'].get('steps')} steps)"
+            ),
+        )
+
     for sys_ in systems:
-        fire = _passing(g, f"t4_relax__t4b_{sys_}_fire")
-        lbfgs = _passing(g, f"t4_relax__t4b_{sys_}_lbfgs")
+        fire = _profile_records(g, f"t4_relax__t4b_{sys_}_fire")
+        lbfgs = _profile_records(g, f"t4_relax__t4b_{sys_}_lbfgs")
         agree = g.get(f"t4_relax__t4b_{sys_}_optimizer_agreement", [])
-        cells = []
-        for table in (fire, lbfgs):
-            if not table:
-                cells.append("—")
-                continue
-            rec = next(iter(table.values()))
-            m = rec["metrics"]
-            cells.append(
-                f"{rec.get('status')} (fmax {_fmt(m.get('fmax_final'))}, "
-                f"{m.get('steps')} steps)"
-            )
+        cells = [_relax_cell(fire), _relax_cell(lbfgs)]
         a0 = agree[0]["metrics"] if agree else {}
         astatus = worst(agree) if agree else "not_run"
         cells.append(
@@ -677,9 +776,10 @@ def md_t4(records: list[dict[str, Any]]) -> str:
     lines.append("")
     # cell relax
     lines += [
-        "### Cell relaxation (FrechetCellFilter, requires stress + 3D "
-        "PBC)", "",
-        "| system | status (dV, dE) |", "|---|---|",
+        "### Cell relaxation (FrechetCellFilter, requires stress + 3D " "PBC)",
+        "",
+        "| system | status (dV, dE) |",
+        "|---|---|",
     ]
     for sys_ in systems:
         recs = g.get(f"t4_cellrelax__t4b_cell_{sys_}", [])
@@ -706,55 +806,44 @@ def md_t4(records: list[dict[str, Any]]) -> str:
         "| system | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
+
+    def _eos(rec):
+        fit = rec["metrics"].get("fits", {}).get("birchmurnaghan", {})
+        return f"{_fmt(fit.get('b0_GPa'))} / {_fmt(fit.get('v0_A3'))}"
+
     for sys_ in ("cu_fcc", "si_diamond", "mgo_rocksalt"):
-        table = _passing(g, f"t4_eos__t4c_{sys_}")
-        cells = []
-        for eng in ENGINE_ORDER:
-            rec = table.get(eng)
-            if rec is None:
-                cells.append("—")
-                continue
-            fit = rec["metrics"].get("fits", {}).get("birchmurnaghan", {})
-            cells.append(
-                f"{_fmt(fit.get('b0_GPa'))} / {_fmt(fit.get('v0_A3'))}"
-            )
+        table = _profile_records(g, f"t4_eos__t4c_{sys_}")
+        cells = [_engine_cell(table, eng, _eos) for eng in ENGINE_ORDER]
         lines.append(f"| {sys_} | " + " | ".join(cells) + " |")
     lines.append("")
     # elastic
     lines += [
-        "### Cubic elastic constants (GPa, finite-strain fits)", "",
+        "### Cubic elastic constants (GPa, finite-strain fits)",
+        "",
         "| system | variant | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|---|",
     ]
+
+    def _elastic(rec):
+        m = rec["metrics"]
+        bs = m.get("born_stability") or {}
+        stability = "stable" if bs and all(bool(v) for v in bs.values()) else "unstable"
+        return (
+            f"{_fmt(m.get('C11_GPa'))}/{_fmt(m.get('C12_GPa'))}"
+            f"/{_fmt(m.get('C44_GPa'))} ({stability})"
+        )
+
     for sys_ in ("cu_fcc", "si_diamond"):
         for variant in ("clamped", "relaxed"):
-            table = _passing(g, f"t4_elastic__t4d_{sys_}_{variant}")
-            cells = []
-            born = "—"
-            for eng in ENGINE_ORDER:
-                rec = table.get(eng)
-                if rec is None:
-                    cells.append("—")
-                    continue
-                m = rec["metrics"]
-                bs = m.get("born_stability") or {}
-                born = (
-                    "stable" if all(bool(v) for v in bs.values())
-                    else f"unstable {bs}"
-                )
-                cells.append(
-                    f"{_fmt(m.get('C11_GPa'))}/{_fmt(m.get('C12_GPa'))}"
-                    f"/{_fmt(m.get('C44_GPa'))}"
-                )
-            lines.append(
-                f"| {sys_} | {variant} | " + " | ".join(cells)
-                + f" | born: {born} |"
-            )
+            table = _profile_records(g, f"t4_elastic__t4d_{sys_}_{variant}")
+            cells = [_engine_cell(table, eng, _elastic) for eng in ENGINE_ORDER]
+            lines.append(f"| {sys_} | {variant} | " + " | ".join(cells) + " |")
     lines.append("")
     # phonons (aggregate over supercells and displacements)
     lines += [
         "### Harmonic phonons (min Gamma frequency, ASR-corrected; "
-        "min over supercell/displacement variants)", "",
+        "min over supercell/displacement variants)",
+        "",
         "| system | " + " | ".join(ENGINE_ORDER) + " | robust imaginary |",
         "|---|---|---|---|---|---|",
     ]
@@ -773,25 +862,21 @@ def md_t4(records: list[dict[str, Any]]) -> str:
                     eng = str(rec.get("engine"))
                     vals[eng] = min(vals.get(eng, 0.0), freqs[0])
                     imag[eng] = bool(
-                        imag.get(eng)
-                        or m.get("n_robust_imaginary_modes", 0) > 0
+                        imag.get(eng) or m.get("n_robust_imaginary_modes", 0) > 0
                     )
         cells = [
-            f"{_fmt(vals[e] * 1000, 3)} meV" if e in vals else "—"
-            for e in ENGINE_ORDER
+            f"{_fmt(vals[e] * 1000, 3)} meV" if e in vals else "—" for e in ENGINE_ORDER
         ]
         imag_cell = "<br>".join(
-            f"{e}: {'yes' if imag.get(e) else 'no'}"
-            for e in ENGINE_ORDER if e in imag
+            f"{e}: {'yes' if imag.get(e) else 'no'}" for e in ENGINE_ORDER if e in imag
         )
-        lines.append(
-            f"| {sys_} | " + " | ".join(cells) + f" | {imag_cell} |"
-        )
+        lines.append(f"| {sys_} | " + " | ".join(cells) + f" | {imag_cell} |")
     lines.append("")
     # thermodynamics
     lines += [
         "### Harmonic thermodynamics (per phonon unit cell, q-averaged "
-        "over the 8x8x8 MP grid; worst variant shown)", "",
+        "over the 8x8x8 MP grid; worst variant shown)",
+        "",
         "| system | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
@@ -807,9 +892,7 @@ def md_t4(records: list[dict[str, Any]]) -> str:
                 m = rec["metrics"]
                 eng = str(rec.get("engine"))
                 # worst (largest) variant value per engine
-                if eng not in zpe or (
-                    m.get("zero_point_energy_eV") or 0
-                ) > zpe[eng]:
+                if eng not in zpe or (m.get("zero_point_energy_eV") or 0) > zpe[eng]:
                     zpe[eng] = m.get("zero_point_energy_eV")
                 for tv in m.get("per_temperature") or []:
                     if tv.get("T_K") == 300.0:
@@ -826,46 +909,56 @@ def md_t4(records: list[dict[str, Any]]) -> str:
     lines.append("")
     # vacancy
     lines += [
-        "### Cu vacancy energy (relaxed, eV; finite-size trend)", "",
+        "### Cu vacancy energy (relaxed, eV; finite-size trend)",
+        "",
         "| supercell | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
     for size in ("2x2x2", "3x3x3", "4x4x4"):
-        table = _passing(g, f"t4_vacancy__t4g_cu_{size}")
+        table = _profile_records(g, f"t4_vacancy__t4g_cu_{size}")
         cells = [
-            _fmt(table[e]["metrics"].get("evac_relaxed_eV"))
-            if e in table else "—"
+            _engine_cell(
+                table,
+                e,
+                lambda rec: _fmt(rec["metrics"].get("evac_relaxed_eV")),
+            )
             for e in ENGINE_ORDER
         ]
         lines.append(f"| Cu {size} | " + " | ".join(cells) + " |")
     lines.append("")
     # surface
     lines += [
-        "### Cu(111) surface energy (relaxed, J/m^2)", "",
+        "### Cu(111) surface energy (relaxed, J/m^2)",
+        "",
         "| slab | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
-    for slab in ("4L_10A", "4L_15A", "6L_10A", "6L_15A", "8L_10A",
-                 "8L_15A"):
-        table = _passing(g, f"t4_surface__t4h_cu111_{slab}")
+    for slab in ("4L_10A", "4L_15A", "6L_10A", "6L_15A", "8L_10A", "8L_15A"):
+        table = _profile_records(g, f"t4_surface__t4h_cu111_{slab}")
         cells = [
-            _fmt(table[e]["metrics"].get("gamma_relaxed_J_m2"))
-            if e in table else "—"
+            _engine_cell(
+                table,
+                e,
+                lambda rec: _fmt(rec["metrics"].get("gamma_relaxed_J_m2")),
+            )
             for e in ENGINE_ORDER
         ]
         lines.append(f"| {slab} | " + " | ".join(cells) + " |")
     lines.append("")
     # energetics (conditional references)
-    lines += ["### Conditional reference energies (OMat24 exact refs)", "",
-              "| case | " + " | ".join(ENGINE_ORDER) + " |",
-              "|---|---|---|---|---|"]
-    for key, label in (("t4_energetics__t4i_cohesive", "Cu cohesive"),
-                       ("t4_energetics__t4i_formation",
-                        "formation (exact refs)")):
+    lines += [
+        "### Conditional reference energies (OMat24 exact refs)",
+        "",
+        "| case | " + " | ".join(ENGINE_ORDER) + " |",
+        "|---|---|---|---|---|",
+    ]
+    for key, label in (
+        ("t4_energetics__t4i_cohesive", "Cu cohesive"),
+        ("t4_energetics__t4i_formation", "formation (exact refs)"),
+    ):
         recs = g.get(key, [])
         if not recs:
-            lines.append(f"| {label} | " + " | ".join(["not_run"] * 4)
-                         + " |")
+            lines.append(f"| {label} | " + " | ".join(["not_run"] * 4) + " |")
             continue
         cells = []
         for eng in ENGINE_ORDER:
@@ -884,32 +977,38 @@ def md_t5(records: list[dict[str, Any]]) -> str:
     g = _by_composite(records)
     lines = ["## T5: NEB and saddle validation", ""]
     # endpoints + path init
-    ep = _passing(g, "t5_endpoints__t5a_cu_vacancy_endpoints")
+    ep = _profile_records(g, "t5_endpoints__t5a_cu_vacancy_endpoints")
     if ep:
-        parts = []
-        for eng, rec in ep.items():
-            m = rec["metrics"]
-            parts.append(
-                f"{eng}: converged {m.get('endpoints_converged')}, "
-                f"symmetry dE {_fmt(m.get('symmetry_delta_eV'))} eV"
-            )
-        lines += ["### NEB endpoints (Cu vacancy, relaxed fmax)",
-                  "", "<br>".join(parts), ""]
+        parts = [
+            f"{profile_label(rec)}: {rec.get('status')}, converged "
+            f"{rec['metrics'].get('endpoints_converged')}, symmetry dE "
+            f"{_fmt(rec['metrics'].get('symmetry_delta_eV'))} eV"
+            for rec in _engine_profiles(ep)
+        ]
+        lines += [
+            "### NEB endpoints (Cu vacancy, relaxed fmax)",
+            "",
+            "<br>".join(parts),
+            "",
+        ]
     pi = g.get("t5_path_init__t5b_cu_vacancy_linear_vs_idpp", [])
     if pi:
         rec = pi[0]
         m = rec["metrics"]
         lines += [
-            "### Path initialisation (linear vs IDPP)", "",
+            "### Path initialisation (linear vs IDPP)",
+            "",
             f"Linear band peak-vs-initial dE "
             f"{_fmt(m.get('linear_band_peak_minus_initial_eV'))} eV; "
             f"IDPP { _fmt(m.get('idpp_band_peak_minus_initial_eV'))} eV; "
             f"max segment { _fmt(m.get('linear_band_max_segment_A'))} A "
             f"(linear) / { _fmt(m.get('idpp_band_max_segment_A'))} A "
-            f"(IDPP); atom mapping: {m.get('mapping_check')}.", ""
+            f"(IDPP); atom mapping: {m.get('mapping_check')}.",
+            "",
         ]
     lines += [
-        "### CI-NEB barriers (sampled from recorded band energies)", "",
+        "### CI-NEB barriers (sampled from recorded band energies)",
+        "",
         "| path | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
@@ -918,19 +1017,20 @@ def md_t5(records: list[dict[str, Any]]) -> str:
         ("t5_neb__t5e_cu_vacancy_ci_neb7", "Cu vacancy NEB-7 (CI)"),
         ("t5_neb__t5i_na3ps4_na_hop_ci_neb5", "Na3PS4 Na-hop NEB-5 (CI)"),
     ):
-        table = _passing(g, key)
-        cells = []
-        for eng in ENGINE_ORDER:
-            rec = table.get(eng)
-            if rec is None:
-                cells.append("—")
-                continue
-            m = rec["metrics"]
-            cells.append(
-                f"fwd {_fmt(m.get('barrier_forward_sampled_eV'), 3)} eV "
-                f"({m.get('barrier_status')}, fmax "
-                f"{_fmt(m.get('max_neb_force_eV_A'), 3)})"
+        table = _profile_records(g, key)
+        cells = [
+            _engine_cell(
+                table,
+                eng,
+                lambda rec: (
+                    f"fwd "
+                    f"{_fmt(rec['metrics'].get('barrier_forward_sampled_eV'), 3)} "
+                    f"eV ({rec['metrics'].get('barrier_status')}, fmax "
+                    f"{_fmt(rec['metrics'].get('max_neb_force_eV_A'), 3)})"
+                ),
             )
+            for eng in ENGINE_ORDER
+        ]
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
     lines.append("")
     conv = g.get("t5_neb__t5e_image_convergence", [])
@@ -947,26 +1047,30 @@ def md_t5(records: list[dict[str, Any]]) -> str:
         r0 = res[0]
         m = r0["metrics"]
         lines += [
-            "### Checkpoint resume identity", "",
+            "### Checkpoint resume identity",
+            "",
             f"endpoint identity {m.get('endpoint_identity_preserved')}, "
             f"atom map {m.get('atom_map_preserved')}, run id "
             f"{m.get('run_id_preserved')}, options fingerprint "
             f"{m.get('resolved_options_fingerprint_preserved')}; "
-            f"status {r0.get('status')}.", ""
+            f"status {r0.get('status')}.",
+            "",
         ]
     sad = g.get("t5_saddle__t5h_saddle_hessian", [])
     if sad:
         lines += [
-            "### Saddle Hessian validation (Cu vacancy candidate)", "",
+            "### Saddle Hessian validation (Cu vacancy candidate)",
+            "",
             "| engine | verdict | persistent negative deltas | "
-            "eigenvalue spread ok |", "|---|---|---|---|",
+            "eigenvalue spread ok |",
+            "|---|---|---|---|",
         ]
         for r in sad:
             m = r["metrics"]
             sv = m.get("saddle_validation", {}) or {}
-            verdict = (
-                sv.get("verdict") if isinstance(sv, dict) else None
-            ) or r.get("status")
+            verdict = (sv.get("verdict") if isinstance(sv, dict) else None) or r.get(
+                "status"
+            )
             lines.append(
                 f"| {r.get('engine')} | {verdict} "
                 f"| {m.get('n_persistent_negative_deltas')} "
@@ -979,45 +1083,50 @@ def md_t5(records: list[dict[str, Any]]) -> str:
 def md_t6(records: list[dict[str, Any]]) -> str:
     g = _by_composite(records)
     lines = ["## T6: molecular dynamics (Cu32)", ""]
-    nve = _passing(g, "t6_nve__t6a_cu32_nve_timestep_sweep")
+    nve = _profile_records(g, "t6_nve__t6a_cu32_nve_timestep_sweep")
     if nve:
         lines += [
-            "### NVE timestep sweep (|drift| eV/atom/ps)", "",
-            "| dt (fs) | " + " | ".join(ENGINE_ORDER)
-            + " | all finite |", "|---|---|---|---|---|---|",
+            "### NVE timestep sweep (|drift| eV/atom/ps)",
+            "",
+            "| dt (fs) | " + " | ".join(ENGINE_ORDER) + " | all finite |",
+            "|---|---|---|---|---|---|",
         ]
-        first = next(iter(nve.values()))
-        dts = sorted(first["metrics"]["per_timestep"], key=float)
+        nve_records = _engine_profiles(nve)
+        dts = sorted(nve_records[0]["metrics"]["per_timestep"], key=float)
         for dt in dts:
             cells = []
             finite = []
             for eng in ENGINE_ORDER:
-                rec = nve.get(eng)
-                if rec is None:
-                    cells.append("—")
-                    continue
-                entry = rec["metrics"]["per_timestep"].get(dt) or {}
-                slope = entry.get("drift_slope_eV_atom_ps")
-                finite.append(bool(entry.get("all_finite")))
-                cells.append(
-                    _fmt(abs(slope), 3) if slope is not None else "—"
-                )
+                records = nve.get(eng, [])
+                fragments = []
+                for rec in records:
+                    entry = rec["metrics"]["per_timestep"].get(dt) or {}
+                    slope = entry.get("drift_slope_eV_atom_ps")
+                    finite.append(bool(entry.get("all_finite")))
+                    value = _fmt(abs(slope), 3) if slope is not None else "—"
+                    fragments.append(
+                        value if len(records) == 1 else f"{profile_label(rec)}: {value}"
+                    )
+                cells.append("<br>".join(fragments) if fragments else "—")
             lines.append(
-                f"| {dt} | " + " | ".join(cells)
+                f"| {dt} | "
+                + " | ".join(cells)
                 + f" | {all(finite) if finite else '—'} |"
             )
         imp = {
-            e: nve[e]["metrics"].get("drift_improves_with_timestep")
-            for e in nve
+            profile_label(rec): rec["metrics"].get("drift_improves_with_timestep")
+            for rec in nve_records
         }
         lines.append("")
         lines.append(
             "Drift improves with smaller timestep: "
-            + ", ".join(f"{e} {v}" for e, v in imp.items()) + "."
+            + ", ".join(f"{k} {v}" for k, v in imp.items())
+            + "."
         )
         lines.append("")
     lines += [
-        "### NVT thermostats (300 K target)", "",
+        "### NVT thermostats (300 K target)",
+        "",
         "| case | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
@@ -1026,19 +1135,19 @@ def md_t6(records: list[dict[str, Any]]) -> str:
         ("t6_bussi__t6c_cu32_nvt_bussi", "Bussi (CSVR)"),
         ("t6_nhc__t6d_cu32_nvt_nhc", "NHC"),
     ):
-        table = _passing(g, key)
-        cells = []
-        for eng in ENGINE_ORDER:
-            rec = table.get(eng)
-            if rec is None:
-                cells.append("—")
-                continue
-            m = rec["metrics"]
-            cells.append(
-                f"mean {_fmt(m.get('temperature_mean_K'), 3)} K, "
-                f"std {_fmt(m.get('temperature_std_K'), 3)} K "
-                f"({rec.get('status')})"
+        table = _profile_records(g, key)
+        cells = [
+            _engine_cell(
+                table,
+                eng,
+                lambda rec: (
+                    f"mean {_fmt(rec['metrics'].get('temperature_mean_K'), 3)} K, "
+                    f"std {_fmt(rec['metrics'].get('temperature_std_K'), 3)} K "
+                    f"({rec.get('status')})"
+                ),
             )
+            for eng in ENGINE_ORDER
+        ]
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
     lines.append("")
     con = g.get("t6_constraints__t6e_cu32_constraint_exactness", [])
@@ -1046,35 +1155,42 @@ def md_t6(records: list[dict[str, Any]]) -> str:
         r0 = con[0]
         m = r0["metrics"]
         lines += [
-            "### Constraint exactness (fixed atoms + COM)", "",
+            "### Constraint exactness (fixed atoms + COM)",
+            "",
             f"fixatoms DOF {m.get('fixatoms_dof')}/"
             f"{m.get('fixatoms_dof_expected')} (max deviation "
             f"{_fmt(m.get('fixatoms_max_position_deviation_A'))} A), "
             f"COM DOF {m.get('com_dof')}/{m.get('com_dof_expected')} "
             f"(max drift {_fmt(m.get('com_max_drift_A'))} A); "
-            f"status {r0.get('status')}.", ""
+            f"status {r0.get('status')}.",
+            "",
         ]
     fs = g.get("t6_force_safety__t6f_cu32_force_safety_abort", [])
     if fs:
         r0 = fs[0]
         m = r0["metrics"]
         lines += [
-            "### Force-safety abort", "",
+            "### Force-safety abort",
+            "",
             f"abort raised {m.get('abort_raised')} at step "
             f"{m.get('abort_step')} (raw force "
             f"{_fmt(m.get('abort_max_force_raw_eV_A'))} eV/A vs "
             f"threshold {_fmt(m.get('threshold_configured_eV_A'))}); "
             f"checkpoint {m.get('unsafe_frame_checkpointed')}, manifest "
             f"{m.get('artifacts_manifest_status')}; status "
-            f"{r0.get('status')}.", ""
+            f"{r0.get('status')}.",
+            "",
         ]
     return "\n".join(lines)
 
 
 def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
     g = _by_composite(records)
-    title = ("## T7: transport and mechanism analysis (alpha-Na3PS4)"
-             if not cn else "## T7：输运与机制分析（alpha-Na3PS4）")
+    title = (
+        "## T7: transport and mechanism analysis (alpha-Na3PS4)"
+        if not cn
+        else "## T7：输运与机制分析（alpha-Na3PS4）"
+    )
     lines = [title, ""]
     tr = {}
     for key, recs in g.items():
@@ -1083,10 +1199,11 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
                 tr.setdefault(str(r.get("engine")), {})[key] = r
     if tr:
         lines += [
-            "### Tracer diffusion (kinisi; D in m^2/s)", "",
+            "### Tracer diffusion (kinisi; D in m^2/s)",
+            "",
             "| engine | T (K) | D | 95% CI | sigma_NE (S/m) | "
-            "fit window (ps) | native MSD diag |", "|---|---|---|---|---|"
-            "---|---|",
+            "fit window (ps) | native MSD diag |",
+            "|---|---|---|---|---|" "---|---|",
         ]
         for eng in ENGINE_ORDER:
             for key in sorted(tr.get(eng, {})):
@@ -1095,11 +1212,9 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
                 kin = m.get("kinisi_transport", {}) or {}
                 post = kin.get("D_posterior_m2_s", {}) or {}
                 ci = post.get("credible_interval_95") or [None, None]
-                native = (m.get("native_msd", {}) or {}).get(
-                    "D_diagnostic_m2_s")
+                native = (m.get("native_msd", {}) or {}).get("D_diagnostic_m2_s")
                 temp = key.rsplit("_T", 1)[-1].replace("K", "")
-                msd_final = (m.get("native_msd", {}) or {}).get(
-                    "msd_final_A2")
+                msd_final = (m.get("native_msd", {}) or {}).get("msd_final_A2")
                 lines.append(
                     f"| {eng} | {temp} | {_fmt(post.get('mean'), 3)} "
                     f"| [{_fmt(ci[0], 3)}, {_fmt(ci[1], 3)}] "
@@ -1119,14 +1234,14 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
                 f"drift {_fmt(m.get('total_energy_drift_eV_atom_ps'), 3)} "
                 "eV/atom/ps"
             )
-        lines += ["### Production MD health (700 K)", "",
-                  "<br>".join(parts), ""]
+        lines += ["### Production MD health (700 K)", "", "<br>".join(parts), ""]
     arr = g.get("t7_arrhenius__t7b_na3ps4_arrhenius", [])
     if arr:
         lines += [
-            "### Arrhenius fit (stage 2, exploratory)", "",
-            "| engine | temperatures (K) | D (m^2/s) | Ea (eV) | r^2 "
-            "| status |", "|---|---|---|---|---|---|",
+            "### Arrhenius fit (stage 2, exploratory)",
+            "",
+            "| engine | temperatures (K) | D (m^2/s) | Ea (eV) | r^2 " "| status |",
+            "|---|---|---|---|---|---|",
         ]
         for r in arr:
             m = r["metrics"]
@@ -1149,9 +1264,12 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
             for r in recs:
                 gem.setdefault(str(r.get("engine")), {})[key] = r
     if gem:
-        lines += ["### GEMDAT mechanism crosscheck", "",
-                  "| engine | T (K) | jumps | mean/max jump dist (A) | "
-                  "status |", "|---|---|---|---|---|"]
+        lines += [
+            "### GEMDAT mechanism crosscheck",
+            "",
+            "| engine | T (K) | jumps | mean/max jump dist (A) | " "status |",
+            "|---|---|---|---|---|",
+        ]
         for eng in ENGINE_ORDER:
             for key in sorted(gem.get(eng, {})):
                 r = gem[eng][key]
@@ -1171,75 +1289,94 @@ def md_t8(records: list[dict[str, Any]]) -> str:
     g = _by_composite(records)
     lines = ["## T8: performance (V100-16GB)", ""]
     lines += [
-        "### Single-point warm latency (median ms)", "",
+        "### Single-point warm latency (median ms)",
+        "",
         "| atoms | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
     for n in (32, 128, 512):
-        table = _passing(g, f"t8_sp_scaling_{n}__t8_performance")
-        cells = []
-        vram = {}
-        for eng in ENGINE_ORDER:
-            rec = table.get(eng)
-            if rec is None:
-                cells.append("—")
-                continue
-            m = rec["metrics"]
-            cells.append(_fmt(m.get("warm_call_median_seconds", 0) * 1e3, 3))
-            vram[eng] = m.get("peak_vram_mib")
+        table = _profile_records(g, f"t8_sp_scaling_{n}__t8_performance")
+        cells = [
+            _engine_cell(
+                table,
+                eng,
+                lambda rec: _fmt(
+                    (rec["metrics"].get("warm_call_median_seconds") or 0) * 1e3,
+                    3,
+                ),
+            )
+            for eng in ENGINE_ORDER
+        ]
         lines.append(f"| {n} | " + " | ".join(cells) + " |")
     lines.append("")
     lines += [
-        "### NVE MD throughput (steps/s / atom-steps/s)", "",
+        "### NVE MD throughput (steps/s / atom-steps/s)",
+        "",
         "| atoms | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
     for n in (128, 512):
-        table = _passing(g, f"t8_md_throughput_{n}__t8_performance")
-        cells = []
-        for eng in ENGINE_ORDER:
-            rec = table.get(eng)
-            if rec is None:
-                cells.append("—")
-                continue
-            m = rec["metrics"]
-            cells.append(
-                f"{_fmt(m.get('steps_per_second'), 3)} / "
-                f"{_fmt(m.get('atom_steps_per_second'), 3)}"
+        table = _profile_records(g, f"t8_md_throughput_{n}__t8_performance")
+        cells = [
+            _engine_cell(
+                table,
+                eng,
+                lambda rec: (
+                    f"{_fmt(rec['metrics'].get('steps_per_second'), 3)} / "
+                    f"{_fmt(rec['metrics'].get('atom_steps_per_second'), 3)}"
+                ),
             )
+            for eng in ENGINE_ORDER
+        ]
         lines.append(f"| {n} | " + " | ".join(cells) + " |")
     lines.append("")
     vram_parts = []
-    table = _passing(g, "t8_sp_scaling_512__t8_performance")
-    for eng in ENGINE_ORDER:
-        rec = table.get(eng)
-        if rec and rec["metrics"].get("peak_vram_mib") is not None:
+    table = _profile_records(g, "t8_sp_scaling_512__t8_performance")
+    for rec in _engine_profiles(table):
+        if rec["metrics"].get("peak_vram_mib") is not None:
             vram_parts.append(
-                f"{eng} {_fmt(rec['metrics']['peak_vram_mib'])} MiB"
+                f"{profile_label(rec)} " f"{_fmt(rec['metrics']['peak_vram_mib'])} MiB"
             )
     if vram_parts:
-        lines.append("Peak VRAM at 512 atoms: " + ", ".join(vram_parts)
-                     + ".")
+        lines.append("Peak VRAM at 512 atoms: " + ", ".join(vram_parts) + ".")
         lines.append("")
     return "\n".join(lines)
 
 
-
 def md_support_matrix(matrix: dict[str, Any]) -> str:
     order = [
-        "install", "single_point", "forces", "stress",
-        "force_energy_consistency", "stress_energy_consistency",
-        "invariance_caching", "fixed_cell_relax", "cell_relax", "eos",
-        "elastic", "phonon", "thermodynamics", "defect", "surface",
-        "formation_energy", "neb", "saddle_hessian", "short_nve",
-        "short_nvt", "transport_demo", "mechanism_analysis",
-        "arrhenius", "performance",
+        "install",
+        "single_point",
+        "forces",
+        "stress",
+        "force_energy_consistency",
+        "stress_energy_consistency",
+        "invariance_caching",
+        "fixed_cell_relax",
+        "cell_relax",
+        "eos",
+        "elastic",
+        "phonon",
+        "thermodynamics",
+        "defect",
+        "surface",
+        "formation_energy",
+        "neb",
+        "saddle_hessian",
+        "short_nve",
+        "short_nvt",
+        "transport_demo",
+        "mechanism_analysis",
+        "arrhenius",
+        "performance",
     ]
     lines = [
-        "## Support matrix (section 39 classification)", "",
+        "## Support matrix (section 39 classification)",
+        "",
         "`software_validated` and `model_characterized` coexist; "
         "`fail`/`characterized` records keep the workload classified "
-        "as characterized, with the record counts visible.", "",
+        "as characterized, with the record counts visible.",
+        "",
         "| workload | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
@@ -1255,9 +1392,7 @@ def md_support_matrix(matrix: dict[str, Any]) -> str:
             if note:
                 label += " *"
             cells.append(label)
-        lines.append(
-            f"| {workload} | " + " | ".join(cells) + " |"
-        )
+        lines.append(f"| {workload} | " + " | ".join(cells) + " |")
     lines.append("")
     lines.append(
         "\\* install rows cover software validation only (installer, "
@@ -1308,9 +1443,15 @@ def evidence_commits(tiers: dict[str, list[dict[str, Any]]]) -> str:
     return ", ".join(commits)
 
 
-def _summary_json(root: Path, out_dir: Path,
-                  tiers: dict[str, list], matrix: dict,
-                  coverage: list) -> dict[str, Any]:
+def _summary_json(
+    root: Path,
+    out_dir: Path,
+    tiers: dict[str, list],
+    matrix: dict,
+    coverage: list,
+    bundle=None,
+    canonical: dict | None = None,
+) -> dict[str, Any]:
     t3 = tiers["t3"]
     omat = {}
     for r in t3:
@@ -1334,9 +1475,7 @@ def _summary_json(root: Path, out_dir: Path,
         "schema": "mlipx.beta-validation-summary/1",
         "generated_from": str(root),
         "code_commit": evidence_commits(tiers),
-        "model_profiles": {
-            eng: ENGINE_LABELS[eng] for eng in ENGINE_ORDER
-        },
+        "model_profiles": {eng: ENGINE_LABELS[eng] for eng in ENGINE_ORDER},
         "tiers": {
             tier: {
                 "records": len(records),
@@ -1349,25 +1488,77 @@ def _summary_json(root: Path, out_dir: Path,
         "coverage_table": coverage,
         "harness_violations": violations,
         "problems": problems,
+        # The canonical aggregate view is embedded verbatim so report counts
+        # and profile verdicts are provably identical to ``aggregate.py``
+        # output for the same evidence (task book PR-A acceptance).
+        "canonical_summary": (
+            {
+                "record_counts": canonical["record_counts"],
+                "profiles": canonical["profiles"],
+                "support_matrix": canonical["support_matrix"],
+                "expected_matrix": canonical["expected_matrix"],
+                "problems": canonical["problems"],
+                "harness_violations": canonical["harness_violations"],
+                "import_summary": canonical["import_summary"],
+            }
+            if canonical is not None
+            else None
+        ),
+        "canonical_loader": {
+            "scanned_files": bundle.scanned_files if bundle is not None else None,
+            "ancillary_files": bundle.ancillary_files if bundle is not None else None,
+            "migrated_records": bundle.migrated_records if bundle is not None else None,
+            "out_of_scope_records": (
+                bundle.out_of_scope_records if bundle is not None else None
+            ),
+            "untagged_records": (
+                bundle.untagged_records if bundle is not None else None
+            ),
+            "campaign": bundle.campaign if bundle is not None else None,
+        },
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-root", default=".validation-work")
+    parser.add_argument("--out", default="validation/science/reports")
     parser.add_argument(
-        "--out", default="validation/science/reports"
+        "--campaign",
+        default=None,
+        help=(
+            "restrict the report to records tagged with this campaign id; "
+            "records for other campaigns are out of scope"
+        ),
     )
     args = parser.parse_args()
     root = Path(args.evidence_root)
     out = Path(args.out)
+
+    bundle = evidence_tiers(root, campaign=args.campaign)
+    for problem in bundle.problems:
+        print(f"[report] PROBLEM: {problem}", file=sys.stderr)
+    if bundle.problems:
+        print(
+            f"[report] refusing to render: {len(bundle.problems)} evidence "
+            "problem(s); fix or quarantine them first",
+            file=sys.stderr,
+        )
+        return 2
+    if not bundle.records:
+        print(
+            f"[report] refusing to render: no result records under {root}",
+            file=sys.stderr,
+        )
+        return 3
     out.mkdir(parents=True, exist_ok=True)
 
-    tiers = {tier: load_tier(root, tier) for tier in TIER_GLOBS}
+    tiers = {tier: bundle.tier(tier) for tier in TIER_NAMES}
+    canonical = aggregate_records(bundle.records, loader=bundle)
     matrix = build_support_matrix(tiers)
     coverage = build_coverage_table(tiers)
 
-    summary = _summary_json(root, out, tiers, matrix, coverage)
+    summary = _summary_json(root, out, tiers, matrix, coverage, bundle, canonical)
     (out / "beta-summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
     )
@@ -1386,12 +1577,9 @@ def main() -> int:
         md_support_matrix(matrix),
         md_limitations(),
     ]
-    (out / "BETA_VALIDATION.md").write_text(
-        "\n".join(sections_en), encoding="utf-8"
-    )
+    (out / "BETA_VALIDATION.md").write_text("\n".join(sections_en), encoding="utf-8")
     (out / "README_VALIDATION.md").write_text(
-        readme_validation_snippet(matrix, tiers.get("t3", [])) + "\n",
-        encoding="utf-8"
+        readme_validation_snippet(matrix, tiers.get("t3", [])) + "\n", encoding="utf-8"
     )
 
     sections_cn = [
@@ -1417,14 +1605,14 @@ def main() -> int:
         md_support_matrix(matrix),
         md_limitations(),
     ]
-    (out / "BETA_VALIDATION_CN.md").write_text(
-        "\n".join(sections_cn), encoding="utf-8"
-    )
+    (out / "BETA_VALIDATION_CN.md").write_text("\n".join(sections_cn), encoding="utf-8")
     for tier, records in tiers.items():
         counts = status_counts(records)
         print(f"[report] {tier}: {len(records)} records, {counts}")
-    print(f"[report] wrote {out}/beta-summary.json, "
-          f"BETA_VALIDATION.md, BETA_VALIDATION_CN.md")
+    print(
+        f"[report] wrote {out}/beta-summary.json, "
+        f"BETA_VALIDATION.md, BETA_VALIDATION_CN.md"
+    )
     return 0
 
 

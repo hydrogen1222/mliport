@@ -440,7 +440,12 @@ def test_aggregate_keeps_float32_fail_visible_next_to_float64_pass(tmp_path):
     by_status = {b["status"] for b in buckets.values()}
     assert by_status == {"fail", "pass"}
     matrix = summary["support_matrix"]["mace"]["energy"]
-    assert matrix["status"] == "fail", "worst status must win"
+    # Engine-level cells are only a single status when every profile agrees;
+    # mixed profiles are reported as "mixed" with the worst kept alongside so
+    # a float32 failure can never be compressed into a passing engine
+    # (task book section 3.4).
+    assert matrix["status"] == "mixed"
+    assert matrix["worst_status"] == "fail"
     assert set(matrix["by_profile"].values()) == {"fail", "pass"}
     # dtype is part of the profile identity, so the two never merge
     assert len({pid.split("-")[1] for pid in buckets}) == 2
@@ -1458,7 +1463,7 @@ def test_t3_summary_json_keeps_energy_and_force_metrics_without_stress():
             "n_structures": 256,
         },
     }
-    tiers = {tier: [] for tier in report.TIER_GLOBS}
+    tiers = {tier: [] for tier in report.TIER_NAMES}
     tiers["t3"] = [t3_record]
     summary = report._summary_json(Path("."), Path("."), tiers, {}, [])
     uma = summary["omat24"]["uma"]

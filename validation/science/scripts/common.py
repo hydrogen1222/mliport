@@ -1,7 +1,8 @@
 """Shared infrastructure for the mlipx beta scientific validation suite.
 
 Every result record produced by this suite carries ``mlipx.beta-validation-
-result/1`` and identifies the calculation independently of folder names:
+result/2`` (migrated in memory from ``/1`` by the canonical evidence loader)
+and identifies the calculation independently of folder names:
 model identity and SHA-256, task/head, dtype, backend/framework versions,
 GPU identity (hashed UUID), input-structure hash, parameters, metrics and
 timing.  The suite revision is bumped whenever formulas, selection rules,
@@ -27,47 +28,45 @@ if TYPE_CHECKING:
 
     from ase import Atoms
 
-BETA_VALIDATION_SUITE_REVISION = 1
-RESULT_SCHEMA_V1 = "mlipx.beta-validation-result/1"
-RESULT_SCHEMA = "mlipx.beta-validation-result/2"
-RESULT_SCHEMAS = (RESULT_SCHEMA_V1, RESULT_SCHEMA)
-SUMMARY_SCHEMA_V1 = "mlipx.beta-validation-summary/1"
-SUMMARY_SCHEMA = "mlipx.beta-validation-summary/2"
-MODEL_MANIFEST_SCHEMA = "mlipx.beta-model-manifest/1"
-DATA_MANIFEST_SCHEMA = "mlipx.beta-data-manifest/1"
+# The canonical evidence layer lives in validation/science/evidence/.  Every
+# suite script imports common.py first, so adding the science root here makes
+# `evidence` importable everywhere without duplicating identity or schema
+# logic (task book PR-A: one interpretation entry point).
+_SCIENCE_ROOT = Path(__file__).resolve().parent.parent
+if str(_SCIENCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCIENCE_ROOT))
 
-#: Fields that describe *when* a record was produced rather than *what* was
-#: computed.  They never participate in the overwrite decision, so repeated
-#: deterministic runs are recognised as the same evidence.
-VOLATILE_RECORD_FIELDS = (
-    "run_id",
-    "wall_seconds",
-    "peak_vram_mib",
-    "generated_at",
+from evidence.constants import (  # noqa: E402
+    ALLOWED_WRAPPER_MODULES,
+    BETA_VALIDATION_SUITE_REVISION,
+    DATA_MANIFEST_SCHEMA,
+    MODEL_MANIFEST_SCHEMA,
+    RESULT_SCHEMA,
+    RESULT_SCHEMA_V1,
+    RESULT_SCHEMAS,
+    STATUSES,
+    SUMMARY_SCHEMA,
+    SUMMARY_SCHEMA_V1,
+    VOLATILE_RECORD_FIELDS,
 )
-
-# Status vocabulary (taskbook section 3).  ``blocked`` is an execution state,
-# the rest are result states.
-STATUSES = (
-    "pass",
-    "fail",
-    "characterized",
-    "insufficient_sampling",
-    "unsupported",
-    "blocked",
+from evidence.identity import (  # noqa: E402
+    canonical_json,
+    device_class,
+    migrate_record,
+    new_run_id,
+    profile_id_for,
+    profile_identity,
+    record_fingerprint,
+    record_id_for,
+    seed_from,
 )
 
 EV_A3_TO_GPA = 160.21766208
 
-#: Wrapper classes that are allowed to produce four-backend science evidence.
-#: Anything else (EMT, Lennard-Jones, SinglePointCalculator, ...) must never
-#: populate backend results -- see taskbook section 47.
-ALLOWED_WRAPPER_MODULES = (
-    "mlipx.calculator",
-    "mlipx.calculators.mace_calc",
-    "mlipx.calculators.dpa_calc",
-    "mlipx.calculators.grace_calc",
-)
+
+def _canonical_json(payload: Any) -> str:
+    """Backward-compatible alias of the canonical evidence encoder."""
+    return canonical_json(payload)
 
 
 def sha256_file(path: str | Path) -> str:
@@ -102,145 +101,6 @@ def package_version(dist: str) -> str:
         return _pkg_version(dist)
     except PackageNotFoundError:
         return "not-installed"
-
-
-def _canonical_json(payload: Any) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-
-
-def device_class(device: Any) -> str:
-    """Coarse device class used in profile identity (never the raw UUID)."""
-    if not isinstance(device, dict):
-        return "unknown"
-    actual = device.get("actual")
-    if not actual:
-        return "unknown"
-    actual = str(actual)
-    if actual == "cpu":
-        return "cpu"
-    if actual.startswith("cuda"):
-        return "cuda"
-    return actual
-
-
-def seed_from(record: dict[str, Any]) -> Any:
-    """Best-effort seed identity: top-level field, else common parameter keys."""
-    if record.get("seed") is not None:
-        return record["seed"]
-    params = record.get("parameters")
-    if isinstance(params, dict):
-        for key in ("seed", "random_seed", "rng_seed", "nvt_seed", "md_seed"):
-            if params.get(key) is not None:
-                return params[key]
-    return None
-
-
-def profile_identity(record: dict[str, Any]) -> dict[str, Any]:
-    """Full identity of the model/profile that produced a record.
-
-    Two records belong to the same profile only when every component below
-    matches; anything else (artifact hash, dtype, task/head, inference mode,
-    device class, code commit, seed) is a different evidence identity and
-    must never be aggregated together (review R03).
-    """
-    return {
-        "engine": record.get("engine"),
-        "model_identity": record.get("model_identity"),
-        "model_sha256": record.get("model_sha256"),
-        "dtype": record.get("dtype"),
-        "task": record.get("task"),
-        "head": record.get("head"),
-        "inference_mode": record.get("inference_mode"),
-        "device_class": device_class(record.get("device")),
-        "git_commit": record.get("git_commit"),
-        "seed": seed_from(record),
-    }
-
-
-def profile_id_for(record: dict[str, Any]) -> str:
-    """Human-readable, stable profile id: ``<engine>-<dtype>-<digest>``."""
-    identity = profile_identity(record)
-    digest = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
-    engine = str(record.get("engine", "unknown"))
-    dtype = str(record.get("dtype", "unknown"))
-    dtype = dtype.replace("/", "-").replace(" ", "-").lower()
-    return f"{engine}-{dtype}-{digest[:10]}"
-
-
-def record_id_for(record: dict[str, Any]) -> str:
-    """Deterministic identity of the *intended computation*.
-
-    Deliberately excludes measured values and timing: the same case on the
-    same profile with the same parameters is the same record identity even
-    when it is executed twice (each execution gets a fresh ``run_id``).
-    """
-    payload = {
-        "profile_id": record.get("profile_id") or profile_id_for(record),
-        "case_id": record.get("case_id"),
-        "test_id": record.get("test_id"),
-        "input_structure_id": record.get("input_structure_id"),
-        "parameters": record.get("parameters"),
-        "seed": seed_from(record),
-        "schema": RESULT_SCHEMA,
-    }
-    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()[:32]
-
-
-def new_run_id() -> str:
-    """A fresh execution-attempt id (32 hex chars)."""
-    import uuid
-
-    return uuid.uuid4().hex
-
-
-def migrate_record(record: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
-    """Explicitly migrate an older-schema record to the current schema.
-
-    Returns ``(record, note)`` where ``note`` is a human-readable description
-    of the migration (or ``None`` when the record already is current).  Old
-    files are never rewritten: migration happens in the aggregator, so the
-    original evidence stays byte-identical on disk.
-    """
-    if not isinstance(record, dict):
-        msg = "migrate_record expects a JSON object"
-        raise TypeError(msg)
-    schema = record.get("schema")
-    if schema == RESULT_SCHEMA:
-        return record, None
-    if schema != RESULT_SCHEMA_V1:
-        msg = f"cannot migrate unknown result schema {schema!r}"
-        raise ValueError(msg)
-    migrated = dict(record)
-    migrated["schema"] = RESULT_SCHEMA
-    migrated["inference_mode"] = record.get("inference_mode")
-    migrated["seed"] = seed_from(record)
-    migrated["profile_id"] = profile_id_for(migrated)
-    migrated["record_id"] = record_id_for(migrated)
-    # Legacy records have no attempt id; derive a stable one from the record
-    # content so re-aggregating the same file is idempotent.
-    migrated["run_id"] = hashlib.sha256(
-        _canonical_json(
-            {
-                "legacy_schema": RESULT_SCHEMA_V1,
-                "profile_id": migrated["profile_id"],
-                "record_id": migrated["record_id"],
-                "wall_seconds": record.get("wall_seconds"),
-            }
-        ).encode("utf-8")
-    ).hexdigest()[:32]
-    migrated["migrated_from"] = RESULT_SCHEMA_V1
-    return migrated, f"migrated {RESULT_SCHEMA_V1} -> {RESULT_SCHEMA}"
-
-
-def record_fingerprint(record: dict[str, Any]) -> str:
-    """Content fingerprint used to decide whether a write is a real conflict.
-
-    Volatile execution metadata (run id, wall time, VRAM) is excluded so a
-    deterministic repeat of the same computation is recognised as the same
-    evidence rather than as a conflicting record.
-    """
-    payload = {k: v for k, v in record.items() if k not in VOLATILE_RECORD_FIELDS}
-    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 def synchronize(device: str) -> None:

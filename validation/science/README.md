@@ -14,6 +14,7 @@ committed.
 | `model_manifest.json` | Pinned model identities (sha256 of the exact artifacts; no local paths) |
 | `data_manifest.json` | Pinned OMat24 validation-subset provenance (corrected 241220 files) |
 | `scripts/common.py` | Shared schemas, identity/UUID hashing, result records |
+| `evidence/` | Canonical evidence layer: strict loader, identity, schema dispatch and profile-aware aggregation. Report/README/figure generators only consume this package |
 | `scripts/engines.py` | Engine construction through the product `CalculatorFactory` (no fallbacks) |
 | `scripts/fixtures.py` | Deterministic bulk fixtures (Cu, Si, MgO + triclinic/distorted extras) |
 | `scripts/inference.py` | T1 — first-call/warm-call timings, E/F/stress, VRAM |
@@ -29,7 +30,7 @@ committed.
 | `scripts/build_cases.py` | Regenerates/pins `cases/manifests/fixtures.json` |
 | `scripts/omat_subset.py` | OMat24 val-subset acquisition + deterministic selection |
 | `scripts/run_suite.py` | Sequential per-engine orchestrator (backend venvs) |
-| `scripts/aggregate.py` | Validates + aggregates records into a summary |
+| `scripts/aggregate.py` | Thin CLI over `evidence/` (validates + aggregates records into the canonical summary) |
 | `schemas/` | JSON Schemas for result records and summaries |
 
 ## Core rules encoded here
