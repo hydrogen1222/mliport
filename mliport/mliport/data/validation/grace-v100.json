@@ -1,0 +1,38 @@
+{
+  "schema": "mliport.capability-evidence/1",
+  "evidence_id": "v100-grace-87e72b50a2eb-native-cacheTrue",
+  "source_record": "validation/runtime/v100/grace.json",
+  "model_identity": {
+    "model_type": "grace",
+    "model_sha256": "87e72b50a2eb151f00242a0ad7ab1253d507860f9da837cdc2f9010371b1490a",
+    "backend_version": "0.6.0",
+    "framework_versions": {
+      "tensorflow": "2.20.0"
+    },
+    "task": "bulk",
+    "head_effective": null,
+    "dtype_effective": [
+      "float32"
+    ],
+    "inference_mode": "default",
+    "compile_enabled": null,
+    "actual_device_type": "cuda"
+  },
+  "workloads": {
+    "single_point": {
+      "status": "passed"
+    },
+    "shared_calculator": {
+      "status": "passed"
+    },
+    "energy_force_consistency": {
+      "status": "passed"
+    },
+    "short_md": {
+      "status": "passed"
+    },
+    "neb": {
+      "status": "passed"
+    }
+  }
+}

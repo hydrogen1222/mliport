@@ -1,6 +1,6 @@
 # Scientific Validation Harness (beta)
 
-Reproducible GPU validation of the four production engines that mlipx
+Reproducible GPU validation of the four production engines that mliport
 wraps (UMA, MACE-OMAT-0, DPA-3.1-3M, GRACE-2L-OMAT).  This directory holds
 the harness: manifests, deterministic fixtures, per-tier scripts, JSON
 schemas, and the aggregator.  **Run outputs stay out of git** — only the
@@ -37,7 +37,7 @@ committed.
 ## Core rules encoded here
 
 - **Calculator identity is proven, not assumed** — every record stores the
-  live wrapper module/class; anything outside the mlipx wrappers aborts
+  live wrapper module/class; anything outside the mliport wrappers aborts
   the run (`common.calculator_identity`).
 - **Tolerances are never hard-coded by hand** — they are `max(10 × measured
   repeatability floor, absolute floor)`, and the policy is stored in every
@@ -113,7 +113,7 @@ versioned JSON Schema plus semantic identity checks, aggregates per
 **profile** (engine × artifact hash × dtype × task/head × inference mode ×
 device class × commit × seed) so a float32 failure can never be hidden by a
 float64 pass, and keeps every run of the same computation visible.  Legacy
-`mlipx.beta-validation-result/1` records are migrated in memory, so existing
+`mliport.beta-validation-result/1` records are migrated in memory, so existing
 raw evidence can be re-aggregated without rerunning any model.  Exit codes:
 `0` clean, `1` harness violation (calculator identity outside the allowed
 wrappers), `2` import problem, `3` no records, `4` `--expect-complete` was
@@ -125,5 +125,5 @@ explicitly versioned `...__run-<id>.json` sibling instead.
 CPU-only regression tests (no backend needed):
 
 ```bash
-pytest tests/mlipx/mlipx/test_science_harness.py -q
+pytest tests/mliport/mliport/test_science_harness.py -q
 ```

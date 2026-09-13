@@ -1,12 +1,12 @@
 name: Bug report
-description: Report a problem with mlipx
+description: Report a problem with mliport
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for taking the time to fill out this bug report. Please include
-        the output of `mlipx doctor --engine <your-engine>` if possible.
+        the output of `mliport doctor --engine <your-engine>` if possible.
   - type: textarea
     id: description
     attributes:
@@ -27,9 +27,9 @@ body:
     validations:
       required: true
   - type: input
-    id: mlipx-version
+    id: mliport-version
     attributes:
-      label: mlipx version
+      label: mliport version
       placeholder: e.g. 2.0.0
     validations:
       required: true
@@ -65,6 +65,6 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: mlipx doctor output
-      description: Please paste `mlipx doctor --engine <your-engine>` output
+      label: mliport doctor output
+      description: Please paste `mliport doctor --engine <your-engine>` output
       render: text

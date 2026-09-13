@@ -19,13 +19,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           # This repository deliberately has no uv.lock; the real
-          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # dependency manifest is mliport/pyproject.toml, so the cache
           # key must hash that path (a uv.lock default never matched).
-          cache-dependency-glob: "mlipx/pyproject.toml"
-      - name: Install mlipx dev dependencies
+          cache-dependency-glob: "mliport/pyproject.toml"
+      - name: Install mliport dev dependencies
         run: |
           uv venv .venv-dev --python ${{ matrix.python-version }}
-          uv pip install --python .venv-dev/bin/python -e './mlipx[dev]'
+          uv pip install --python .venv-dev/bin/python -e './mliport[dev]'
       # test_json_writer exercises the JSON encoder's torch-tensor path, so
       # the full suite needs torch. Use the CPU index; the PyPI linux wheel
       # drags in the multi-GB CUDA stack the suite never touches.
@@ -45,19 +45,19 @@ jobs:
           python-version: "3.12"
           enable-cache: true
           # This repository deliberately has no uv.lock; the real
-          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # dependency manifest is mliport/pyproject.toml, so the cache
           # key must hash that path (a uv.lock default never matched).
-          cache-dependency-glob: "mlipx/pyproject.toml"
+          cache-dependency-glob: "mliport/pyproject.toml"
       - name: Install all analysis backends
         run: |
           uv venv .venv-analysis --python 3.12
-          uv pip install --python .venv-analysis/bin/python -e './mlipx[dev,analysis-all]'
+          uv pip install --python .venv-analysis/bin/python -e './mliport[dev,analysis-all]'
       - name: Verify supported backend majors
         run: |
           .venv-analysis/bin/python -c "import gemdat, kinisi; assert gemdat.__version__.startswith('1.'); assert kinisi.__version__.startswith('2.')"
       - name: Run real kinisi and GEMDAT integration tests
         run: |
-          .venv-analysis/bin/python -m pytest tests/mlipx/mlipx/analysis/test_analysis_backends_integration.py -q
+          .venv-analysis/bin/python -m pytest tests/mliport/mliport/analysis/test_analysis_backends_integration.py -q
 
   # RC-FINAL-01 regression: the packaged capability registry must resolve on
   # every supported Python, not just the runner that happens to build/test.
@@ -75,15 +75,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           # This repository deliberately has no uv.lock; the real
-          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # dependency manifest is mliport/pyproject.toml, so the cache
           # key must hash that path (a uv.lock default never matched).
-          cache-dependency-glob: "mlipx/pyproject.toml"
+          cache-dependency-glob: "mliport/pyproject.toml"
       - name: Build wheel
-        run: uv build --wheel --out-dir dist ./mlipx
+        run: uv build --wheel --out-dir dist ./mliport
       - name: Install wheel into a clean pinned interpreter
         run: |
           uv venv wheel-clean --python ${{ matrix.python-version }}
-          uv pip install --python wheel-clean/bin/python --no-deps dist/mlipx-*.whl
+          uv pip install --python wheel-clean/bin/python --no-deps dist/mliport-*.whl
       - name: Capability smoke on the installed wheel
         run: |
           wheel-clean/bin/python -I - <<'PY'
@@ -91,11 +91,11 @@ jobs:
           import sys
 
           from importlib.resources import files
-          from mlipx.capabilities import resolve_capabilities
+          from mliport.capabilities import resolve_capabilities
 
           identities = [
               json.loads(entry.read_text(encoding="utf-8"))["model_identity"]
-              for entry in files("mlipx.data").joinpath("validation").iterdir()
+              for entry in files("mliport.data").joinpath("validation").iterdir()
               if entry.name.endswith(".json")
           ]
           assert len(identities) == 4, identities

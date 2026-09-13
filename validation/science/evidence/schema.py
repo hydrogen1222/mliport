@@ -28,8 +28,8 @@ RESULT_SCHEMA_FILES = {
     RESULT_SCHEMA: SCHEMA_DIR / "result.schema.json",
 }
 SUMMARY_SCHEMA_FILES = {
-    "mlipx.beta-validation-summary/1": SCHEMA_DIR / "summary-v1.schema.json",
-    "mlipx.beta-validation-summary/2": SCHEMA_DIR / "summary.schema.json",
+    "mliport.beta-validation-summary/1": SCHEMA_DIR / "summary-v1.schema.json",
+    "mliport.beta-validation-summary/2": SCHEMA_DIR / "summary.schema.json",
 }
 
 SUPPORTED_KEYWORDS = frozenset(

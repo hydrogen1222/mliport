@@ -1,4 +1,4 @@
-"""Engine adapters: build real backend calculators through mlipx itself.
+"""Engine adapters: build real backend calculators through mliport itself.
 
 All four engines are loaded through the same ``CalculatorFactory`` layer the
 public CLI/API uses, so the validation exercises the product's own loading
@@ -70,7 +70,7 @@ def build_engine(
     head: str | None = None,
     neighbor_cache: bool = True,
 ) -> EngineContext:
-    """Load one backend calculator through mlipx's CalculatorFactory.
+    """Load one backend calculator through mliport's CalculatorFactory.
 
     ``dtype`` is only interpreted by MACE (``default_dtype``).  ``head`` is
     the DPA branch / MACE multi-head selector.  ``neighbor_cache`` is the
@@ -89,7 +89,7 @@ def build_engine(
     if engine == "grace":
         kwargs["neighbor_cache"] = neighbor_cache
 
-    from mlipx.calculators.factory import CalculatorFactory  # noqa: PLC0415
+    from mliport.calculators.factory import CalculatorFactory  # noqa: PLC0415
 
     wrapper = CalculatorFactory.create(
         model_type=engine,

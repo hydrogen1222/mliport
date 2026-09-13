@@ -34,8 +34,8 @@ def test_current_tracked_repository_obeys_hygiene_policy() -> None:
         "uv.lock",
         "archive/legacy.py",
         "audit_round7.md",
-        "mlipx_next_phase_NOT_FOR_REPO_2026.md",
-        "mlipx_development_plan.md",
+        "mliport_next_phase_NOT_FOR_REPO_2026.md",
+        "mliport_development_plan.md",
     ],
 )
 def test_repository_hygiene_rejects_local_or_unapproved_files(
@@ -52,12 +52,12 @@ def _write_wheel(path: Path, members: dict[str, bytes]) -> None:
 
 
 def test_distribution_hygiene_accepts_package_source(tmp_path: Path) -> None:
-    wheel = tmp_path / "mlipx-2.0.0-py3-none-any.whl"
+    wheel = tmp_path / "mliport-2.0.0-py3-none-any.whl"
     _write_wheel(
         wheel,
         {
-            "mlipx/__init__.py": b'__version__ = "2.0.0"\n',
-            "mlipx-2.0.0.dist-info/LICENSE.md": b"MIT\n",
+            "mliport/__init__.py": b'__version__ = "2.0.0"\n',
+            "mliport-2.0.0.dist-info/LICENSE.md": b"MIT\n",
         },
     )
     validate_artifact(wheel)
@@ -66,12 +66,12 @@ def test_distribution_hygiene_accepts_package_source(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "member",
     [
-        "mlipx/archive/legacy.py",
-        "mlipx/checkpoints/model.pt",
-        "mlipx/results/run.traj",
-        "mlipx/revise.md",
-        "mlipx/uv.lock",
-        "mlipx/local_NOT_FOR_REPO_notes.md",
+        "mliport/archive/legacy.py",
+        "mliport/checkpoints/model.pt",
+        "mliport/results/run.traj",
+        "mliport/revise.md",
+        "mliport/uv.lock",
+        "mliport/local_NOT_FOR_REPO_notes.md",
     ],
 )
 def test_distribution_hygiene_rejects_forbidden_members(
@@ -87,7 +87,7 @@ def test_distribution_hygiene_rejects_local_absolute_paths(tmp_path: Path) -> No
     wheel = tmp_path / "bad-path.whl"
     _write_wheel(
         wheel,
-        {"mlipx/example.py": b'MODEL = "/home/alice/private/model.pt"\n'},
+        {"mliport/example.py": b'MODEL = "/home/alice/private/model.pt"\n'},
     )
     with pytest.raises(HygieneViolation, match="local absolute path"):
         validate_artifact(wheel)

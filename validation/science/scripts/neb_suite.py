@@ -274,7 +274,7 @@ def _ensure_endpoints(ctx, args, out_dir) -> dict[str, Any]:
 
 def _neb_resolved(ctx, args, **run_options):
     """Typed ResolvedConfig for calc_type='neb' through the product resolver."""
-    from mlipx.config import resolve_config
+    from mliport.config import resolve_config
 
     cli: dict[str, Any] = {
         "model_type": ctx.engine,
@@ -295,7 +295,7 @@ def _run_dir(out_dir: Path, tag: str | None, name: str) -> Path:
 
 
 def _run_product_neb(ctx, resolved, run_dir, init, fin):
-    from mlipx.neb.workflow import run_neb_workflow
+    from mliport.neb.workflow import run_neb_workflow
 
     t0 = time.perf_counter()
     payload = run_neb_workflow(
@@ -747,8 +747,8 @@ def workflow_endpoints(ctx, args, out_dir) -> int:
 
 def workflow_path_init(ctx, args, out_dir) -> int:
     """t5b: explicit mapping/winding + linear vs IDPP initial band quality."""
-    from mlipx.neb.prepare import prepare_band
-    from mlipx.neb.schema import NEBOptions
+    from mliport.neb.prepare import prepare_band
+    from mliport.neb.schema import NEBOptions
 
     t0 = time.perf_counter()
     entry = _ensure_endpoints(ctx, args, out_dir)
@@ -1054,7 +1054,7 @@ def workflow_resume_identity(ctx, args, out_dir) -> int:
     t0 = time.perf_counter()
     metrics: dict[str, Any] = {}
     try:
-        from mlipx.neb.io import load_checkpoint
+        from mliport.neb.io import load_checkpoint
 
         resolved_a = _neb_resolved(ctx, args, **base_run)
         run_a = _run_product_neb(
@@ -1064,7 +1064,7 @@ def workflow_resume_identity(ctx, args, out_dir) -> int:
         meta_a, _ = load_checkpoint(checkpoint)
         _, images_final_a = load_checkpoint(checkpoint)
         resolved_b = _neb_resolved(ctx, args, **base_run)
-        from mlipx.neb.workflow import run_neb_workflow
+        from mliport.neb.workflow import run_neb_workflow
 
         run_b = run_neb_workflow(
             ctx.wrapper,
@@ -1172,7 +1172,7 @@ def workflow_saddle_hessian(ctx, args, out_dir) -> int:
         return 1
     payload = ref["payload"]
     try:
-        from mlipx.neb.io import load_checkpoint
+        from mliport.neb.io import load_checkpoint
 
         _, images = load_checkpoint(payload["latest_checkpoint"])
         energies = np.asarray(payload["energies_eV"], dtype=float)
@@ -1293,7 +1293,7 @@ def checkpoint_stage_positions(run_dir: Path, stage: str) -> list | None:
 
 
 def load_checkpoint_dir(path: Path):
-    from mlipx.neb.io import load_checkpoint
+    from mliport.neb.io import load_checkpoint
 
     return load_checkpoint(path)
 
@@ -1410,7 +1410,7 @@ def main() -> int:
         "--neighbor-cache",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="GRACE only: toggle the mlipx neighbor-list cache",
+        help="GRACE only: toggle the mliport neighbor-list cache",
     )
     parser.add_argument(
         "--workflows",

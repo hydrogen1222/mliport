@@ -818,7 +818,7 @@ def main() -> int:
         print(f"[figures] refusing to render: {exc}", file=sys.stderr)
         return 2
     manifest = {
-        "schema": "mlipx.beta-figures/1",
+        "schema": "mliport.beta-figures/1",
         "evidence_root": str(root),
         "campaign": bundle.campaign,
         "versions": versions.as_dict(),

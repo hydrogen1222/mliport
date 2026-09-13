@@ -1,5 +1,5 @@
 {
-  "schema": "mlipx.runtime-validation/1",
+  "schema": "mliport.runtime-validation/1",
   "backend": "grace",
   "python": "3.12.13",
   "os": "Linux",
@@ -99,7 +99,7 @@
   },
   "versions": {
     "tensorflow": "2.20.0",
-    "mlipx": "2.0.0",
+    "mliport": "2.0.0",
     "grace": "0.6.0"
   },
   "model_identity": {

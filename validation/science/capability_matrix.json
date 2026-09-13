@@ -1,5 +1,5 @@
 {
-  "schema": "mlipx.capability-matrix/1",
+  "schema": "mliport.capability-matrix/1",
   "description": "Machine-readable interface capability matrix (task book section 12). Values describe whether an explicitly documented entry point can express a feature; they are not a claim of behavioural equivalence. 'no'/'partial' entries carry a note.",
   "values": ["yes", "no", "partial", "not_applicable"],
   "limitations": [

@@ -15,13 +15,13 @@ jobs:
           python-version: "3.12"
           enable-cache: true
           # This repository deliberately has no uv.lock; the real
-          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # dependency manifest is mliport/pyproject.toml, so the cache
           # key must hash that path (a uv.lock default never matched).
-          cache-dependency-glob: "mlipx/pyproject.toml"
+          cache-dependency-glob: "mliport/pyproject.toml"
       # Pin the ruff version the project actually enforces locally; an
       # unpinned `uv run ruff` drifts with new releases and fails on renamed
       # rules (e.g. TCH003 -> TC003) that the 0.5.1 baseline never checks.
       - name: Ruff check
-        run: uvx ruff@0.5.1 check mlipx/mlipx tests scripts
+        run: uvx ruff@0.5.1 check mliport/mliport tests scripts
       - name: Ruff format check
-        run: uvx ruff@0.5.1 format --check mlipx/mlipx tests scripts
+        run: uvx ruff@0.5.1 format --check mliport/mliport tests scripts

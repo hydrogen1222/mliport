@@ -1,5 +1,5 @@
 {
-  "schema": "mlipx.beta-figures/1",
+  "schema": "mliport.beta-figures/1",
   "evidence_root": ".validation-work",
   "generated": {
     "fig01": "fig01_omat24_energy.png",

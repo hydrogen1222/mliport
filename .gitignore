@@ -40,7 +40,7 @@ htmlcov/
 .env
 
 # ------------------------------------------------------------------
-# mlipx model / data artifacts (large or user-specific)
+# mliport model / data artifacts (large or user-specific)
 # ------------------------------------------------------------------
 *.pt
 *.pth
@@ -74,18 +74,24 @@ results/
 # Private development plans & notes (not project documentation)
 /.agent-local/
 /.local-plans/
+# Pre-rename local-only plans/reviews: kept ignored so the old namespace can
+# never leak a transient audit document into the repository.
+/mlipx_*development_plan*.md
+/mlipx_*NOT_FOR_REPO*.md
+/mlipx_review_*.md
+/mlipx_analysis_*.md
 # Local wheelhouse / offline install sources
 /packages/
 /audit-local/
 /*_NOT_FOR_REPO_*.md
 /*_development_plan*.md
-/mlipx_analysis_v2_unfreeze_development_plan.md
-/mlipx_analysis_v2_final_transport_hardening_plan.md
+/mliport_analysis_v2_unfreeze_development_plan.md
+/mliport_analysis_v2_final_transport_hardening_plan.md
 # Private structure / model files
 LGPS*
 
 # Accidental uv lockfiles inside the package dir (no workspace lock)
-/mlipx/uv.lock
+/mliport/uv.lock
 /uv.lock
 # Beta scientific validation working data (taskbook section 9)
 /.validation-work/

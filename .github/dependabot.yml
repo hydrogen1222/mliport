@@ -7,9 +7,9 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
 
-  # Python: the mlipx package itself (mlipx/pyproject.toml).
+  # Python: the mliport package itself (mliport/pyproject.toml).
   - package-ecosystem: pip
-    directory: "/mlipx"
+    directory: "/mliport"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10

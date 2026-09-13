@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "mlipx.beta-validation-summary/2",
-  "title": "mlipx beta scientific validation summary",
+  "$id": "mliport.beta-validation-summary/2",
+  "title": "mliport beta scientific validation summary",
   "description": "Version 2 aggregates per profile identity instead of per engine, keeps every run of the same computation visible, seeds the support matrix from the declared model manifest (missing evidence is 'not_run', never pass) and carries an explicit import exit contract.",
   "type": "object",
   "required": [
@@ -11,7 +11,7 @@
     "problems", "harness_violations", "import_summary", "expected_matrix"
   ],
   "properties": {
-    "schema": { "const": "mlipx.beta-validation-summary/2" },
+    "schema": { "const": "mliport.beta-validation-summary/2" },
     "suite_revision": { "type": "integer", "minimum": 1 },
     "generated_at": { "type": "string" },
     "code_commit": { "type": "string" },
@@ -44,7 +44,7 @@
       "type": "array"
     },
     "harness_violations": {
-      "description": "calculator identity outside the allowed mlipx wrapper modules (taskbook section 47); non-empty means the suite is compromised",
+      "description": "calculator identity outside the allowed mliport wrapper modules (taskbook section 47); non-empty means the suite is compromised",
       "type": "array"
     },
     "import_summary": {

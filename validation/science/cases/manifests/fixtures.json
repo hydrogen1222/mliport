@@ -48,6 +48,6 @@
     "cu_distorted",
     "mgo_rocksalt"
   ],
-  "schema": "mlipx.beta-case-fixtures/1",
+  "schema": "mliport.beta-case-fixtures/1",
   "suite_revision": 1
 }

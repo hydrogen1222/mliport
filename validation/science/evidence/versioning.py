@@ -17,7 +17,7 @@ HEAD.  Four commits are tracked separately:
   ``software_commit`` and a campaign manifest declares completion.
 
 The current-head status can only come from an explicit campaign manifest
-(``mlipx.beta-campaign/1``), never from the mere presence of records.
+(``mliport.beta-campaign/1``), never from the mere presence of records.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from typing import Any
 
 from .constants import VALIDATION_LOGIC_VERSION
 
-CAMPAIGN_MANIFEST_SCHEMA = "mlipx.beta-campaign/1"
+CAMPAIGN_MANIFEST_SCHEMA = "mliport.beta-campaign/1"
 
 REVALIDATION_STATUSES = (
     "no_evidence",
@@ -82,7 +82,7 @@ class CampaignManifestError(RuntimeError):
 
 
 def load_campaign_manifest(path: str | Path) -> dict[str, Any]:
-    """Load and validate a ``mlipx.beta-campaign/1`` manifest."""
+    """Load and validate a ``mliport.beta-campaign/1`` manifest."""
     manifest_path = Path(path)
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

@@ -1,4 +1,4 @@
-# mlipx development contract
+# mliport development contract
 
 1. Scientific correctness has priority over speed and feature count.
 2. Fail closed when physical assumptions are not satisfied.

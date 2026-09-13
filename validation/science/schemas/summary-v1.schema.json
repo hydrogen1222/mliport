@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "mlipx.beta-validation-summary/1",
-  "title": "mlipx beta scientific validation summary",
+  "$id": "mliport.beta-validation-summary/1",
+  "title": "mliport beta scientific validation summary",
   "type": "object",
   "required": [
     "schema", "suite_revision", "generated_at", "code_commit",
@@ -9,7 +9,7 @@
     "support_matrix", "cases", "environment", "problems", "harness_violations"
   ],
   "properties": {
-    "schema": { "const": "mlipx.beta-summary/1" },
+    "schema": { "const": "mliport.beta-summary/1" },
     "suite_revision": { "type": "integer", "minimum": 1 },
     "generated_at": { "type": "string" },
     "code_commit": { "type": "string" },
@@ -34,7 +34,7 @@
       "type": "array"
     },
     "harness_violations": {
-      "description": "calculator identity outside the allowed mlipx wrapper modules (taskbook section 47); non-empty means the suite is compromised",
+      "description": "calculator identity outside the allowed mliport wrapper modules (taskbook section 47); non-empty means the suite is compromised",
       "type": "array"
     }
   }

@@ -130,7 +130,7 @@ def _md_run_complete(run_dir: Path, equil_steps: int, prod_steps: int) -> bool:
 
 def _load_md_dataset(args, temperature_k: float, engine: str):
     """Load one completed MD run through the product loading path."""
-    from mlipx.analysis.dataset import TrajectoryDataset
+    from mliport.analysis.dataset import TrajectoryDataset
 
     run_dir = _md_run_dir_for(args, temperature_k, engine)
     equil_steps = int(round(EQUILIBRATION_PS * 1000.0 / TIMESTEP_FS))
@@ -149,7 +149,7 @@ def _production_csv_rows(run_dir: Path, equil_steps: int) -> list[dict[str, str]
 
 
 def _kinisi_transport(dataset, temperature_k: float) -> dict[str, Any]:
-    from mlipx.analysis.transport import kinisi_transport
+    from mliport.analysis.transport import kinisi_transport
 
     result = kinisi_transport(
         dataset,
@@ -193,7 +193,7 @@ def _native_msd_diagnostic(dataset) -> dict[str, Any]:
     the product's diffusive-regime warning are reported but do not gate:
     high-temperature demonstration trajectories are expected to be noisy.
     """
-    from mlipx.analysis.msd import calculate_msd, diagnostic_linear_diffusion_fit
+    from mliport.analysis.msd import calculate_msd, diagnostic_linear_diffusion_fit
 
     result = calculate_msd(dataset, mobile_species=MOBILE_SPECIES)
     lag_ps = result["lag_time_ps"]
@@ -223,7 +223,7 @@ def _native_msd_diagnostic(dataset) -> dict[str, Any]:
 
 
 def _gemdat_diagnostic(dataset, args, temperature_k: float) -> dict[str, Any]:
-    from mlipx.analysis.electrolyte import gemdat_electrolyte
+    from mliport.analysis.electrolyte import gemdat_electrolyte
 
     sites_path = Path(args.sites)
     result = gemdat_electrolyte(
@@ -278,7 +278,7 @@ def _arrhenius_fit(
     diffusivities: list[float],
     uncertainties: list[float] | None,
 ) -> dict[str, Any]:
-    from mlipx.analysis.arrhenius import fit_arrhenius
+    from mliport.analysis.arrhenius import fit_arrhenius
 
     result = fit_arrhenius(
         temperatures_K=np.asarray(temperatures, dtype=float),
@@ -354,7 +354,7 @@ def run_md_case(ctx, args) -> int:
     Runs in the engine environment only; analysis cases later load the
     completed run directory through the product loading path.
     """
-    from mlipx.runners.md import MDRunner
+    from mliport.runners.md import MDRunner
 
     temperatures = [float(t) for t in args.temperatures.split(",")]
     atoms = na3ps4_supercell()
@@ -464,7 +464,7 @@ def _classify_transport_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
     'unsupported' with the explicit insufficient_trajectory_information
     reason, not a generic product failure (PR-E section 7.4).
     """
-    from mlipx.analysis.validation import (
+    from mliport.analysis.validation import (
         InsufficientTrajectoryInformationError,
         UnsupportedAnalysisError,
     )
@@ -488,7 +488,7 @@ def _drift_comparability(
     backends used the same centre definition and reference selection; this
     records the comparison instead of silently claiming agreement.
     """
-    from mlipx.analysis.drift import drift_definitions_match
+    from mliport.analysis.drift import drift_definitions_match
 
     native_drift = native.get("drift_semantics") or {}
     kinisi_drift = kinisi.get("drift_semantics") or {}
@@ -648,7 +648,7 @@ def _classify_gemdat_failure(exc: Exception) -> tuple[str, dict[str, Any]]:
     pymatgen occupancy limitation are 'unsupported' (diagnostic unavailable),
     not 'fail' (which is reserved for product errors).
     """
-    from mlipx.analysis.validation import UnsupportedAnalysisError
+    from mliport.analysis.validation import UnsupportedAnalysisError
 
     if isinstance(exc, UnsupportedAnalysisError):
         return "unsupported", {"reason": "product_refused", "exception": str(exc)}
@@ -723,7 +723,7 @@ def main() -> int:
         "--neighbor-cache",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="GRACE only: toggle the mlipx neighbor-list cache",
+        help="GRACE only: toggle the mliport neighbor-list cache",
     )
     parser.add_argument(
         "--temperatures",

@@ -1,12 +1,12 @@
-# mlipx repository tooling configuration.
+# mliport repository tooling configuration.
 #
 # This is intentionally NOT a Python runtime project.  Each engine (UMA,
 # MACE, DPA, GRACE) installs into its own isolated environment via
-# `scripts/install_mlipx.sh` (see mlipx/install/compatibility.py).  The four
+# `scripts/install_mliport.sh` (see mliport/install/compatibility.py).  The four
 # stacks have mutually exclusive dependencies, so no single workspace lockfile
 # is maintained here.
 #
-# The actual `mlipx` package metadata lives in `mlipx/pyproject.toml`.
+# The actual `mliport` package metadata lives in `mliport/pyproject.toml`.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -15,7 +15,7 @@ testpaths = ["tests"]
 line-length = 88
 target-version = "py310"
 include = [
-    "mlipx/mlipx/**/*.py",
+    "mliport/mliport/**/*.py",
     "tests/**/*.py",
     "scripts/*.py",
 ]
@@ -65,11 +65,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["mlipx"]
+known-first-party = ["mliport"]
 required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"mlipx/mlipx/install/__init__.py" = ["F401"]
+"mliport/mliport/install/__init__.py" = ["F401"]

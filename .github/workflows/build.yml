@@ -15,18 +15,18 @@ jobs:
           python-version: "3.12"
           enable-cache: true
           # This repository deliberately has no uv.lock; the real
-          # dependency manifest is mlipx/pyproject.toml, so the cache
+          # dependency manifest is mliport/pyproject.toml, so the cache
           # key must hash that path (a uv.lock default never matched).
-          cache-dependency-glob: "mlipx/pyproject.toml"
+          cache-dependency-glob: "mliport/pyproject.toml"
       - name: Check repository hygiene
         run: python scripts/check_repository_hygiene.py
       - name: Build wheel and sdist
-        run: uv build --wheel --sdist --out-dir mlipx/dist ./mlipx
+        run: uv build --wheel --sdist --out-dir mliport/dist ./mliport
       - name: Check distribution contents
-        run: python scripts/check_repository_hygiene.py mlipx/dist/*
+        run: python scripts/check_repository_hygiene.py mliport/dist/*
       - name: Install wheel into clean env and smoke test
         run: |
           uv venv .venv-smoke --python 3.12
-          uv pip install --python .venv-smoke/bin/python ./mlipx/dist/*.whl
-          .venv-smoke/bin/mlipx --help
-          .venv-smoke/bin/mlipx setup --json
+          uv pip install --python .venv-smoke/bin/python ./mliport/dist/*.whl
+          .venv-smoke/bin/mliport --help
+          .venv-smoke/bin/mliport setup --json

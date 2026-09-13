@@ -7,7 +7,7 @@ Run inside a backend environment::
         --subset .validation-work/omat24/omat24_subset.extxyz
 
 Evaluates the pinned ~256-structure OMat24 validation subset (built by
-``omat_subset.py`` with an immutable seed) through the same mlipx
+``omat_subset.py`` with an immutable seed) through the same mliport
 calculator path the product exposes, and reports energy/force/stress
 error statistics against the dataset's own reference labels.  Metrics:
 

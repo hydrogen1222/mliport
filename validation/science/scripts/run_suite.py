@@ -13,7 +13,7 @@ Usage::
         --engine mace --profile-id mace_omat --model models/mace/... \
         --out .validation-work
 
-Engine venv resolution order: ``--venv`` > ``MLIPX_SCIENCE_VENV_<ENGINE>``
+Engine venv resolution order: ``--venv`` > ``MLIPORT_SCIENCE_VENV_<ENGINE>``
 > ``<repo>/.venv-<engine>``.
 """
 
@@ -51,7 +51,7 @@ DEFAULT_VENV_ROOT = str(Path(__file__).resolve().parents[3])
 def venv_python(engine: str, override: str | None) -> str | None:
     if override:
         return override
-    env_key = f"MLIPX_SCIENCE_VENV_{engine.upper()}"
+    env_key = f"MLIPORT_SCIENCE_VENV_{engine.upper()}"
     if os.environ.get(env_key):
         return os.environ[env_key]
     default = Path(DEFAULT_VENV_ROOT) / f".venv-{engine}" / "bin" / "python"
@@ -92,7 +92,7 @@ def resolve_gpu_uuid(device: str) -> str | None:
 
     Backends whose ASE adapter has no per-calculator device (DPA) require
     CUDA_VISIBLE_DEVICES to be fixed to a single GPU before framework
-    imports (mlipx.devices.require_isolated_visibility).  The orchestrator
+    imports (mliport.devices.require_isolated_visibility).  The orchestrator
     applies that isolation to every engine uniformly.  Raw UUIDs are used
     only for the child process environment; records store their hash.
     """
@@ -145,7 +145,7 @@ def main() -> int:
         write_blocked(
             args.engine,
             f"no backend venv provisioned for engine {args.engine!r} "
-            f"(looked at --venv, MLIPX_SCIENCE_VENV_{args.engine.upper()}, "
+            f"(looked at --venv, MLIPORT_SCIENCE_VENV_{args.engine.upper()}, "
             f"{DEFAULT_VENV_ROOT}/.venv-{args.engine})",
             out_dir,
         )

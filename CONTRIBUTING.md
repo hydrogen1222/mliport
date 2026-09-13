@@ -1,4 +1,4 @@
-# Contributing to mlipx
+# Contributing to mliport
 
 We want to make contributing to this project as easy and transparent as
 possible.
@@ -23,7 +23,7 @@ clear and has sufficient instructions to be able to reproduce the issue.
 ```bash
 # UMA environment (default)
 uv sync
-uv run mlipx doctor
+uv run mliport doctor
 
 # Optional engine environments (each isolated, see README)
 # .venv-mace / .venv-dpa / .venv-grace
@@ -32,13 +32,13 @@ uv run mlipx doctor
 Run the test suite with:
 
 ```bash
-uv run python -m pytest tests/mlipx -q
+uv run python -m pytest tests/mliport -q
 ```
 
 ## License
 
-By contributing to mlipx, you agree that your contributions will be licensed
-under the MIT License (see `LICENSE.md`). mlipx builds on
+By contributing to mliport, you agree that your contributions will be licensed
+under the MIT License (see `LICENSE.md`). mliport builds on
 [FAIRChem](https://github.com/FAIR-Chem/fairchem) (MIT, Copyright © Meta
-Platforms, Inc. and affiliates) -- see `mlipx/LICENSE` for the original
+Platforms, Inc. and affiliates) -- see `mliport/LICENSE` for the original
 license notice.

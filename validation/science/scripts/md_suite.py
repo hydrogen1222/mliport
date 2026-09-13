@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """T6 - MD integration and ensembles (taskbook section 27).
 
-Runs the product MD pipeline (``mlipx.runners.md.MDRunner`` driven exactly
+Runs the product MD pipeline (``mliport.runners.md.MDRunner`` driven exactly
 as the public API drives it) per engine profile on a deterministic 32-atom
 Cu fixture with identical initial coordinates and a seeded velocity set:
 
@@ -182,7 +182,7 @@ def _run_md(
     pre_relax: bool = False,
 ) -> dict[str, Any]:
     """Drive the product MDRunner exactly once and parse its CSV."""
-    from mlipx.runners.md import MDRunner
+    from mliport.runners.md import MDRunner
 
     if atoms is None:
         atoms = cu32()
@@ -510,7 +510,7 @@ def _expect_rejection(
     The runner validates the combination before any dynamics or model work,
     so this is a cheap negative test (no integration is attempted).
     """
-    from mlipx.runners.md import MDRunner
+    from mliport.runners.md import MDRunner
 
     try:
         kwargs: dict[str, Any] = {
@@ -816,7 +816,7 @@ def workflow_force_safety(ctx, args, out_dir) -> int:
     """t6f: controlled high-force abort with checkpoint/output consistency."""
     from ase.geometry import find_mic
 
-    from mlipx.runners.md import ForceSafetyAbort
+    from mliport.runners.md import ForceSafetyAbort
 
     t0 = time.perf_counter()
     try:
@@ -962,7 +962,7 @@ def main() -> int:
         "--neighbor-cache",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="GRACE only: toggle the mlipx neighbor-list cache",
+        help="GRACE only: toggle the mliport neighbor-list cache",
     )
     parser.add_argument(
         "--workflows",

@@ -71,7 +71,7 @@ def harness_violations(records: list[dict[str, Any]]) -> list[str]:
         if wrapper_module and wrapper_module not in ALLOWED_WRAPPER_MODULES:
             violations.append(
                 f"{record.get('_path')}: wrapper {wrapper_module} is not an "
-                "allowed mlipx backend wrapper"
+                "allowed mliport backend wrapper"
             )
     return violations
 
@@ -228,8 +228,8 @@ def aggregate_records(
 
     environment: dict[str, Any] = {
         "python_versions": sorted({record.get("python") for record in records if record.get("python")}),
-        "mlipx_versions": sorted(
-            {record.get("mlipx_version") for record in records if record.get("mlipx_version")}
+        "mliport_versions": sorted(
+            {record.get("mliport_version") for record in records if record.get("mliport_version")}
         ),
         "backend_versions": sorted(
             {
@@ -263,6 +263,9 @@ def aggregate_records(
         "scanned_files": loader.scanned_files if loader is not None else len(records),
         "ancillary_files": loader.ancillary_files if loader is not None else 0,
         "migrated_records": loader.migrated_records if loader is not None else 0,
+        "legacy_namespace_records": (
+            loader.legacy_namespace_records if loader is not None else 0
+        ),
         "out_of_scope_records": loader.out_of_scope_records if loader is not None else 0,
         "untagged_records": loader.untagged_records if loader is not None else 0,
     }
@@ -310,6 +313,7 @@ def aggregate_records(
         "import_summary": {
             "records": len(records),
             "migrated_records": loader_meta["migrated_records"],
+            "legacy_namespace_records": loader_meta["legacy_namespace_records"],
             "ancillary_files": loader_meta["ancillary_files"],
             "problems": len(problems),
         },

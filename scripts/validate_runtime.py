@@ -19,12 +19,12 @@ from pathlib import Path
 
 from ase.build import bulk
 
-from mlipx.calculators.factory import CalculatorFactory
-from mlipx.capabilities import model_identity
-from mlipx.config import resolve_config
-from mlipx.neb.workflow import _hash_model, _model_record, run_neb_workflow
-from mlipx.runners.md import MDRunner
-from mlipx.validation import displacement_checks, evaluate
+from mliport.calculators.factory import CalculatorFactory
+from mliport.capabilities import model_identity
+from mliport.config import resolve_config
+from mliport.neb.workflow import _hash_model, _model_record, run_neb_workflow
+from mliport.runners.md import MDRunner
+from mliport.validation import displacement_checks, evaluate
 
 
 def main():
@@ -49,7 +49,7 @@ def main():
     signal.signal(signal.SIGTERM, timed_out)
     started = time.monotonic()
     report = {
-        "schema": "mlipx.runtime-validation/1",
+        "schema": "mliport.runtime-validation/1",
         "backend": args.backend,
         "python": platform.python_version(),
         "os": platform.system(),
@@ -104,7 +104,7 @@ def main():
         report["runtime"]["gpu_uuid_sha256"] = hashlib.sha256(
             info["actual_device_uuid"].encode()
         ).hexdigest()
-        from mlipx.install.hardware import detect_gpus
+        from mliport.install.hardware import detect_gpus
 
         gpu = (detect_gpus() or [])[0]
         report["gpu"] = {
@@ -121,7 +121,7 @@ def main():
         framework = "tensorflow" if args.backend == "grace" else "torch"
         report["versions"] = {
             framework: version(framework),
-            "mlipx": version("mlipx"),
+            "mliport": version("mliport"),
             args.backend: version(backend_dist),
         }
         layer = {

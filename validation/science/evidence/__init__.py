@@ -1,4 +1,4 @@
-"""Canonical evidence layer for the mlipx beta validation harness.
+"""Canonical evidence layer for the mliport beta validation harness.
 
 Single source of truth for reading, validating, normalizing and aggregating
 validation result records.  Report generators, README blocks, figures and the

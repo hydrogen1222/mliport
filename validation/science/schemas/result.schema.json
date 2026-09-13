@@ -1,19 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "mlipx.beta-validation-result/2",
-  "title": "mlipx beta scientific validation result record",
+  "$id": "mliport.beta-validation-result/2",
+  "title": "mliport beta scientific validation result record",
   "description": "Version 2 adds explicit identity: profile_id (engine x artifact x dtype x task/head x inference mode x device class x commit x suite revision), record_id (deterministic identity of the intended computation) and run_id (one execution attempt). Records are immutable; write_result never overwrites a different record with the same case/test/engine tag.",
   "type": "object",
   "required": [
     "schema", "suite_revision", "git_commit", "case_id", "test_id",
     "status", "engine", "model_identity", "model_sha256", "task", "head",
-    "dtype", "python", "mlipx_version", "backend_version",
+    "dtype", "python", "mliport_version", "backend_version",
     "framework_version", "device", "input_structure_id", "parameters",
     "metrics", "diagnostics", "wall_seconds", "peak_vram_mib", "exception",
     "profile_id", "record_id", "run_id", "inference_mode", "seed"
   ],
   "properties": {
-    "schema": { "const": "mlipx.beta-validation-result/2" },
+    "schema": { "const": "mliport.beta-validation-result/2" },
     "suite_revision": { "type": "integer", "minimum": 1 },
     "git_commit": { "type": "string" },
     "case_id": { "type": "string" },
@@ -36,7 +36,7 @@
                "upstream/model-defined", "engine-defined", "n/a"]
     },
     "python": { "type": "string" },
-    "mlipx_version": { "type": "string" },
+    "mliport_version": { "type": "string" },
     "backend_version": { "type": ["string", "null"] },
     "framework_version": { "type": ["string", "null"] },
     "device": {

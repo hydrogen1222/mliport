@@ -1,4 +1,4 @@
-"""Shared pytest fixtures/configuration for mlipx.
+"""Shared pytest fixtures/configuration for mliport.
 
 Deliberately imports nothing from torch/fairchem/ray so that test discovery
 does not pull in heavy ML backends.

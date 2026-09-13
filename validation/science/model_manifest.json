@@ -1,7 +1,7 @@
 {
-  "schema": "mlipx.beta-model-manifest/1",
+  "schema": "mliport.beta-model-manifest/1",
   "suite_revision": 1,
-  "description": "Model identities for the mlipx beta scientific validation suite. Hashes are of the exact distributed artifacts; per-machine local paths are NOT recorded here (pass --model at runtime). A changed artifact means a new identity: update this manifest deliberately, never silently.",
+  "description": "Model identities for the mliport beta scientific validation suite. Hashes are of the exact distributed artifacts; per-machine local paths are NOT recorded here (pass --model at runtime). A changed artifact means a new identity: update this manifest deliberately, never silently.",
   "profiles": {
     "uma_omat": {
       "engine": "uma",
@@ -13,7 +13,7 @@
       "model_sha256": "ba5c0d912efa22dc238e5fb1b5b7f66ee2e68c48c1b95b7cfd7fe1da5938398b",
       "source_url": "https://huggingface.co/facebook/UMA (artifact uma-s-1p2.pt)",
       "license": "FAIR Non-Commercial Research License (research use)",
-      "notes": "Loaded via mlipx UMACalculator(model_path, task='omat') on a local checkpoint file; fairchem-core FAIRChemCalculator underneath."
+      "notes": "Loaded via mliport UMACalculator(model_path, task='omat') on a local checkpoint file; fairchem-core FAIRChemCalculator underneath."
     },
     "mace_omat": {
       "engine": "mace",
@@ -49,7 +49,7 @@
       "model_sha256": "86dd3a804d78ca5d203ebf98747e8f16dff9713ba8950097ceb760b161e19907",
       "source_url": "https://huggingface.co/deepmodelingcommunity/DPA-3.1-3M (artifact DPA-3.1-3M.pt, 47176032 bytes)",
       "license": "LGPL-2.1 (deepmd-kit ecosystem model distribution)",
-      "notes": "Multitask checkpoint; branch list read from the artifact itself via 'dp --pt show <model> model-branch' (32 branches incl. Omat24). Head recorded here and passed through the mlipx DPA wrapper; fail-closed for multi-task PESs."
+      "notes": "Multitask checkpoint; branch list read from the artifact itself via 'dp --pt show <model> model-branch' (32 branches incl. Omat24). Head recorded here and passed through the mliport DPA wrapper; fail-closed for multi-task PESs."
     },
     "grace_omat": {
       "engine": "grace",

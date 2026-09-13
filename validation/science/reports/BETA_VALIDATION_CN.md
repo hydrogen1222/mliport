@@ -1,12 +1,12 @@
-# mlipx beta 科学验证报告
+# mliport beta 科学验证报告
 
 由 `.validation-work` 下的证据记录生成；证据对应提交 `05e548c41f8e863f0121702d2c8cc3c60ca8add0, 293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc, 360e1d2034e74d55133cb6e152d062c24867245b, 38abb85d87c92799b9b370758c9f920b4e982cbc, 7b22280d5eb723a0a9edde0ebf8d925bf410a341, 7cfce9f908feedcc64e790d6eb893fe3b02b6e5d, b79f0d0c7947ccada2cd60b384a2701060e7d2f2, c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f, e08ab41788ee17aa2dc924271230ae21ad01c4e8`。本文档全部表格由 `validation/science/scripts/generate_beta_report.py` 从结果 JSON 渲染，更新方式是重新生成并 diff，不要手工编辑。
 
 重新认证状态：**partial_reaggregation** —— historical evidence re-aggregated under the current validation semantics; no completed current-head campaign manifest was provided, so this is NOT current-HEAD validation
 
 - software_commit（声称被验证）：`None`
-- validation_code_commit：`219477b69285c1961424bc744e753a32f48306ed`
-- report_generator_commit：`219477b69285c1961424bc744e753a32f48306ed`
+- validation_code_commit：`93e928ed797203209217092c2cc1fd40b5f627fa`
+- report_generator_commit：`93e928ed797203209217092c2cc1fd40b5f627fa`
 - evidence_campaign：`None`
 - evidence_source_commits：`05e548c41f8e863f0121702d2c8cc3c60ca8add0, 293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc, 360e1d2034e74d55133cb6e152d062c24867245b, 38abb85d87c92799b9b370758c9f920b4e982cbc, 651abde0efd15a9f5c09766132a0819b8a5ad8b2, 7b22280d5eb723a0a9edde0ebf8d925bf410a341, 7cfce9f908feedcc64e790d6eb893fe3b02b6e5d, b79f0d0c7947ccada2cd60b384a2701060e7d2f2, c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f, e08ab41788ee17aa2dc924271230ae21ad01c4e8`
 
@@ -25,7 +25,7 @@
 
 Tolerance policy: `max(10 x measured repeatability floor, absolute floor 1e-10 eV / 1e-9 eV/A / 1e-9 eV/A^3)`. The floors are measured per system/profile from repeated identical inference before any transformed comparison.
 
-Recorded outcome: the float64 profile (MACE) passes every check bitwise. The upstream-float32 builds (DPA, UMA) show 1e-7..1e-6 eV coordinate-order arithmetic noise across most transformed comparisons. GRACE passes all four-system invariance checks with the mlipx neighbor cache ON (energy deltas 0..1e-14 eV); with the cache OFF the same noise appears on most checks. These failures are recorded as-is, not hidden.
+Recorded outcome: the float64 profile (MACE) passes every check bitwise. The upstream-float32 builds (DPA, UMA) show 1e-7..1e-6 eV coordinate-order arithmetic noise across most transformed comparisons. GRACE passes all four-system invariance checks with the mliport neighbor cache ON (energy deltas 0..1e-14 eV); with the cache OFF the same noise appears on most checks. These failures are recorded as-is, not hidden.
 
 | profile | records | by status |
 |---|---|---|

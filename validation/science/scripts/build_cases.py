@@ -29,7 +29,7 @@ def build_fixtures_manifest() -> dict:
         if name not in fixtures.FIXTURES
     }
     return {
-        "schema": "mlipx.beta-case-fixtures/1",
+        "schema": "mliport.beta-case-fixtures/1",
         "suite_revision": common.BETA_VALIDATION_SUITE_REVISION,
         "bulk_fixtures": bulk,
         "extra_fixtures": extra,

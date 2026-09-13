@@ -1,20 +1,23 @@
-# mlipx
+# mliport
 
-mlipx runs UMA, MACE, DPA and GRACE machine-learning interatomic
+mliport runs UMA, MACE, DPA and GRACE machine-learning interatomic
 potentials through one VASP-shaped CLI/TUI/Python workflow for single
 points, relaxation, molecular dynamics, NEB and trajectory analysis.
 
 Scope and boundary, stated directly:
 
-- mlipx evaluates learned potential-energy surfaces (PES). It does not
+- mliport evaluates learned potential-energy surfaces (PES). It does not
   perform DFT electronic-structure calculations.
 - "VASP-shaped" refers to the workflow and output conventions (INCAR-style
   configuration, OUTCAR/OSZICAR/CONTCAR/XDATCAR files). It describes
   interface familiarity, not physical equivalence to VASP.
 - Energies, forces and stresses come from the selected model. Their
-  accuracy is the model's accuracy on your chemistry, not mlipx's.
+  accuracy is the model's accuracy on your chemistry, not mliport's.
 
-License: MIT. Status: post-fix beta candidate. Software CI is validated on
+License: MIT. Status: post-fix beta candidate. The project was previously
+published as `mlipx`, which collided on PyPI/import with an unrelated
+BASF package of the same name; `mliport` is a clean-break rename (the old
+top-level import is deliberately not published). Software CI is validated on
 Python 3.10-3.12; historical scientific evidence (one GPU architecture,
 V100 sm_70, and CPU) is being reclassified under the current validation
 semantics and current-HEAD scientific revalidation is pending; see
@@ -24,16 +27,16 @@ semantics and current-HEAD scientific revalidation is pending; see
 
 | Task | Command | Notes |
 |---|---|---|
-| Single point | `mlipx sp` | energy, forces, stress (stress if the model provides it) |
-| Ionic relaxation | `mlipx opt` | fixed cell, FIRE/LBFGS/BFGS |
-| Cell + ionic relaxation | `mlipx opt` | FrechetCellFilter; requires model stress + 3D PBC |
-| NVE MD | `mlipx md` | velocity Verlet |
-| NVT MD | `mlipx md` | Langevin, Bussi, Nosé-Hoover chain |
-| NEB / CI-NEB | `mlipx neb` | fixed cell, IDPP pre-relaxation, two-stage climbing image |
-| Batch | `mlipx batch` | many structures through one model load |
-| Trajectory analysis | `mlipx analyze` | validate, thermo, rdf, rmsd, msd, vacf, spectrum, transport, density, arrhenius, GEMDAT mechanisms |
-| INCAR-driven runs | `mlipx run -i INCAR.mlipx` | the VASP-shaped entry point |
-| Queue | `mlipx queue submit/start`, `mlipx jobs` | background job execution |
+| Single point | `mliport sp` | energy, forces, stress (stress if the model provides it) |
+| Ionic relaxation | `mliport opt` | fixed cell, FIRE/LBFGS/BFGS |
+| Cell + ionic relaxation | `mliport opt` | FrechetCellFilter; requires model stress + 3D PBC |
+| NVE MD | `mliport md` | velocity Verlet |
+| NVT MD | `mliport md` | Langevin, Bussi, Nosé-Hoover chain |
+| NEB / CI-NEB | `mliport neb` | fixed cell, IDPP pre-relaxation, two-stage climbing image |
+| Batch | `mliport batch` | many structures through one model load |
+| Trajectory analysis | `mliport analyze` | validate, thermo, rdf, rmsd, msd, vacf, spectrum, transport, density, arrhenius, GEMDAT mechanisms |
+| INCAR-driven runs | `mliport run -i INCAR.mliport` | the VASP-shaped entry point |
+| Queue | `mliport queue submit/start`, `mliport jobs` | background job execution |
 
 Everything ASE can read works as a structure input (POSCAR/CONTCAR, CIF,
 EXTXYZ, ...). Output formats are VASP-compatible text files plus JSON.
@@ -42,7 +45,7 @@ EXTXYZ, ...). Output formats are VASP-compatible text files plus JSON.
 
 These require a DFT code or are absent by design:
 
-| Property | Status in mlipx |
+| Property | Status in mliport |
 |---|---|
 | Electronic band structure | not available |
 | Density of states | not available |
@@ -58,9 +61,9 @@ The tested path is the installer, which builds one isolated environment
 per backend (the four stacks have mutually exclusive dependencies):
 
 ```bash
-git clone https://github.com/hydrogen1222/mlipx
-cd mlipx
-./scripts/install_mlipx.sh --engines mace dpa grace uma --device auto
+git clone https://github.com/hydrogen1222/mliport
+cd mliport
+./scripts/install_mliport.sh --engines mace dpa grace uma --device auto
 ```
 
 What the installer does:
@@ -75,26 +78,26 @@ What the installer does:
   sources, and offline/source builds are supported.
 - Requires roughly 10-15 GB of disk for all four backends including
   torch and model weights.
-- Runs `mlipx doctor` at the end unless `--skip-doctor` is given.
+- Runs `mliport doctor` at the end unless `--skip-doctor` is given.
 
 Useful flags: `--dry-run` (print the plan, install nothing),
 `--non-interactive`, `--clean` (rebuild environments), `--python 3.10`.
 
-Then install the mlipx CLI itself into your working environment:
+Then install the mliport CLI itself into your working environment:
 
 ```bash
-pip install ./mlipx
+pip install ./mliport
 ```
 
 <details>
 <summary>Manual installation (per backend)</summary>
 
-Each backend environment needs the mlipx package plus the engine's own
+Each backend environment needs the mliport package plus the engine's own
 stack. The authoritative version pins live in
-`mlipx/mlipx/install/compatibility.py`; the installer is the only path
+`mliport/mliport/install/compatibility.py`; the installer is the only path
 that keeps them consistent with your GPU architecture. If you install
 manually, at minimum verify your torch build against your compute
-capability, then run `mlipx doctor` and confirm every check passes
+capability, then run `mliport doctor` and confirm every check passes
 before trusting results.
 
 </details>
@@ -102,7 +105,7 @@ before trusting results.
 
 ## GPU architecture compatibility
 
-The installer and `mlipx setup` choose the correct PyTorch/CUDA wheel
+The installer and `mliport setup` choose the correct PyTorch/CUDA wheel
 automatically.
 
 | GPU family | Examples | Compute capability | CUDA route |
@@ -124,11 +127,11 @@ modern channel (cu128 for torch 2.8-2.10, cu130 for torch 2.12+).
 Maxwell is experimental because official TensorFlow 2.20 wheels start
 at sm_60.
 
-**Architecture compatibility** (from `mlipx/install/compatibility.py`; this
+**Architecture compatibility** (from `mliport/install/compatibility.py`; this
 describes the install route only - upstream package support, the pinned
 backend version, and the CUDA wheel channel - *not* workload
 certification). "Needs runtime smoke test" means the installer contract
-is consistent for that GPU family but mlipx has not yet verified that
+is consistent for that GPU family but mliport has not yet verified that
 exact engine + framework + GPU combination; "experimental" means
 upstream itself does not support or test it. Install-route smoke tests
 (engine installed, real model prediction) have been run on real V100 and
@@ -148,7 +151,7 @@ needs a post-fix model smoke retest.
 With a UMA environment installed and a structure file present:
 
 ```bash
-mlipx sp POSCAR --model uma-s-1p2.pt --model-type UMA \
+mliport sp POSCAR --model uma-s-1p2.pt --model-type UMA \
     --task omat --device cuda --output ./results
 ```
 
@@ -157,12 +160,12 @@ evidence) and a JSON record into `./results`. The same calculation in
 INCAR form:
 
 ```bash
-mlipx template -o INCAR.mlipx sp   # then edit MODEL_PATH/TASK/DEVICE
-mlipx run -i INCAR.mlipx
+mliport template -o INCAR.mliport sp   # then edit MODEL_PATH/TASK/DEVICE
+mliport run -i INCAR.mliport
 ```
 
 Configuration precedence: explicit CLI flags override the INCAR file,
-which overrides `settings.ini`, which overrides defaults. `mlipx config
+which overrides `settings.ini`, which overrides defaults. `mliport config
 show` prints the fully resolved configuration including where every
 value came from.
 
@@ -196,13 +199,13 @@ results above.
 
 ### Single point
 
-`mlipx sp` runs one structure through the calculator and writes
+`mliport sp` runs one structure through the calculator and writes
 energy/forces/stress. NaN/inf energies abort before any output file is
 written.
 
 ### Relaxation
 
-`mlipx opt` relaxes ionic positions at fixed cell (FIRE, LBFGS or BFGS).
+`mliport opt` relaxes ionic positions at fixed cell (FIRE, LBFGS or BFGS).
 With model stress available and a 3D periodic cell, it relaxes cell and
 ions together through ASE's `FrechetCellFilter`. Convergence is reported
 as final fmax plus step counts; the CLI prints both initial and final
@@ -210,7 +213,7 @@ volumes for cell relaxation.
 
 ### Molecular dynamics
 
-`mlipx md` supports NVE (velocity Verlet) and NVT with three
+`mliport md` supports NVE (velocity Verlet) and NVT with three
 thermostats: Langevin, Bussi stochastic velocity rescaling, and
 Nosé-Hoover chain. Trajectories are written as XDATCAR plus JSON with
 per-frame energies. The integration timestep and the save interval are
@@ -220,7 +223,7 @@ transport analysis rather than corrupting it.
 
 ### NEB / CI-NEB
 
-`mlipx neb` computes minimum-energy paths with a fixed cell:
+`mliport neb` computes minimum-energy paths with a fixed cell:
 
 - Endpoints can be validated as-is or pre-relaxed (`--endpoint-policy
   validate|relax`).
@@ -240,7 +243,7 @@ transport analysis rather than corrupting it.
 
 ### Analysis
 
-`mlipx analyze` operates on mlipx trajectories or external ones with an
+`mliport analyze` operates on mliport trajectories or external ones with an
 explicit coordinate convention (`--positions-convention`). The
 hierarchy for diffusion problems:
 
@@ -286,7 +289,7 @@ and collective transport is not assumed.
   There is no global "safe" timestep.
 - **Save interval vs timestep**: analysis operates on saved frames; the
   saved-frame interval must be short enough to resolve the process you
-  are measuring. `mlipx analyze validate` checks this and reports
+  are measuring. `mliport analyze validate` checks this and reports
   insufficient sampling rather than returning a number.
 - **Fixed-cell requirement for transport**: kinisi transport analysis
   requires NVT/NVE trajectories. NPT is not implemented, and analysis
@@ -303,7 +306,7 @@ fails if the README block drifts from the generator output.
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
 Status: post-fix beta candidate. Software CI is validated on Python 3.10-3.12. Historical scientific evidence has been retained and is being reclassified under the current validation semantics. Current-HEAD scientific revalidation is pending.
 
-Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mlipx integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
+Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mliport integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
 
 | Workflow | MACE | DPA | GRACE | UMA |
 |---|---|---|---|---|
@@ -402,7 +405,7 @@ results/
 ```
 
 Every record carries: model path + SHA-256, task/head, dtype, device
-(requested vs actual, GPU UUID hash), mlipx/framework versions, git
+(requested vs actual, GPU UUID hash), mliport/framework versions, git
 commit and scientific suite revision, and the result schema version.
 NEB and MD runs write checkpoints; analysis results are keyed by a
 request hash so identical requests are served from cache and changed
@@ -410,10 +413,10 @@ requests recompute.
 
 ## Python API
 
-The public surface (`mlipx.api`):
+The public surface (`mliport.api`):
 
 ```python
-from mlipx.api import calculate_energy, run_single_point
+from mliport.api import calculate_energy, run_single_point
 
 energy = calculate_energy("POSCAR", model_path="mace-omat-0-medium.model",
                           model_type="MACE", device="cpu")
@@ -428,8 +431,8 @@ the real signatures fail CI.
 ## Configuration precedence
 
 CLI flags > INCAR file > `settings.ini` > built-in defaults. Path
-provenance is printed by `mlipx config show`; `mlipx config schema`
-lists every recognized key. The TUI (`mlipx tui`) exposes the same
+provenance is printed by `mliport config show`; `mliport config schema`
+lists every recognized key. The TUI (`mliport tui`) exposes the same
 configuration space interactively.
 
 ## Troubleshooting
@@ -444,10 +447,10 @@ Observed, diagnosable failures:
   head. The record's `head` field shows what was used; the installer
   profile pins `Omat24`.
 - **Model lacks stress**: cell relaxation, elastic recipes and NPT-style
-  analysis require stress. mlipx fails closed with an explicit message
+  analysis require stress. mliport fails closed with an explicit message
   instead of fabricating stress.
 - **GPU architecture mismatch** (e.g. Volta with a cu128-only torch
-  build): `mlipx doctor` reports the compute capability and the
+  build): `mliport doctor` reports the compute capability and the
   installer pins the matching build; a manual install that ignores this
   fails at first kernel launch.
 - **GRACE memory**: the GRACE build is the most memory-hungry of the
@@ -457,7 +460,7 @@ Observed, diagnosable failures:
   capability registry are cross-checked by tests; a runtime contract
   change without revalidation fails CI rather than shipping stale
   claims.
-- **Insufficient transport sampling**: `mlipx analyze transport`
+- **Insufficient transport sampling**: `mliport analyze transport`
   reports when the trajectory is too short or the save interval too
   coarse for the fit window; it does not return a number in that case.
 
@@ -477,7 +480,7 @@ Observed, diagnosable failures:
 - Model predictive uncertainty is not implemented.
 - Historical beta validation covers one GPU architecture (V100, sm_70) and
   CPU, and predates the current validator semantics. It does not prove
-  every GPU architecture; use `mlipx doctor` on your hardware before
+  every GPU architecture; use `mliport doctor` on your hardware before
   trusting a first run.
 
 ## Credits
@@ -491,5 +494,5 @@ Observed, diagnosable failures:
 - [GEMDAT](https://github.com/GEMDAT-repos/GEMDAT)
 - [OMat24 / Meta](https://ai.meta.com/blog/open-source-climate-modeling/)
 
-This project (`hydrogen1222/mlipx`) is unrelated to the other project
-also named `mlipx` on PyPI.
+This project (`hydrogen1222/mliport`) is unrelated to the other project
+also named `mliport` on PyPI.

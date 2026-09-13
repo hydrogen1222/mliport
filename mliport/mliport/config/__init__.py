@@ -1,0 +1,78 @@
+"""mliport configuration system (Phase 1).
+
+This package is the single source of truth for built-in defaults, settings.ini
+loading, model/profile aliases, strict schema validation and layered config
+resolution. It is designed so that the CLI, the Python API and the INCAR flow
+all read the *same* defaults instead of each hard-coding their own.
+
+Public surface (re-exported here for convenience)::
+
+    from mliport.config import (
+        BUILTIN_DEFAULTS,
+        ConfigResolver,
+        IncarConfig,
+        MliportSettings,
+        OptionSpec,
+        Schema,
+        get_default_config,
+        settings_search_paths,
+    )
+
+The legacy ``mliport.config`` module (``IncarConfig`` + ``DEFAULT_*_CONFIG``) is
+kept as a thin backward-compatibility shim that re-exports from here.
+"""
+
+from __future__ import annotations
+
+from mliport.config.aliases import ModelAlias, Profile, resolve_model_alias
+from mliport.config.defaults import (
+    BUILTIN_DEFAULTS,
+    DEFAULT_DEVICE_BY_CALC_TYPE,
+    build_incar_default,
+    get_default_config,
+)
+from mliport.config.incar import IncarConfig
+from mliport.config.provenance import SourceLocation
+from mliport.config.resolver import ResolvedConfig, ResolvedValue, resolve_config
+from mliport.config.schema import OptionSpec, Schema, get_schema
+from mliport.config.settings import (
+    DEFAULT_SETTINGS_INI,
+    MliportSettings,
+    init_settings_file,
+    load_settings,
+    settings_search_paths,
+)
+
+# Backward-compatible template strings, regenerated from the single source of
+# defaults (plan section 17.7) so there is only one owner of the values.
+DEFAULT_SP_CONFIG = build_incar_default("sp")
+DEFAULT_OPT_CONFIG = build_incar_default("opt")
+DEFAULT_MD_CONFIG = build_incar_default("md")
+DEFAULT_NEB_CONFIG = build_incar_default("neb")
+
+__all__ = [
+    "BUILTIN_DEFAULTS",
+    "DEFAULT_DEVICE_BY_CALC_TYPE",
+    "DEFAULT_MD_CONFIG",
+    "DEFAULT_NEB_CONFIG",
+    "DEFAULT_OPT_CONFIG",
+    "DEFAULT_SETTINGS_INI",
+    "DEFAULT_SP_CONFIG",
+    "IncarConfig",
+    "ModelAlias",
+    "MliportSettings",
+    "OptionSpec",
+    "Profile",
+    "ResolvedConfig",
+    "ResolvedValue",
+    "Schema",
+    "SourceLocation",
+    "build_incar_default",
+    "get_default_config",
+    "get_schema",
+    "init_settings_file",
+    "load_settings",
+    "resolve_config",
+    "resolve_model_alias",
+    "settings_search_paths",
+]

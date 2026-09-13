@@ -1,11 +1,11 @@
 {
-  "schema": "mlipx.beta-validation-summary/1",
+  "schema": "mliport.beta-validation-summary/1",
   "generated_from": ".validation-work",
   "code_commit": "05e548c41f8e863f0121702d2c8cc3c60ca8add0, 293c1ed36f6aea843929e4d3ca2fe1da9c5e88bc, 360e1d2034e74d55133cb6e152d062c24867245b, 38abb85d87c92799b9b370758c9f920b4e982cbc, 7b22280d5eb723a0a9edde0ebf8d925bf410a341, 7cfce9f908feedcc64e790d6eb893fe3b02b6e5d, b79f0d0c7947ccada2cd60b384a2701060e7d2f2, c676c7d2f1ac43b1ffc12e14f1efb1024396ca2f, e08ab41788ee17aa2dc924271230ae21ad01c4e8",
   "versions": {
     "software_commit": null,
-    "validation_code_commit": "219477b69285c1961424bc744e753a32f48306ed",
-    "report_generator_commit": "219477b69285c1961424bc744e753a32f48306ed",
+    "validation_code_commit": "93e928ed797203209217092c2cc1fd40b5f627fa",
+    "report_generator_commit": "93e928ed797203209217092c2cc1fd40b5f627fa",
     "evidence_campaign": null,
     "evidence_source_commits": [
       "05e548c41f8e863f0121702d2c8cc3c60ca8add0",
@@ -1300,157 +1300,157 @@
   "coverage_table": [
     {
       "workflow": "Energy / forces",
-      "mlipx_status": "native",
+      "mliport_status": "native",
       "beta_status": "pass",
       "evidence": "four-backend inference + OMat24 labels"
     },
     {
       "workflow": "Stress",
-      "mlipx_status": "native when backend supports",
+      "mliport_status": "native when backend supports",
       "beta_status": "characterized\u00d740, fail\u00d71, pass\u00d715",
       "evidence": "numerical strain derivative; OMat24 reference stress absent"
     },
     {
       "workflow": "Ionic relaxation",
-      "mlipx_status": "native",
+      "mliport_status": "native",
       "beta_status": "pass",
       "evidence": "Cu/Si/MgO/Na3PS4"
     },
     {
       "workflow": "Cell relaxation",
-      "mlipx_status": "native when stress + 3D PBC",
+      "mliport_status": "native when stress + 3D PBC",
       "beta_status": "pass",
       "evidence": "FrechetCellFilter cases"
     },
     {
       "workflow": "EOS / bulk modulus",
-      "mlipx_status": "validation recipe",
+      "mliport_status": "validation recipe",
       "beta_status": "pass",
       "evidence": "Cu/Si/MgO"
     },
     {
       "workflow": "Elastic constants",
-      "mlipx_status": "validation recipe",
+      "mliport_status": "validation recipe",
       "beta_status": "pass",
       "evidence": "cubic finite strain, clamped vs relaxed ions"
     },
     {
       "workflow": "Harmonic phonons",
-      "mlipx_status": "validation recipe",
+      "mliport_status": "validation recipe",
       "beta_status": "fail\u00d72, pass\u00d746",
       "evidence": "Cu/Si"
     },
     {
       "workflow": "Vibrational thermodynamics",
-      "mlipx_status": "validation recipe",
+      "mliport_status": "validation recipe",
       "beta_status": "fail\u00d721, pass\u00d727",
       "evidence": "harmonic only, q-averaged"
     },
     {
       "workflow": "Vacancy energy",
-      "mlipx_status": "validation recipe",
+      "mliport_status": "validation recipe",
       "beta_status": "pass",
       "evidence": "Cu finite-size trend"
     },
     {
       "workflow": "Interstitial",
-      "mlipx_status": "characterization",
+      "mliport_status": "characterization",
       "beta_status": "not_run",
       "evidence": "optional OOD; not exercised in beta"
     },
     {
       "workflow": "Surface energy",
-      "mlipx_status": "characterization",
+      "mliport_status": "characterization",
       "beta_status": "pass",
       "evidence": "Cu(111) convergence"
     },
     {
       "workflow": "Formation energy",
-      "mlipx_status": "conditional",
+      "mliport_status": "conditional",
       "beta_status": "unsupported\u00d74",
       "evidence": "only exact OMat references"
     },
     {
       "workflow": "NEB",
-      "mlipx_status": "native",
+      "mliport_status": "native",
       "beta_status": "characterized\u00d74, pass\u00d728",
       "evidence": "Cu vacancy + Na3PS4"
     },
     {
       "workflow": "CI-NEB",
-      "mlipx_status": "native",
+      "mliport_status": "native",
       "beta_status": "characterized\u00d74, pass\u00d716",
       "evidence": "same"
     },
     {
       "workflow": "Saddle Hessian",
-      "mlipx_status": "validation recipe",
+      "mliport_status": "validation recipe",
       "beta_status": "pass",
       "evidence": "Cu vacancy candidate"
     },
     {
       "workflow": "NVE MD",
-      "mlipx_status": "native",
+      "mliport_status": "native",
       "beta_status": "pass",
       "evidence": "timestep convergence"
     },
     {
       "workflow": "NVT MD",
-      "mlipx_status": "native",
+      "mliport_status": "native",
       "beta_status": "characterized\u00d73, pass\u00d79",
       "evidence": "Langevin/Bussi/NHC"
     },
     {
       "workflow": "NPT MD",
-      "mlipx_status": "unsupported",
+      "mliport_status": "unsupported",
       "beta_status": "not_run",
       "evidence": "do not claim"
     },
     {
       "workflow": "RDF/MSD/VACF/density",
-      "mlipx_status": "native analysis",
+      "mliport_status": "native analysis",
       "beta_status": "pass",
       "evidence": "synthetic + real"
     },
     {
       "workflow": "Kinisi transport",
-      "mlipx_status": "native optional analysis",
+      "mliport_status": "native optional analysis",
       "beta_status": "characterized\u00d712",
       "evidence": "synthetic + real"
     },
     {
       "workflow": "GEMDAT mechanism",
-      "mlipx_status": "native optional analysis",
+      "mliport_status": "native optional analysis",
       "beta_status": "characterized\u00d712",
       "evidence": "real trajectory"
     },
     {
       "workflow": "Arrhenius",
-      "mlipx_status": "native analysis",
+      "mliport_status": "native analysis",
       "beta_status": "characterized\u00d74",
       "evidence": "synthetic; physical conditional"
     },
     {
       "workflow": "Band structure/DOS",
-      "mlipx_status": "unsupported",
+      "mliport_status": "unsupported",
       "beta_status": "not_run",
       "evidence": "electronic structure absent"
     },
     {
       "workflow": "Charge/Bader/ELF",
-      "mlipx_status": "unsupported",
+      "mliport_status": "unsupported",
       "beta_status": "not_run",
       "evidence": "electronic density absent"
     },
     {
       "workflow": "Dielectric/Born/piezo",
-      "mlipx_status": "unsupported",
+      "mliport_status": "unsupported",
       "beta_status": "not_run",
       "evidence": "electric-field response absent"
     },
     {
       "workflow": "k-point/ENCUT/SCF convergence",
-      "mlipx_status": "DFT-reference-only",
+      "mliport_status": "DFT-reference-only",
       "beta_status": "not_run",
       "evidence": "not an MLIP test"
     }
@@ -3058,6 +3058,7 @@
     "import_summary": {
       "records": 624,
       "migrated_records": 621,
+      "legacy_namespace_records": 624,
       "ancillary_files": 888,
       "problems": 0
     }

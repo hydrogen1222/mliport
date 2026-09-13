@@ -1,6 +1,6 @@
-"""Shared infrastructure for the mlipx beta scientific validation suite.
+"""Shared infrastructure for the mliport beta scientific validation suite.
 
-Every result record produced by this suite carries ``mlipx.beta-validation-
+Every result record produced by this suite carries ``mliport.beta-validation-
 result/2`` (migrated in memory from ``/1`` by the canonical evidence loader)
 and identifies the calculation independently of folder names:
 model identity and SHA-256, task/head, dtype, backend/framework versions,
@@ -351,7 +351,7 @@ def calculator_identity(wrapper: Any, calculator: Any) -> dict[str, Any]:
     if wrapper_mod not in ALLOWED_WRAPPER_MODULES:
         msg = (
             f"refusing to record evidence from {wrapper_mod}.{type(wrapper).__name__}: "
-            "only real mlipx backend wrappers may populate validation results"
+            "only real mliport backend wrappers may populate validation results"
         )
         raise RuntimeError(msg)
     return {
@@ -386,11 +386,11 @@ def result_record(
     run_id: str | None = None,
     campaign_id: str | None = None,
 ) -> dict[str, Any]:
-    """Build one ``mlipx.beta-validation-result/2`` record.
+    """Build one ``mliport.beta-validation-result/2`` record.
 
     Identity is explicit and additive: ``profile_id`` names the model
     profile, ``record_id`` the intended computation and ``run_id`` this
-    execution attempt.  ``campaign_id`` (env ``MLIPX_VALIDATION_CAMPAIGN``)
+    execution attempt.  ``campaign_id`` (env ``MLIPORT_VALIDATION_CAMPAIGN``)
     groups attempts that belong to one validation campaign when the caller
     provides one.
     """
@@ -398,11 +398,11 @@ def result_record(
         msg = f"invalid status {status!r}; must be one of {STATUSES}"
         raise ValueError(msg)
     try:
-        mlipx_version = package_version("mlipx")
+        mliport_version = package_version("mliport")
     except Exception:  # noqa: BLE001 - version probe must never abort a run
-        mlipx_version = "unknown"
+        mliport_version = "unknown"
     resolved_seed = seed if seed is not None else seed_from({"parameters": parameters})
-    resolved_campaign = campaign_id or os.environ.get("MLIPX_VALIDATION_CAMPAIGN")
+    resolved_campaign = campaign_id or os.environ.get("MLIPORT_VALIDATION_CAMPAIGN")
     record: dict[str, Any] = {
         "schema": RESULT_SCHEMA,
         "suite_revision": BETA_VALIDATION_SUITE_REVISION,
@@ -417,7 +417,7 @@ def result_record(
         "head": head,
         "dtype": dtype,
         "python": platform.python_version(),
-        "mlipx_version": mlipx_version,
+        "mliport_version": mliport_version,
         "backend_version": None,
         "framework_version": None,
         "device": device,
@@ -536,7 +536,7 @@ def write_result(
         if not versioned.exists():
             _atomic_write_text(versioned, payload)
             print(
-                f"[mlipx-validation] result collision at {path.name}: kept the "
+                f"[mliport-validation] result collision at {path.name}: kept the "
                 f"existing record and published this attempt as {versioned.name}",
                 file=sys.stderr,
             )

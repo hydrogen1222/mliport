@@ -1,5 +1,5 @@
 {
- "schema": "mlipx.runtime-validation/1",
+ "schema": "mliport.runtime-validation/1",
  "backend": "mace",
  "python": "3.12.13",
  "os": "Linux",
@@ -99,7 +99,7 @@
  },
  "versions": {
   "torch": "2.8.0+cu126",
-  "mlipx": "2.0.0",
+  "mliport": "2.0.0",
   "mace": "0.3.16"
  },
  "model_identity": {

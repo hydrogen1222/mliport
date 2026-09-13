@@ -17,6 +17,7 @@ from typing import Any
 from . import schema as schema_module
 from .constants import (
     BETA_VALIDATION_SUITE_REVISION,
+    LEGACY_RESULT_SCHEMA_PREFIXES,
     RESULT_SCHEMA,
     RESULT_SCHEMA_PREFIX,
     RESULT_SCHEMA_V1,
@@ -86,6 +87,37 @@ def _nonfinite_paths(value: Any, path: str = "$") -> list[str]:
         for index, item in enumerate(value):
             found.extend(_nonfinite_paths(item, f"{path}[{index}]"))
     return found
+
+
+def normalize_schema_id(schema_id: str) -> str:
+    """Map a legacy ``mlipx.*`` result schema id to the current namespace."""
+    for prefix in LEGACY_RESULT_SCHEMA_PREFIXES:
+        if schema_id.startswith(prefix):
+            return f"{RESULT_SCHEMA_PREFIX}/{schema_id[len(prefix):]}"
+    return schema_id
+
+
+def _normalize_legacy_record(
+    record: dict[str, Any], schema_id: str
+) -> tuple[dict[str, Any], bool]:
+    """Return a copy normalized for validation plus a legacy-namespace flag."""
+    legacy = schema_id.startswith(LEGACY_RESULT_SCHEMA_PREFIXES)
+    if not legacy and not (
+        "mliport_version" not in record and record.get("mlipx_version") is not None
+    ):
+        return record, False
+    normalized = dict(record)
+    if legacy:
+        normalized["legacy_schema_namespace"] = schema_id
+        normalized["schema"] = normalize_schema_id(schema_id)
+    if (
+        "mliport_version" not in normalized
+        and normalized.get("mlipx_version") is not None
+    ):
+        # Historical records carry the old provenance field name; the
+        # canonical schema reads mliport_version.
+        normalized["mliport_version"] = normalized["mlipx_version"]
+    return normalized, legacy
 
 
 def tier_of_path(path: Path) -> str | None:
@@ -200,6 +232,7 @@ class LoadedEvidence:
     scanned_files: int = 0
     out_of_scope_records: int = 0
     untagged_records: int = 0
+    legacy_namespace_records: int = 0
     campaign: str | None = None
     tier_counts: dict[str, int] = field(default_factory=dict)
 
@@ -230,6 +263,7 @@ class LoadedEvidence:
             "by_status": dict(sorted(by_status.items())),
             "by_tier": dict(sorted(self.tier_counts.items())),
             "migrated": self.migrated_records,
+            "legacy_namespace": self.legacy_namespace_records,
             "ancillary": self.ancillary_files,
             "out_of_scope": self.out_of_scope_records,
             "untagged": self.untagged_records,
@@ -301,10 +335,17 @@ def load_evidence(
             )
             continue
         schema_id = record.get("schema")
-        if not (isinstance(schema_id, str) and schema_id.startswith(RESULT_SCHEMA_PREFIX)):
+        is_result = isinstance(schema_id, str) and (
+            schema_id.startswith(RESULT_SCHEMA_PREFIX)
+            or schema_id.startswith(LEGACY_RESULT_SCHEMA_PREFIXES)
+        )
+        if not is_result:
             # Explicitly not a result record (summary/manifest/artefact).
             bundle.ancillary_files += 1
             continue
+        record, legacy_namespace = _normalize_legacy_record(record, schema_id)
+        if legacy_namespace:
+            bundle.legacy_namespace_records += 1
         violations = _validate_result_schema(record, rel)
         violations += _semantic_problems(record, rel)
         if violations:
@@ -382,6 +423,7 @@ __all__ = [
     "load_evidence",
     "load_records",
     "normalize_identity",
+    "normalize_schema_id",
     "strict_json_loads",
     "tier_of_path",
 ]

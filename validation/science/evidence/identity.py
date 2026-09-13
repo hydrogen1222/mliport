@@ -14,6 +14,7 @@ import json
 from typing import Any
 
 from .constants import (
+    LEGACY_PROJECT_NAME,
     RESULT_SCHEMA,
     RESULT_SCHEMA_V1,
     STATUS_SEMANTICS,
@@ -119,11 +120,14 @@ def migrate_record(record: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
     schema = record.get("schema")
     if schema == RESULT_SCHEMA:
         return record, None
-    if schema != RESULT_SCHEMA_V1:
+    legacy_v1 = f"{LEGACY_PROJECT_NAME}.beta-validation-result/1"
+    if schema not in (RESULT_SCHEMA_V1, legacy_v1):
         msg = f"cannot migrate unknown result schema {schema!r}"
         raise ValueError(msg)
     migrated = dict(record)
     migrated["schema"] = RESULT_SCHEMA
+    if str(schema).startswith(f"{LEGACY_PROJECT_NAME}."):
+        migrated["legacy_schema_namespace"] = str(schema)
     migrated["inference_mode"] = record.get("inference_mode")
     migrated["seed"] = seed_from(record)
     migrated["profile_id"] = profile_id_for(migrated)
@@ -139,7 +143,12 @@ def migrate_record(record: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
         ).encode("utf-8")
     ).hexdigest()[:32]
     migrated["migrated_from"] = RESULT_SCHEMA_V1
-    return migrated, f"migrated {RESULT_SCHEMA_V1} -> {RESULT_SCHEMA}"
+    if (
+        "mliport_version" not in migrated
+        and migrated.get(f"{LEGACY_PROJECT_NAME}_version") is not None
+    ):
+        migrated["mliport_version"] = migrated[f"{LEGACY_PROJECT_NAME}_version"]
+    return migrated, f"migrated {schema} -> {RESULT_SCHEMA}"
 
 
 def record_fingerprint(record: dict[str, Any]) -> str:

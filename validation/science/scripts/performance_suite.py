@@ -305,7 +305,7 @@ def main() -> int:
         "--neighbor-cache",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="GRACE only: toggle the mlipx neighbor-list cache",
+        help="GRACE only: toggle the mliport neighbor-list cache",
     )
     parser.add_argument(
         "--md-steps",

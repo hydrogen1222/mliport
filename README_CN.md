@@ -1,19 +1,21 @@
-# mlipx
+# mliport
 
-mlipx 通过同一套 VASP 风格的 CLI/TUI/Python 工作流,运行 UMA、MACE、DPA
+mliport 通过同一套 VASP 风格的 CLI/TUI/Python 工作流,运行 UMA、MACE、DPA
 与 GRACE 机器学习原子间势,完成单点能、结构弛豫、分子动力学、NEB 与轨迹
 分析。
 
 边界需要说清楚:
 
-- mlipx 计算的是学习得到的势能面(PES),不做 DFT 电子结构计算。
+- mliport 计算的是学习得到的势能面(PES),不做 DFT 电子结构计算。
 - "VASP 风格"指的是工作流与输出文件的约定(INCAR 式配置、OUTCAR/
   OSZICAR/CONTCAR/XDATCAR 等),目的是让熟悉 VASP 的用户上手成本低;
   这不是与 VASP 的物理等价性。
 - 能量、力、应力全部来自所选模型。结果的精度取决于模型对你的化学体系
-  的适用性,与 mlipx 本身无关。
+  的适用性,与 mliport 本身无关。
 
-许可证:MIT。状态:修复后的 beta 候选版。软件 CI 已在 Python 3.10-3.12
+许可证:MIT。状态:修复后的 beta 候选版。本项目此前以 `mlipx` 发布,该名称在
+PyPI/import 层面与 BASF 的同名包冲突;`mliport` 为 clean-break 改名
+(旧顶层 import 不再发布)。软件 CI 已在 Python 3.10-3.12
 通过;历史科学证据(一种 GPU 架构 V100 sm_70 与 CPU)正在按当前验证语义
 重新分类,current-HEAD 科学重新认证尚未完成,见下方[验证](#验证)一节。
 
@@ -21,25 +23,25 @@ mlipx 通过同一套 VASP 风格的 CLI/TUI/Python 工作流,运行 UMA、MACE�
 
 | 任务 | 命令 | 说明 |
 |---|---|---|
-| 单点能 | `mlipx sp` | 能量、力、应力(应力取决于模型是否提供) |
-| 离子弛豫 | `mlipx opt` | 固定晶胞,FIRE/LBFGS/BFGS |
-| 晶胞 + 离子弛豫 | `mlipx opt` | FrechetCellFilter;要求模型提供应力且为三维周期体系 |
-| NVE 分子动力学 | `mlipx md` | velocity Verlet |
-| NVT 分子动力学 | `mlipx md` | Langevin、Bussi、Nosé-Hoover 链 |
-| NEB / CI-NEB | `mlipx neb` | 固定晶胞,IDPP 预弛豫,两阶段攀爬图像 |
-| 批量计算 | `mlipx batch` | 一次模型加载处理多个结构 |
-| 轨迹分析 | `mlipx analyze` | validate、thermo、rdf、rmsd、msd、vacf、spectrum、transport、density、arrhenius、GEMDAT 机理分析 |
-| INCAR 驱动 | `mlipx run -i INCAR.mlipx` | VASP 风格入口 |
-| 队列 | `mlipx queue submit/start`、`mlipx jobs` | 后台作业执行 |
+| 单点能 | `mliport sp` | 能量、力、应力(应力取决于模型是否提供) |
+| 离子弛豫 | `mliport opt` | 固定晶胞,FIRE/LBFGS/BFGS |
+| 晶胞 + 离子弛豫 | `mliport opt` | FrechetCellFilter;要求模型提供应力且为三维周期体系 |
+| NVE 分子动力学 | `mliport md` | velocity Verlet |
+| NVT 分子动力学 | `mliport md` | Langevin、Bussi、Nosé-Hoover 链 |
+| NEB / CI-NEB | `mliport neb` | 固定晶胞,IDPP 预弛豫,两阶段攀爬图像 |
+| 批量计算 | `mliport batch` | 一次模型加载处理多个结构 |
+| 轨迹分析 | `mliport analyze` | validate、thermo、rdf、rmsd、msd、vacf、spectrum、transport、density、arrhenius、GEMDAT 机理分析 |
+| INCAR 驱动 | `mliport run -i INCAR.mliport` | VASP 风格入口 |
+| 队列 | `mliport queue submit/start`、`mliport jobs` | 后台作业执行 |
 
 ASE 能读的结构格式(POSCAR/CONTCAR、CIF、EXTXYZ 等)都可用作输入。
 输出为 VASP 兼容文本文件加 JSON 记录。
 
 ## 不能替代什么
 
-以下性质需要 DFT 代码,或在 mlipx 中明确缺席:
+以下性质需要 DFT 代码,或在 mliport 中明确缺席:
 
-| 性质 | mlipx 中的状态 |
+| 性质 | mliport 中的状态 |
 |---|---|
 | 电子能带结构 | 不可用 |
 | 态密度 | 不可用 |
@@ -55,9 +57,9 @@ ASE 能读的结构格式(POSCAR/CONTCAR、CIF、EXTXYZ 等)都可用作输入�
 无法共用一个环境):
 
 ```bash
-git clone https://github.com/hydrogen1222/mlipx
-cd mlipx
-./scripts/install_mlipx.sh --engines mace dpa grace uma --device auto
+git clone https://github.com/hydrogen1222/mliport
+cd mliport
+./scripts/install_mliport.sh --engines mace dpa grace uma --device auto
 ```
 
 安装脚本的行为:
@@ -70,31 +72,31 @@ cd mlipx
 - 模型权重在首次使用时下载;`--source` 控制轮子来源,支持离线与源码
   构建。
 - 四个后端连同 torch 与模型权重约需 10-15 GB 磁盘。
-- 结束时运行 `mlipx doctor`,除非给出 `--skip-doctor`。
+- 结束时运行 `mliport doctor`,除非给出 `--skip-doctor`。
 
 常用参数:`--dry-run`(只打印计划,不安装)、`--non-interactive`、
 `--clean`(重建环境)、`--python 3.10`。
 
-再把 mlipx 本体装进你的工作环境:
+再把 mliport 本体装进你的工作环境:
 
 ```bash
-pip install ./mlipx
+pip install ./mliport
 ```
 
 <details>
 <summary>手动安装(按后端)</summary>
 
-每个后端环境需要 mlipx 包加引擎自身的依赖栈。权威的版本锁定在
-`mlipx/mlipx/install/compatibility.py`;只有安装脚本会保证这些锁定与
+每个后端环境需要 mliport 包加引擎自身的依赖栈。权威的版本锁定在
+`mliport/mliport/install/compatibility.py`;只有安装脚本会保证这些锁定与
 你的 GPU 架构一致。如果手动安装,至少要核对 torch 构建与算力是否匹配,
-然后运行 `mlipx doctor` 并确认全部检查通过,再开始正式计算。
+然后运行 `mliport doctor` 并确认全部检查通过,再开始正式计算。
 
 </details>
 
 
 ## GPU 架构兼容性
 
-安装脚本与 `mlipx setup` 会自动选择正确的 PyTorch/CUDA 轮子通道。
+安装脚本与 `mliport setup` 会自动选择正确的 PyTorch/CUDA 轮子通道。
 
 | GPU 系列 | 例子 | 算力 | CUDA 路线 |
 |---|---|---|---|
@@ -114,10 +116,10 @@ PyTorch 2.8+ 的 cu128 构建已移除 Maxwell/Pascal 支持,PyTorch 2.11+
 cu128,torch 2.12+ 用 cu130)。Maxwell 标为实验性,因为官方 
 TensorFlow 2.20 轮子从 sm_60 起才有支持。
 
-**架构兼容性**(来自 `mlipx/install/compatibility.py`;它只描述安装
+**架构兼容性**(来自 `mliport/install/compatibility.py`;它只描述安装
 路线——上游包支持情况、锁定的后端版本、CUDA 轮子通道——*不是*负载
 级别的认证)。"needs runtime smoke test"表示该 GPU 系列的安装契约
-是自洽的,但 mlipx 尚未在真实的该引擎 + 框架 + GPU 组合上验证;
+是自洽的,但 mliport 尚未在真实的该引擎 + 框架 + GPU 组合上验证;
 "experimental"表示上游本身不支持或不测试该组合。安装路线冒烟测试
 (引擎装好、真实模型预测)已在真实的 V100 与 RTX 4090 硬件上运行;
 负载级证据目前只有下文的 V100 运行时验证。P40 使用了修正后的精确
@@ -135,7 +137,7 @@ TensorFlow 2.20 轮子从 sm_60 起才有支持。
 装好 UMA 环境后,对一个结构文件:
 
 ```bash
-mlipx sp POSCAR --model uma-s-1p2.pt --model-type UMA \
+mliport sp POSCAR --model uma-s-1p2.pt --model-type UMA \
     --task omat --device cuda --output ./results
 ```
 
@@ -143,12 +145,12 @@ mlipx sp POSCAR --model uma-s-1p2.pt --model-type UMA \
 与 JSON 记录。同样的计算用 INCAR 形式:
 
 ```bash
-mlipx template -o INCAR.mlipx sp   # 然后编辑 MODEL_PATH/TASK/DEVICE
-mlipx run -i INCAR.mlipx
+mliport template -o INCAR.mliport sp   # 然后编辑 MODEL_PATH/TASK/DEVICE
+mliport run -i INCAR.mliport
 ```
 
 配置优先级:显式 CLI 参数 > INCAR 文件 > `settings.ini` > 内置默认值。
-`mlipx config show` 会打印完整解析后的配置,并标明每个值来自哪里。
+`mliport config show` 会打印完整解析后的配置,并标明每个值来自哪里。
 
 ## 选择模型
 
@@ -175,26 +177,26 @@ mlipx run -i INCAR.mlipx
 
 ### 单点能
 
-`mlipx sp` 把一个结构送入计算器,写出能量/力/应力。能量出现 NaN/inf
+`mliport sp` 把一个结构送入计算器,写出能量/力/应力。能量出现 NaN/inf
 时,在任何输出文件写出之前即中止。
 
 ### 弛豫
 
-`mlipx opt` 在固定晶胞下弛豫离子位置(FIRE、LBFGS 或 BFGS)。当模型
+`mliport opt` 在固定晶胞下弛豫离子位置(FIRE、LBFGS 或 BFGS)。当模型
 提供应力且体系为三维周期时,通过 ASE 的 `FrechetCellFilter` 同时弛豫
 晶胞与离子。输出报告最终 fmax 与步数;晶胞弛豫同时打印初始与最终
 体积。
 
 ### 分子动力学
 
-`mlipx md` 支持 NVE(velocity Verlet)与三种恒温器的 NVT:Langevin、
+`mliport md` 支持 NVE(velocity Verlet)与三种恒温器的 NVT:Langevin、
 Bussi 随机速度重标定、Nosé-Hoover 链。轨迹写为 XDATCAR 加 JSON(含
 每帧能量)。积分步长与保存间隔相互独立;分析命令从轨迹元数据读取
 保存间隔——保存间隔过粗会让传输分析退化,而不是悄悄给出错误结果。
 
 ### NEB / CI-NEB
 
-`mlipx neb` 在固定晶胞下计算最小能量路径:
+`mliport neb` 在固定晶胞下计算最小能量路径:
 
 - 端点可以直接使用或预先弛豫(`--endpoint-policy validate|relax`)。
 - 初始路径:带周期映像(winding)处理的线性插值,或 IDPP 预弛豫。
@@ -209,7 +211,7 @@ Bussi 随机速度重标定、Nosé-Hoover 链。轨迹写为 XDATCAR 加 JSON(�
 
 ### 分析
 
-`mlipx analyze` 处理 mlipx 轨迹或外部轨迹(外部轨迹需显式给出坐标
+`mliport analyze` 处理 mliport 轨迹或外部轨迹(外部轨迹需显式给出坐标
 约定 `--positions-convention`)。扩散问题的层级:
 
 1. `msd` — 窗口化、按方向分解的 MSD 诊断。
@@ -244,7 +246,7 @@ Bussi 随机速度重标定、Nosé-Hoover 链。轨迹写为 XDATCAR 加 JSON(�
   0.25-2.0 fs),以 NVE 能量漂移斜率作为判据;验证报告中记录了哪些
   步长稳定。不存在全局"安全"步长。
 - **保存间隔与步长**:分析只作用于保存的帧。要分辨你测量的过程,
-  保存间隔必须足够密。`mlipx analyze validate` 会检查这一点,采样
+  保存间隔必须足够密。`mliport analyze validate` 会检查这一点,采样
   不足时报告问题而不是给出一个数字。
 - **传输分析的固定晶胞要求**:kinisi 传输分析要求 NVT/NVE 轨迹。
   NPT 未实现,因此也不提供对恒压轨迹的传输分析。
@@ -259,7 +261,7 @@ README 中的生成块与生成器输出逐字节比对,漂移即失败。
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
 Status: post-fix beta candidate. Software CI is validated on Python 3.10-3.12. Historical scientific evidence has been retained and is being reclassified under the current validation semantics. Current-HEAD scientific revalidation is pending.
 
-Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mlipx integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
+Validation status per backend, rendered from the beta evidence records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 common subset). `software_validated` means the mliport integration and all recorded checks passed; `model_characterized` means the workflow ran and its behavior was recorded, including honest failures (e.g. float32 arithmetic noise). Full per-test tables: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md).
 
 | Workflow | MACE | DPA | GRACE | UMA |
 |---|---|---|---|---|
@@ -351,16 +353,16 @@ results/
 ```
 
 每条记录携带:模型路径与 SHA-256、task/head、dtype、设备(请求值与
-实际值、GPU UUID 哈希)、mlipx 与框架版本、git commit 与科学套件
+实际值、GPU UUID 哈希)、mliport 与框架版本、git commit 与科学套件
 修订号、结果 schema 版本。NEB 与 MD 写检查点;分析结果按请求哈希
 缓存,相同请求直接命中,请求变化即重算。
 
 ## Python API
 
-公开接口(`mlipx.api`):
+公开接口(`mliport.api`):
 
 ```python
-from mlipx.api import calculate_energy, run_single_point
+from mliport.api import calculate_energy, run_single_point
 
 energy = calculate_energy("POSCAR", model_path="mace-omat-0-medium.model",
                           model_type="MACE", device="cpu")
@@ -373,9 +375,9 @@ results = run_single_point("POSCAR", model_path="mace-omat-0-medium.model",
 
 ## 配置优先级
 
-CLI 参数 > INCAR 文件 > `settings.ini` > 内置默认值。`mlipx config
-show` 打印每个值的来源路径;`mlipx config schema` 列出全部可识别的
-键。TUI(`mlipx tui`)以交互方式暴露同一配置空间。
+CLI 参数 > INCAR 文件 > `settings.ini` > 内置默认值。`mliport config
+show` 打印每个值的来源路径;`mliport config schema` 列出全部可识别的
+键。TUI(`mliport tui`)以交互方式暴露同一配置空间。
 
 ## 故障排查
 
@@ -386,17 +388,17 @@ show` 打印每个值的来源路径;`mlipx config schema` 列出全部可识别
 - **DPA 分支用错**:DPA-3.1-3M 是多头的。`--head`/TASK 与训练分支
   不匹配时,结果会静默地来自错误的头。记录中的 `head` 字段显示实际
   使用的分支;安装 profile 锁定 `Omat24`。
-- **模型不提供应力**:晶胞弛豫、弹性配方等都需要应力。mlipx 以显式
+- **模型不提供应力**:晶胞弛豫、弹性配方等都需要应力。mliport 以显式
   报错的方式 fail closed,不会伪造应力。
 - **GPU 架构不匹配**(例如 Volta 卡装了仅含 cu128 内核的 torch
-  构建):`mlipx doctor` 会报告算力版本,安装脚本据此锁定对应构建;
+  构建):`mliport doctor` 会报告算力版本,安装脚本据此锁定对应构建;
   忽略此事的手动安装会在第一次内核启动时失败。
 - **GRACE 显存**:四个后端中 GRACE 在大晶胞下最耗显存;批量计算先
   调低 `--batch-size`,再怀疑是 bug。
 - **能力证据不一致**:README 表格与策划的能力注册表由测试交叉校验;
   运行时契约变更若未重新验证,CI 会失败,而不是让过时的声明随包
   发布。
-- **传输采样不足**:轨迹太短或保存间隔太粗时,`mlipx analyze
+- **传输采样不足**:轨迹太短或保存间隔太粗时,`mliport analyze
   transport` 会报告问题,而不是返回一个数字。
 
 ## 局限
@@ -411,7 +413,7 @@ show` 打印每个值的来源路径;`mlipx config schema` 列出全部可识别
 - 无 NPT 系综。
 - 未实现模型预测不确定度。
 - 历史 beta 验证覆盖一种 GPU 架构(V100,sm_70)与 CPU,且早于当前验证器语义。它不证明所有
-  GPU 架构都可用;在你的硬件上,请先运行 `mlipx doctor` 再信任首次
+  GPU 架构都可用;在你的硬件上,请先运行 `mliport doctor` 再信任首次
   计算结果。
 
 ## 致谢
@@ -425,4 +427,4 @@ show` 打印每个值的来源路径;`mlipx config schema` 列出全部可识别
 - [GEMDAT](https://github.com/GEMDAT-repos/GEMDAT)
 - [OMat24 / Meta](https://ai.meta.com/blog/open-source-climate-modeling/)
 
-本项目(`hydrogen1222/mlipx`)与 PyPI 上另一个同名 `mlipx` 项目无关。
+本项目(`hydrogen1222/mliport`)与 PyPI 上另一个同名 `mliport` 项目无关。

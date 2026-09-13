@@ -1,5 +1,5 @@
 {
-  "schema": "mlipx.beta-data-manifest/1",
+  "schema": "mliport.beta-data-manifest/1",
   "suite_revision": 1,
   "description": "Pinned OMat24 validation-subset provenance (taskbook section 6.1). The subset is drawn ONLY from the official validation split, using the corrected 2024-12-20 files (fairchem issue #942), so none of these structures are model training data. Raw download caches live in an ignored local directory; the selected ~256-structure subset and this manifest are committed.",
   "dataset": {

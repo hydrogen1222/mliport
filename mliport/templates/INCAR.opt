@@ -1,0 +1,26 @@
+# Geometry Optimization Settings
+# mliport - VASP-style input
+# Supports engines: UMA (default), MACE, DPA, GRACE
+
+# Calculation Type
+CALC_TYPE = OPT
+TASK = omat
+
+# Model Settings
+MODEL_PATH = uma-s-1.pt
+MODEL_TYPE = uma          # uma (default), mace, dpa, grace
+DEVICE = cpu
+INFERENCE_MODE = default  # UMA only; ignored by other engines
+
+# Optimization Settings
+OPT_ALGO = FIRE          # FIRE, BFGS, or LBFGS
+FMAX = 0.05              # Force convergence threshold (eV/Å)
+CELL_OPT = .FALSE.       # .TRUE. to relax cell too
+
+# Notes:
+# - TASK: omat (materials, UMA), omol (molecules, UMA), oc20 (catalysis, UMA),
+#   bulk (MACE/DPA/GRACE), molecule (MACE/DPA/GRACE)
+# - MODEL_TYPE=mace: add HEAD=default
+# - MODEL_TYPE=dpa:  add HEAD=<branch>
+# - MODEL_TYPE=grace: MODEL_PATH is a SavedModel directory
+# - DEVICE: cpu or cuda[:N]

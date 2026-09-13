@@ -384,7 +384,7 @@ def build_coverage_table(tiers: dict[str, list]) -> list[dict[str, str]]:
         table.append(
             {
                 "workflow": name,
-                "mlipx_status": status,
+                "mliport_status": status,
                 "beta_status": _coverage_status(records),
                 "evidence": evidence,
             }
@@ -535,7 +535,7 @@ def readme_validation_snippet(
         "",
         "Validation status per backend, rendered from the beta evidence "
         "records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 "
-        "common subset). `software_validated` means the mlipx integration "
+        "common subset). `software_validated` means the mliport integration "
         "and all recorded checks passed; `model_characterized` means the "
         "workflow ran and its behavior was recorded, including honest "
         "failures (e.g. float32 arithmetic noise). Full per-test tables: "
@@ -582,7 +582,7 @@ def md_provenance(
 ) -> str:
     versions = versions or {}
     lines = [
-        "# mlipx beta scientific validation report",
+        "# mliport beta scientific validation report",
         "",
         f"Generated from evidence records under `{root}`; evidence "
         f"commits: `{commits}`. Every table in this document is rendered from "
@@ -647,7 +647,7 @@ def md_t2(records: list[dict[str, Any]]) -> str:
         "check bitwise. The upstream-float32 builds (DPA, UMA) show "
         "1e-7..1e-6 eV coordinate-order arithmetic noise across most "
         "transformed comparisons. GRACE passes all four-system "
-        "invariance checks with the mlipx neighbor cache ON (energy "
+        "invariance checks with the mliport neighbor cache ON (energy "
         "deltas 0..1e-14 eV); with the cache OFF the same noise "
         "appears on most checks. These failures are recorded as-is, "
         "not hidden.",
@@ -1518,7 +1518,7 @@ def evidence_commits(tiers: dict[str, list[dict[str, Any]]]) -> str:
     keeps report regeneration byte-stable: the report is a pure function of
     the evidence records, so ``git diff --exit-code`` after regeneration
     actually holds. String-typed to stay coherent with the shared
-    ``mlipx.beta-validation-summary/1`` schema id.
+    ``mliport.beta-validation-summary/1`` schema id.
     """
     commits = sorted(
         {
@@ -1563,7 +1563,7 @@ def _summary_json(
         if r.get("status") == "blocked"
     ]
     return {
-        "schema": "mlipx.beta-validation-summary/1",
+        "schema": "mliport.beta-validation-summary/1",
         "generated_from": str(root),
         "code_commit": evidence_commits(tiers),
         "versions": versions,
@@ -1635,7 +1635,7 @@ def main() -> int:
         "--campaign-manifest",
         default=None,
         help=(
-            "mlipx.beta-campaign/1 manifest that declares the campaign "
+            "mliport.beta-campaign/1 manifest that declares the campaign "
             "target, status and evidence commits"
         ),
     )
@@ -1724,7 +1724,7 @@ def main() -> int:
             print(f"[report] updated generated block in {path}")
 
     sections_cn = [
-        "# mlipx beta 科学验证报告",
+        "# mliport beta 科学验证报告",
         "",
         f"由 `{root}` 下的证据记录生成；证据对应提交 `{summary['code_commit']}`。"
         "本文档全部表格由 `validation/science/scripts/"

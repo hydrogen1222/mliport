@@ -3,7 +3,7 @@
 Runs relax / cell relax / EOS / elastic / phonon / harmonic thermodynamics /
 vacancy / surface / conditional formation-energetics workflows with the same
 workflow definition on every real backend.  Every record proves calculator
-identity through the mlipx CalculatorFactory; no synthetic calculator may
+identity through the mliport CalculatorFactory; no synthetic calculator may
 appear here (taskbook section 47).
 
 Systems: Cu fcc, Si diamond, MgO rocksalt (mandatory common) and alpha-Na3PS4
@@ -1355,7 +1355,7 @@ def main() -> int:
         "--neighbor-cache",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="GRACE only: toggle the mlipx neighbor-list cache",
+        help="GRACE only: toggle the mliport neighbor-list cache",
     )
     parser.add_argument(
         "--workflows",
