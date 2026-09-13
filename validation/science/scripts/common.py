@@ -403,10 +403,12 @@ def result_record(
         mliport_version = "unknown"
     resolved_seed = seed if seed is not None else seed_from({"parameters": parameters})
     resolved_campaign = campaign_id or os.environ.get("MLIPORT_VALIDATION_CAMPAIGN")
+    software_commit, software_commit_source = _resolved_software_commit()
     record: dict[str, Any] = {
         "schema": RESULT_SCHEMA,
         "suite_revision": BETA_VALIDATION_SUITE_REVISION,
-        "git_commit": _git_commit(),
+        "git_commit": software_commit,
+        "software_commit_source": software_commit_source,
         "case_id": case_id,
         "test_id": test_id,
         "status": status,
@@ -438,6 +440,14 @@ def result_record(
     return record
 
 
+#: Explicit software-commit override.  A validation harness run at commit X
+#: may legitimately analyse trajectories produced by product software at an
+#: earlier commit Y; the record must then carry Y (the validated software
+#: revision) while the report records X as validation_code_commit.  The
+#: override is explicit, validated and recorded, never a silent fallback.
+SOFTWARE_COMMIT_ENV = "MLIPORT_SOFTWARE_COMMIT"
+
+
 def _git_commit() -> str:
     import subprocess
 
@@ -452,6 +462,21 @@ def _git_commit() -> str:
     except (OSError, subprocess.SubprocessError):
         return "unknown"
     return out.stdout.strip()
+
+
+def _resolved_software_commit() -> tuple[str, str]:
+    """Return ``(commit, source)`` for the software revision being validated."""
+    override = os.environ.get(SOFTWARE_COMMIT_ENV)
+    if override:
+        value = override.strip().lower()
+        if len(value) != 40 or any(ch not in "0123456789abcdef" for ch in value):
+            raise ValueError(
+                f"{SOFTWARE_COMMIT_ENV} must be a 40-character hex commit sha, "
+                f"got {override!r}"
+            )
+        return value, "env_override"
+    commit = _git_commit()
+    return commit, "unknown" if commit == "unknown" else "git_head"
 
 
 class ResultCollisionError(RuntimeError):

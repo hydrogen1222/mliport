@@ -1481,3 +1481,76 @@ def test_t3_summary_json_keeps_energy_and_force_metrics_without_stress():
     assert uma["energy_per_atom"]["mae"] == pytest.approx(0.02)
     assert uma["forces"]["component_mae_eV_A"] == pytest.approx(0.1)
     assert uma["stress"]["reference_stress_available"] is False
+
+
+def test_software_commit_env_override_is_explicit_and_validated(monkeypatch):
+    """A harness run may analyse trajectories produced at an earlier commit."""
+    override = "a" * 40
+
+    def _record():
+        return common.result_record(
+            case_id="c",
+            test_id="t1_real_inference",
+            status="pass",
+            engine="mace",
+            model_identity="mace-omat",
+            model_sha256="b" * 64,
+            task="bulk",
+            head=None,
+            dtype="float64",
+            device={
+                "requested": "cpu",
+                "actual": "cpu",
+                "gpu_name": None,
+                "gpu_uuid_hash": None,
+            },
+            input_structure_id=None,
+            parameters={},
+            metrics={
+                "energy_eV": -1.0,
+                "forces_max_abs_eV_A": 0.1,
+                "stress_supported": False,
+            },
+        )
+
+    monkeypatch.delenv(common.SOFTWARE_COMMIT_ENV, raising=False)
+    head_record = _record()
+    assert head_record["git_commit"] == common._git_commit()
+    assert head_record["software_commit_source"] in {"git_head", "unknown"}
+
+    monkeypatch.setenv(common.SOFTWARE_COMMIT_ENV, override)
+    overridden = _record()
+    assert overridden["git_commit"] == override
+    assert overridden["software_commit_source"] == "env_override"
+    # the identity hash must follow the recorded software commit
+    assert overridden["profile_id"] != head_record["profile_id"]
+
+    monkeypatch.setenv(common.SOFTWARE_COMMIT_ENV, "not-a-sha")
+    with pytest.raises(ValueError, match="40-character hex"):
+        _record()
+
+
+def test_analysis_setup_backend_version_does_not_require_engine_import():
+    """Regression for the T7 stage-E AttributeError on engines.package_version."""
+    import sys
+    import types
+    from pathlib import Path as _Path
+
+    scripts = (
+        _Path(__file__).resolve().parents[3] / "validation" / "science" / "scripts"
+    )
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import analysis_suite
+
+    explicit = analysis_suite._analysis_backend_version(
+        types.SimpleNamespace(backend_version="9.9.9", engine="mace")
+    )
+    assert explicit == "9.9.9"
+    resolved = analysis_suite._analysis_backend_version(
+        types.SimpleNamespace(backend_version=None, engine="mace")
+    )
+    assert isinstance(resolved, str) and resolved
+    source = (scripts / "analysis_suite.py").read_text(encoding="utf-8")
+    assert "engines.package_version(" not in source
+    assert "common.package_version(engines._backend_dist(" in source

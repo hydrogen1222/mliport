@@ -148,6 +148,18 @@ def _production_csv_rows(run_dir: Path, equil_steps: int) -> list[dict[str, str]
         return [row for row in csv.DictReader(fh) if int(row["step"]) >= equil_steps]
 
 
+def _analysis_backend_version(args) -> str:
+    """Backend package version for the analysis-only context (no MLIP load).
+
+    The analysis phase runs in the analysis venv where the engine package may
+    not be importable; the version string is informational provenance and must
+    never abort the setup (regression: engines.package_version did not exist).
+    """
+    if args.backend_version:
+        return str(args.backend_version)
+    return common.package_version(engines._backend_dist(args.engine))
+
+
 def _kinisi_transport(dataset, temperature_k: float) -> dict[str, Any]:
     from mliport.analysis.transport import kinisi_transport
 
@@ -790,8 +802,7 @@ def main() -> int:
                 dtype="engine-defined",  # MD ran in the engine venv
                 task=profile.get("task"),
                 head=args.head,
-                backend_version=args.backend_version
-                or engines.package_version(engines._backend_dist(args.engine)),
+                backend_version=_analysis_backend_version(args),
                 framework_version="n/a",
             )
     except Exception as exc:  # noqa: BLE001 - record and return failure
