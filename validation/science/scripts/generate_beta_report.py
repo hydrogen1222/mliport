@@ -198,11 +198,11 @@ def md_tier(tier: str, view: TierView, render_current) -> str:
     return "\n".join(lines)
 
 
-def md_historical(views: dict[str, TierView], versions: dict[str, Any], cn: bool = False) -> str:
+def md_historical(
+    views: dict[str, TierView], versions: dict[str, Any], cn: bool = False
+) -> str:
     """Historical evidence explicitly excluded from the current campaign."""
-    rows = [
-        (tier, view) for tier, view in views.items() if view.historical_sources
-    ]
+    rows = [(tier, view) for tier, view in views.items() if view.historical_sources]
     if cn:
         lines = ["## 不在当前 campaign 内的历史证据", ""]
     else:
@@ -764,7 +764,9 @@ def readme_validation_snippet(
 # ------------------------------------------------------------ md sections
 
 
-def _checklist_context(canonical, tier_views, versions, campaign_manifest, archive_manifest):
+def _checklist_context(
+    canonical, tier_views, versions, campaign_manifest, archive_manifest
+):
     counts = (canonical or {}).get("record_counts", {})
     by_status = counts.get("by_status", {})
     engine_tiers: dict[str, set[str]] = collections.defaultdict(set)
@@ -1140,18 +1142,16 @@ def md_go_checklist(
     )
     items = _go_items_cn(ctx) if language == "cn" else _go_items_en(ctx)
     queries = _go_queries(ctx, tiers)
-    assert len(queries) == len(items), (
-        "every GO checklist item needs exactly one evidence query"
-    )
+    assert len(queries) == len(
+        items
+    ), "every GO checklist item needs exactly one evidence query"
     # Tier-linked GO items cannot claim green when the tier produced no
     # current-campaign record: the status follows the evidence query.
     tier_linked = {11: "t1", 12: "t2fd", 14: "t5", 15: "t7", 16: "t7", 19: "t7"}
     items = [
         (
             title,
-            _GO_STATUS
-            if ctx["tier_counts"].get(tier_linked[index], 0)
-            else _GO_WARN,
+            _GO_STATUS if ctx["tier_counts"].get(tier_linked[index], 0) else _GO_WARN,
             evidence,
         )
         if index in tier_linked
@@ -2013,30 +2013,90 @@ def md_t7(records: list[dict[str, Any]], cn: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _sp_latency_cell(record: dict[str, Any]) -> str:
+    metrics = record["metrics"]
+    median = metrics.get("median_ms")
+    if median is None:
+        median = (metrics.get("warm_call_median_seconds") or 0) * 1e3
+    text = _fmt(median, 3)
+    if metrics.get("p05_ms") is not None:
+        text += (
+            f" [{_fmt(metrics.get('p05_ms'), 3)}-{_fmt(metrics.get('p95_ms'), 3)}]"
+            f" n={metrics.get('n_timed')}"
+        )
+    diagnostics = record.get("diagnostics", {})
+    if diagnostics.get("benchmark_anomaly"):
+        text += " **benchmark_anomaly**"
+    elif diagnostics.get("scaling_verdict"):
+        text += f" ({diagnostics['scaling_verdict']})"
+    return text
+
+
 def md_t8(records: list[dict[str, Any]]) -> str:
     g = _by_composite(records)
     lines = ["## T8: performance (V100-16GB)", ""]
     lines += [
-        "### Single-point warm latency (median ms)",
+        "### Single-point warm latency (median [p05-p95] ms, n timed)",
         "",
         "| atoms | " + " | ".join(ENGINE_ORDER) + " |",
         "|---|---|---|---|---|",
     ]
     for n in (32, 128, 512):
         table = _profile_records(g, f"t8_sp_scaling_{n}__t8_performance")
-        cells = [
-            _engine_cell(
-                table,
-                eng,
-                lambda rec: _fmt(
-                    (rec["metrics"].get("warm_call_median_seconds") or 0) * 1e3,
-                    3,
-                ),
-            )
-            for eng in ENGINE_ORDER
-        ]
+        cells = [_engine_cell(table, eng, _sp_latency_cell) for eng in ENGINE_ORDER]
         lines.append(f"| {n} | " + " | ".join(cells) + " |")
     lines.append("")
+    lines += [
+        "### Single-point startup and spread (per engine/size)",
+        "",
+        "| engine | atoms | model_load_s | first_inference_ms | warmup | n_timed "
+        "| median_ms | mean_ms | p05_ms | p95_ms | min_ms | max_ms | atoms/s |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for n in (32, 128, 512):
+        table = _profile_records(g, f"t8_sp_scaling_{n}__t8_performance")
+        for record in _engine_profiles(table):
+            metrics = record["metrics"]
+            if not metrics.get("median_ms") and not metrics.get(
+                "warm_call_median_seconds"
+            ):
+                continue
+            lines.append(
+                "| {engine} | {atoms} | {load} | {first} | {warmup} | {n_timed} "
+                "| {median} | {mean} | {p05} | {p95} | {min} | {max} | {aps} |".format(
+                    engine=record.get("engine"),
+                    atoms=metrics.get("natoms", n),
+                    load=_fmt(metrics.get("model_load_s"), 3),
+                    first=_fmt(metrics.get("first_inference_ms"), 3),
+                    warmup=metrics.get("warmup_count"),
+                    n_timed=metrics.get("n_timed"),
+                    median=_fmt(metrics.get("median_ms"), 3),
+                    mean=_fmt(metrics.get("mean_ms"), 3),
+                    p05=_fmt(metrics.get("p05_ms"), 3),
+                    p95=_fmt(metrics.get("p95_ms"), 3),
+                    min=_fmt(metrics.get("min_ms"), 3),
+                    max=_fmt(metrics.get("max_ms"), 3),
+                    aps=_fmt(metrics.get("atoms_per_second_warm"), 1),
+                )
+            )
+    lines.append("")
+    flagged = [
+        record
+        for record in records
+        if record.get("diagnostics", {}).get("benchmark_anomaly")
+        or record.get("diagnostics", {}).get("scaling_verdict")
+    ]
+    if flagged:
+        lines.append(
+            "Scaling flags: "
+            + "; ".join(
+                f"{record.get('engine')} {record['metrics'].get('natoms')} atoms"
+                f" ({record.get('diagnostics', {}).get('scaling_reason', 'anomaly')})"
+                for record in flagged
+            )
+            + "."
+        )
+        lines.append("")
     lines += [
         "### NVE MD throughput (steps/s / atom-steps/s)",
         "",
