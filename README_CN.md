@@ -13,11 +13,14 @@ mliport 通过同一套 VASP 风格的 CLI/TUI/Python 工作流,运行 UMA、MAC
 - 能量、力、应力全部来自所选模型。结果的精度取决于模型对你的化学体系
   的适用性,与 mliport 本身无关。
 
-许可证:MIT。状态:修复后的 beta 候选版。本项目此前以 `mlipx` 发布,该名称在
+许可证:MIT。状态:**beta 验证已完成**,对应软件提交
+`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c`(current-HEAD 四后端
+V100-SXM2-16GB smoke:MACE/DPA/GRACE/UMA 的 T1/T2FD/T5/T6/T7,
+外加 Python 3.10-3.12 CI 与干净 wheel 安装);发布物本身仍是
+`2.0.0b1` beta 候选版。T3 精度、T4 静态工作流与 T8 性能保持历史证据,
+明确**不**作为 current-HEAD 声明。本项目此前以 `mlipx` 发布,该名称在
 PyPI/import 层面与 BASF 的同名包冲突;`mliport` 为 clean-break 改名
-(旧顶层 import 不再发布)。软件 CI 已在 Python 3.10-3.12
-通过;历史科学证据(一种 GPU 架构 V100 sm_70 与 CPU)正在按当前验证语义
-重新分类,current-HEAD 科学重新认证尚未完成,见下方[验证](#验证)一节。
+(旧顶层 import 不再发布)。见下方[验证](#验证)一节。
 
 ## 能运行什么
 

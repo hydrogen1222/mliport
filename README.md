@@ -14,14 +14,16 @@ Scope and boundary, stated directly:
 - Energies, forces and stresses come from the selected model. Their
   accuracy is the model's accuracy on your chemistry, not mliport's.
 
-License: MIT. Status: post-fix beta candidate. The project was previously
-published as `mlipx`, which collided on PyPI/import with an unrelated
-BASF package of the same name; `mliport` is a clean-break rename (the old
-top-level import is deliberately not published). Software CI is validated on
-Python 3.10-3.12; historical scientific evidence (one GPU architecture,
-V100 sm_70, and CPU) is being reclassified under the current validation
-semantics and current-HEAD scientific revalidation is pending; see
-[Validation](#validation) below.
+License: MIT. Status: **beta validation completed** at software commit
+`5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (current-HEAD four-backend
+V100-SXM2-16GB smoke: T1/T2FD/T5/T6/T7 for MACE/DPA/GRACE/UMA, plus CI on
+Python 3.10-3.12 and clean wheel installs); the release itself remains a
+`2.0.0b1` beta candidate. T3 accuracy, T4 static workflows and T8
+performance are unchanged historical evidence and are explicitly *not*
+claimed as current-HEAD. The project was previously published as `mlipx`,
+which collided on PyPI/import with an unrelated BASF package of the same
+name; `mliport` is a clean-break rename (the old top-level import is
+deliberately not published). See [Validation](#validation) below.
 
 ## What it can run
 
