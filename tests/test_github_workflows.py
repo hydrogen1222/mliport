@@ -20,7 +20,7 @@ SUPPORTED_PYTHONS = {"3.10", "3.11", "3.12"}
 #: Minimum major that runs on a currently supported Node runtime / action API.
 MINIMUM_MAJOR = {
     "actions/checkout": 5,
-    "astral-sh/setup-uv": 8,
+    "astral-sh/setup-uv": 7,
 }
 
 
