@@ -9,7 +9,7 @@ TASK = omat
 # Model Settings
 MODEL_PATH = uma-s-1.pt
 MODEL_TYPE = REQUIRED     # choose: uma | mace | dpa | grace
-DEVICE = cuda              # MD benefits from GPU
+DEVICE = cpu               # Safe default; use cuda or cuda:N explicitly
 INFERENCE_MODE = turbo     # Turbo mode for better performance (UMA only)
 
 # MD Settings

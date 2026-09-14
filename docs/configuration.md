@@ -107,7 +107,7 @@ device = cuda
 CALC_TYPE = SP
 MODEL_TYPE = MACE
 MODEL_PATH = /models/mace-omat-0-medium.model
-DEVICE = cuda
+DEVICE = cpu                        # explicit cuda / cuda:0 for GPU runs
 ```
 
 Generate a template and fill in the backend explicitly:

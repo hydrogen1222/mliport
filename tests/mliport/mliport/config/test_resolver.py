@@ -47,7 +47,7 @@ def test_builtin_sp_defaults() -> None:
 def test_builtin_md_defaults() -> None:
     rc = resolve_config(calc_type="md")
     assert rc.model_type == "uma"
-    assert rc.device == "cuda"
+    assert rc.device == "cpu"
     assert rc.inference_mode == "turbo"
     # MD auto-seeds
     assert "seed" in rc.run_options
@@ -538,10 +538,10 @@ def test_settings_sp_section_does_not_leak_into_other_calc_types() -> None:
         s = load_settings(explicit=str(ini))
         # opt/batch default to inference_mode="default"; if [sp] leaked they
         # would become "turbo". md defaults to "turbo" but device must stay
-        # "cuda" (not the [sp] "cuda:1").
+        # "cpu" (not the [sp] "cuda:1").
         for ct, expected_device, expected_mode in (
             ("opt", "cpu", "default"),
-            ("md", "cuda", "turbo"),
+            ("md", "cpu", "turbo"),
             ("batch", "cpu", "default"),
         ):
             rc = resolve_config(calc_type=ct, settings=s)

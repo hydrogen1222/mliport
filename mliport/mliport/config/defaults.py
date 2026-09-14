@@ -139,11 +139,13 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
 
 
 # Map calc_type -> default device, used by the CLI resolver when nothing else
-# specifies a device. NEB is CPU-safe by default; users must explicitly select GPU.
+# specifies a device. Every generic template is CPU-safe: a device default must
+# not assume that the user's machine has a GPU. GPU users pass --device cuda
+# (or cuda:N) explicitly; the installer and queue record the chosen device.
 DEFAULT_DEVICE_BY_CALC_TYPE: dict[str, str] = {
     "sp": "cpu",
     "opt": "cpu",
-    "md": "cuda",
+    "md": "cpu",
     "neb": "cpu",
     "batch": "cpu",
 }

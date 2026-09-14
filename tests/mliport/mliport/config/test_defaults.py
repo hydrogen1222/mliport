@@ -54,7 +54,7 @@ def test_inference_mode_in_calc_type_scopes() -> None:
 def test_device_per_calc_type() -> None:
     assert DEFAULT_DEVICE_BY_CALC_TYPE["sp"] == "cpu"
     assert DEFAULT_DEVICE_BY_CALC_TYPE["opt"] == "cpu"
-    assert DEFAULT_DEVICE_BY_CALC_TYPE["md"] == "cuda"
+    assert DEFAULT_DEVICE_BY_CALC_TYPE["md"] == "cpu"
     assert DEFAULT_DEVICE_BY_CALC_TYPE["neb"] == "cpu"
 
 
@@ -119,7 +119,7 @@ def test_build_incar_default_sp() -> None:
 def test_build_incar_default_md() -> None:
     neutral = build_incar_default("md")
     assert "CALC_TYPE = MD" in neutral
-    assert "DEVICE = cuda" in neutral
+    assert "DEVICE = cpu" in neutral
     assert "MODEL_TYPE = REQUIRED" in neutral
 
     uma = build_incar_default("md", engine="uma")
@@ -144,3 +144,10 @@ def test_build_incar_default_invalid_type() -> None:
 def test_get_default_config_returns_incar() -> None:
     config = get_default_config("sp")
     assert config.get_str("CALC_TYPE", "").lower() == "sp"
+
+
+def test_md_template_has_a_cpu_safe_device_default() -> None:
+    """DEVICE-T1: a CPU-only user can run the generic MD template unchanged."""
+    neutral = build_incar_default("md")
+    assert "DEVICE = cpu" in neutral
+    assert "DEVICE = cuda" not in neutral
