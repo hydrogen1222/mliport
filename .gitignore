@@ -103,3 +103,6 @@ LGPS*
 # Beta scientific validation working data (taskbook section 9)
 /.validation-work/
 /.validation-cache/
+
+# Fresh-install acceptance harness outputs (task book 20260914)
+/.validation-acceptance/

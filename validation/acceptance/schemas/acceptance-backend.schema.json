@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hydrogen1222/mliport/validation/acceptance/schemas/acceptance-backend.schema.json",
+  "title": "mliport acceptance backend results",
+  "type": "object",
+  "required": ["schema", "backend", "records"],
+  "properties": {
+    "schema": {"const": "mliport.acceptance-backend/1"},
+    "backend": {"enum": ["mace", "dpa", "grace", "uma", "analysis"]},
+    "venv": {"type": "string"},
+    "device_requested": {"enum": ["cuda", "cpu"]},
+    "generated_at": {"type": "string"},
+    "records": {
+      "type": "array",
+      "items": {"$ref": "acceptance-record.schema.json"}
+    }
+  }
+}

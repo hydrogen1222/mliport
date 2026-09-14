@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hydrogen1222/mliport/validation/acceptance/schemas/acceptance-environment.schema.json",
+  "title": "mliport sanitized acceptance environment manifest",
+  "type": "object",
+  "required": ["schema", "environments", "gpu", "caches_preserved"],
+  "properties": {
+    "schema": {"const": "mliport.acceptance-environment/1"},
+    "commit": {"type": ["string", "null"]},
+    "generated_at": {"type": "string"},
+    "os": {"type": "object"},
+    "cpu": {"type": ["string", "null"]},
+    "gpu": {
+      "type": "object",
+      "required": ["available"],
+      "properties": {
+        "uuid_sha256_prefix": {"type": "string", "maxLength": 16}
+      },
+      "additionalProperties": true
+    },
+    "caches_preserved": {"type": "object"},
+    "structure": {"type": "object"},
+    "models": {"type": "object"},
+    "environments": {"type": "object"}
+  }
+}

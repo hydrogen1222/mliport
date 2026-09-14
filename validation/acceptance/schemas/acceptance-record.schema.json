@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hydrogen1222/mliport/validation/acceptance/schemas/acceptance-record.schema.json",
+  "title": "mliport acceptance task record",
+  "type": "object",
+  "required": ["task", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "task": {"type": "string", "minLength": 1},
+    "status": {
+      "enum": ["PASS", "FAIL", "EXPECTED_LIMITATION", "NOT_RUN"]
+    },
+    "detail": {"type": "string"},
+    "command": {"type": "string"},
+    "rc": {"type": ["integer", "null"]},
+    "duration_s": {"type": ["number", "null"]},
+    "artifacts": {"type": "array", "items": {"type": "string"}},
+    "checks": {"type": "object"}
+  }
+}
