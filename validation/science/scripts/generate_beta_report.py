@@ -19,6 +19,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import re
 import collections
 import json
 import subprocess
@@ -685,6 +686,16 @@ def status_snippet(versions: dict[str, Any] | None) -> str:
     )
 
 
+def _package_version() -> str:
+    """Read the authoritative package version from mliport/pyproject.toml."""
+    try:
+        text = (REPO_ROOT / "mliport" / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+        return match.group(1) if match else "unknown"
+    except OSError:
+        return "unknown"
+
+
 def readme_validation_snippet(
     matrix: dict[str, Any],
     t3_records: list[dict[str, Any]],
@@ -698,17 +709,27 @@ def readme_validation_snippet(
     both READMEs and with README_VALIDATION.md.
     """
     versions = versions or {}
+    package_version = _package_version()
+    scientific_commit = str(versions.get("software_commit") or "unknown")
+    scientific_campaign = str(versions.get("evidence_campaign") or "unknown")
     lines = [
         status_snippet(versions),
+        "",
+        f"Scientific campaign target: commit `{scientific_commit}` "
+        f"(campaign `{scientific_campaign}`).",
+        "LGPS fresh-install acceptance target: commit `51d2a78` "
+        "([acceptance report](validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)).",
+        f"Current release: {package_version} (package metadata; the release "
+        "tag records the exact commit).",
         "",
         "Validated hardware: NVIDIA V100-SXM2-16GB (Volta, 16 GiB), driver "
         "580.173.02, Rocky Linux 9.8. CPU installs are smoke-tested on the "
         "same host.",
         "",
-        "Current status: 2.0.0b3 beta. The four backends are installed and "
-        "exercised on an LGPS structure through single point, relaxation, "
-        "MD, NEB, batch, INCAR-style runs, queue, TUI, the Python API and "
-        "the analysis modules.",
+        f"Current status: {package_version} beta. The four backends are "
+        "installed and exercised on an LGPS structure through single point, "
+        "relaxation, MD, NEB, batch, INCAR-style runs, queue, TUI, the Python "
+        "API and the analysis modules.",
         "",
         "- Full beta validation report: "
         "[BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md)",

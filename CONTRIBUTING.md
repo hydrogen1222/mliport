@@ -37,8 +37,8 @@ uv build mliport
 The installable package lives in `mliport/`; the repository-root
 `pyproject.toml` is tooling only (ruff, pytest, uv). `pip install .` at the
 repository root therefore fails fast with a setuptools package-discovery
-error; install through `./scripts/install_mliport.sh` or
-`pip install ./mliport`.
+error; install through `./scripts/install_mliport.sh`, or point a manual
+environment manager at the `mliport/` subdirectory explicitly.
 
 ## Pull requests
 

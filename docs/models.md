@@ -93,8 +93,12 @@ distributed files; local paths are never written into the manifest.
 
 The MACE GitHub asset was downloaded in an isolated cache during the LGPS
 acceptance and matched the pinned hash; local copies of all four artifacts
-are used for the acceptance runs. Checkpoint licenses stay with the upstream
-projects, and UMA's is a non-commercial research license.
+are used for the acceptance runs. The Hugging Face cold-download path was
+**not network-validated on the acceptance host**: this host's SOCKS/httpx
+configuration rejects the HF client's default proxy setup, so the acceptance
+used the hash-verified local files instead. Follow the proxy recipe below if
+your network needs it. Checkpoint licenses stay with the upstream projects,
+and UMA's is a non-commercial research license.
 
 ## Proxy and offline access
 

@@ -31,7 +31,7 @@ replacement.
 | `mliport/analysis/transport.py` legacy-path note | Documents why reconstructed frames are reported as `adapter=false` |
 | `mliport/config/incar.py`, `cli.py` (`INCAR.uma` fallback) | Historical default filename; fail-closed when absent |
 | `mliport/jobs.py` record defaults (`display_name`, `run_id`, claim fields, state schema) | Read-only upgrade of pre-2.0.0b4 job records |
-| `validation/science/evidence/constants.py` (`mlipx.*`, `mliport.calculator` allowlist) | Historical evidence records reference these module paths; they are strings in JSON, not imports |
+| `validation/science/evidence/constants.py` (pre-rename namespace + `mliport.calculator` allowlist) | Historical evidence records reference these module paths; they are strings in JSON, not imports |
 | `mliport/calculators/dpa_calc.py` (`.pb` legacy TensorFlow runtime error, `device` key) | Explicit error message for an unsupported backend format |
 | `mliport/calculators/mace_calc.py` (`gpu` synonym) | Documented CLI synonym, resolved centrally |
 | `mliport/config/schema.py` ("legacy canonical field name") | Renamed INCAR key kept readable for old inputs |

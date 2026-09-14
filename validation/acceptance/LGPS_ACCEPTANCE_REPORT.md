@@ -33,10 +33,21 @@ V100 workstation, which failures were found, and what remains limited.
 BASELINE_COMMIT=74f8dee0cfa009b6dc08d888c48a590078f69836
 BASELINE_TAG=v2.0.0b3
 HEAD_AT_ACCEPTANCE=74f8dee
+ACCEPTANCE_HARNESS_COMMIT=e0e8fbd
+RUNTIME_FIX_COMMITS=79a3c39, a671033
+DOCS_COMMITS=fad5ed6, 26f1168, 737948e
+ACCEPTANCE_REPORT_COMMITS=13d76b0, bd18aad, 51d2a78
+FINAL_RELEASE_COMMIT=recorded in the tag/release metadata for v2.0.0b4
 OS=Rocky Linux 9.8 (kernel 5.14)
 GPU=Tesla V100-SXM2-16GB, CC 7.0, driver 580.173.02
 CPU=Intel Xeon E5-2696 v3 (2 sockets)
 ```
+
+The layered commits are recorded explicitly because acceptance code,
+installed runtime fixes and documentation have different revision points.
+No file can contain the SHA of the commit that contains it; the tested
+runtime commit is frozen above, and the tag commit is recorded in the GitHub
+release metadata and in `validation/maintenance/FINAL_FREEZE_REPORT.md`.
 
 Environment names, Python versions and package versions are in
 `environment.json` for both phases. Caches (uv/pip) were preserved: this is a
@@ -174,7 +185,7 @@ Arrhenius pipeline:
 | `g19_analysis_density` | PASS | artifacts: density.npz, provenance.json, request.json, results.json |
 | `g19_analysis_transport` | PASS | D=1.885096858330463e-09 m^2/s, 95% CI=[1.4923284163456254e-09, 2.275022374278964e-09], T=797.0238474614208 K |
 | `g19_analysis_electrolyte_segment` | PASS | artifacts: density_projection.png, density_projection.svg, detected_sites.cif, diagnostics.json |
-| `g19_analysis_electrolyte_full_run` | EXPECTED_LIMITATION | GEMDAT site/jump analysis on the full 1 ns, 400-atom run exceeded the acceptance time budget (>300 s); the 30 ps segment above completed. The full trajectory re |
+| `g19_analysis_electrolyte_full_run` | EXPECTED_LIMITATION | GEMDAT site/jump analysis on the full 1 ns, 400-atom run exceeded the acceptance time budget (>300 s); the 30 ps segment above completed. The full trajectory was not analysed end-to-end within the acceptance budget. |
 | `g20_transport_600K` | PASS | D=8.475717920885925e-10 m^2/s, T=601.819571188524 K |
 | `g20_transport_700K` | PASS | D=3.479544924221434e-09 m^2/s, T=699.205068855085 K |
 | `g20_transport_800K` | PASS | D=4.1032232256356064e-09 m^2/s, T=799.6301902531942 K |
@@ -269,10 +280,12 @@ GitHub Actions: pending final push
    short acceptance budget; the report uses a 30 ps segment.
 3. NEB resume keeps the recorded step budget in this beta; changing
    `--max-steps` on resume is rejected with an explicit fingerprint error.
-4. Hugging Face downloads could not be verified from this host because of its
-   local SOCKS proxy configuration; the MACE GitHub release download was
-   verified (SHA-256 matches the manifest) and all runs used local,
-   manifest-verified checkpoints.
+4. The Hugging Face checkpoint download path was not cold-network validated
+   on this host: its SOCKS/httpx configuration rejects the HF client's default
+   proxy handling. The MACE GitHub release download WAS verified (SHA-256
+   matches the manifest), and all runs used local, manifest-verified
+   checkpoints. `docs/models.md` keeps the official links, local-file path,
+   proxy recipe and license notes instead of claiming a green cold download.
 5. The preclean `pip freeze` capture failed because uv-managed environments do
    not ship `pip`; the forensic record keeps Python versions, key distribution
    versions, sizes and doctor outputs for the removed environments instead.
