@@ -164,19 +164,23 @@ you call DPA or GRACE from Python. Per-backend manuals:
 
 ## Main workflows
 
-**Relaxation** (`opt`): `--fmax` and `--max-steps` control convergence;
-`--cell-opt` relaxes the cell and the ions.
+### Relaxation (`opt`)
+
+`--fmax` and `--max-steps` control convergence, and `--cell-opt` relaxes the
+cell together with the ions.
 
 ```bash
 .venv-mace/bin/mliport opt LGPS.vasp --model model.model --model-type mace \
   --fmax 0.05 --max-steps 200 --cell-opt --device cuda --output runs/lgps-opt
 ```
 
-**Molecular dynamics** (`md`): `--ensemble NVE` or `NVT`, `--thermostat
-LANGEVIN|BUSSI|NHC`, `--temp`, `--timestep`, `--steps`, `--save-interval`.
-A continued trajectory can be started from a saved frame that contains
+### Molecular dynamics (`md`)
+
+`--ensemble` selects `NVE` or `NVT`, and `--thermostat` selects `LANGEVIN`,
+`BUSSI` or `NHC`. `--temp`, `--timestep`, `--steps` and `--save-interval`
+size the run. A trajectory can continue from a saved frame that contains
 velocities with `--velocity-policy preserve --no-pre-relax`. NHC requires
-`--com-policy none` because constrained NHC cannot run with automatic
+`--com-policy none`, because constrained NHC cannot run with automatic
 center-of-mass removal.
 
 ```bash
@@ -185,11 +189,12 @@ center-of-mass removal.
   --steps 10000 --save-interval 100 --device cuda --output runs/lgps-md
 ```
 
-**NEB / CI-NEB** (`neb`): the endpoint files define the band, `--images` the
-number of intermediates, `--climb` enables the climbing image. Current
-checkpoints have not had their energy-gradient consistency validated, so the
-run requires the explicit experimental opt-in and reports
-`physical_barrier=not_claimed`:
+### NEB and CI-NEB (`neb`)
+
+The endpoint files define the band, `--images` sets the number of
+intermediates, and `--climb` enables the climbing image. Current checkpoints
+have not had their energy-gradient consistency validated, so the run requires
+the explicit experimental opt-in and reports `physical_barrier=not_claimed`:
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
@@ -198,18 +203,22 @@ run requires the explicit experimental opt-in and reports
 ```
 
 Resume a stopped band with `--resume runs/lgps-neb --output runs/lgps-neb`.
-The recorded step budgets are part of the run identity; changing
+The recorded step budgets are part of the run identity, so changing
 `--max-steps` during a resume is rejected in this beta. Advanced explicit
 atom mapping/image-shift control is available through API/direct CLI/TUI only.
 
-**Batch** (`batch`): one directory, one model, one calculation type.
+### Batch (`batch`)
+
+One directory, one model and one calculation type per sweep.
 
 ```bash
 .venv-mace/bin/mliport batch structures/ --pattern "*.vasp" --calc-type sp \
   --model model.model --model-type mace --device cuda --output runs/batch
 ```
 
-**INCAR-style runs** (`run`): generate a template, edit it, and run it.
+### INCAR-style runs (`run`)
+
+Generate a template, edit it, then run it.
 
 ```bash
 .venv-mace/bin/mliport template sp --output INCAR.mliport
@@ -217,8 +226,10 @@ atom mapping/image-shift control is available through API/direct CLI/TUI only.
 .venv-mace/bin/mliport run -i INCAR.mliport -s LGPS.vasp -o runs/incar-sp
 ```
 
-**Queue** (`queue`, `jobs`, `kill`, `clean`): put several calculations in a
-JSON task file, start the scheduler in the background, and inspect jobs.
+### Queue (`queue`, `jobs`, `kill`, `clean`)
+
+Put several calculations in a JSON task file, start the scheduler in the
+background, then inspect the jobs.
 
 ```bash
 .venv-mace/bin/mliport queue submit tasks.json
@@ -227,10 +238,12 @@ JSON task file, start the scheduler in the background, and inspect jobs.
 .venv-mace/bin/mliport queue stop
 ```
 
-**TUI**: `mliport tui` opens the interactive application. It requires a
-terminal; without one the command exits with an error instead of waiting.
+### TUI
 
-**Python API**:
+`mliport tui` opens the interactive application. It needs a terminal and
+exits with an error when there is none.
+
+### Python API
 
 ```python
 from mliport.api import calculate_energy, run_single_point
@@ -238,9 +251,6 @@ from mliport.api import calculate_energy, run_single_point
 energy = calculate_energy("LGPS.vasp", "model.model", model_type="mace", device="cuda")
 result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device="cuda")
 ```
-
-The API also exposes `run_optimization`, `run_md` and `run_neb`. The CLI and
-the API report the same energies for the same structure, model and device.
 
 ## Analyze a trajectory
 

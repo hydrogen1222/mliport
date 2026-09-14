@@ -152,16 +152,19 @@ DPA/GRACE 前请自行设置 `CUDA_VISIBLE_DEVICES`。各 backend 手册见
 
 ## 主要工作流
 
-**结构弛豫** (`opt`):`--fmax`、`--max-steps` 控制收敛;`--cell-opt` 同时
-弛豫晶胞与离子。
+### 结构弛豫 (`opt`)
+
+`--fmax`、`--max-steps` 控制收敛,`--cell-opt` 同时弛豫晶胞与离子。
 
 ```bash
 .venv-mace/bin/mliport opt LGPS.vasp --model model.model --model-type mace \
   --fmax 0.05 --max-steps 200 --cell-opt --device cuda --output runs/lgps-opt
 ```
 
-**分子动力学** (`md`):`--ensemble NVE` 或 `NVT`,`--thermostat
-LANGEVIN|BUSSI|NHC`,`--temp`、`--timestep`、`--steps`、`--save-interval`。
+### 分子动力学 (`md`)
+
+`--ensemble` 选择 `NVE` 或 `NVT`,`--thermostat` 选择 `LANGEVIN`、`BUSSI`
+或 `NHC`;`--temp`、`--timestep`、`--steps`、`--save-interval` 决定运行规模。
 要接着已有轨迹继续跑,可从带速度的保存帧开始,并加
 `--velocity-policy preserve --no-pre-relax`。NHC 需要 `--com-policy none`,
 因为有约束的 NHC 不能与自动质心移除同时使用。
@@ -172,10 +175,11 @@ LANGEVIN|BUSSI|NHC`,`--temp`、`--timestep`、`--steps`、`--save-interval`。
   --steps 10000 --save-interval 100 --device cuda --output runs/lgps-md
 ```
 
-**NEB / CI-NEB** (`neb`):端点文件定义路径,`--images` 是中间 image 数,
-`--climb` 打开 climbing image。当前 checkpoint 尚未验证能量-梯度一致性,
-因此需要显式的实验性 opt-in,并且结果会标注
-`physical_barrier=not_claimed`:
+### NEB 与 CI-NEB (`neb`)
+
+端点文件定义路径,`--images` 设置中间 image 数,`--climb` 打开 climbing
+image。当前 checkpoint 尚未验证能量-梯度一致性,因此需要显式的实验性
+opt-in,并且结果会标注 `physical_barrier=not_claimed`:
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
@@ -184,18 +188,22 @@ LANGEVIN|BUSSI|NHC`,`--temp`、`--timestep`、`--steps`、`--save-interval`。
 ```
 
 用 `--resume runs/lgps-neb --output runs/lgps-neb` 续跑已经停止的 band。
-已记录的步数预算属于 run identity;当前 beta 中 resume 时修改
+已记录的步数预算属于 run identity,当前 beta 中 resume 时修改
 `--max-steps` 会被拒绝。高级的显式 atom mapping/image-shift 控制只能通过
 API/直接 CLI/TUI 使用。
 
-**批量计算** (`batch`):一个目录、一个模型、一种计算类型。
+### 批量计算 (`batch`)
+
+一次扫描使用一个目录、一个模型和一种计算类型。
 
 ```bash
 .venv-mace/bin/mliport batch structures/ --pattern "*.vasp" --calc-type sp \
   --model model.model --model-type mace --device cuda --output runs/batch
 ```
 
-**INCAR 风格运行** (`run`):先生成模板,编辑后再运行。
+### INCAR 风格运行 (`run`)
+
+先生成模板,编辑后再运行。
 
 ```bash
 .venv-mace/bin/mliport template sp --output INCAR.mliport
@@ -203,8 +211,9 @@ API/直接 CLI/TUI 使用。
 .venv-mace/bin/mliport run -i INCAR.mliport -s LGPS.vasp -o runs/incar-sp
 ```
 
-**队列** (`queue`、`jobs`、`kill`、`clean`):把多个计算写进 JSON 任务文件,
-后台启动调度器,再查看任务。
+### 队列 (`queue`、`jobs`、`kill`、`clean`)
+
+把多个计算写进 JSON 任务文件,后台启动调度器,再查看任务。
 
 ```bash
 .venv-mace/bin/mliport queue submit tasks.json
@@ -213,10 +222,11 @@ API/直接 CLI/TUI 使用。
 .venv-mace/bin/mliport queue stop
 ```
 
-**TUI**:`mliport tui` 打开交互界面,需要终端;没有终端时命令会直接报错
-退出,不会一直等待。
+### TUI
 
-**Python API**:
+`mliport tui` 打开交互界面,需要终端;没有终端时会报错退出。
+
+### Python API
 
 ```python
 from mliport.api import calculate_energy, run_single_point
@@ -224,9 +234,6 @@ from mliport.api import calculate_energy, run_single_point
 energy = calculate_energy("LGPS.vasp", "model.model", model_type="mace", device="cuda")
 result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device="cuda")
 ```
-
-API 还提供 `run_optimization`、`run_md` 与 `run_neb`。同一结构、模型和设备
-下,CLI 与 API 给出的能量一致。
 
 ## 分析轨迹
 

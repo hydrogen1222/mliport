@@ -1,6 +1,6 @@
 # Installation
 
-mliport installs **inside each backend's own Python environment**. It is not a
+mliport installs inside each backend's own Python environment. It is not a
 cross-environment dispatcher: the CLI in `.venv-mace` can only run MACE, the
 CLI in `.venv` can only run UMA, and so on. Pick the backend you need, install
 its environment, and run `mliport` from that environment.
@@ -106,7 +106,7 @@ note. The Python API cannot restart the caller: set `CUDA_VISIBLE_DEVICES`
 
 ## Python version selection
 
-Python is chosen **per backend**, from the pinned compatibility registry
+Python is chosen for each backend from the pinned compatibility registry
 (`mliport/mliport/install/compatibility.py`). The `Python` column above is the
 intersection of mliport's supported versions, the backend's own
 `requires-python` and the framework wheel's Python range.
@@ -144,7 +144,7 @@ Each backend environment needs mliport itself plus that engine's stack. The
 authoritative pins live in `mliport/mliport/install/compatibility.py`; the
 installer is the only path that keeps them consistent with your GPU
 architecture. If you install manually, create one environment per backend,
-install `./mliport` **into that environment**, then run `mliport doctor` and
+install `./mliport` into that environment, then run `mliport doctor` and
 confirm every check passes before trusting results. Never install mliport once
 and expect it to reach into other backend environments.
 

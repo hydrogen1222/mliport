@@ -1,10 +1,12 @@
 # NEB / CI-NEB
 
-**Purpose.** Find a minimum-energy path between two endpoints using
+## Purpose
+
+Find a minimum-energy path between two endpoints using
 fixed-cell nudged elastic band (with optional climbing image), and report the
 forward barrier.
 
-**Minimal command.**
+## Minimal command
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp   --model mace-omat-0-medium.model --model-type mace --images 7   --allow-unvalidated-neb --output runs/neb
@@ -17,7 +19,7 @@ model/runtime, so it refuses to run without the explicit
 `workflow_smoke_only` and do not claim a physical barrier. Once a runtime has
 a validated capability record the flag is no longer required.
 
-**Important options.**
+## Important options
 
 | Option | Meaning |
 |---|---|
@@ -34,23 +36,29 @@ a validated capability record the flag is no longer required.
 | `--resume` | resume from a checkpoint/directory |
 | `--allow-unvalidated-neb` | opt-in for NEB configurations outside the validated envelope (recorded, not silent) |
 
-**Inputs.** Two structures with consistent atom order (or an explicit
+## Inputs
+
+Two structures with consistent atom order (or an explicit
 `--atom-map`), a model, an explicit backend, and enough memory for
 `images + 2` calculators.
 
-**Outputs.** `NEB_BAND`/band trajectory, per-image energies/forces,
+## Outputs
+
+`NEB_BAND`/band trajectory, per-image energies/forces,
 `resolved_config.json`, checkpoint files, and a result JSON with `barrier`,
 convergence state and the sampled barrier value.
 
-**Failure semantics.** Non-convergence is reported with the best band and a
+## Failure semantics
+
+Non-convergence is reported with the best band and a
 failure reason; it is not a converged barrier. Bad atom mapping or
 inconsistent endpoints fail before the band is built. Checkpoint/resume
 locks the original run directory so the band cannot be silently restarted
 with different settings.
 
-**Scientific caveats.**
+## Scientific caveats
 
-- A NEB saddle candidate is **not** a verified transition state. Hessian
+- A NEB saddle candidate is not a verified transition state. Hessian
   (frequency) verification is a separate analysis and is not implied by a
   converged band.
 - The barrier is only comparable within one model/head identity and one NEB
@@ -59,7 +67,7 @@ with different settings.
 - The saddle is meaningful only if the endpoints are the intended states and
   the atom mapping is chemically correct.
 
-**Interface capability matrix**
+## Interface capability matrix
 
 | Feature | API | direct CLI | INCAR | TUI |
 |---|---|---|---|---|
@@ -75,7 +83,7 @@ with different settings.
 
 This matrix is generated from `validation/science/capability_matrix.json`. A `yes` means the entry point can express the feature; it is not an equivalence or validation claim. A `no`/`partial` entry carries a note in that file.
 
-**Example (resume).**
+## Example (resume)
 
 ```bash
 .venv-mace/bin/mliport neb --resume runs/neb --output runs/neb
