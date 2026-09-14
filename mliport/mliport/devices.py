@@ -47,6 +47,11 @@ def visible_gpus(
                 )
             ]
             if len(matches) != 1 or matches[0] in selected:
+                if selector.startswith("MIG-"):
+                    raise RuntimeError(
+                        "CUDA_VISIBLE_DEVICES exposes a MIG device; mliport's "
+                        "device resolver supports whole GPUs only"
+                    )
                 raise RuntimeError(
                     f"CUDA_VISIBLE_DEVICES selector {selector!r} is unknown, "
                     "ambiguous, or duplicated"
@@ -58,6 +63,100 @@ def visible_gpus(
         )
         for index, gpu in enumerate(selected)
     ]
+
+
+def query_physical_gpus() -> list[VisibleGpu]:
+    """Physical GPU inventory from nvidia-smi (single source for CLI/queue)."""
+    import subprocess  # noqa: PLC0415
+
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,uuid",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("nvidia-smi failed while resolving a GPU device") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(f"nvidia-smi failed while resolving a GPU device: {detail}")
+    inventory: list[VisibleGpu] = []
+    for line in result.stdout.splitlines():
+        fields = [field.strip() for field in line.split(",", maxsplit=1)]
+        if len(fields) != 2 or not fields[0].isdigit() or not fields[1]:
+            raise RuntimeError(f"Malformed nvidia-smi GPU inventory line: {line!r}")
+        inventory.append(
+            VisibleGpu(len(inventory), fields[1], int(fields[0]), "", None)
+        )
+    return inventory
+
+
+def resolve_visible_device(
+    device: str,
+    *,
+    inventory: Sequence[VisibleGpu] | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> VisibleGpu | None:
+    """Resolve ``cpu``/``cuda``/``cuda:N`` inside the current CVD frame.
+
+    The returned GPU carries the local ordinal (in the CUDA_VISIBLE_DEVICES
+    order), the immutable physical UUID and the physical index.  Numeric and
+    UUID visibility lists are both honoured, invalid ordinals fail closed, and
+    ``cpu`` returns ``None``.
+    """
+    normalized = str(device).strip().lower()
+    if normalized == "cpu":
+        return None
+    if normalized.startswith("mig-"):
+        raise ValueError(
+            "MIG devices are not supported as --device values; select a whole "
+            "GPU with cuda:N"
+        )
+    import re  # noqa: PLC0415
+
+    match = re.fullmatch(r"(?:gpu|cuda)(?::(\d+))?", normalized)
+    if match is None:
+        raise ValueError(
+            f"Cannot resolve device {device!r}; expected cpu, cuda, gpu or cuda:N"
+        )
+    local_ordinal = int(match.group(1) or 0)
+    physical = list(inventory) if inventory is not None else query_physical_gpus()
+    env = os.environ if environment is None else environment
+    visible = visible_gpus(physical, env)
+    if not visible:
+        raise RuntimeError(
+            f"No CUDA device is visible for {device!r} "
+            f"(CUDA_VISIBLE_DEVICES={env.get('CUDA_VISIBLE_DEVICES')!r})"
+        )
+    if local_ordinal >= len(visible):
+        raise RuntimeError(
+            f"CUDA device {device!r} is not visible; CUDA_VISIBLE_DEVICES "
+            f"exposes {len(visible)} device(s)"
+        )
+    return visible[local_ordinal]
+
+
+def resolve_device_uuid(
+    device: str,
+    *,
+    inventory: Sequence[VisibleGpu] | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> str | None:
+    """Immutable UUID for a requested device (``None`` for CPU).
+
+    This is the single resolver shared by the CLI isolation re-exec and the
+    queue device lease, so both choose the same physical GPU.
+    """
+    resolved = resolve_visible_device(
+        device, inventory=inventory, environment=environment
+    )
+    return None if resolved is None else resolved.uuid
 
 
 def verify_runtime_uuid(actual_uuid: str | None, requested_uuid: str) -> str:
@@ -145,8 +244,6 @@ def torch_model_identity(model, requested: str) -> dict:
         ),
     }
     if actual.type == "cuda":
-        from mliport.queue import resolve_device_uuid
-
         properties = torch.cuda.get_device_properties(actual.index)
         uuid = getattr(properties, "uuid", None)
         if uuid is not None:
@@ -226,8 +323,6 @@ def tensorflow_output_identity(outputs, requested: str) -> dict:
     ]
     if len(matches) != 1:
         raise RuntimeError("TensorFlow PCI bus cannot be uniquely mapped to a GPU UUID")
-    from mliport.queue import resolve_device_uuid
-
     identity["actual_device_uuid"] = verify_runtime_uuid(
         matches[0], resolve_device_uuid(requested)
     )

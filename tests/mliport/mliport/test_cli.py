@@ -1219,6 +1219,13 @@ def test_isolation_backends_reexec_in_a_fresh_process(monkeypatch, capsys):
         raise SystemExit(99)
 
     monkeypatch.setattr(cli.os, "execvpe", fake_execvpe)
+    import mliport.devices as devices
+
+    monkeypatch.setattr(
+        devices,
+        "query_physical_gpus",
+        lambda: [devices.VisibleGpu(0, "GPU-test", 0, "V100", (7, 0))],
+    )
     with pytest.raises(SystemExit) as excinfo:
         cli._maybe_reexec_for_device_isolation(
             SimpleNamespace(model_type="grace", device="cuda")

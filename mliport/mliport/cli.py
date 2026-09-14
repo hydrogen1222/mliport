@@ -1718,32 +1718,19 @@ _ISOLATION_BACKENDS = {"dpa", "grace"}
 
 
 def _device_visibility_value(device: str) -> str:
-    """Value for CUDA_VISIBLE_DEVICES that matches the requested device."""
-    import subprocess  # noqa: PLC0415
+    """CUDA_VISIBLE_DEVICES value for the requested device.
 
-    dev = str(device).lower()
-    if dev == "cpu":
+    Uses the same resolver as the queue lease so both paths choose the same
+    physical GPU, including when the caller already set CUDA_VISIBLE_DEVICES.
+    """
+    from mliport.devices import resolve_visible_device  # noqa: PLC0415
+
+    if str(device).strip().lower() == "cpu":
         return ""
-    index = 0
-    if ":" in dev:
-        with contextlib.suppress(ValueError):
-            index = int(dev.split(":", 1)[1])
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=uuid", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-        uuids = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        if index < len(uuids):
-            return uuids[index]
-    except (OSError, subprocess.SubprocessError):
-        pass
-    # The isolation guard accepts any single non-empty token; the runtime UUID
-    # check still compares the framework-reported UUID with the requested one.
-    return str(index)
+    resolved = resolve_visible_device(device)
+    if resolved is None:  # defensive: cpu handled above
+        return ""
+    return resolved.uuid
 
 
 def _maybe_reexec_for_device_isolation(resolved) -> None:

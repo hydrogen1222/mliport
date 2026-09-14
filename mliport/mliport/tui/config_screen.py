@@ -1122,9 +1122,7 @@ class ConfigScreen(Screen):
 
         model_type_select = self.query_one("#model-type-select", Select)
         if model_type_select.value is Select.NULL or not model_type_select.value:
-            self.notify(
-                "Please select a model backend before saving", severity="error"
-            )
+            self.notify("Please select a model backend before saving", severity="error")
             return
         self.app.update_config("model_type", model_type_select.value)
         model_type = str(self.app.get_config("model_type", ""))

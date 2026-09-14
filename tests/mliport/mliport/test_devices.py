@@ -70,3 +70,133 @@ def test_visibility_is_isolated_truth_table(monkeypatch):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "-1")
     assert visibility_is_isolated("cuda") is False
     assert visibility_is_isolated("cpu") is True
+
+
+# ---------------------------------------------------------------------------
+# GPU-01: one CUDA_VISIBLE_DEVICES resolver for CLI and queue
+# ---------------------------------------------------------------------------
+
+
+def test_mg01_without_cvd_uses_requested_physical_ordinal(inventory):
+    from mliport.devices import resolve_visible_device
+
+    env = {}
+    assert (
+        resolve_visible_device("cuda:0", inventory=inventory, environment=env).uuid
+        == "GPU-a"
+    )
+    assert (
+        resolve_visible_device("cuda", inventory=inventory, environment=env).uuid
+        == "GPU-a"
+    )
+    assert (
+        resolve_visible_device("cuda:3", inventory=inventory, environment=env).uuid
+        == "GPU-d"
+    )
+    assert resolve_visible_device("cpu", inventory=inventory, environment=env) is None
+
+
+def test_mg02_numeric_cvd_uses_local_ordinals(inventory):
+    from mliport.devices import resolve_visible_device
+
+    env = {"CUDA_VISIBLE_DEVICES": "2,3"}
+    assert (
+        resolve_visible_device("cuda:0", inventory=inventory, environment=env).uuid
+        == "GPU-c"
+    )
+    assert (
+        resolve_visible_device("cuda:1", inventory=inventory, environment=env).uuid
+        == "GPU-d"
+    )
+
+
+def test_mg03_uuid_cvd_uses_local_ordinals(inventory):
+    from mliport.devices import resolve_visible_device
+
+    env = {"CUDA_VISIBLE_DEVICES": "GPU-c,GPU-d"}
+    assert (
+        resolve_visible_device("cuda:0", inventory=inventory, environment=env).uuid
+        == "GPU-c"
+    )
+    assert (
+        resolve_visible_device("cuda:1", inventory=inventory, environment=env).uuid
+        == "GPU-d"
+    )
+
+
+def test_mg04_unique_uuid_prefix_resolves(inventory):
+    from mliport.devices import resolve_visible_device
+
+    env = {"CUDA_VISIBLE_DEVICES": "GPU-c"}
+    assert (
+        resolve_visible_device("cuda:0", inventory=inventory, environment=env).uuid
+        == "GPU-c"
+    )
+    with pytest.raises(RuntimeError):
+        # Too short to be unique.
+        resolve_visible_device(
+            "cuda:0", inventory=inventory, environment={"CUDA_VISIBLE_DEVICES": "GPU-"}
+        )
+
+
+def test_mg05_ordinal_outside_cvd_fails(inventory):
+    from mliport.devices import resolve_visible_device
+
+    with pytest.raises(RuntimeError, match="not visible"):
+        resolve_visible_device(
+            "cuda:1", inventory=inventory, environment={"CUDA_VISIBLE_DEVICES": "2"}
+        )
+
+
+@pytest.mark.parametrize("selector", ["2,,3", "0,0", "GPU-z", "-2", "4"])
+def test_mg06_malformed_or_unknown_cvd_fails(inventory, selector):
+    from mliport.devices import resolve_visible_device
+
+    with pytest.raises(RuntimeError):
+        resolve_visible_device(
+            "cuda:0",
+            inventory=inventory,
+            environment={"CUDA_VISIBLE_DEVICES": selector},
+        )
+
+
+def test_mg07_queue_and_cli_resolvers_agree(inventory, monkeypatch):
+    import mliport.devices as devices
+    from mliport.cli import _device_visibility_value
+
+    monkeypatch.setattr(devices, "query_physical_gpus", lambda: inventory)
+    for env in (
+        {},
+        {"CUDA_VISIBLE_DEVICES": "2,3"},
+        {"CUDA_VISIBLE_DEVICES": "GPU-d,GPU-a"},
+    ):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", env.get("CUDA_VISIBLE_DEVICES", ""))
+        if not env:
+            monkeypatch.delenv("CUDA_VISIBLE_DEVICES")
+        for device in ("cuda:0", "cuda:1"):
+            try:
+                expected = devices.resolve_device_uuid(device, environment=env)
+            except RuntimeError:
+                continue
+            assert devices.resolve_device_uuid(device, environment=env) == expected
+            assert _device_visibility_value(device) == expected
+
+
+def test_mig_selectors_fail_closed(inventory):
+    from mliport.devices import resolve_visible_device
+
+    with pytest.raises(RuntimeError, match="MIG"):
+        resolve_visible_device(
+            "cuda:0",
+            inventory=inventory,
+            environment={"CUDA_VISIBLE_DEVICES": "MIG-abc"},
+        )
+    with pytest.raises(ValueError, match="MIG"):
+        resolve_visible_device("MIG-abc", inventory=inventory, environment={})
+
+
+def test_invalid_device_string_fails(inventory):
+    from mliport.devices import resolve_visible_device
+
+    with pytest.raises(ValueError):
+        resolve_visible_device("tpu", inventory=inventory, environment={})

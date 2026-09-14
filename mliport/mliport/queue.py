@@ -32,9 +32,9 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mliport.backend_selection import canonical_model_type, normalize_model_type
+from mliport.backend_selection import canonical_model_type
 from mliport.config import get_schema
-from mliport.devices import VisibleGpu, visible_gpus
+from mliport.devices import resolve_device_uuid
 from mliport.jobs import JobManager, JobStatus, _lock_file, _unlock_file
 
 if TYPE_CHECKING:
@@ -646,62 +646,6 @@ def _probe_structure(structure: str) -> tuple[str, int]:
         return atoms.get_chemical_formula(), len(atoms)
     except Exception:
         return "?", 0
-
-
-def resolve_device_uuid(device: str) -> str | None:
-    """Resolve a CUDA ordinal to the immutable physical GPU UUID.
-
-    CPU jobs do not take an exclusive device lease. CUDA ordinals are resolved
-    through ``CUDA_VISIBLE_DEVICES`` before querying ``nvidia-smi`` so two
-    differently expressed ordinals cannot lease the same physical GPU.
-    """
-    normalized = str(device).strip().lower()
-    if normalized == "cpu":
-        return None
-    match = re.fullmatch(r"(?:gpu|cuda)(?::(\d+))?", normalized)
-    if match is None:
-        raise ValueError(
-            f"Cannot acquire device lease for {device!r}; expected cpu, gpu, "
-            "cuda, or cuda:N"
-        )
-    local_ordinal = int(match.group(1) or 0)
-
-    try:
-        result = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,uuid",
-                "--format=csv,noheader,nounits",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(
-            f"Cannot resolve {device!r} to a GPU UUID; nvidia-smi failed"
-        ) from exc
-    if result.returncode != 0:
-        detail = result.stderr.strip() or f"exit code {result.returncode}"
-        raise RuntimeError(
-            f"Cannot resolve {device!r} to a GPU UUID: nvidia-smi {detail}"
-        )
-
-    inventory: list[VisibleGpu] = []
-    for line in result.stdout.splitlines():
-        fields = [field.strip() for field in line.split(",", maxsplit=1)]
-        if len(fields) != 2 or not fields[0].isdigit() or not fields[1]:
-            raise RuntimeError(f"Malformed nvidia-smi GPU inventory line: {line!r}")
-        inventory.append(
-            VisibleGpu(len(inventory), fields[1], int(fields[0]), "", None)
-        )
-    visible = visible_gpus(inventory)
-    if local_ordinal >= len(visible):
-        raise RuntimeError(
-            f"CUDA device {device!r} is not present in CUDA_VISIBLE_DEVICES"
-        )
-    return visible[local_ordinal].uuid
 
 
 class QueueScheduler:
