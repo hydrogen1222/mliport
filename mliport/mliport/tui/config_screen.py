@@ -1116,16 +1116,23 @@ class ConfigScreen(Screen):
         else:
             self.app.update_config("job_name", None)
 
-        # Get model engine, task and device
+        # Get model engine, task and device.  The backend must be selected
+        # explicitly; an unset select is not allowed to become UMA.
+        from mliport.backend_selection import default_task_for  # noqa: PLC0415
+
         model_type_select = self.query_one("#model-type-select", Select)
-        if model_type_select.value:
-            self.app.update_config("model_type", model_type_select.value)
-        model_type = str(self.app.get_config("model_type", "uma"))
+        if model_type_select.value is Select.NULL or not model_type_select.value:
+            self.notify(
+                "Please select a model backend before saving", severity="error"
+            )
+            return
+        self.app.update_config("model_type", model_type_select.value)
+        model_type = str(self.app.get_config("model_type", ""))
 
         task_select = self.query_one("#task-select", Select)
         if task_select.value:
             self.app.update_config("task", task_select.value)
-        task = str(self.app.get_config("task", "omat"))
+        task = str(self.app.get_config("task") or default_task_for(model_type))
 
         if task in {"omol", "molecule"}:
             charge_text = self.query_one("#charge-input", Input).value.strip()

@@ -1093,6 +1093,7 @@ async def test_neb_invalid_atom_map_blocks_submission(tmp_path: Path) -> None:
     initial, final, model = _write_neb_endpoints(tmp_path)
     app = MliportApp()
     app.update_config("calc_type", "neb")
+    app.update_config("model_type", "mace")
 
     async with app.run_test(size=(100, 100)) as pilot:
         screen = ConfigScreen()
@@ -1122,6 +1123,7 @@ async def test_neb_image_shifts_require_unwrapped_convention(tmp_path: Path) -> 
     initial, final, model = _write_neb_endpoints(tmp_path)
     app = MliportApp()
     app.update_config("calc_type", "neb")
+    app.update_config("model_type", "mace")
 
     async with app.run_test(size=(100, 100)) as pilot:
         screen = ConfigScreen()
@@ -1445,3 +1447,30 @@ async def test_neb_run_screen_live_status_reads_engine_artifacts(
         screen._refresh_neb_status("done")
         assert "NOT converged" in str(screen.status.render())
         assert "resume" in str(screen.status.render()).lower()
+
+
+@pytest.mark.asyncio()
+async def test_config_save_requires_explicit_backend(tmp_path: Path) -> None:
+    """TUI config must not silently default an unselected backend to UMA."""
+    structure = tmp_path / "s.cif"
+    structure.write_text("dummy", encoding="utf-8")
+    model = tmp_path / "m.pt"
+    model.write_text("dummy", encoding="utf-8")
+
+    app = MliportApp()
+    app.update_config("calc_type", "sp")
+    app.update_config("model_type", None)
+    async with app.run_test(size=(80, 80)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(structure)
+        screen.query_one("#model-input").value = str(model)
+        screen.query_one("#output-input").value = str(tmp_path / "out")
+        notifications: list[str] = []
+        screen.notify = lambda message, **kwargs: notifications.append(str(message))
+        screen._save_and_run()
+
+    assert notifications, "saving without a backend must notify the user"
+    assert "backend" in notifications[0].lower()
+    assert not app.get_config("model_type")

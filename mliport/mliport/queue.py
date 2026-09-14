@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mliport.backend_selection import canonical_model_type, normalize_model_type
 from mliport.config import get_schema
 from mliport.devices import VisibleGpu, visible_gpus
 from mliport.jobs import JobManager, JobStatus, _lock_file, _unlock_file
@@ -231,14 +232,14 @@ def build_mliport_command(
     calc_type: str,
     structure: str | None,
     model: str | None,
-    model_type: str = "uma",
+    *,
+    model_type: str,
     task: str | None = None,
     device: str = "cpu",
     output_dir: str = "./results",
     job_name: str | None = None,
     options: dict[str, Any] | None = None,
     python: str | None = None,
-    *,
     initial: str | None = None,
     final: str | None = None,
     resume: str | None = None,
@@ -336,7 +337,8 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
               "calc_type": "opt",            // sp | opt | md | neb
               "structure": "/abs/a.cif",     // required, must exist
               "model": "/abs/uma-s-1.pt",    // required, must exist
-              "model_type": "uma",           // optional
+              "model_type": "uma",           // required for new tasks;
+                                             // NEB resume may restore it
               "task": "omat",                // optional
               "device": "cuda:0",            // optional
               "output_dir": "/abs/out",      // optional
@@ -513,13 +515,38 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
             label=f"{label}: model",
             must_exist=True,
         )
-        model_type = str(
-            task.get("model_type", checkpoint_layer.get("model_type", "uma"))
-        ).lower()
-        if model_type not in _VALID_ENGINES:
+        declared_type = task.get("model_type")
+        checkpoint_type = checkpoint_layer.get("model_type")
+        if declared_type is not None:
+            try:
+                model_type = canonical_model_type(declared_type)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{label}: model_type must be one of "
+                    f"{sorted(_VALID_ENGINES)}, got {declared_type!r}"
+                ) from exc
+            if (
+                checkpoint_type is not None
+                and canonical_model_type(checkpoint_type) != model_type
+            ):
+                raise ValueError(
+                    f"{label}: model_type {declared_type!r} does not match the "
+                    f"resume checkpoint backend {checkpoint_type!r}"
+                )
+        elif checkpoint_type is not None:
+            # NEB resume is the one path that may take the backend from the
+            # checkpoint it is continuing.
+            try:
+                model_type = canonical_model_type(checkpoint_type)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{label}: checkpoint model_type {checkpoint_type!r} is "
+                    "not a supported backend"
+                ) from exc
+        else:
             raise ValueError(
-                f"{label}: model_type must be one of {sorted(_VALID_ENGINES)}, "
-                f"got {task.get('model_type')!r}"
+                f"{label}: no backend selected; set model_type to one of "
+                f"{sorted(_VALID_ENGINES)}"
             )
         python = task.get("python")
         if python is not None:

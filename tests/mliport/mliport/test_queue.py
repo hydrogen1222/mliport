@@ -63,6 +63,7 @@ def test_build_command_opt_options() -> None:
         "opt",
         "s.cif",
         "m.pt",
+        model_type="mace",
         options={
             "fmax": 0.02,
             "max_steps": 100,
@@ -83,6 +84,7 @@ def test_build_command_md_options() -> None:
         "md",
         "s.cif",
         "m.pt",
+        model_type="mace",
         options={
             "ensemble": "NVT",
             "temperature": 500.0,
@@ -112,6 +114,7 @@ def test_build_command_neb_uses_two_endpoints_and_serial_job_flags() -> None:
         "neb",
         None,
         "model.pt",
+        model_type="mace",
         output_dir="out",
         initial="initial.vasp",
         final="final.vasp",
@@ -334,6 +337,7 @@ def test_task_paths_are_frozen_relative_to_task_file(tmp_path: Path) -> None:
                 "calc_type": "md",
                 "structure": "inputs/s.cif",
                 "model": "models/m.pt",
+                "model_type": "mace",
                 "python": "bin/python",
                 "output_dir": "outputs/run",
                 "options": {
@@ -1114,3 +1118,65 @@ def test_mark_running_does_not_touch_unrelated_records(tmp_path: Path) -> None:
     )
     assert not mgr.mark_running(job_id, os.getpid(), claim_token=mgr.new_job_id())
     assert mgr.get_job(job_id)["status"] == "claimed"
+
+
+# ---------------------------------------------------------------------------
+# QUEUE-01: no implicit UMA backend in task files
+# ---------------------------------------------------------------------------
+
+
+def test_queue_task_without_model_type_fails(tmp_path: Path) -> None:
+    """QUEUE-01/QN-01: a new task must select its backend explicitly."""
+    task = _sample_task(tmp_path)
+    task.pop("model_type")
+    with pytest.raises(ValueError, match="model_type|backend"):
+        parse_task_file(_write_tasks(tmp_path, [task]))
+
+
+def test_queue_fairchem_alias_canonicalizes_to_uma(tmp_path: Path) -> None:
+    """QUEUE-01/QN-04: the fairchem alias is recorded as the UMA runtime."""
+    task = _sample_task(tmp_path, model_type="fairchem")
+    parsed = parse_task_file(_write_tasks(tmp_path, [task]))
+    assert parsed["tasks"][0]["model_type"] == "uma"
+
+
+def test_queue_resume_conflicting_backend_fails(tmp_path: Path) -> None:
+    """QUEUE-01/QN-06: an explicit task backend must match the checkpoint."""
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model")
+    run = tmp_path / "run"
+    images = [
+        Atoms("H", positions=[[x, 0, 0]], cell=[4, 4, 4], pbc=True)
+        for x in (0.5, 1.0, 1.5)
+    ]
+    NEBCheckpointStore(run).write(
+        images,
+        run_id=str(uuid.uuid4()),
+        attempt_id=str(uuid.uuid4()),
+        stage="neb",
+        stage_step=1,
+        resume_fingerprint={},
+        resume_fingerprint_sha256="test",
+        resolved_config={
+            "model_type": "mace",
+            "model_path": str(model),
+            "task": "bulk",
+            "device": "cpu",
+            "inference_mode": "default",
+            "calculator_options": {},
+            "run_options": {},
+            "settings": {},
+        },
+    )
+    path = _write_tasks(
+        tmp_path,
+        [{"calc_type": "neb", "resume": str(run), "model_type": "dpa"}],
+    )
+    with pytest.raises(ValueError, match="conflict|does not match|checkpoint"):
+        parse_task_file(path)
+
+
+def test_build_command_requires_model_type(tmp_path: Path) -> None:
+    """QUEUE-01/QN-01: the command builder has no backend default."""
+    with pytest.raises(TypeError):
+        build_mliport_command("sp", "s.cif", "m.pt")  # type: ignore[call-arg]

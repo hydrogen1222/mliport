@@ -49,6 +49,12 @@ def require_model_type(model_type: str | None) -> str:
     return normalize_model_type(value)
 
 
+def canonical_model_type(model_type: str | None) -> str:
+    """Normalize a backend and fold the ``fairchem`` alias into ``uma``."""
+    value = require_model_type(model_type)
+    return "uma" if value in UMA_ALIASES else value
+
+
 def is_uma(model_type: str) -> bool:
     """True for the UMA runtime (including its ``fairchem`` alias)."""
     return str(model_type).strip().lower() in UMA_ALIASES
@@ -68,6 +74,7 @@ __all__ = [
     "SUPPORTED_BACKENDS",
     "SUPPORTED_TYPES",
     "UMA_ALIASES",
+    "canonical_model_type",
     "default_task_for",
     "is_uma",
     "normalize_model_type",
