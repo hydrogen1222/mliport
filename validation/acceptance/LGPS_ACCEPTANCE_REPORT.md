@@ -2,6 +2,7 @@
 
 Baseline commit: `74f8dee0cfa009b6dc08d888c48a590078f69836` (2.0.0b3)
 Acceptance code: `fad5ed6` (fixes + harness + docs in this round)
+Documentation revision: `26f1168` (prose pass)
 Acceptance host: Rocky Linux 9.8, dual Xeon E5-2696 v3, NVIDIA
 V100-SXM2-16GB (16 GiB, driver 580.173.02), Python 3.12.13 environments.
 Report date: 2026-09-14.
@@ -230,14 +231,22 @@ a natural technical adaptation, not a mechanical translation. `docs/` gained
 the acceptance-verified options for installation, models, NEB, MD, queue and
 the analysis tasks, plus troubleshooting entries for every failure above.
 
-The Humanizer skill is not available in this session (skill search and local
-`SKILL.md` lookup found nothing), so the plan's own style rules were applied
-directly: no `not-X-but-Y` constructions, staged openers, dramatic closers,
-forced triads, bold-label lists or inflated adjectives; commands, model names,
-scientific values and citations were kept unchanged. A second technical audit
-checked the rewritten pages against the CLI, the compatibility registry, the
-model manifest and the acceptance results; the docs contract, README sync and
-command-existence tests pass.
+The rewrite uses the Humanizer skill from
+[github.com/blader/humanizer](https://github.com/blader/humanizer), fetched
+during the acceptance round (SKILL.md version 3.0.0, skill commit
+`9862685`). The skill ran in file mode: prose only, with code blocks, inline
+code, commands, paths, data and link targets left unchanged. The English and
+Chinese READMEs and the generated installation, backend and NEB pages were
+edited for the skill's §1-§25 patterns, including staged openers, not-X-but-Y
+contrasts, one-line closers, decorative bold labels, forced triads, dashed
+connectors and inflated vocabulary. Pages that predate this round keep their
+established style; they were not rewritten wholesale.
+
+A second technical audit re-checked the edited text against the CLI parser,
+the compatibility registry, the model manifest and the acceptance evidence.
+The docs contract, README sync, capability-matrix, install-UX and
+command-existence tests pass. README.md is 353 lines and README_CN.md is 325
+lines, including the generated status block.
 
 ## Tests, lint and CI
 
