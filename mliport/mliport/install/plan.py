@@ -223,8 +223,17 @@ def _torch_steps(
             )
         )
 
-    # Backend package(s) + editable mliport.
-    pkg_argv = _uv_pip(profile, python, "-e", "./mliport", *backend.install_packages())
+    # Backend package(s) + editable mliport with all user features.
+    # ``analysis-all`` covers scipy/matplotlib (analysis), kinisi
+    # (transport) and gemdat (electrolyte); textual is a core dependency, so
+    # this is the complete user-facing feature set for each environment.
+    pkg_argv = _uv_pip(
+        profile,
+        python,
+        "-e",
+        "./mliport[analysis-all]",
+        *backend.install_packages(),
+    )
     pkg_argv += build_package_source_args(profile)
     steps.append(
         InstallStep(
@@ -253,7 +262,7 @@ def _grace_steps(
             profile,
             python,
             "-e",
-            "./mliport",
+            "./mliport[analysis-all]",
             f"tensorflow=={tf_ver}",
             backend.requirement,
         )
@@ -262,7 +271,7 @@ def _grace_steps(
             profile,
             python,
             "-e",
-            "./mliport",
+            "./mliport[analysis-all]",
             f"tensorflow[and-cuda]=={tf_ver}",
             backend.requirement,
             *extra_pkgs,

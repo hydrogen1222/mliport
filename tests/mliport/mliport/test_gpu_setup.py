@@ -185,7 +185,10 @@ def test_engine_install_commands_uma_explicit() -> None:
     joined = "\n".join(cmds)
     assert "uv sync" not in joined
     assert "fairchem-core==2.21.0" in joined
-    assert "-e ./mliport" in joined
+    assert (
+        "-e './mliport[analysis-all]'" in joined
+        or "-e ./mliport[analysis-all]" in joined
+    )
 
 
 def test_engine_install_commands_maxwell_experimental() -> None:

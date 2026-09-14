@@ -164,3 +164,74 @@ def test_cancelled_interactive_source_returns_cli_error(monkeypatch, capsys) -> 
 
     assert cli.main(["--source", "china", "--dry-run"]) == 2
     assert "Source selection cancelled" in capsys.readouterr().err
+
+
+def test_engines_accept_space_and_comma_separated_forms():
+    """README uses `--engines mace dpa grace uma`; the CLI must accept it.
+
+    Regression INSTALL-002: the documented space-separated form was rejected
+    because argparse only accepted one comma-separated argument.
+    """
+    from mliport.install.cli import _parser, normalize_engine_args
+
+    space = _parser().parse_args(["--engines", "mace", "dpa", "grace", "uma"])
+    assert normalize_engine_args(space.engines) == ["mace", "dpa", "grace", "uma"]
+
+    comma = _parser().parse_args(["--engines", "mace,dpa,grace,uma"])
+    assert normalize_engine_args(comma.engines) == ["mace", "dpa", "grace", "uma"]
+
+    mixed = _parser().parse_args(["--engines", "mace,dpa", "grace", "uma"])
+    assert normalize_engine_args(mixed.engines) == ["mace", "dpa", "grace", "uma"]
+
+    default = _parser().parse_args([])
+    assert normalize_engine_args(default.engines) == ["uma", "mace", "dpa", "grace"]
+
+
+def test_plan_installs_all_user_features_for_every_engine():
+    """INSTALL-003: one-command install must include analysis/transport/
+    electrolyte/plotting features, not just the backend runtime."""
+    from mliport.install.plan import generate_plan
+
+    plan = generate_plan(
+        gpus=None,
+        engines=["mace", "dpa", "grace", "uma"],
+        source="auto",
+        python_version="3.12",
+        device="cpu",
+        clean=False,
+        verify=False,
+    )
+    package_steps = [
+        step
+        for step in plan.steps
+        if step.stage == "pip"
+        and "-e" in step.argv
+        and any("mliport" in arg for arg in step.argv)
+    ]
+    assert len(package_steps) == 4
+    for step in package_steps:
+        joined = " ".join(step.argv)
+        assert "./mliport[analysis-all]" in joined, joined
+
+
+def test_dpa_plan_installs_mpich_for_deepmd_torch_ops():
+    """INSTALL-005: deepmd.pt.cxx_op reads mpich metadata at model load.
+
+    The upstream deepmd-kit[torch] extra declares mpich; installing the bare
+    distribution (as the fresh README install did) leaves DPA unusable with
+    `No package metadata was found for mpich`.
+    """
+    from mliport.install.plan import generate_plan
+
+    plan = generate_plan(
+        gpus=None,
+        engines=["dpa"],
+        source="auto",
+        python_version="3.12",
+        device="cpu",
+        clean=False,
+        verify=False,
+    )
+    joined = " ".join(arg for step in plan.steps for arg in step.argv)
+    assert "deepmd-kit" in joined
+    assert "mpich" in joined, joined

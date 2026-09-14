@@ -456,6 +456,13 @@ BACKENDS: dict[str, BackendSpec] = {
         framework="torch",
         upstream_constraint="torch==2.10.0",
         requires_python=SpecifierSet(">=3.10"),
+        # deepmd.pt.cxx_op reads importlib metadata for the MPICH library that
+        # ships with the upstream `deepmd-kit[torch]` extra. Installing the
+        # bare distribution leaves the model loader unable to find it
+        # (`No package metadata was found for mpich`), so carry the extra's
+        # MPI package explicitly.  Kept as a range: mpich 5.x is the tested
+        # series, 6.x has not been validated with deepmd-kit 3.1.3.
+        install_extra=("mpich>=5.0,<6",),
         arch_profiles={
             "maxwell": BackendArchProfile(
                 framework_version="2.10.0",

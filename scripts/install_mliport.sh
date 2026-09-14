@@ -65,7 +65,7 @@ for ARG in "$@"; do
 done
 
 bootstrap_help() {
-    echo "Usage: install_mliport.sh [--engines uma,mace,dpa,grace] [--device auto|cuda|cpu]"
+    echo "Usage: install_mliport.sh [--engines mace dpa grace uma] [--device auto|cuda|cpu]"
     echo "       [--source auto|official|china|china-aliyun|china-ustc|china-tencent|custom|offline]"
     echo "       [--python 3.10|3.11|3.12] [--dry-run] [--clean] [--skip-doctor] [--non-interactive]"
     echo "UMA requires Python >=3.11. Help and dry-run never download Python."
@@ -80,9 +80,12 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 1
 fi
 
-# Pick a Python interpreter that uv manages (3.12 preferred, 3.10/3.11 ok).
-# This avoids depending on an old system python3 that cannot parse the
-# modern type annotations used by mliport.install.
+# Pick a Python 3.10-3.12 interpreter (uv-managed preferred) to run the
+# modern mliport.install planner.  A bare uv-managed interpreter often has
+# no third-party packages, so when the selected interpreter lacks
+# ``packaging`` the planner runs in an ephemeral ``uv run --with packaging``
+# environment instead of failing the install (regression: fresh machine with
+# only uv and no project venv).
 if [[ -z "${MLIPORT_INSTALL_PYTHON:-}" && "$HELP_ONLY" -eq 0 ]]; then
     case "$TARGET_PYTHON" in
         3.10|3.11|3.12) ;;
@@ -93,6 +96,14 @@ if [[ -z "${MLIPORT_INSTALL_PYTHON:-}" && "$HELP_ONLY" -eq 0 ]]; then
     esac
 fi
 PY_SPEC="${MLIPORT_INSTALL_PYTHON:-$TARGET_PYTHON}"
+
+_python_range_ok() {
+    "$1" -c 'import sys; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1
+}
+_planner_ok() {
+    "$1" -c 'import sys, packaging.specifiers; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1
+}
+
 if [[ "$SOURCE_PROFILE" == "offline" || "$READ_ONLY" -eq 1 ]]; then
     export UV_OFFLINE=1
     export UV_PYTHON_DOWNLOADS=never
@@ -102,79 +113,58 @@ if [[ "$SOURCE_PROFILE" == "offline" || "$READ_ONLY" -eq 1 ]]; then
             exit 0
         fi
         if [[ "$SOURCE_PROFILE" != "offline" ]]; then
-            echo "[mliport] ERROR: dry-run requires an existing Python $PY_SPEC interpreter; automatic download is disabled." >&2
+            echo "[mliport] ERROR: dry-run requires an existing Python $PY_SPEC interpreter. Run 'uv python install $PY_SPEC' first (or set MLIPORT_INSTALL_PYTHON); automatic download is disabled in dry-run." >&2
             exit 1
         fi
-        echo "[mliport] ERROR: offline mode requires an existing Python $PY_SPEC interpreter; automatic download is disabled." >&2
+        echo "[mliport] ERROR: offline mode requires an existing Python $PY_SPEC interpreter. Install it beforehand or set MLIPORT_INSTALL_PYTHON; automatic download is disabled offline." >&2
         exit 1
     fi
 else
-    # RC-06: the planner runtime and the target environment runtime are two
-    # different things. The planner only parses args, validates the
-    # engine x target-Python matrix, and computes the source/device plan; it
-    # may be any local Python 3.10-3.12 with 'packaging'. Only after the full
-    # plan validates is uv allowed to obtain the target interpreter while
-    # creating the environments (normal online mode).
-    UV_PY=""
-    _planner_ok() {
-        "$1" -c 'import sys, packaging.specifiers; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1
-    }
     if [[ -n "${MLIPORT_INSTALL_PYTHON:-}" ]]; then
-        if _planner_ok "$MLIPORT_INSTALL_PYTHON"; then
-            UV_PY="$MLIPORT_INSTALL_PYTHON"
-        else
+        if ! _planner_ok "$MLIPORT_INSTALL_PYTHON"; then
             echo "[mliport] ERROR: MLIPORT_INSTALL_PYTHON must be a local Python 3.10-3.12 with packaging installed." >&2
             exit 1
         fi
+        UV_PY="$MLIPORT_INSTALL_PYTHON"
     else
-        # Fast path: the target interpreter itself acts as the planner when
-        # it already exists locally (this lookup never downloads anything).
+        # The target interpreter is the preferred planner when it already
+        # exists locally.  This lookup never downloads anything.
         UV_PY="$(UV_PYTHON_DOWNLOADS=never uv python find "$PY_SPEC" 2>/dev/null || true)"
-        if [[ -n "$UV_PY" ]] && ! _planner_ok "$UV_PY"; then
+        if [[ -n "$UV_PY" ]] && ! _python_range_ok "$UV_PY"; then
             UV_PY=""
         fi
         if [[ -z "$UV_PY" ]]; then
-            # Target absent or unusable as planner: plan with any local
-            # compatible runtime; the plan still targets --python.
             for CANDIDATE in "$REPO_ROOT/.venv/bin/python" python3.12 python3.11 python3.10 python3 python; do
-                if _planner_ok "$CANDIDATE"; then
+                if _python_range_ok "$CANDIDATE"; then
                     UV_PY="$CANDIDATE"
                     break
                 fi
             done
         fi
         if [[ -z "$UV_PY" ]]; then
-            echo "[mliport] ERROR: no local Python 3.10-3.12 runtime with packaging found to plan the install; set MLIPORT_INSTALL_PYTHON to such an interpreter." >&2
+            echo "[mliport] ERROR: no local Python 3.10-3.12 runtime found to plan the install. Run 'uv python install 3.12' first, or set MLIPORT_INSTALL_PYTHON to a 3.10-3.12 interpreter with packaging." >&2
             exit 1
         fi
         echo "[mliport] Planner runtime: $UV_PY (target environment: Python $TARGET_PYTHON)"
     fi
 fi
 
-# The planner uses packaging.SpecifierSet. A bare managed interpreter can
-# lack packaging even when the target Python exists. Reuse an installed
-# local planner runtime without changing the requested target --python.
-if ! "$UV_PY" -c 'import packaging.specifiers' >/dev/null 2>&1; then
-    PLANNER_PY=""
-    for CANDIDATE in "$REPO_ROOT/.venv/bin/python" python3 python; do
-        if "$CANDIDATE" -c 'import sys, packaging.specifiers; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1; then
-            PLANNER_PY="$CANDIDATE"
-            break
-        fi
-    done
-    if [[ -z "$PLANNER_PY" ]]; then
-        if [[ "$HELP_ONLY" -eq 1 ]]; then
-            bootstrap_help
-            exit 0
-        fi
-        echo "[mliport] ERROR: preflight needs a local Python 3.10-3.12 with packaging installed. Set MLIPORT_INSTALL_PYTHON to that interpreter; no dependencies were downloaded." >&2
-        exit 1
-    fi
-    UV_PY="$PLANNER_PY"
-fi
-
 # Make the mliport package importable: PYTHONPATH -> <repo>/mliport (project root),
 # so `import mliport` resolves to <repo>/mliport/mliport.
 export PYTHONPATH="$REPO_ROOT/mliport${PYTHONPATH:+:$PYTHONPATH}"
 
-exec "$UV_PY" -m mliport.install "$@"
+if _planner_ok "$UV_PY"; then
+    exec "$UV_PY" -m mliport.install "$@"
+fi
+
+# The interpreter exists but has no packaging.  Build the planner
+# environment through uv.  Read-only/offline modes may only use cached
+# wheels, so a cache miss is a clear error rather than a silent download.
+if [[ "$READ_ONLY" -eq 1 || "$SOURCE_PROFILE" == "offline" ]]; then
+    if uv run --no-project --offline --with packaging --python "$UV_PY" -- python -c 'import packaging.specifiers' >/dev/null 2>&1; then
+        exec uv run --no-project --offline --with packaging --python "$UV_PY" -- python -m mliport.install "$@"
+    fi
+    echo "[mliport] ERROR: planner Python $UV_PY lacks 'packaging' and no cached copy is available in offline/dry-run mode. Install packaging into that interpreter or set MLIPORT_INSTALL_PYTHON." >&2
+    exit 1
+fi
+exec uv run --no-project --with packaging --python "$UV_PY" -- python -m mliport.install "$@"

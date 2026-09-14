@@ -45,8 +45,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--engines",
-        default="uma,mace,dpa,grace",
-        help="Comma-separated engines to install (default: all four).",
+        nargs="+",
+        default=["uma", "mace", "dpa", "grace"],
+        help=(
+            "Engines to install (default: all four). Accepts the documented "
+            "space-separated form (`--engines mace dpa grace uma`) and the "
+            "comma-separated form (`--engines mace,dpa,grace,uma`)."
+        ),
     )
     p.add_argument(
         "--device",
@@ -97,6 +102,22 @@ def _parser() -> argparse.ArgumentParser:
         help="Print the plan without executing anything.",
     )
     return p
+
+
+def normalize_engine_args(value: str | list[str] | tuple[str, ...]) -> list[str]:
+    """Flatten comma- and/or space-separated engine arguments.
+
+    argparse gives a list for the documented space-separated form; the
+    historical comma-separated form arrives as one string.  Both (and a
+    mixture) are accepted.
+    """
+    chunks = [value] if isinstance(value, str) else list(value)
+    engines = [
+        engine.strip()
+        for chunk in chunks
+        for engine in str(chunk).split(",")
+    ]
+    return [engine for engine in engines if engine]
 
 
 def _can_prompt_for_source() -> bool:
@@ -206,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         src = resolve_source(source_name)
         plan = generate_plan(
             gpus=gpus,
-            engines=args.engines.split(","),
+            engines=normalize_engine_args(args.engines),
             source=source_name,
             python_version=args.python,
             device=args.device,
@@ -242,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 2
 
-    engine_list = [engine for engine in args.engines.split(",") if engine.strip()]
+    engine_list = normalize_engine_args(args.engines)
 
     if args.dry_run:
         print()
