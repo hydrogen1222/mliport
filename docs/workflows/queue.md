@@ -63,3 +63,41 @@ JSON
 .venv/bin/mliport queue submit job.json
 .venv/bin/mliport queue start --max-concurrent 1
 ```
+
+## Task file and lifecycle
+
+A task file is one JSON object. Paths must exist; `calc_type` is one of
+`sp`, `opt`, `md` or `neb`:
+
+```json
+{
+  "max_concurrent": 1,
+  "tasks": [
+    {
+      "name": "lgps-sp",
+      "calc_type": "sp",
+      "structure": "/data/LGPS.vasp",
+      "model": "/data/mace-omat-0-medium.model",
+      "model_type": "mace",
+      "task": "bulk",
+      "device": "cuda",
+      "output_dir": "/data/runs/lgps-sp"
+    }
+  ]
+}
+```
+
+```bash
+# tested example
+.venv-mace/bin/mliport queue submit tasks.json
+.venv-mace/bin/mliport queue start
+.venv-mace/bin/mliport jobs
+.venv-mace/bin/mliport queue status
+.venv-mace/bin/mliport queue stop
+```
+
+`queue start` owns a background scheduler and returns immediately; poll
+`jobs` (or `queue status`) until the job reaches `done` or `failed`, then stop
+the scheduler. Each job writes the usual run directory, including
+`mliport_results.json`. `queue pause`/`queue resume` control pending work,
+while `kill` and `clean` operate on individual job records.

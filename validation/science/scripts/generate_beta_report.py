@@ -690,95 +690,35 @@ def readme_validation_snippet(
     t3_records: list[dict[str, Any]],
     versions: dict[str, Any] | None = None,
 ) -> str:
-    """Generated validation block embedded in both READMEs (section 41.9).
+    """Generated README validation block (task book section 110).
 
-    The block is machine-rendered from the support matrix; the README sync
-    test compares the README content against this output byte-for-byte, so
-    numbers are never handwritten in the READMEs.
+    The README keeps validated hardware, current beta status and links; the
+    per-workload matrix, tier scopes and limitations stay in the reports.
+    The README sync test compares this output byte-for-byte with the block in
+    both READMEs and with README_VALIDATION.md.
     """
-    rows = [
-        ("Install & doctor (CI software tests)", "install"),
-        ("Single-point inference (4 structures)", "single_point"),
-        ("Energy-forces consistency", "force_energy_consistency"),
-        ("Stress (finite-difference cross-check)", "stress"),
-        ("Stress-energy consistency", "stress_energy_consistency"),
-        ("Coordinate invariance & cache", "invariance_caching"),
-        ("Fixed-cell relaxation", "fixed_cell_relax"),
-        ("Cell relaxation", "cell_relax"),
-        ("EOS / bulk modulus", "eos"),
-        ("Elastic constants", "elastic"),
-        ("Harmonic phonons", "phonon"),
-        ("Harmonic thermodynamics", "thermodynamics"),
-        ("Vacancy formation energy", "defect"),
-        ("Surface energy", "surface"),
-        ("NEB", "neb"),
-        ("Saddle-point Hessian", "saddle_hessian"),
-        ("Short NVE / NVT MD", "short_nve"),
-        ("Transport analysis (demonstration)", "transport_demo"),
-        ("Mechanism analysis (GEMDAT)", "mechanism_analysis"),
-        ("Performance (SP/MD scaling)", "performance"),
-    ]
-    names = {
-        "mace": "MACE",
-        "dpa": "DPA",
-        "grace": "GRACE",
-        "uma": "UMA",
-    }
     versions = versions or {}
-    lines = [status_snippet(versions)]
-    if versions.get("release_candidate_commit"):
-        candidate = str(versions.get("release_candidate_commit"))
-        lines += [
-            "",
-            f"The full scientific beta campaign targets commit "
-            f"`{versions.get('scientific_campaign_target')}`. The release "
-            f"candidate `{candidate[:12]}` retains that validated scientific "
-            "implementation and adds productization/release-layer changes. A "
-            f"four-backend release-bridge smoke "
-            f"(`{versions.get('release_bridge_campaign')}`) was executed at "
-            "the release-candidate commit to verify configuration, backend "
-            "selection, model loading and single-point inference paths. No "
-            "long scientific trajectories were regenerated.",
-        ]
-    lines += [
+    lines = [
+        status_snippet(versions),
         "",
-        "Validation status per backend, rendered from the beta evidence "
-        "records (`beta-summary.json`; t1-t8 tiers, 4 backends x OMat24 "
-        "common subset). `software_validated` means the mliport integration "
-        "and all recorded checks passed; `model_characterized` means the "
-        "workflow ran and its behavior was recorded, including honest "
-        "failures (e.g. float32 arithmetic noise). Full per-test tables: "
-        "[BETA_VALIDATION.md](validation/science/reports/"
-        "BETA_VALIDATION.md).",
+        "Validated hardware: NVIDIA V100-SXM2-16GB (Volta, 16 GiB), driver "
+        "580.173.02, Rocky Linux 9.8. CPU installs are smoke-tested on the "
+        "same host.",
         "",
-        "| Workflow | MACE | DPA | GRACE | UMA |",
-        "|---|---|---|---|---|",
-    ]
-    for label, key in rows:
-        cells = []
-        for eng in ("mace", "dpa", "grace", "uma"):
-            entry = matrix[key][eng]
-            labels = entry.get("labels") or ["not_run"]
-            text = "+".join(labels)
-            if entry.get("by_status"):
-                parts = [
-                    f"{st}x{cnt}" for st, cnt in sorted(entry["by_status"].items())
-                ]
-                text += f" ({', '.join(parts)})"
-            if entry.get("note"):
-                text += "*"
-            cells.append(text)
-        lines.append(f"| {label} | " + " | ".join(cells) + " |")
-    lines += [
+        "Current status: 2.0.0b3 beta. The four backends are installed and "
+        "exercised on an LGPS structure through single point, relaxation, "
+        "MD, NEB, batch, INCAR-style runs, queue, TUI, the Python API and "
+        "the analysis modules.",
         "",
-        t3_accuracy_line(t3_records),
+        "- Full beta validation report: "
+        "[BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md)",
+        "- LGPS fresh-install acceptance: "
+        "[LGPS_ACCEPTANCE_REPORT.md](validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)",
+        "- Model identities: "
+        "[model_manifest.json](validation/science/model_manifest.json)",
         "",
-        "`*` = CI software test only, no model involved. A cell lists the "
-        "recorded statuses for that workload; per-workload rows reuse the "
-        "same evidence tiers, so row counts are not additive. Full "
-        "per-test tables and limitations: [BETA_VALIDATION.md]"
-        "(validation/science/reports/BETA_VALIDATION.md). Model "
-        "identities pinned in `validation/science/model_manifest.json`.",
+        "Per-workload tables, tier scopes and limitations live in the "
+        "reports; the README keeps only this status summary.",
     ]
     return "\n".join(lines)
 

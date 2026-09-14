@@ -54,5 +54,5 @@ mliport is MIT-licensed; the upstream model/software must be cited separately. S
 ## Known limitations
 
 - `MODEL_PATH` must be the SavedModel directory.
-- TensorFlow GPU visibility must be isolated per process (the queue worker and installer do this); do not override it inside a run.
+- TensorFlow GPU visibility must be isolated per process. The CLI restarts a command with `CUDA_VISIBLE_DEVICES` when it is unset; the Python API and the queue worker need the same isolation.
 - Stress support depends on the checkpoint.

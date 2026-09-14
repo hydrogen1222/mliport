@@ -47,3 +47,20 @@ and model caveats on the relevant page.
   coefficients than for RDF/thermo diagnostics.
 - Re-running with different windows is expected and recorded via `--force`
   and analysis IDs.
+
+## Acceptance-verified invocations
+
+The LGPS acceptance suite exercises these commands on real trajectories:
+
+```bash
+# tested example
+.venv-mace/bin/mliport analyze runs/lgps-md validate
+.venv-mace/bin/mliport analyze runs/lgps-md thermo
+.venv-mace/bin/mliport analyze runs/lgps-md rmsd
+.venv-mace/bin/mliport analyze runs/lgps-md density --mobile Li
+```
+
+`density` needs `--mobile`. `validate` and `thermo` run on short trajectories
+as well as long ones; they report metadata problems instead of producing a
+number when the trajectory is not suitable for a later task. Every task
+writes JSON plus CSV and, where useful, PNG/SVG figures, all headless.

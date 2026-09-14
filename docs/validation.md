@@ -75,3 +75,17 @@ each tier's scope in the report before quoting a number.
   uncertainties.
 - If evidence for a claim is missing, the status is `not_run` — never
   "assumed working".
+
+## LGPS fresh-install acceptance
+
+The 2.0.0b3 cycle adds a user-path acceptance run: the documented install
+commands, four GPU backends, the LGPS workflow matrix, the analysis modules,
+a CPU install and a final clean-room pass. The report and its machine-readable
+evidence live here:
+
+- [LGPS_ACCEPTANCE_REPORT.md](../validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)
+- [beta-summary.json](../validation/science/reports/beta-summary.json)
+- [BETA_VALIDATION.md](../validation/science/reports/BETA_VALIDATION.md)
+
+Installation-matrix rows for the acceptance host, the exact commands and the
+remaining limitations are recorded there rather than inferred from CI.

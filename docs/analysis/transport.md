@@ -88,3 +88,21 @@ mliport analyze runs/md-800K transport --mobile Li --charge 1 \
   --dimensions 3 --temperature-K 800 --drift-reference nonmobile \
   --drift-mode mass_weighted_com --collective-conductivity --jump-diffusion
 ```
+
+## Acceptance-verified invocation
+
+`transport` requires an ionic charge and an explicit fit window; a sparse lag
+grid keeps the covariance matrix inside the memory guard:
+
+```bash
+# tested example
+.venv-grace/bin/mliport analyze results/lgps-1ns transport \
+  --mobile Li --charge 1 --fit-start-ps 100 \
+  --lag-step-ps 1 --lag-stop-ps 200
+```
+
+On the repository's 1 ns GRACE LGPS run this returns
+`D = 1.885e-09 m^2/s` with a 95% credible interval of
+`[1.492e-09, 2.275e-09] m^2/s` (fit window 100-200 ps). Short trajectories
+instead return an insufficient-sampling status; mliport never fabricates a
+diffusion coefficient for them.

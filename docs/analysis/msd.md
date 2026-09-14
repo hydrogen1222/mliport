@@ -54,3 +54,12 @@ mliport analyze runs/md-800K msd --mobile Li --axes xyz \
   --drift-reference nonmobile --drift-mode mass_weighted_com \
   --fit-start-ps 50 --fit-stop-ps 400 --alpha-focus-band 0.8 1.2
 ```
+
+## Short-trajectory semantics
+
+`msd` requires `--mobile <species>`. A 5-step smoke trajectory is accepted:
+the result carries an explicit insufficient-diffusive-window status and the
+alpha/diagnostics fields remain finite. The acceptance suite treats that as
+an expected limitation, never as a diffusion measurement. For a real MSD,
+give the run at least a few hundred saved frames and let the fit window cover
+a diffusive regime.

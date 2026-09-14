@@ -111,3 +111,30 @@ is a fatal configuration error.
 - MD, NEB and batch: [workflows/](workflows/single-point.md)
 - Analyse a trajectory: [analysis/overview.md](analysis/overview.md)
 - Know the evidence behind the claims: [validation.md](validation.md)
+
+## The LGPS acceptance structure
+
+The repository ships a real periodic LGPS (Li10GeP2S12) primitive cell with
+50 atoms:
+
+```text
+examples/structures/li10gep2s12_primitive.vasp
+```
+
+It is derived from a 2x2x2 LGPS supercell; `examples/structures/README.md`
+records the exact provenance and hashes. The cell is small enough for CPU
+smoke tests and is the structure used by the repository acceptance suite.
+
+A complete first run on it looks like this:
+
+```bash
+# tested example
+.venv-mace/bin/mliport sp examples/structures/li10gep2s12_primitive.vasp \
+  --model /path/to/mace-omat-0-medium.model \
+  --model-type mace --task bulk --device cuda --output runs/lgps-mace-sp
+```
+
+Expected outcome: `runs/lgps-mace-sp/mliport_results.json` with a finite
+`energy` (about -216 eV for the MACE-OMAT-0 checkpoint), finite forces, the
+50-atom formula `Ge2Li20P4S24`, and `actual_device_type: cuda` when a GPU was
+requested.

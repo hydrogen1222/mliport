@@ -112,11 +112,17 @@ _LIMITATIONS = {
         "DPA has no `inference_mode` concept; UMA-only options are rejected "
         "in strict config mode.",
         "Stress support depends on the checkpoint and its branch.",
+        "DPA needs process-level CUDA isolation. The CLI restarts a command "
+        "with `CUDA_VISIBLE_DEVICES` when it is unset; the Python API needs "
+        "the variable set in the caller.",
+        "`deepmd-kit[torch]` metadata is required for the model loader; the "
+        "installer carries the matching `mpich` package.",
     ],
     "grace": [
         "`MODEL_PATH` must be the SavedModel directory.",
-        "TensorFlow GPU visibility must be isolated per process (the queue "
-        "worker and installer do this); do not override it inside a run.",
+        "TensorFlow GPU visibility must be isolated per process. The CLI "
+        "restarts a command with `CUDA_VISIBLE_DEVICES` when it is unset; "
+        "the Python API and the queue worker need the same isolation.",
         "Stress support depends on the checkpoint.",
     ],
 }
@@ -337,8 +343,17 @@ forward barrier.
 **Minimal command.**
 
 ```bash
-.venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp --model mace-omat-0-medium.model --model-type mace --images 7 --output runs/neb
+.venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
+  --model mace-omat-0-medium.model --model-type mace --images 7 \
+  --allow-unvalidated-neb --output runs/neb
 ```
+
+The current checkpoints are outside the validated NEB envelope: mliport
+cannot yet certify their energy-gradient consistency for this exact
+model/runtime, so it refuses to run without the explicit
+`--allow-unvalidated-neb` opt-in. Such runs are recorded as
+`workflow_smoke_only` and do not claim a physical barrier. Once a runtime has
+a validated capability record the flag is no longer required.
 
 **Important options.**
 
@@ -389,8 +404,14 @@ with different settings.
 **Example (resume).**
 
 ```bash
-.venv-mace/bin/mliport neb --resume runs/neb/checkpoints/latest.pkl
+.venv-mace/bin/mliport neb --resume runs/neb --output runs/neb
 ```
+
+Resume continues in the original run directory and checks the recorded
+identity (model, task/head/dtype, cell/PBC, constraints, band setup and
+options). Step budgets are part of that identity in this beta: a resume that
+changes `--max-steps` is rejected with `Resume fingerprint is incompatible`;
+the explicit error leaves the checkpoint untouched.
 """
 
 

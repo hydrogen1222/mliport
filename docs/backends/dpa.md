@@ -55,3 +55,5 @@ mliport is MIT-licensed; the upstream model/software must be cited separately. S
 - Multi-task checkpoints require an explicit `HEAD`; the product fails closed rather than using an arbitrary branch.
 - DPA has no `inference_mode` concept; UMA-only options are rejected in strict config mode.
 - Stress support depends on the checkpoint and its branch.
+- DPA needs process-level CUDA isolation. The CLI restarts a command with `CUDA_VISIBLE_DEVICES` when it is unset; the Python API needs the variable set in the caller.
+- `deepmd-kit[torch]` metadata is required for the model loader; the installer carries the matching `mpich` package.

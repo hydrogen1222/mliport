@@ -7,8 +7,8 @@ Revalidation status: **target_commit_revalidated** -- campaign manifest declares
 | version identity | commit |
 |---|---|
 | software_commit (claimed validated) | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
-| validation_code_commit | `8957a53b997aceb4524d1553467b40bcfae3561d` |
-| report_generator_commit | `8957a53b997aceb4524d1553467b40bcfae3561d` |
+| validation_code_commit | `74f8dee0cfa009b6dc08d888c48a590078f69836` |
+| report_generator_commit | `74f8dee0cfa009b6dc08d888c48a590078f69836` |
 | evidence_campaign | `20260913-current-head-5f8d91d` |
 | evidence_source_commits | `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` |
 

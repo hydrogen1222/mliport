@@ -5,15 +5,15 @@
   "versions": {
     "software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
     "target_software_commit": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
-    "validation_code_commit": "8957a53b997aceb4524d1553467b40bcfae3561d",
-    "report_generator_commit": "8957a53b997aceb4524d1553467b40bcfae3561d",
+    "validation_code_commit": "74f8dee0cfa009b6dc08d888c48a590078f69836",
+    "report_generator_commit": "74f8dee0cfa009b6dc08d888c48a590078f69836",
     "evidence_campaign": "20260913-current-head-5f8d91d",
     "evidence_source_commits": [
       "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c"
     ],
     "scientific_revalidation_status": "target_commit_revalidated",
     "status_reason": "campaign manifest declares completion and every record was produced at the target software commit",
-    "repository_head_at_render_time": "8957a53b997aceb4524d1553467b40bcfae3561d",
+    "repository_head_at_render_time": "74f8dee0cfa009b6dc08d888c48a590078f69836",
     "validation_logic_version": 1,
     "scientific_campaign_target": "5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c",
     "release_candidate_commit": "6e1a945f91c76a4f17be10ed189fba0232936514",

@@ -39,3 +39,18 @@ frames and a homogeneous cell.
 mliport analyze runs/md-800K rdf --center Li --neighbor O \
   --rmax 8 --bins 240 --cn-cutoff 3.0 --stride 5
 ```
+
+## Required pair
+
+`rdf` needs an explicit pair; for LGPS the useful ones are Li-Li, Li-S and
+P-S:
+
+```bash
+# tested example
+.venv-grace/bin/mliport analyze results/lgps-1ns rdf \
+  --center Li --neighbor S --start-frame 0 --stop-frame 2000 --stride 5
+```
+
+`--start-frame`/`--stop-frame`/`--stride` bound the cost on long
+trajectories. The output contains the partial RDF, the coordination number,
+and CSV/PNG/SVG artifacts.

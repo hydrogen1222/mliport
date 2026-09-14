@@ -62,3 +62,19 @@ mliport analyze runs/md-800K electrolyte --mobile Li \
   --discover-sites-from-density --resolution-A 0.2 --minimal-residence 2 \
   --jump-dimensions 3 --percolation-axes xyz
 ```
+
+## Required site input and budget
+
+GEMDAT needs a site definition. Use either an explicit site file or the
+automatic density-based discovery:
+
+```bash
+# tested example
+.venv-grace/bin/mliport analyze results/lgps-1ns electrolyte \
+  --mobile Li --discover-sites-from-density
+```
+
+Site discovery on a full 1 ns, 400-atom trajectory is expensive; the
+acceptance suite runs it on a 30 ps segment with
+`--frame-interval-fs 100`. Partial-occupancy warnings from GEMDAT are reported
+by the upstream library and do not change the requested site set.

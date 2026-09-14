@@ -44,3 +44,17 @@ protocol.
 mliport analyze runs/md-300K spectrum --species O --method fft \
   --taper one-sided-cosine --normalization normalized_area --stride 1
 ```
+
+## Acceptance-verified invocation
+
+`vacf` and `spectrum` need only a readable trajectory:
+
+```bash
+# tested example
+.venv-grace/bin/mliport analyze results/lgps-1ns vacf
+.venv-grace/bin/mliport analyze results/lgps-1ns spectrum
+```
+
+Both complete headlessly and write CSV plus PNG/SVG. A short trajectory gives
+a noisy but finite spectrum; do not interpret the frequencies as converged
+vibrational modes.

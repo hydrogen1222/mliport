@@ -53,3 +53,25 @@ mliport analyze runs/md series/arrhenius \
   --diffusivity-std 0.1e-12 0.2e-12 0.4e-12 0.8e-12 \
   --extrapolate-temperature 300 1200
 ```
+
+## Independent temperature points
+
+`arrhenius` fits explicit, independent `(T, D)` pairs. Pass the values
+produced by `transport` at each temperature; the command never invents a
+missing point:
+
+```bash
+# tested example
+.venv-grace/bin/mliport analyze results/uma-800K.traj arrhenius \
+  --frame-interval-fs 100 --positions-convention unwrapped \
+  --temperature 600 --temperature 700 --temperature 800 \
+  --diffusivity 8.475718e-10 --diffusivity 3.479545e-09 --diffusivity 4.103223e-09 \
+  --diffusivity-std 7.356329e-11 --diffusivity-std 2.407381e-10 --diffusivity-std 2.640917e-10
+```
+
+The source trajectory is only used as the analysis source; trajectory-source
+options such as `--positions-convention` are recorded as ignored for this fit.
+With three same-engine UMA LGPS points the acceptance run fits
+`Ea = 0.316 eV` (r2 = 0.88). If fewer than two transports succeed, the
+pipeline reports `insufficient_transport_data` instead of an activation
+energy.

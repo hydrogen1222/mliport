@@ -71,3 +71,21 @@ option combination exits before dynamics start.
   --thermostat NHC --com-policy none \
   --output runs/md-800K
 ```
+
+## Thermostats and continuation
+
+`--thermostat` selects `LANGEVIN`, `BUSSI` or `NHC` for NVT. NHC requires
+`--com-policy none`: constrained NHC cannot run together with automatic
+center-of-mass removal, and mliport fails closed instead of silently dropping
+one of them.
+
+To continue a trajectory, read a saved frame that contains momenta and start a
+new run from it with `--velocity-policy preserve --no-pre-relax`. The new run
+keeps the supplied positions and velocities and does not reinitialize the
+Maxwell-Boltzmann distribution. mliport has no single-run resume flag for
+`md`; the continuation is a new run directory whose first frame equals the
+previous leg's last frame (the acceptance suite checks exactly that).
+
+The acceptance matrix runs 5-step NVE and 5-step Langevin/Bussi/NHC smokes in
+all four backend environments. Those runs verify the workflow and the
+thermostat plumbing, not temperature equilibration.
