@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.0.0b4
+
+Repository freeze / state isolation / compatibility audit beta:
+
+- removes the last implicit UMA defaults from queue task files and the TUI,
+  so a run without an explicit backend (or a checkpoint that supplies one)
+  fails closed;
+- moves persistent job history to the OS state directory, records the state
+  schema/application/version, scopes records to their project, adds
+  `mliport state path`/`state migrate`, and keeps legacy `~/.mliport` records
+  explicitly import-only;
+- unifies CUDA device resolution so the CLI isolation re-exec and the queue
+  device lease honour an existing `CUDA_VISIBLE_DEVICES` mapping and choose
+  the same physical GPU;
+- removes the deprecated `mliport/calculator.py` shim and the accidental
+  top-level `examples` package from the distribution;
+- audits the pinned frameworks at the binary level for Maxwell through
+  Blackwell, records wheel hashes and compiled architectures, ships the
+  audit to `mliport doctor`, and keeps non-Volta families at
+  `binary_theory_verified`/`experimental` instead of claiming hardware
+  verification;
+- adds a wheel/sdist content gate to CI and makes the generic MD template
+  device default CPU-safe.
+
+
 ## 2.0.0b3
 
 Recovery/release-bridge beta polish:

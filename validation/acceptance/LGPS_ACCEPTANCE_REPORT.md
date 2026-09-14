@@ -268,7 +268,9 @@ README sync: pass
 acceptance harness tests: pass
 lint/format: pass
 wheel/sdist build: pass
-GitHub Actions: pending final push
+GitHub Actions: lint/tests/package-build green at tested runtime commit
+28f2a40 (runs 34810783982, 34810784000, 34810783981); the v2.0.0b4 tag
+push re-runs the same workflows and their run IDs live in the release metadata
 ```
 
 ## Remaining limitations

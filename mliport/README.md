@@ -318,7 +318,7 @@ for the per-task options and semantics.
 
 ## Validation and limitations
 
-The current release is a beta candidate (2.0.0b3). It has been installed from
+The current release is a beta candidate (2.0.0b4). It has been installed from
 these instructions on a clean V100 host and exercised through the LGPS
 workflow and analysis matrix; the generated status block below links the
 reports.
@@ -353,11 +353,11 @@ Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce394
 
 Scientific campaign target: commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).
 LGPS fresh-install acceptance target: commit `51d2a78` ([acceptance report](https://github.com/hydrogen1222/mliport/blob/main/validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)).
-Current release: 2.0.0b3 (package metadata; the release tag records the exact commit).
+Current release: 2.0.0b4 (package metadata; the release tag records the exact commit).
 
 Validated hardware: NVIDIA V100-SXM2-16GB (Volta, 16 GiB), driver 580.173.02, Rocky Linux 9.8. CPU installs are smoke-tested on the same host.
 
-Current status: 2.0.0b3 beta. The four backends are installed and exercised on an LGPS structure through single point, relaxation, MD, NEB, batch, INCAR-style runs, queue, TUI, the Python API and the analysis modules.
+Current status: 2.0.0b4 beta. The four backends are installed and exercised on an LGPS structure through single point, relaxation, MD, NEB, batch, INCAR-style runs, queue, TUI, the Python API and the analysis modules.
 
 - Full beta validation report: [BETA_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md)
 - LGPS fresh-install acceptance: [LGPS_ACCEPTANCE_REPORT.md](https://github.com/hydrogen1222/mliport/blob/main/validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)
