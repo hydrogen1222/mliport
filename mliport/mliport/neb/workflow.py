@@ -344,6 +344,8 @@ def _fingerprint(
     band: BandInput,
     options: NEBOptions,
     model: Mapping[str, Any],
+    *,
+    electronic_state_override: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str]:
     package_version = _distribution_version("mliport")
     if package_version is None:
@@ -377,7 +379,11 @@ def _fingerprint(
         "cell_A": np.asarray(band.initial.cell.array, dtype=float).tolist(),
         "pbc": np.asarray(band.initial.pbc, dtype=bool).tolist(),
         "constraints": {"fix_atoms": _fixed_indices(band.initial)},
-        "electronic_state": _electronic_state(band.initial),
+        "electronic_state": (
+            dict(electronic_state_override)
+            if electronic_state_override is not None
+            else _electronic_state(band.initial)
+        ),
         "band": {
             "image_count": len(band.images),
             "atom_map": band.atom_map.tolist(),
@@ -671,7 +677,23 @@ def _run_neb_workflow_locked(
         if model["actual_device_type"] != "cuda":
             raise NEBPreparationError("Backend did not confirm actual CUDA execution")
         verify_runtime_uuid(model["actual_device_uuid"], device_uuid)
-    fingerprint, fingerprint_sha256 = _fingerprint(band, options, model)
+    # On resume the checkpoint band file may materialize implicit defaults
+    # (for example UMA's charge/spin 0/0) that the original fingerprint did
+    # not record.  Identity is defined by the checkpoint, so validate against
+    # its recorded electronic state instead of recomputing it from the file.
+    recorded_electronic_state: Mapping[str, Any] | None = None
+    if checkpoint_record is not None:
+        recorded_fingerprint = checkpoint_record.get("resume_fingerprint")
+        if isinstance(recorded_fingerprint, Mapping):
+            candidate = recorded_fingerprint.get("electronic_state")
+            if isinstance(candidate, Mapping):
+                recorded_electronic_state = candidate
+    fingerprint, fingerprint_sha256 = _fingerprint(
+        band,
+        options,
+        model,
+        electronic_state_override=recorded_electronic_state,
+    )
     if checkpoint_record is not None:
         recorded_digest = checkpoint_record.get("resume_fingerprint_sha256")
         recorded_fingerprint = checkpoint_record.get("resume_fingerprint")

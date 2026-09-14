@@ -455,3 +455,49 @@ def test_torch_recommendation_is_uma_specific():
         installed_torch="2.10.0+cu126",
         recommended_torch="2.6.0+cu124",
     )
+
+
+def test_feature_inventory_flags_missing_optional_and_required(monkeypatch):
+    """Doctor must report core/tui/analysis/transport/electrolyte/plotting."""
+    import mliport.doctor as doctor
+
+    def fake_version(name: str):
+        return None if name == "kinisi" else "1.0"
+
+    monkeypatch.setattr(doctor, "_distribution_version", fake_version)
+    checks = {c["name"]: c for c in doctor.feature_inventory()}
+    assert set(checks) >= {
+        "Feature: core",
+        "Feature: tui",
+        "Feature: analysis",
+        "Feature: transport",
+        "Feature: electrolyte",
+        "Feature: plotting",
+    }
+    assert checks["Feature: transport"]["status"] == "warn"
+    assert checks["Feature: analysis"]["status"] == "ok"
+
+    monkeypatch.setattr(
+        doctor, "_distribution_version", lambda name: None if name == "numpy" else "1.0"
+    )
+    core = {c["name"]: c for c in doctor.feature_inventory()}["Feature: core"]
+    assert core["status"] == "warn"
+    assert core["required"] is True
+
+
+def test_doctor_json_reports_features_and_failures(capsys):
+    """Acceptance harnesses consume `doctor --json` instead of scraping text."""
+    import json
+
+    from mliport.cli import main
+
+    rc = main(["doctor", "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema"] == "mliport.doctor-report/1"
+    assert isinstance(payload["failures"], int)
+    names = {check["name"] for check in payload["checks"]}
+    assert "Feature: core" in names
+    assert "Feature: analysis" in names
+    assert "Feature: transport" in names
+    assert "Feature: electrolyte" in names

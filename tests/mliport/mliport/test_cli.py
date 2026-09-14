@@ -1174,3 +1174,77 @@ def test_md_output_switches_reach_the_runner(tmp_path):
     runner = CalculationEngine.from_config(config)._create_runner(calculator=object())
     assert runner.write_trajectory is False
     assert runner.write_xdatcar is False
+
+
+def test_cli_version_flag(capsys) -> None:
+    """`mliport --version` is part of the documented install/check protocol."""
+    from importlib.metadata import version as package_version
+
+    from mliport.cli import main
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--version"])
+    assert excinfo.value.code == 0
+    output = capsys.readouterr().out.strip()
+    assert output.startswith("mliport ")
+    assert package_version("mliport") in output
+
+
+def test_tui_fails_closed_without_a_tty(capsys) -> None:
+    """The interactive TUI must not hang when no terminal is attached.
+
+    Fresh-install acceptance found that `mliport tui` under a non-TTY session
+    waited for a terminal until the acceptance driver killed it.
+    """
+    from mliport.cli import main
+
+    rc = main(["tui"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "requires an interactive terminal" in captured.err
+
+
+def test_isolation_backends_reexec_in_a_fresh_process(monkeypatch, capsys):
+    """GRACE/DPA commands restart with CUDA_VISIBLE_DEVICES when unset."""
+    from types import SimpleNamespace
+
+    import mliport.cli as cli
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("MLIPORT_DEVICE_ISOLATION_REEXEC", raising=False)
+    captured: dict = {}
+
+    def fake_execvpe(path, argv, env):
+        captured.update(path=path, argv=argv, env=env)
+        raise SystemExit(99)
+
+    monkeypatch.setattr(cli.os, "execvpe", fake_execvpe)
+    with pytest.raises(SystemExit) as excinfo:
+        cli._maybe_reexec_for_device_isolation(
+            SimpleNamespace(model_type="grace", device="cuda")
+        )
+    assert excinfo.value.code == 99
+    assert captured["env"]["CUDA_VISIBLE_DEVICES"] != ""
+    assert captured["env"]["MLIPORT_DEVICE_ISOLATION_REEXEC"] == "1"
+    assert "isolated device visibility" in capsys.readouterr().err
+
+    # An already isolated process is not restarted.
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    cli._maybe_reexec_for_device_isolation(
+        SimpleNamespace(model_type="dpa", device="cuda")
+    )
+
+    # Backends without the restriction are never restarted.
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    for model_type in ("mace", "uma"):
+        cli._maybe_reexec_for_device_isolation(
+            SimpleNamespace(model_type=model_type, device="cuda")
+        )
+
+    # CPU DPA/GRACE isolates with an empty visibility list.
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    with pytest.raises(SystemExit):
+        cli._maybe_reexec_for_device_isolation(
+            SimpleNamespace(model_type="grace", device="cpu")
+        )
+    assert captured["env"]["CUDA_VISIBLE_DEVICES"] == ""

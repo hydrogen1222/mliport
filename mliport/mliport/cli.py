@@ -137,6 +137,16 @@ def _doctor_device_argument(value: str) -> str:
     raise argparse.ArgumentTypeError("device must be auto, cpu, cuda, gpu, or cuda:N")
 
 
+def _mliport_version() -> str:
+    """Installed mliport version for `--version` and the doctor JSON report."""
+    try:
+        from importlib.metadata import version as _dist_version
+
+        return _dist_version("mliport")
+    except Exception:  # noqa: BLE001 - source-only / unusual environments
+        return "0.0.0"
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser with subcommands."""
     parser = argparse.ArgumentParser(
@@ -169,6 +179,13 @@ Examples:
   # Generate template INCAR
   mliport template sp
         """,
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"mliport {_mliport_version()}",
+        help="Show the installed mliport version and exit.",
     )
 
     # Global option: explicit settings.ini (plan section 4.2). Must precede
@@ -1386,6 +1403,11 @@ Examples:
         ),
     )
     doctor_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the machine-readable doctor report as JSON.",
+    )
+    doctor_parser.add_argument(
         "--engine",
         choices=["auto", "uma", "mace", "dpa", "grace"],
         default="auto",
@@ -1661,7 +1683,76 @@ def _resolve_engine_config(
     engine_config.job_name = (
         job_name if job_name is not None else getattr(args, "name", None)
     )
+    _maybe_reexec_for_device_isolation(resolved)
     return engine_config, resolved, settings
+
+
+_ISOLATION_BACKENDS = {"dpa", "grace"}
+
+
+def _device_visibility_value(device: str) -> str:
+    """Value for CUDA_VISIBLE_DEVICES that matches the requested device."""
+    import subprocess  # noqa: PLC0415
+
+    dev = str(device).lower()
+    if dev == "cpu":
+        return ""
+    index = 0
+    if ":" in dev:
+        with contextlib.suppress(ValueError):
+            index = int(dev.split(":", 1)[1])
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=uuid", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        uuids = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if index < len(uuids):
+            return uuids[index]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # The isolation guard accepts any single non-empty token; the runtime UUID
+    # check still compares the framework-reported UUID with the requested one.
+    return str(index)
+
+
+def _maybe_reexec_for_device_isolation(resolved) -> None:
+    """Restart DPA/GRACE commands in a process with isolated GPU visibility.
+
+    Their ASE adapters cannot select a GPU after the framework is imported, so
+    the documented per-environment CLI commands would otherwise fail on a
+    machine that has not exported CUDA_VISIBLE_DEVICES. Re-exec keeps the
+    user-facing command and arguments unchanged (fresh-install acceptance
+    finding, LGPS round).
+    """
+    from mliport.devices import visibility_is_isolated  # noqa: PLC0415
+
+    if resolved.model_type not in _ISOLATION_BACKENDS:
+        return
+    if os.environ.get("MLIPORT_DEVICE_ISOLATION_REEXEC") == "1":
+        return
+    if visibility_is_isolated(resolved.device):
+        return
+    value = _device_visibility_value(resolved.device)
+    env = dict(os.environ)
+    env["CUDA_VISIBLE_DEVICES"] = value
+    env["MLIPORT_DEVICE_ISOLATION_REEXEC"] = "1"
+    print(
+        f"Note: restarting with isolated device visibility "
+        f"(CUDA_VISIBLE_DEVICES={value!r}) for {resolved.model_type.upper()}.",
+        file=sys.stderr,
+    )
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0 and os.access(argv0, os.X_OK):
+        os.execvpe(argv0, sys.argv, env)
+    os.execvpe(
+        sys.executable,
+        [sys.executable, "-m", "mliport.cli", *sys.argv[1:]],
+        env,
+    )
 
 
 def _final_run_dir(config: EngineConfig) -> Path:
@@ -2195,6 +2286,16 @@ def cmd_template(args: argparse.Namespace) -> int:
 
 def cmd_tui(args: argparse.Namespace) -> int:
     """Launch interactive TUI mode."""
+    import sys  # noqa: PLC0415
+
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print(
+            "Error: mliport tui requires an interactive terminal. "
+            "Run it from a terminal, or use `mliport tui --help` and the "
+            "Python API in headless environments.",
+            file=sys.stderr,
+        )
+        return 1
     try:
         from mliport.tui import MliportApp  # noqa: PLC0415
     except ImportError as e:
@@ -2209,6 +2310,8 @@ def cmd_tui(args: argparse.Namespace) -> int:
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Run environment diagnostic checks."""
+    import json  # noqa: PLC0415
+
     from mliport.doctor import run_diagnostics, format_diagnostics  # noqa: PLC0415
 
     checks, failures = run_diagnostics(
@@ -2220,7 +2323,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         structure_path=args.structure,
         default_dtype=args.default_dtype,
     )
-    print(format_diagnostics(checks))
+    if getattr(args, "json", False):
+        payload = {
+            "schema": "mliport.doctor-report/1",
+            "mliport_version": _mliport_version(),
+            "engine": args.engine,
+            "device": args.device,
+            "failures": failures,
+            "checks": checks,
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+    else:
+        print(format_diagnostics(checks))
     return 0 if failures == 0 else 1
 
 
@@ -2650,6 +2764,8 @@ def _main(argv: list[str] | None = None) -> int:
     # banner for them too.
     suppress_banner = (
         args.command == "setup" and getattr(args, "json", False)
+    ) or (
+        args.command == "doctor" and getattr(args, "json", False)
     ) or args.command in {"config", "analyze"}
     if not suppress_banner:
         print_header()

@@ -583,7 +583,18 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
         from mliport.analysis.arrhenius import fit_arrhenius
         from mliport.analysis.plots import plot_arrhenius
 
+        # Arrhenius fits explicit (temperature, diffusivity) pairs; it does
+        # not consume the source trajectory, so the shared trajectory-source
+        # options are not parameters of the fit.  They are dropped explicitly
+        # (and recorded) instead of leaking into fit_arrhenius(**parameters).
+        ignored_source_options = {
+            key: parameters.pop(key)
+            for key in ("positions_convention", "frame_interval_fs")
+            if parameters.get(key) is not None
+        }
         result = fit_arrhenius(**parameters)
+        if ignored_source_options:
+            result["ignored_source_options"] = ignored_source_options
         _write_columns(
             output_dir / "arrhenius.csv",
             {

@@ -45,3 +45,28 @@ def test_framework_uuid_must_match_request_and_lease(monkeypatch):
     for actual, requested in [(None, "GPU-a"), ("GPU-b", "GPU-a"), ("GPU-b", "GPU-b")]:
         with pytest.raises(RuntimeError):
             verify_runtime_uuid(actual, requested)
+
+
+def test_visibility_is_isolated_truth_table(monkeypatch):
+    """DPA/GRACE isolation preflight predicate (fresh-install acceptance)."""
+    from mliport.devices import visibility_is_isolated
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("LOCAL_RANK", raising=False)
+    monkeypatch.delenv("DEVICE", raising=False)
+    assert visibility_is_isolated("cuda") is False
+    assert visibility_is_isolated("cpu") is False
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    assert visibility_is_isolated("cuda") is True
+    assert visibility_is_isolated("cpu") is False
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    assert visibility_is_isolated("cpu") is True
+    assert visibility_is_isolated("cuda") is False
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-aaa,GPU-bbb")
+    assert visibility_is_isolated("cuda") is False
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "-1")
+    assert visibility_is_isolated("cuda") is False
+    assert visibility_is_isolated("cpu") is True

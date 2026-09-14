@@ -113,6 +113,50 @@ def _distribution_version(distribution_name: str) -> str | None:
         return None
 
 
+#: User-facing feature sets and the distributions that provide them.
+FEATURE_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
+    "core": ("ase", "numpy", "packaging", "textual"),
+    "tui": ("textual",),
+    "analysis": ("scipy", "matplotlib"),
+    "transport": ("kinisi",),
+    "electrolyte": ("gemdat",),
+    "plotting": ("matplotlib",),
+}
+
+
+def feature_inventory() -> list[dict[str, Any]]:
+    """Report installed/missing user features without importing their modules."""
+    checks: list[dict[str, Any]] = []
+    for feature, distributions in FEATURE_DISTRIBUTIONS.items():
+        missing = [
+            name for name in distributions if _distribution_version(name) is None
+        ]
+        required = feature == "core"
+        if not missing:
+            status, value = "ok", "installed"
+        else:
+            # Advisory: a missing optional feature is a warning, and a missing
+            # core distribution is already visible through the import/hardware
+            # checks above.  ``required`` lets the acceptance harness classify
+            # the row without changing the doctor exit code semantics.
+            status = "warn"
+            value = "missing: " + ", ".join(missing)
+        checks.append(
+            {
+                "name": f"Feature: {feature}",
+                "value": value,
+                "status": status,
+                "required": required,
+                "detail": (
+                    "Required by mliport itself."
+                    if required
+                    else "Optional user feature; provided by mliport[analysis-all]."
+                ),
+            }
+        )
+    return checks
+
+
 def _normalize_device(device: str) -> str:
     """Validate and normalize a doctor device target."""
     value = str(device).strip().lower()
@@ -1220,6 +1264,7 @@ def run_diagnostics(
                 }
             )
 
+    checks.extend(feature_inventory())
     failures = sum(check["status"] == "fail" for check in checks)
     return checks, failures
 

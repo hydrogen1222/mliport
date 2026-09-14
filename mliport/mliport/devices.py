@@ -70,6 +70,27 @@ def verify_runtime_uuid(actual_uuid: str | None, requested_uuid: str) -> str:
     return actual_uuid
 
 
+def visibility_is_isolated(device: str) -> bool:
+    """True when CUDA_VISIBLE_DEVICES already isolates this process.
+
+    Non-raising counterpart of :func:`require_isolated_visibility`; the CLI
+    uses it to decide whether DPA/GRACE must restart in a fresh process.
+    """
+    dev = str(device).lower()
+    visibility = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if dev == "cpu":
+        return visibility is not None and visibility.strip() in {"", "-1"}
+    return bool(
+        dev in {"cuda", "gpu", "cuda:0"}
+        and visibility is not None
+        and visibility.strip()
+        and visibility.strip() != "-1"
+        and "," not in visibility
+        and os.environ.get("LOCAL_RANK", "0") == "0"
+        and os.environ.get("DEVICE") != "cpu"
+    )
+
+
 def require_isolated_visibility(device: str, backend: str) -> None:
     """Preflight backends whose ASE adapter has no per-calculator device.
 
@@ -77,21 +98,7 @@ def require_isolated_visibility(device: str, backend: str) -> None:
     process. The caller must isolate it before importing the framework, as the
     queue worker does. No environment variable is modified here.
     """
-    dev = str(device).lower()
-    visibility = os.environ.get("CUDA_VISIBLE_DEVICES")
-    if dev == "cpu":
-        valid = visibility is not None and visibility.strip() in {"", "-1"}
-    else:
-        valid = (
-            dev in {"cuda", "gpu", "cuda:0"}
-            and visibility is not None
-            and bool(visibility.strip())
-            and visibility.strip() != "-1"
-            and "," not in visibility
-            and os.environ.get("LOCAL_RANK", "0") == "0"
-            and os.environ.get("DEVICE") != "cpu"
-        )
-    if not valid:
+    if not visibility_is_isolated(device):
         raise RuntimeError(
             f"{backend} requires process-level device isolation before framework "
             "imports. Use the queue worker, or start a fresh process with "

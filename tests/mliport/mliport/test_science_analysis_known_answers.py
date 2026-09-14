@@ -861,3 +861,87 @@ def test_analysis_request_task_registry_covers_tested_families():
     }
     assert expected == AnalysisRequest.VALID_TASKS
     assert dataclasses.is_dataclass(AnalysisRequest)
+
+
+def test_arrhenius_dispatch_ignores_trajectory_source_options(tmp_path):
+    """CLI arrhenius accepts the shared source options without crashing.
+
+    Regression: the dispatcher forwarded positions_convention/frame_interval_fs
+    to fit_arrhenius(), which does not consume a trajectory and raised
+    TypeError (fresh-install acceptance, LGPS run).
+    """
+    from ase import Atoms
+    from ase.io import write
+
+    from mliport.cli import main
+
+    atoms = Atoms("Li", positions=[[0.0, 0.0, 0.0]], cell=[5.0, 5.0, 5.0], pbc=True)
+    source = tmp_path / "dummy.traj"
+    write(source, atoms)
+    rc = main(
+        [
+            "analyze",
+            str(source),
+            "arrhenius",
+            "--temperature",
+            "600",
+            "--temperature",
+            "700",
+            "--diffusivity",
+            "1e-9",
+            "--diffusivity",
+            "2e-9",
+            "--positions-convention",
+            "unwrapped",
+            "--frame-interval-fs",
+            "100",
+        ]
+    )
+    assert rc == 0
+
+
+def test_neb_fingerprint_can_use_recorded_electronic_state():
+    """NEB resume must validate against the checkpoint's recorded state.
+
+    The checkpoint band file materializes implicit charge/spin defaults
+    (0/0), while the original fingerprint recorded null/null for periodic
+    tasks. Recomputing from the file broke UMA NEB resume (fresh-install
+    acceptance finding).
+    """
+    from ase import Atoms
+
+    from mliport.neb.prepare import BandInput
+    from mliport.neb.workflow import NEBOptions, _fingerprint
+
+    atoms = Atoms("Li", positions=[[0.0, 0.0, 0.0]], cell=[5.0, 5.0, 5.0], pbc=True)
+    atoms.info["charge"] = 0
+    atoms.info["spin"] = 0
+    images = (atoms, atoms.copy(), atoms.copy())
+    band = BandInput(
+        images=images,
+        atom_map=[0],
+        image_shifts=[[0, 0, 0]],
+        path_convention="mic",
+        source="checkpoint_optimized_band",
+    )
+    options = NEBOptions()
+    model = {
+        "model_type": "uma",
+        "model_sha256": "0" * 64,
+        "backend_distribution": "fairchem-core",
+        "backend_version": "2.21.0",
+        "framework_versions": {"torch": "2.8.0+cu126"},
+        "task": "omat",
+        "head_effective": None,
+        "dtype_effective": ["float32"],
+        "inference_mode": "default",
+        "compile_enabled": False,
+    }
+    computed, computed_digest = _fingerprint(band, options, model)
+    assert computed["electronic_state"] == {"charge": 0, "spin": 0}
+
+    recorded, recorded_digest = _fingerprint(
+        band, options, model, electronic_state_override={"charge": None, "spin": None}
+    )
+    assert recorded["electronic_state"] == {"charge": None, "spin": None}
+    assert recorded_digest != computed_digest
