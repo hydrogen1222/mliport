@@ -112,11 +112,7 @@ def normalize_engine_args(value: str | list[str] | tuple[str, ...]) -> list[str]
     mixture) are accepted.
     """
     chunks = [value] if isinstance(value, str) else list(value)
-    engines = [
-        engine.strip()
-        for chunk in chunks
-        for engine in str(chunk).split(",")
-    ]
+    engines = [engine.strip() for chunk in chunks for engine in str(chunk).split(",")]
     return [engine for engine in engines if engine]
 
 

@@ -2763,10 +2763,10 @@ def _main(argv: list[str] | None = None) -> int:
     # subcommands also produce machine/script-oriented output, so suppress the
     # banner for them too.
     suppress_banner = (
-        args.command == "setup" and getattr(args, "json", False)
-    ) or (
-        args.command == "doctor" and getattr(args, "json", False)
-    ) or args.command in {"config", "analyze"}
+        (args.command == "setup" and getattr(args, "json", False))
+        or (args.command == "doctor" and getattr(args, "json", False))
+        or args.command in {"config", "analyze"}
+    )
     if not suppress_banner:
         print_header()
 

@@ -243,9 +243,9 @@ def test_tested_example_commands_reference_real_subcommands():
                 subcommand = match.group(1)
                 if subcommand.startswith("--"):
                     continue
-                assert subcommand in choices, (
-                    f"{doc.name}: tested example uses unknown subcommand {subcommand!r}"
-                )
+                assert (
+                    subcommand in choices
+                ), f"{doc.name}: tested example uses unknown subcommand {subcommand!r}"
                 checked += 1
     # The docs rewrite adds the markers; before that the scan simply finds none.
     assert checked >= 0
