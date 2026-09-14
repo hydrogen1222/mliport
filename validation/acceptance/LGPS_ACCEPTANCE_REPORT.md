@@ -74,8 +74,8 @@ history:
 | Final | README command from a clean state | All 27 steps completed; final log tail: |
 
 ```text
-[mliport] [launcher] created /home/storm/others/mlipx/bin/mliport-grace
-[mliport] [launcher] created /home/storm/others/mlipx/bin/mliport-uma
+[mliport] [launcher] created <repo>/bin/mliport-grace
+[mliport] [launcher] created <repo>/bin/mliport-uma
 [mliport] All 27 steps completed.
 ```
 

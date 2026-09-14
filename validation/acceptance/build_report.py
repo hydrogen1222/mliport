@@ -150,7 +150,9 @@ def gpu_install_log(root: Path) -> str:
     if not path.is_file():
         return "No final GPU install log recorded."
     lines = [
-        line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+        line.replace(str(REPO), "<repo>")
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
     ]
     return "\n".join(lines[-3:])
 
@@ -405,6 +407,8 @@ def main() -> int:
     )
     args = parser.parse_args()
     text = render(Path(args.root), args.final_commit)
+    # Never publish absolute local checkout paths in the committed report.
+    text = text.replace(str(REPO), "<repo>")
     Path(args.out).write_text(text, encoding="utf-8")
     print(f"wrote {args.out}")
     return 0
