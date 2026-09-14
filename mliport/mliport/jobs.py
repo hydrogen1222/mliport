@@ -91,12 +91,142 @@ _ALLOWED_TRANSITIONS = {
 }
 
 
-def _default_jobs_dir() -> Path:
-    """Get default jobs directory: ~/.mliport/jobs/ (override via MLIPORT_JOBS_DIR)."""
-    override = os.environ.get("MLIPORT_JOBS_DIR")
+#: Persistent state contract.  Records written from 2.0.0b4 onward carry these
+#: fields; older records are upgraded in memory and never rewritten silently.
+STATE_SCHEMA_VERSION = 1
+STATE_APPLICATION = "mliport"
+STATE_DIR_ENV = "MLIPORT_STATE_DIR"
+JOBS_DIR_ENV = "MLIPORT_JOBS_DIR"
+
+
+def _state_root() -> Path:
+    """OS-appropriate mliport state root.
+
+    Precedence: ``MLIPORT_STATE_DIR`` -> Windows local app data ->
+    macOS application support -> ``XDG_STATE_HOME`` -> ``~/.local/state``.
+    """
+    override = os.environ.get(STATE_DIR_ENV)
     if override:
-        return Path(override)
+        return Path(override).expanduser()
+    if os.name == "nt":  # pragma: no cover - POSIX CI hosts
+        base = os.environ.get("LOCALAPPDATA")
+        root = Path(base) if base else Path.home() / "AppData" / "Local"
+        return root / "mliport" / "state"
+    if sys.platform == "darwin":  # pragma: no cover - POSIX CI hosts
+        return Path.home() / "Library" / "Application Support" / "mliport" / "state"
+    xdg = os.environ.get("XDG_STATE_HOME")
+    if xdg:
+        return Path(xdg).expanduser() / "mliport"
+    return Path.home() / ".local" / "state" / "mliport"
+
+
+def _default_jobs_dir() -> Path:
+    """Default job registry directory under the user state root.
+
+    ``MLIPORT_JOBS_DIR`` keeps working as an explicit, documented override.
+    """
+    override = os.environ.get(JOBS_DIR_ENV)
+    if override:
+        return Path(override).expanduser()
+    return _state_root() / "jobs"
+
+
+def legacy_jobs_dir() -> Path:
+    """Pre-2.0.0b4 developer path (read-only; never imported silently)."""
     return Path.home() / ".mliport" / "jobs"
+
+
+def state_paths() -> dict[str, Path]:
+    """The resolved state paths shown by ``mliport state path``."""
+    return {
+        "state_root": _state_root(),
+        "jobs_dir": _default_jobs_dir(),
+        "legacy_jobs_dir": legacy_jobs_dir(),
+    }
+
+
+def _project_root(start: Path | None = None) -> Path:
+    """Nearest ancestor that looks like a project checkout."""
+    current = Path(start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists() or (candidate / "pyproject.toml").is_file():
+            return candidate
+    return current
+
+
+def legacy_state_records() -> list[Path]:
+    """Legacy ``~/.mliport/jobs/*.json`` records (read-only)."""
+    legacy = legacy_jobs_dir()
+    if not legacy.is_dir():
+        return []
+    return sorted(legacy.glob("*.json"))
+
+
+def legacy_state_hint() -> str | None:
+    """One-line hint when legacy state exists and has not been imported."""
+    records = legacy_state_records()
+    if not records:
+        return None
+    target = _default_jobs_dir()
+    if target != legacy_jobs_dir() and target.is_dir() and any(target.glob("*.json")):
+        # The new registry already has records; never mix the two silently.
+        return None
+    return (
+        f"Legacy mliport job history found at {legacy_jobs_dir()}. "
+        f"Run `mliport state migrate` to import it into {target}."
+    )
+
+
+def migrate_legacy_state(*, dry_run: bool = False) -> dict[str, Any]:
+    """Import legacy job records into the current state directory.
+
+    The import is explicit, additive and never deletes the legacy files.  A
+    record that already exists in the target is skipped instead of replaced.
+    """
+    source = legacy_jobs_dir()
+    target = JobManager().jobs_dir
+    imported: list[str] = []
+    skipped: list[dict[str, str]] = []
+    for path in legacy_state_records():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            skipped.append({"file": path.name, "reason": f"unreadable: {exc}"})
+            continue
+        if not isinstance(data, dict) or not data.get("job_id"):
+            skipped.append({"file": path.name, "reason": "not a job record"})
+            continue
+        target_path = target / path.name
+        if target_path.exists():
+            skipped.append({"file": path.name, "reason": "already present"})
+            continue
+        data.setdefault("schema_version", 0)
+        data.setdefault("application", STATE_APPLICATION)
+        data.setdefault("created_by_version", None)
+        data.setdefault("submit_cwd", None)
+        data.setdefault("project_root", None)
+        data["migrated_from_legacy"] = True
+        imported.append(path.name)
+        if not dry_run:
+            target_path.write_text(
+                json.dumps(data, indent=2, default=str) + "\n", encoding="utf-8"
+            )
+    return {
+        "source": str(source),
+        "target": str(target),
+        "imported": imported,
+        "skipped": skipped,
+        "dry_run": dry_run,
+    }
+
+
+def _created_by_version() -> str | None:
+    try:
+        from importlib.metadata import version  # noqa: PLC0415
+
+        return version("mliport")
+    except Exception:  # noqa: BLE001 - provenance is best-effort
+        return None
 
 
 def _utc_now() -> str:
@@ -238,7 +368,13 @@ class JobManager:
             return None
         if not isinstance(data, dict) or data.get("job_id") != job_id:
             return None
-        # Read-only compatibility for records written before internal UUIDs.
+        # Read-only compatibility for records written before internal UUIDs
+        # and before the versioned state schema.  Nothing is rewritten here.
+        data.setdefault("schema_version", 0)
+        data.setdefault("application", STATE_APPLICATION)
+        data.setdefault("created_by_version", None)
+        data.setdefault("submit_cwd", None)
+        data.setdefault("project_root", None)
         data.setdefault("display_name", job_id)
         data.setdefault("run_id", job_id)
         data.setdefault("created_at", data.get("started_at"))
@@ -337,12 +473,17 @@ class JobManager:
     def _read_job_state(self, job_id: str) -> dict[str, Any] | None:
         return self._read_job_state_unlocked(job_id)
 
-    def list_jobs(self) -> list[dict[str, Any]]:
+    def list_jobs(self, *, project_only: bool = False) -> list[dict[str, Any]]:
+        """List records, optionally restricted to the current project root."""
+        project = str(_project_root()) if project_only else None
         jobs = []
         for path in sorted(self.jobs_dir.glob("*.json")):
             data = self._read_job_state_unlocked(path.stem)
-            if data is not None:
-                jobs.append(data)
+            if data is None:
+                continue
+            if project is not None and data.get("project_root") != project:
+                continue
+            jobs.append(data)
         return jobs
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
@@ -379,6 +520,11 @@ class JobManager:
 
         now = _utc_now()
         data = {
+            "schema_version": STATE_SCHEMA_VERSION,
+            "application": STATE_APPLICATION,
+            "created_by_version": _created_by_version(),
+            "submit_cwd": str(Path.cwd()),
+            "project_root": str(_project_root()),
             "job_id": job_id,
             "run_id": job_id,
             "display_name": name,
@@ -737,20 +883,27 @@ class JobManager:
         """Return whether a RUNNING record still identifies the same process."""
         return _pid_matches(job.get("pid"), job.get("pid_identity"))
 
-    def clean(self) -> list[str]:
-        """Remove terminal state and log files under the state lock."""
+    def clean(self, *, dry_run: bool = False) -> list[str]:
+        """Remove terminal state and log files under the state lock.
+
+        Active jobs and calculation result directories are never touched.
+        ``dry_run`` returns the same list without deleting anything.
+        """
         removed: list[str] = []
         with self._locked():
             for path in self.jobs_dir.glob("*.json"):
                 data = self._read_job_state_unlocked(path.stem)
                 if data is None or data.get("status") not in _TERMINAL_STATUSES:
                     continue
+                removed.append(data["job_id"])
+                if dry_run:
+                    continue
                 path.unlink()
                 self._log_file(data["job_id"]).unlink(missing_ok=True)
-                removed.append(data["job_id"])
-            for log in self._logs_dir.glob("*.log"):
-                if not self._job_file(log.stem).exists():
-                    log.unlink(missing_ok=True)
+            if not dry_run:
+                for log in self._logs_dir.glob("*.log"):
+                    if not self._job_file(log.stem).exists():
+                        log.unlink(missing_ok=True)
         return removed
 
     def delete_job(self, job_id: str) -> bool:

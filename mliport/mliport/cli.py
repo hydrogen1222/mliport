@@ -1478,13 +1478,40 @@ Examples:
     jobs_parser.add_argument(
         "--refresh", type=int, default=0, help="Auto-refresh interval in seconds"
     )
+    jobs_parser.add_argument(
+        "--project",
+        action="store_true",
+        help="Only list jobs submitted from the current project root",
+    )
 
     # kill command
     kill_parser = subparsers.add_parser("kill", help="Kill a background job")
     kill_parser.add_argument("job_id", help="Job ID to kill")
 
     # clean command
-    subparsers.add_parser("clean", help="Remove completed/failed job records")
+    clean_parser = subparsers.add_parser(
+        "clean", help="Remove completed/failed job records"
+    )
+    clean_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List terminal job records without deleting them",
+    )
+
+    # state command
+    state_parser = subparsers.add_parser(
+        "state", help="Inspect and migrate persistent user state"
+    )
+    state_sub = state_parser.add_subparsers(dest="state_command", required=True)
+    state_sub.add_parser("path", help="Print the persistent state paths")
+    state_migrate = state_sub.add_parser(
+        "migrate", help="Import legacy ~/.mliport job history (explicit)"
+    )
+    state_migrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be imported without writing",
+    )
 
     return parser
 
@@ -2670,10 +2697,14 @@ def cmd_queue(args: argparse.Namespace) -> int:
 
 
 def cmd_jobs(args: argparse.Namespace) -> int:
-    from mliport.jobs import JobManager  # noqa: PLC0415
+    from mliport.jobs import JobManager, legacy_state_hint  # noqa: PLC0415
 
     mgr = JobManager()
-    jobs = mgr.list_jobs()
+    print(f"User job history: {mgr.jobs_dir}")
+    hint = legacy_state_hint()
+    if hint:
+        print(hint)
+    jobs = mgr.list_jobs(project_only=getattr(args, "project", False))
     if not jobs:
         print("No jobs found.")
         return 0
@@ -2706,16 +2737,49 @@ def cmd_kill(args: argparse.Namespace) -> int:
 
 
 def cmd_clean(args: argparse.Namespace) -> int:
-    """Remove completed/failed job records."""
+    """Remove completed/failed job records (never active jobs or results)."""
     from mliport.jobs import JobManager  # noqa: PLC0415
 
     mgr = JobManager()
-    removed = mgr.clean()
-    if removed:
+    dry_run = bool(getattr(args, "dry_run", False))
+    removed = mgr.clean(dry_run=dry_run)
+    if dry_run:
+        print(f"Would remove {len(removed)} completed/failed job records.")
+    elif removed:
         print(f"Removed {len(removed)} completed/failed job records.")
     else:
         print("No completed/failed jobs to clean.")
     return 0
+
+
+def cmd_state(args: argparse.Namespace) -> int:
+    """Inspect or migrate persistent user state."""
+    from mliport.jobs import (  # noqa: PLC0415
+        legacy_state_hint,
+        migrate_legacy_state,
+        state_paths,
+    )
+
+    if args.state_command == "path":
+        paths = state_paths()
+        print(f"State root: {paths['state_root']}")
+        print(f"Job state: {paths['jobs_dir']}")
+        legacy = paths["legacy_jobs_dir"]
+        print(f"Legacy job state: {legacy}")
+        hint = legacy_state_hint()
+        if hint:
+            print(hint)
+        return 0
+    if args.state_command == "migrate":
+        report = migrate_legacy_state(dry_run=bool(getattr(args, "dry_run", False)))
+        action = "Would import" if report["dry_run"] else "Imported"
+        print(f"{action} {len(report['imported'])} legacy job record(s).")
+        for skip in report["skipped"]:
+            print(f"Skipped {skip['file']}: {skip['reason']}")
+        print(f"Legacy records stay in {report['source']} (read-only).")
+        return 0
+    print(f"Unknown state command: {args.state_command}", file=sys.stderr)
+    return 2
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2765,7 +2829,7 @@ def _main(argv: list[str] | None = None) -> int:
     suppress_banner = (
         (args.command == "setup" and getattr(args, "json", False))
         or (args.command == "doctor" and getattr(args, "json", False))
-        or args.command in {"config", "analyze"}
+        or args.command in {"config", "analyze", "state"}
     )
     if not suppress_banner:
         print_header()
@@ -2788,6 +2852,7 @@ def _main(argv: list[str] | None = None) -> int:
         "jobs": cmd_jobs,
         "kill": cmd_kill,
         "clean": cmd_clean,
+        "state": cmd_state,
     }
 
     handler = commands.get(args.command)

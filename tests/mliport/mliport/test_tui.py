@@ -1474,3 +1474,17 @@ async def test_config_save_requires_explicit_backend(tmp_path: Path) -> None:
     assert notifications, "saving without a backend must notify the user"
     assert "backend" in notifications[0].lower()
     assert not app.get_config("model_type")
+
+
+@pytest.mark.asyncio()
+async def test_tui_jobs_screen_is_empty_in_new_state(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """STATE-T3: the TUI jobs screen must be empty for a brand-new state."""
+    monkeypatch.setenv("MLIPORT_JOBS_DIR", str(tmp_path / "jobs"))
+    app = MliportApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        await app.push_screen("jobs")
+        await pilot.pause()
+        table = app.screen.query_one("#jobs-table")
+        assert len(table.rows) == 0
