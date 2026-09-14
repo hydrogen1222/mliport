@@ -426,6 +426,19 @@ def generate_plan(
             if is_cpu:
                 # Use any arch profile's framework version (all use TF 2.20).
                 bp = next(iter(BACKENDS["grace"].arch_profiles.values()))
+            else:
+                assert bp is not None, f"No profile for {backend.label} on {arch_name}"
+                if bp.status == "experimental":
+                    plan.warnings.append(
+                        f"{backend.label} on {arch_name}: EXPERIMENTAL — "
+                        f"upstream does not officially support this GPU. {bp.notes}"
+                    )
+                elif bp.status == "needs_smoke_test":
+                    plan.warnings.append(
+                        f"{backend.label} on {arch_name}: needs smoke test — "
+                        f"upstream constraints are satisfied but mliport has not "
+                        f"yet verified this combination on real hardware."
+                    )
             plan.steps.extend(_grace_steps(backend, bp, src, cpu=is_cpu))
         else:
             # torch backend (UMA / MACE / DPA)

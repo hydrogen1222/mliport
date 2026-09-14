@@ -63,6 +63,10 @@ resolved_config.json
 bulks.pkl
 config.yml
 
+# Private research workspaces (never pushed)
+/sp_crosscheck_v2/
+/sp_stress_crosscheck/
+
 # Local validation work
 /.validation-work/
 /.validation-cache/

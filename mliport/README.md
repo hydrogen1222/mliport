@@ -57,6 +57,25 @@ are MACE and GRACE `>=3.9`, DPA `>=3.10` and UMA `>=3.11`; the package itself
 supports Python 3.10-3.12. If you override the interpreter with `--python`,
 every requested backend must accept it.
 
+### Older GPUs
+
+The installer picks a framework channel per architecture because upstream
+support windows differ:
+
+| GPU family | Installer route | Evidence |
+|---|---|---|
+| Maxwell | cu126, experimental | binary audit only; install-time warning |
+| Pascal (P100/P40) | torch 2.8/2.10 + cu126, TF 2.20 | binary audit; no hardware smoke |
+| Volta (V100) | torch 2.8/2.10 + cu126, TF 2.20 | real V100 acceptance |
+| Turing / Ampere / Ada | cu128 | binary audit; no hardware smoke |
+| Hopper / Blackwell | cu128 for torch backends; GRACE experimental | binary audit; no hardware smoke |
+
+PyTorch stops publishing CUDA 12.6 wheels from 2.15, which drops Maxwell,
+Pascal and Volta binary support. Do not upgrade the framework in a legacy
+environment; the installer pins the audited versions. Wheel hashes, compiled
+architectures and per-backend limits are in
+[`validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md`](https://github.com/hydrogen1222/mliport/blob/main/validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md).
+
 Environment layout after a successful four-engine install:
 
 | Engine | Environment | Launcher |

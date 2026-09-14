@@ -32,6 +32,14 @@ uv build mliport
 .venv-mace/bin/mliport doctor --engine mace --device auto
 ```
 
+## Package layout
+
+The installable package lives in `mliport/`; the repository-root
+`pyproject.toml` is tooling only (ruff, pytest, uv). `pip install .` at the
+repository root therefore fails fast with a setuptools package-discovery
+error; install through `./scripts/install_mliport.sh` or
+`pip install ./mliport`.
+
 ## Pull requests
 
 1. Fork and branch from `main`.

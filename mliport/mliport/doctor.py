@@ -517,6 +517,66 @@ def _recommendation_detail(
     return "\n  ".join(lines)
 
 
+def _gpu_architecture_evidence(
+    engine: str, major: int, minor: int
+) -> tuple[str, str] | None:
+    """Honest architecture evidence line for one runtime GPU.
+
+    Returns ``(value, status)`` where status is ``ok`` only when mliport has
+    real hardware acceptance for that family.  The packaged audit JSON is the
+    source of the classification; if it is unavailable the registry state is
+    used instead of guessing.
+    """
+    from mliport.install.compatibility import classify_gpu  # noqa: PLC0415
+
+    arch = classify_gpu(major, minor)
+    if arch is None:
+        return None
+    classification: str | None = None
+    real_hardware = False
+    try:
+        from importlib.resources import files  # noqa: PLC0415
+
+        raw = (
+            files("mliport") / "data" / "compatibility" / "gpu_architecture_theory.json"
+        ).read_text(encoding="utf-8")
+        audit = json.loads(raw)
+        for entry in audit.get("entries", []):
+            if entry.get("backend") == engine and [major, minor] in entry.get(
+                "compute_capabilities", []
+            ):
+                classification = str(entry.get("support_classification"))
+                real_hardware = bool(entry.get("real_hardware_tested"))
+                break
+    except (OSError, ValueError, KeyError, TypeError):
+        classification = None
+    if classification is None and engine in {"mace", "dpa", "grace", "uma"}:
+        from mliport.install.compatibility import (  # noqa: PLC0415
+            get_backend_arch_profile,
+        )
+
+        profile = get_backend_arch_profile(engine, arch.name)
+        classification = (
+            "experimental"
+            if profile and not profile.upstream_supported
+            else "resolver_only"
+        )
+    labels = {
+        "hardware_verified": "verified on real mliport hardware (V100 acceptance)",
+        "binary_theory_verified": "binary-theory verified (exact wheel/native audit)",
+        "resolver_only": "installer resolves a wheel; no binary/hardware evidence recorded",
+        "experimental": "experimental (upstream does not declare support for this family)",
+        "unsupported": "unsupported",
+    }
+    label = labels.get(classification or "", "unknown; see the architecture audit")
+    value = (
+        f"Current GPU architecture: {arch.label} sm_{major}{minor}; "
+        f"{label}; real mliport hardware smoke: "
+        f"{'available' if real_hardware else 'not available for this family'}"
+    )
+    return value, ("ok" if real_hardware else "warn")
+
+
 def _runtime_gpu_vram_mib(
     gpu: dict[str, Any], hardware_gpus: list[GpuInfo]
 ) -> int | None:
@@ -1054,6 +1114,15 @@ def run_diagnostics(
                                 installed_torch=str(runtime.get("torch_version") or ""),
                             )
                         ),
+                    }
+                )
+            evidence = _gpu_architecture_evidence(target_engine, major, minor)
+            if evidence is not None:
+                checks.append(
+                    {
+                        "name": f"GPU architecture {index}",
+                        "value": evidence[0],
+                        "status": evidence[1],
                     }
                 )
             if vram_mib is None:

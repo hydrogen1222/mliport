@@ -70,7 +70,7 @@ namespaces = false
 # Curated capability evidence must ship inside the wheel so an installed
 # mliport can resolve capabilities without a repository checkout.
 [tool.setuptools.package-data]
-mliport = ["data/validation/*.json"]
+mliport = ["data/validation/*.json", "data/compatibility/*.json"]
 
 [tool.ruff]
 line-length = 88

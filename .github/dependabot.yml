@@ -13,3 +13,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # Framework pins are architecture compatibility decisions, not routine
+      # version bumps: PyTorch stops publishing CUDA 12.6 wheels with the 2.15
+      # line, which would drop Pascal/Volta support. Any change here needs a
+      # new GPU architecture audit.
+      - dependency-name: "torch"
+      - dependency-name: "fairchem-core"
+      - dependency-name: "deepmd-kit"
+      - dependency-name: "tensorflow"

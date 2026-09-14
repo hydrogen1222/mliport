@@ -23,7 +23,9 @@ jobs:
       - name: Build wheel and sdist
         run: uv build --wheel --sdist --out-dir mliport/dist ./mliport
       - name: Check distribution contents
-        run: python scripts/check_repository_hygiene.py mliport/dist/*
+        run: |
+          python scripts/check_repository_hygiene.py mliport/dist/*
+          python scripts/check_package_contents.py mliport/dist/*
       - name: Install wheel into clean env and smoke test
         run: |
           uv venv .venv-smoke --python 3.12

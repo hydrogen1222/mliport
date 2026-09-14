@@ -218,6 +218,17 @@ the matching route.
 `experimental` means the upstream framework does not test that family;
 `needs runtime smoke test` means a route exists but mliport has not promoted
 a runtime record for it. Neither state is a "verified" claim.
+
+Families without real hardware evidence (everything except the V100) are
+classified from exact wheel and native-extension inspection: the compiled
+architecture lists, the `+cu126`/`+cu128` wheel hashes and the `cuobjdump`
+results live in the
+[architecture theory report](../validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md). `mliport doctor` prints that
+classification for the detected GPU instead of claiming "verified".
+
+Pre-Turing GPUs depend on the CUDA 12.6 legacy channel, which PyTorch stops
+publishing from 2.15; keep the installer pins instead of upgrading the
+framework in those environments.
 """
 
 

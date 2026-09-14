@@ -48,6 +48,13 @@ docs/                      user documentation (generated + curated)
 scripts/                   repo tooling (installer, docs generation, hygiene)
 ```
 
+The installable package is `mliport/` (with `mliport/pyproject.toml`). The
+repository-root `pyproject.toml` is developer tooling only (ruff, pytest,
+uv), so `pip install .` at the repository root is intentionally unsupported:
+setuptools sees the repository layout and stops with a package-discovery
+error. Use `./scripts/install_mliport.sh`, or `pip install ./mliport` if you
+are managing environments by hand.
+
 ## Generated artifacts
 
 Never hand-edit generated files; regenerate and commit:
