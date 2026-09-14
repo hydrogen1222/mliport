@@ -218,5 +218,5 @@ class LiveRunLogger:
     def __enter__(self) -> LiveRunLogger:
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, exc_type, _exc_value, traceback) -> None:
         self.close()

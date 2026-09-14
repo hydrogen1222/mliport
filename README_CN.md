@@ -231,8 +231,8 @@ API/直接 CLI/TUI 使用。
 ```python
 from mliport.api import calculate_energy, run_single_point
 
-energy = calculate_energy("LGPS.vasp", "model.model", model_type="mace", device="cuda")
-result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device="cuda")
+energy = calculate_energy("examples/structures/li10gep2s12_primitive.vasp", "model.model", model_type="mace", device="cuda")
+result = run_single_point("examples/structures/li10gep2s12_primitive.vasp", "model.model", model_type="mace", device="cuda")
 ```
 
 ## 分析轨迹

@@ -17,11 +17,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mliport.base_calculator import BaseMLIPCalculator
-from mliport.calculator import UMACalculator
 from mliport.calculators.dpa_calc import DPACalculatorWrapper
 from mliport.calculators.factory import _CALC_KEYS, SUPPORTED_TYPES, CalculatorFactory
 from mliport.calculators.grace_calc import GRACECalculatorWrapper
 from mliport.calculators.mace_calc import MACECalculatorWrapper
+from mliport.calculators.uma import UMACalculator
 from mliport.engine import EngineConfig
 
 

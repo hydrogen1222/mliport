@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mliport.calculator import UMACalculator
+from mliport.calculators.uma import UMACalculator
 
 
 class TestUMACalculatorValidation:

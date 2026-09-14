@@ -37,6 +37,8 @@ ACCEPTANCE = REPO / ".validation-acceptance"
 MANIFEST = REPO / "validation" / "science" / "model_manifest.json"
 STRUCTURE_CANDIDATES = (
     REPO / "examples" / "structures" / "li10gep2s12_primitive.vasp",
+    REPO / "local-data" / "LGPS.vasp",
+    REPO / "local-data" / "LGPS222.vasp",
     REPO / "LGPS.vasp",
     REPO / "LGPS222.vasp",
 )

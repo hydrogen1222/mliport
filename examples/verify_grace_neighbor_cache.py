@@ -18,7 +18,7 @@ Usage (use the GRACE environment, e.g. ``.venv-grace``):
 
     python examples/verify_grace_neighbor_cache.py \
         --model models/grace/GRACE-2L-SMAX-OMAT-large \
-        --structure LGPS222.vasp --device cuda
+        --structure local-data/LGPS222.vasp --device cuda
 """
 
 from __future__ import annotations

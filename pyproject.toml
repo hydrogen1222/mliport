@@ -60,8 +60,6 @@ ignore = [
   "PERF102", # Use values() of dict
   "RUF001",  # Ambiguous unicode character
   "RUF100",  # Unused noqa directive
-  "F841",    # Unused local variable (pre-existing in tests)
-  "B017",    # pytest.raises(Exception)
 ]
 
 [tool.ruff.lint.isort]
@@ -73,3 +71,5 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "mliport/mliport/install/__init__.py" = ["F401"]
+# Test-only style rules stay scoped to tests instead of masking production.
+"tests/**" = ["F841", "B017"]

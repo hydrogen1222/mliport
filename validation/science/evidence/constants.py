@@ -46,6 +46,7 @@ VOLATILE_RECORD_FIELDS = (
 )
 
 ALLOWED_WRAPPER_MODULES = (
+    # Historical evidence recorded before the shim was removed in 2.0.0b4.
     "mliport.calculator",
     "mliport.calculators.uma",
     "mliport.calculators.mace_calc",

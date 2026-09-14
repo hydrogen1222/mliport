@@ -60,7 +60,7 @@ def test_factory_requires_an_explicit_backend(tmp_path):
 
 
 def test_factory_explicit_backends_and_fairchem_alias(tmp_path):
-    from mliport.calculator import UMACalculator
+    from mliport.calculators.uma import UMACalculator
 
     model = _fake_model(tmp_path / "uma", "uma.pt")
     with patch.object(UMACalculator, "_validate"):
@@ -211,7 +211,7 @@ def test_calculators_package_exports_all_backends_symmetrically():
 
 
 def test_legacy_calculator_module_is_a_compatibility_shim():
-    from mliport.calculator import UMACalculator as LegacyUMA
+    from mliport.calculators import UMACalculator as LegacyUMA
     from mliport.calculators.uma import UMACalculator as NewUMA
 
     assert LegacyUMA is NewUMA

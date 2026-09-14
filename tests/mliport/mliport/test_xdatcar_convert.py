@@ -32,7 +32,7 @@ def _mliport_style_xdatcar(path: Path, *, cross_boundary: bool = False) -> None:
 
 
 def test_convert_output_matches_vasp_layout(tmp_path: Path) -> None:
-    """Layout must match a real VASP XDATCAR (see /home/storm/vasp/MD_test)."""
+    """Layout must match a real VASP XDATCAR output directory."""
     src = tmp_path / "XDATCAR"
     _mliport_style_xdatcar(src)
     out = convert_to_vasp_xdatcar(src)

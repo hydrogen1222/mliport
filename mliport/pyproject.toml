@@ -63,7 +63,7 @@ documentation = "https://github.com/hydrogen1222/mliport/blob/main/README.md"
 where = ["."]
 # Explicit include list: auto-discovery would pick up stale setuptools build
 # caches (build/lib/**) and other repository artifacts as packages.
-include = ["mliport", "mliport.*", "examples", "examples.*"]
+include = ["mliport", "mliport.*"]
 namespaces = false
 
 

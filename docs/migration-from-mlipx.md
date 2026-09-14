@@ -54,10 +54,9 @@ from mliport import CalculatorFactory
 ```
 
 The UMA class moved to `mliport.calculators.uma.UMACalculator`, next to the
-MACE/DPA/GRACE wrappers. `from mliport.calculator import UMACalculator` still
-works as a deprecated compatibility shim, but new code should select the
-backend through the factory/config resolver. `mliport.__all__` no longer
-privileges UMA.
+MACE/DPA/GRACE wrappers. The old `mliport.calculator` shim was removed in
+2.0.0b4; import from `mliport.calculators` or use `CalculatorFactory` and
+select the backend explicitly. `mliport.__all__` never privileged UMA.
 
 ## Validation records
 

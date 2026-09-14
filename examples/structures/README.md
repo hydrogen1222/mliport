@@ -8,6 +8,7 @@ Li20Ge2P4S24 per cell, all three axes are periodic, and the minimum
 interatomic distance is 2.02 A.
 
 Provenance: derived deterministically from a 2x2x2 LGPS supercell
+(`local-data/LGPS.vasp` on the acceptance host)
 (400 atoms, Ge16Li160P32S192) by halving each lattice vector, folding the
 fractional coordinates into the new cell, and removing periodic duplicates.
 Tiling the primitive back to 2x2x2 reproduces the source supercell within

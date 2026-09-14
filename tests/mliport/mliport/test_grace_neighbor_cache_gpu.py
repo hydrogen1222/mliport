@@ -41,6 +41,7 @@ STRUCT = os.path.join(
     "..",
     "..",
     "..",
+    "local-data/LGPS222.vasp",
     "LGPS222.vasp",
 )
 
