@@ -59,8 +59,9 @@ option combination exits before dynamics start.
 - Constraints/fixed atoms are applied through the calculator/runners; state
   them when reporting diffusion.
 - NVE and NVT are different ensembles: never average them together.
-- Restart from a checkpoint with `--resume`/checkpoint commands; a restarted
-  run keeps the original seed/provenance.
+- `md` has no `--resume` flag. To continue a stopped run, start a new run
+  from a saved frame that carries momenta (see "Thermostats and continuation"
+  below); the continuation is a separate run directory with its own record.
 
 **Example (production-quality segmenting).**
 
