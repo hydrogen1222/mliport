@@ -150,13 +150,17 @@ def _freeze_declared_path(
     base_dir: Path,
     label: str,
     must_exist: bool,
+    follow_symlinks: bool = True,
 ) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label}: missing required path")
     path = Path(value).expanduser()
     if not path.is_absolute():
         path = base_dir / path
-    path = path.resolve()
+    # A virtual-environment interpreter is a symlink to the base interpreter;
+    # resolving it drops the venv (and its site-packages), so interpreter
+    # paths are made absolute without following symlinks.
+    path = path.resolve() if follow_symlinks else Path(os.path.abspath(path))
     if must_exist and not path.exists():
         raise ValueError(f"{label} not found: {path}")
     return str(path)
@@ -555,6 +559,7 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
                 base_dir=base_dir,
                 label=f"{label}: python",
                 must_exist=True,
+                follow_symlinks=False,
             )
         name = str(task.get("name") or f"{calc_type}-{index + 1}")
         if not name.strip():
