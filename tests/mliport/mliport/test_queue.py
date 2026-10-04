@@ -353,13 +353,43 @@ def test_task_paths_are_frozen_relative_to_task_file(tmp_path: Path) -> None:
 
     assert task["structure"] == str((spec_dir / "inputs/s.cif").resolve())
     assert task["model"] == str((spec_dir / "models/m.pt").resolve())
-    assert task["python"] == str(python.resolve())
+    assert task["python"] == os.path.abspath(python)
     assert task["output_dir"] == str((spec_dir / "outputs/run").resolve())
     assert task["options"] == {
         "temperature": 300.0,
         "steps": 1,
         "pre_relax": False,
     }
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink semantics")
+def test_task_python_keeps_venv_symlink(tmp_path: Path) -> None:
+    """A venv interpreter is a symlink; resolving it would drop the venv."""
+    base = tmp_path / "base_python"
+    base.write_text("", encoding="utf-8")
+    venv_bin = tmp_path / ".venv-mace" / "bin"
+    venv_bin.mkdir(parents=True)
+    venv_python = venv_bin / "python"
+    venv_python.symlink_to(base)
+    (tmp_path / "s.cif").write_text("dummy", encoding="utf-8")
+    (tmp_path / "m.model").write_text("dummy", encoding="utf-8")
+    path = _write_tasks(
+        tmp_path,
+        [
+            {
+                "calc_type": "sp",
+                "structure": "s.cif",
+                "model": "m.model",
+                "model_type": "mace",
+                "python": str(venv_python),
+            }
+        ],
+    )
+
+    task = parse_task_file(path)["tasks"][0]
+
+    assert task["python"] == str(venv_python)
+    assert task["python"] != str(base.resolve())
 
 
 def test_parse_task_file_max_concurrent(tmp_path: Path) -> None:
