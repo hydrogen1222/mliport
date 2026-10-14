@@ -411,7 +411,7 @@ def run_md(
         model_type: MLIP engine (uma, mace, dpa, grace).
         task: Model head.
         device: Device for calculation (cpu or cuda).
-        inference_mode: Inference-mode override (md defaults to "turbo").
+        inference_mode: Inference-mode override (UMA "turbo" is opt-in).
         job_name: Optional job name for organizing results.
         output_dir: Base directory for output files.
         ensemble: MD ensemble (NVT or NVE).

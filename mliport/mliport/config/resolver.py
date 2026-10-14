@@ -468,12 +468,11 @@ def resolve_config(
             ),
         ).value
     )
-    # inference_mode defaults: 'turbo' for MD (historical behaviour),
-    # 'default' for everything else.
-    _default_inference = "turbo" if calc_type == "md" else "default"
+    # inference_mode defaults to the full-precision 'default' preset for every
+    # calculation type; UMA 'turbo' (TF32 + torch.compile) is an explicit opt-in.
     inference_mode = str(
         sources.get(
-            "inference_mode", ResolvedValue(_default_inference, "built-in defaults")
+            "inference_mode", ResolvedValue("default", "built-in defaults")
         ).value
     )
     if model_type not in {"uma", "fairchem"}:

@@ -422,27 +422,53 @@ def test_timestep_and_saved_time_metadata_are_consistent(tmp_path):
     assert manifest["trajectory"]["saved_interval_fs"] == 1.0
 
 
-def test_pre_relax_nonconvergence_stops_before_md(tmp_path, monkeypatch):
-    class NeverConvergedFIRE:
-        def __init__(self, atoms, logfile=None):
-            self.atoms = atoms
-            self.nsteps = 0
+class _NeverConvergedFIRE:
+    def __init__(self, atoms, logfile=None):
+        self.atoms = atoms
+        self.nsteps = 0
 
-        def attach(self, callback, interval=1):
-            self.callback = callback
+    def attach(self, callback, interval=1):
+        self.callback = callback
 
-        def run(self, fmax, steps):
-            self.nsteps = steps
+    def run(self, fmax, steps):
+        self.nsteps = steps
 
-        def converged(self):
-            return False
+    def converged(self):
+        return False
 
-    monkeypatch.setattr("mliport.runners.md.FIRE", NeverConvergedFIRE)
+
+def test_pre_relax_nonconvergence_with_safe_forces_continues_md(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("mliport.runners.md.FIRE", _NeverConvergedFIRE)
     runner = MDRunner(
-        _RunWrapper(_FiniteCalc()),
+        _RunWrapper(_FiniteCalc(force_scale=0.5)),
         output_dir=tmp_path,
         pre_relax=True,
         pre_relax_steps=2,
+        steps=2,
+        save_interval=1,
+        verbose=False,
+    )
+    results = runner.run(_bulk_atoms(n=4))
+
+    assert (tmp_path / "raw" / "trajectory.traj").exists()
+    pre_relax = results["md_provenance"]["pre_relax"]
+    assert pre_relax["status"] == "not_converged"
+    assert pre_relax["steps_taken"] == 2
+    assert pre_relax["final_fmax_eV_A"] == pytest.approx(0.5)
+
+
+def test_pre_relax_nonconvergence_with_unsafe_forces_stops_before_md(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("mliport.runners.md.FIRE", _NeverConvergedFIRE)
+    runner = MDRunner(
+        _RunWrapper(_FiniteCalc(force_scale=5.0)),
+        output_dir=tmp_path,
+        pre_relax=True,
+        pre_relax_steps=2,
+        fmax_abort=1.0,
         verbose=False,
     )
     with pytest.raises(RuntimeError, match="did not converge"):

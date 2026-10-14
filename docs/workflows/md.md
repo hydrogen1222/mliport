@@ -27,7 +27,7 @@ record a reproducible trajectory for analysis (MSD/transport/VACF).
 | `--save-interval` | trajectory save interval in steps (default 10) |
 | `--seed` | random seed; auto-generated and recorded when omitted |
 | `--velocity-policy`, `--com-policy` | velocity/centre-of-mass policies |
-| `--pre-relax`, `--pre-relax-steps`, `--pre-relax-fmax` | pre-relaxation before production (default on for NVT, off for NVE) |
+| `--pre-relax`, `--pre-relax-steps`, `--pre-relax-fmax` | positions-only force reduction before MD (default on for NVT, off for NVE). Not reaching `--pre-relax-fmax` is recorded as `pre_relax.status=not_converged` and MD continues; it stops only if the largest raw force still exceeds `--fmax-abort` |
 | `--fmax-abort` | abort threshold for unphysical forces (default 20 eV/Å) |
 | `--write-outcar`, `--write-xdatcar`, `--write-trajectory` | output selection |
 

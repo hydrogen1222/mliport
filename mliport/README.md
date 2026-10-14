@@ -146,7 +146,10 @@ and small enough for CPU smoke tests.
 
 The run writes `runs/lgps-mace-sp/mliport_results.json` (energy, forces,
 stress, timing), `resolved_config.json` (what was actually used),
-`OUTCAR`/`OSZICAR`/`CONTCAR`, and `run.log`. Energy and forces must be finite;
+`OUTCAR`/`OSZICAR`/`CONTCAR`, and `run.log`. A run refuses an output directory that
+already holds calculation outputs (an earlier run, or a VASP
+`OUTCAR`/`CONTCAR`) and holds a lock on it while running; pass `--overwrite`
+to replace earlier outputs deliberately. Energy and forces must be finite;
 the device in `mliport_results.json` is the device the backend reported, not
 the one that was requested.
 
@@ -200,9 +203,10 @@ cell together with the ions.
 `--ensemble` selects `NVE` or `NVT`, and `--thermostat` selects `LANGEVIN`,
 `BUSSI` or `NHC`. `--temp`, `--timestep`, `--steps` and `--save-interval`
 size the run. A trajectory can continue from a saved frame that contains
-velocities with `--velocity-policy preserve --no-pre-relax`. NHC requires
-`--com-policy none`, because constrained NHC cannot run with automatic
-center-of-mass removal.
+velocities with `--velocity-policy preserve --no-pre-relax`. NHC cannot use a
+FixCom constraint; its default `--com-policy auto` zeroes the center-of-mass
+momentum once (NHC conserves it) so the whole cell does not drift and bias
+MSD-based transport.
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \

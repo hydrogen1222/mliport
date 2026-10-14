@@ -360,6 +360,9 @@ class MDRunner(BaseRunner):
         self.pre_relax = pre_relax
         self.pre_relax_steps = pre_relax_steps_value
         self.pre_relax_fmax = pre_relax_fmax_value
+        self.pre_relax_status = "pending" if pre_relax else "disabled"
+        self.pre_relax_final_fmax: float | None = None
+        self.pre_relax_steps_taken: int | None = None
 
         # Reproducibility / velocity policy (plan section 5.2 / 5.3).
         self.seed = seed_value
@@ -381,8 +384,8 @@ class MDRunner(BaseRunner):
             calculator, "VALID_INFERENCE_MODES"
         ):
             self.log(
-                "Consider using inference_mode='turbo' for better MD performance",
-                level="warning",
+                "UMA inference_mode='turbo' is faster for MD but uses TF32 "
+                "matmuls and torch.compile (reduced precision); it is opt-in."
             )
 
     def _integrator_key(self) -> str:
@@ -1046,6 +1049,14 @@ class MDRunner(BaseRunner):
             "com_policy_effective": self.com_policy_effective,
             "constraints": list(self.constraint_types),
             "degrees_of_freedom": self.md_degrees_of_freedom,
+            "pre_relax": {
+                "enabled": bool(self.pre_relax),
+                "status": self.pre_relax_status,
+                "target_fmax_eV_A": self.pre_relax_fmax if self.pre_relax else None,
+                "max_steps": self.pre_relax_steps if self.pre_relax else None,
+                "steps_taken": self.pre_relax_steps_taken,
+                "final_fmax_eV_A": self.pre_relax_final_fmax,
+            },
             "force_contract": {
                 "forces": "constraint-applied compatibility alias",
                 "forces_raw_eV_A": "unprojected calculator forces",
@@ -1095,6 +1106,7 @@ class MDRunner(BaseRunner):
             "Random seed": provenance["seed"],
             "Velocity policy": provenance["velocity_policy"],
             "Pre-relaxed": self.pre_relax,
+            "Pre-relaxation status": self.pre_relax_status,
         }
         if "friction_fs^-1" in provenance:
             settings["Friction (1/fs)"] = provenance["friction_fs^-1"]
@@ -1176,7 +1188,7 @@ class MDRunner(BaseRunner):
             optimizer.run(fmax=self.pre_relax_fmax, steps=self.pre_relax_steps)
 
             e_final = float(atoms.get_potential_energy())
-            _, forces_applied = self._force_views(
+            forces_raw, forces_applied = self._force_views(
                 atoms, e_final, context="MD pre-relaxation final state"
             )
             delta_e = e_final - e_init
@@ -1185,17 +1197,35 @@ class MDRunner(BaseRunner):
             self.log(
                 f"Energy change: {delta_e:.6f} eV ({delta_e / len(atoms):.6f} eV/atom)"
             )
+            final_fmax = float(np.max(np.linalg.norm(forces_applied, axis=1)))
+            final_raw_fmax = float(np.max(np.linalg.norm(forces_raw, axis=1)))
+            self.pre_relax_steps_taken = int(optimizer.nsteps)
+            self.pre_relax_final_fmax = final_fmax
 
             if optimizer.converged():
+                self.pre_relax_status = "converged"
                 self.log("✓ Pre-relaxation converged")
-            else:
-                final_fmax = float(np.max(np.linalg.norm(forces_applied, axis=1)))
+            elif final_raw_fmax > self.fmax_abort:
                 raise RuntimeError(
                     "Pre-relaxation did not converge after "
-                    f"{optimizer.nsteps} steps (final fmax={final_fmax:.6g} "
-                    "eV/Angstrom); production MD was not started. Increase "
-                    "pre_relax_steps, loosen pre_relax_fmax with scientific "
-                    "justification, or disable pre_relax explicitly."
+                    f"{optimizer.nsteps} steps and the largest raw force "
+                    f"({final_raw_fmax:.6g} eV/Angstrom) still exceeds "
+                    f"fmax_abort={self.fmax_abort:.6g}; production MD was not "
+                    "started. Check the structure, or increase pre_relax_steps."
+                )
+            else:
+                # Pre-relaxation only removes risky initial forces; it is not a
+                # requirement that a fixed-cell 0 K minimum is reached (large
+                # or disordered cells rarely reach fmax=0.1 within 50 steps).
+                # The force-safety gate still applies at every MD step.
+                self.pre_relax_status = "not_converged"
+                self.log(
+                    "Pre-relaxation stopped after "
+                    f"{optimizer.nsteps} steps without reaching "
+                    f"pre_relax_fmax={self.pre_relax_fmax:g} (final fmax="
+                    f"{final_fmax:.6g} eV/Angstrom, below fmax_abort="
+                    f"{self.fmax_abort:g}); continuing with MD from this state.",
+                    level="warning",
                 )
 
         except CancellationRequested:
