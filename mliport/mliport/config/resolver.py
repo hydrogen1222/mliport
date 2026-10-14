@@ -635,16 +635,17 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
             if value <= 0.0:
                 raise ValueError(f"{name} must be > 0 for MD")
         if com_policy == "initialize_only" and (
-            ensemble == "nve" or thermostat in {"bussi", "nhc"}
+            ensemble == "nve" or thermostat == "bussi"
         ):
             integrator = "NVE" if ensemble == "nve" else thermostat.upper()
             raise ValueError(
                 f"{integrator} does not support com_policy='initialize_only'"
             )
-        if ensemble == "nvt" and thermostat == "nhc" and com_policy != "none":
+        if ensemble == "nvt" and thermostat == "nhc" and com_policy == "constraint":
             raise ValueError(
-                "NHC requires explicit com_policy='none'; constrained NHC and "
-                "automatic COM removal are unsupported"
+                "NHC does not support com_policy='constraint' (a FixCom projector); "
+                "use auto/initialize_only (zero COM momentum, conserved by NHC) "
+                "or none"
             )
         if ensemble == "nvt" and thermostat in {"bussi", "nhc"} and temperature <= 0.0:
             raise ValueError(

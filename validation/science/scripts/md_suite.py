@@ -540,7 +540,8 @@ def workflow_nhc(ctx, args, out_dir) -> int:
     t0 = time.perf_counter()
     rejections: list[dict[str, Any]] = []
     try:
-        # positive run: NHC is only validated unconstrained with com_policy='none'
+        # positive run: unconstrained NHC with com_policy='none' (auto zeroes the
+        # COM momentum instead; both are accepted, constraints are not)
         run = _run_md(
             ctx,
             _md_run_dir(Path(args.out), args.tag, "t6d_nhc"),
@@ -562,17 +563,6 @@ def workflow_nhc(ctx, args, out_dir) -> int:
                 com_policy="none",
                 atoms=_atoms_with(cu32(), FixAtoms(indices=_fixed_layer_indices(cu32()))),
                 label="nhc_fixatoms",
-                out_dir=Path(args.out),
-            )
-        )
-        rejections.append(
-            _expect_rejection(
-                ctx,
-                ensemble="nvt",
-                thermostat="nhc",
-                com_policy="auto",
-                atoms=cu32(),
-                label="nhc_auto_com",
                 out_dir=Path(args.out),
             )
         )

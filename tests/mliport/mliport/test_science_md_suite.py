@@ -351,7 +351,6 @@ def test_t6d_nhc_allowed_run_and_rejection_matrix(ctx, args):
     cases = {r["case"]: r for r in m["rejection_matrix"]}
     assert set(cases) == {
         "nhc_fixatoms",
-        "nhc_auto_com",
         "nhc_com_constraint",
         "langevin_compound_constraint",
     }

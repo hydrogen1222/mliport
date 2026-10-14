@@ -639,7 +639,10 @@ Examples:
         "--com-policy",
         choices=["auto", "none", "initialize_only", "constraint"],
         default=None,
-        help="Center-of-mass policy (default: auto; NHC requires explicit none).",
+        help=(
+            "Center-of-mass policy (default: auto; for NHC auto zeroes the "
+            "COM momentum once, which NHC conserves)."
+        ),
     )
     md_parser.add_argument(
         "--fmax-abort",
@@ -2541,6 +2544,9 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             print(f"WARNING: {warning}")
     elif args.analysis_task == "transport":
         _print_transport_summary(outcome.get("results") or {})
+    elif args.analysis_task == "msd":
+        for warning in (outcome.get("results") or {}).get("warnings", []):
+            print(f"WARNING: {warning}")
     return 0
 
 

@@ -136,8 +136,15 @@ class MDRunner(BaseRunner):
         "nve": frozenset({"none", "constraint"}),
         "langevin": frozenset({"none", "initialize_only", "constraint"}),
         "bussi": frozenset({"none", "constraint"}),
-        "nhc": frozenset({"none"}),
+        # NHC cannot use a FixCom projector (ASE NHC keeps private 3N state),
+        # but its uniform momentum scaling conserves a zero total momentum.
+        # ``initialize_only`` therefore removes the centre-of-mass motion
+        # exactly once and the run stays free of whole-system drift.
+        "nhc": frozenset({"none", "initialize_only"}),
     }
+    #: Integrators that conserve total momentum exactly, so a zeroed initial
+    #: COM momentum removes three degrees of freedom for the whole run.
+    MOMENTUM_CONSERVING_INTEGRATORS = frozenset({"nhc"})
     # Every MD step is retained in run.log independently of trajectory saving.
     # LiveRunLogger coalesces the actual filesystem flushes and suppresses these
     # high-frequency records from UI callbacks.
@@ -450,12 +457,24 @@ class MDRunner(BaseRunner):
                 "MD constraint does not report removed degrees of freedom; "
                 "this combination is unsupported"
             ) from exc
+        if self._com_momentum_removed():
+            # ASE only subtracts DOF for explicit constraints. A zero total
+            # momentum conserved by the integrator is an equally exact
+            # constraint on the three COM velocity components.
+            ndof -= 3
         if ndof <= 0:
             raise ValueError(
                 f"MD has zero or negative degrees of freedom ({ndof} DOF); "
                 "thermal initialization and integration are undefined"
             )
         return ndof
+
+    def _com_momentum_removed(self) -> bool:
+        """True when the policy zeroes COM momentum and the integrator keeps it."""
+        return (
+            self.com_policy_effective == "initialize_only"
+            and self._integrator_key() in self.MOMENTUM_CONSERVING_INTEGRATORS
+        )
 
     def _validate_constraint_capability(self, atoms: Atoms) -> None:
         constraints = list(atoms.constraints)
@@ -511,6 +530,11 @@ class MDRunner(BaseRunner):
             effective = "none"
         elif self.com_policy == "initialize_only":
             if constraints:
+                if self._integrator_key() == "nhc":
+                    raise ValueError(
+                        f"NHC with constraint {type(constraints[0]).__name__} is "
+                        "unsupported: ASE NHC maintains private thermostat state."
+                    )
                 raise ValueError(
                     "com_policy='initialize_only' is only validated for structures "
                     "without constraints"
@@ -537,11 +561,17 @@ class MDRunner(BaseRunner):
             effective = "constraint"
         else:  # auto
             if self._integrator_key() == "nhc" and not constraints:
-                raise ValueError(
-                    "NHC cannot use automatic COM removal. Select "
-                    "com_policy='none' explicitly for unconstrained 3N dynamics."
-                )
-            if not constraints:
+                # A FixCom projector is unsupported for ASE NHC, but leaving
+                # the Maxwell-Boltzmann COM momentum in place makes the whole
+                # cell drift ballistically and contaminates every MSD-based
+                # transport result. Zero it once; NHC conserves it.
+                if len(atoms) <= 1:
+                    raise ValueError(
+                        "Automatic COM removal is undefined for a single atom; "
+                        "select com_policy='none' explicitly"
+                    )
+                effective = "initialize_only"
+            elif not constraints:
                 if len(atoms) <= 1:
                     raise ValueError(
                         "Automatic COM removal is undefined for a single atom; "
@@ -897,6 +927,15 @@ class MDRunner(BaseRunner):
         )
         if self.com_policy_effective == "initialize_only":
             Stationary(atoms, preserve_temperature=True)
+            if self._com_momentum_removed() and self.temperature > 0:
+                # ASE preserved the temperature over 3N DOF. With the COM
+                # momentum conserved at zero only 3N-3 DOF carry kinetic
+                # energy, so rescale to the exact requested temperature.
+                current = self._calculate_temperature(atoms)
+                if current > 0:
+                    atoms.set_momenta(
+                        atoms.get_momenta() * math.sqrt(self.temperature / current)
+                    )
         self._validate_atomic_state(atoms, context="initialized MD state")
         self._calculate_temperature(atoms)
 
@@ -953,21 +992,42 @@ class MDRunner(BaseRunner):
             )
 
         if self.thermostat == "nhc":
+            set_temperature = self._nhc_set_temperature(atoms)
             self.log(
                 "Setting up NVT Nose-Hoover-chain dynamics "
                 f"(tdamp={self.nhc_tdamp / units.fs:.6g} fs, "
                 f"chain={self.nhc_tchain}, substeps={self.nhc_tloop})"
             )
+            if set_temperature != self.temperature:
+                self.log(
+                    "NHC thermostat set point "
+                    f"{set_temperature:.6g} K targets {self.temperature:.6g} K "
+                    f"over {self._degrees_of_freedom(atoms)} momentum-conserving DOF"
+                )
             return NoseHooverChainNVT(
                 atoms,
                 timestep=self.timestep,
-                temperature_K=self.temperature,
+                temperature_K=set_temperature,
                 tdamp=self.nhc_tdamp,
                 tchain=self.nhc_tchain,
                 tloop=self.nhc_tloop,
             )
 
         raise ValueError(f"Unknown thermostat: {self.thermostat}")
+
+    def _nhc_set_temperature(self, atoms: Atoms) -> float:
+        """Thermostat set point that targets the true kinetic DOF.
+
+        ASE's NHC uses ``3N`` in both the kinetic-energy target and the first
+        thermostat mass. When the conserved total momentum is zero only
+        ``3N-3`` DOF carry kinetic energy; scaling the set point by
+        ``(3N-3)/3N`` makes ``N_f k T_set`` equal ``(3N-3) k T``, the standard
+        momentum-conservation correction for Nose-Hoover dynamics.
+        """
+        if not self._com_momentum_removed():
+            return self.temperature
+        thermostat_dof = 3 * len(atoms)
+        return self.temperature * self._degrees_of_freedom(atoms) / thermostat_dof
 
     def _md_provenance(self) -> dict[str, Any]:
         """Return canonical MD settings, including only the active coupling."""
@@ -1009,8 +1069,14 @@ class MDRunner(BaseRunner):
                     "nhc_tdamp_fs": float(self.nhc_tdamp / units.fs),
                     "nhc_tchain": self.nhc_tchain,
                     "nhc_tloop": self.nhc_tloop,
+                    "com_momentum_conserved_zero": self._com_momentum_removed(),
                 }
             )
+            if self._com_momentum_removed() and self.md_degrees_of_freedom:
+                thermostat_dof = self.md_degrees_of_freedom + 3
+                provenance["nhc_set_temperature_K"] = (
+                    self.temperature * self.md_degrees_of_freedom / thermostat_dof
+                )
         return provenance
 
     def _outcar_md_settings(self) -> dict[str, Any]:

@@ -166,8 +166,9 @@ DPA/GRACE 前请自行设置 `CUDA_VISIBLE_DEVICES`。各 backend 手册见
 `--ensemble` 选择 `NVE` 或 `NVT`,`--thermostat` 选择 `LANGEVIN`、`BUSSI`
 或 `NHC`;`--temp`、`--timestep`、`--steps`、`--save-interval` 决定运行规模。
 要接着已有轨迹继续跑,可从带速度的保存帧开始,并加
-`--velocity-policy preserve --no-pre-relax`。NHC 需要 `--com-policy none`,
-因为有约束的 NHC 不能与自动质心移除同时使用。
+`--velocity-policy preserve --no-pre-relax`。NHC 不能使用 FixCom 约束;
+默认 `--com-policy auto` 会在初始化时把质心动量清零一次(NHC 会保持它为零),
+避免整个晶胞漂移污染基于 MSD 的输运结果。
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \

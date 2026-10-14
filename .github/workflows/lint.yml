@@ -24,6 +24,11 @@ jobs:
       - name: Generated docs are in sync
         run: uv run --no-project --with packaging python scripts/generate_docs.py --check
       - name: Ruff check
-        run: uvx ruff@0.5.1 check mliport/mliport tests scripts
+        run: uvx ruff@0.5.1 check --output-format=github mliport/mliport tests scripts
       - name: Ruff format check
-        run: uvx ruff@0.5.1 format --check mliport/mliport tests scripts
+        run: |
+          # Emit one annotation per unformatted file so failures are visible
+          # through the checks API as well as in the log.
+          uvx ruff@0.5.1 format --check mliport/mliport tests scripts \
+            | sed -n 's/^Would reformat: \(.*\)$/::error file=\1::ruff format would reformat this file/p;t;p'
+          uvx ruff@0.5.1 format --check mliport/mliport tests scripts

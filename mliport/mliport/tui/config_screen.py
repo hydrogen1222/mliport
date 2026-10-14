@@ -484,7 +484,7 @@ class ConfigScreen(Screen):
                 options=[
                     ("Auto (fail closed when ambiguous)", "auto"),
                     ("None", "none"),
-                    ("Initialization only (Langevin only)", "initialize_only"),
+                    ("Initialization only (Langevin/NHC)", "initialize_only"),
                     ("Explicit FixCom constraint", "constraint"),
                 ],
                 value=self.app.get_config("com_policy", "auto"),
@@ -1483,18 +1483,23 @@ class ConfigScreen(Screen):
             com_select = self.query_one("#com-policy-select", Select)
             com_policy = str(com_select.value)
             ensemble = str(self.app.get_config("ensemble", "NVT")).upper()
-            if thermostat == "NHC" and ensemble == "NVT" and com_policy != "none":
+            if (
+                thermostat == "NHC"
+                and ensemble == "NVT"
+                and com_policy == "constraint"
+            ):
                 self.notify(
-                    "NHC requires COM policy 'none' and an unconstrained structure",
+                    "NHC cannot use a FixCom constraint; use Auto (zero COM "
+                    "momentum once) or None",
                     severity="error",
                 )
                 return
             if com_policy == "initialize_only" and (
-                ensemble == "NVE" or thermostat in {"BUSSI", "NHC"}
+                ensemble == "NVE" or thermostat == "BUSSI"
             ):
                 self.notify(
                     "Initialization-only COM removal is supported only by "
-                    "NVT Langevin",
+                    "NVT Langevin and NVT NHC",
                     severity="error",
                 )
                 return

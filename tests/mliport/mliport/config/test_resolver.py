@@ -78,7 +78,6 @@ def test_md_thermostat_options_are_run_options_only() -> None:
 @pytest.mark.parametrize(
     "cli",
     [
-        {"ensemble": "NVT", "thermostat": "NHC", "com_policy": "auto"},
         {"ensemble": "NVT", "thermostat": "NHC", "com_policy": "constraint"},
         {"ensemble": "NVT", "thermostat": "BUSSI", "temperature": 0.0},
         {

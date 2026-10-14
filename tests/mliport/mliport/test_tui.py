@@ -595,7 +595,7 @@ async def test_md_invalid_numeric_inputs_block_submission(tmp_path: Path) -> Non
 @pytest.mark.parametrize(
     ("ensemble", "thermostat", "com_policy"),
     [
-        ("NVT", "NHC", "auto"),
+        ("NVT", "NHC", "constraint"),
         ("NVT", "BUSSI", "initialize_only"),
         ("NVE", "LANGEVIN", "initialize_only"),
     ],

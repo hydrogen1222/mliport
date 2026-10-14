@@ -728,6 +728,8 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
                 "fits": result["diagnostic_linear_diffusion_fits"],
                 "alpha_estimator_version": result["alpha_estimator_version"],
                 "alpha_diagnostics": result["alpha_diagnostics_by_axes"],
+                "com_drift": result["com_drift_diagnostics"],
+                "warnings": result["warnings"],
             },
         )
         artifacts.extend(("msd.csv", "diagnostics.json"))
@@ -807,6 +809,7 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
                     "kinisi_resource_diagnostics"
                 ),
                 "drift_correction": result.get("drift_correction"),
+                "com_drift": result.get("com_drift_diagnostics"),
                 "uncertainty_semantics": {
                     "tracer": result["nernst_einstein"].get("uncertainty_semantics"),
                     "collective": (result.get("collective_conductivity") or {}).get(

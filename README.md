@@ -198,9 +198,10 @@ cell together with the ions.
 `--ensemble` selects `NVE` or `NVT`, and `--thermostat` selects `LANGEVIN`,
 `BUSSI` or `NHC`. `--temp`, `--timestep`, `--steps` and `--save-interval`
 size the run. A trajectory can continue from a saved frame that contains
-velocities with `--velocity-policy preserve --no-pre-relax`. NHC requires
-`--com-policy none`, because constrained NHC cannot run with automatic
-center-of-mass removal.
+velocities with `--velocity-policy preserve --no-pre-relax`. NHC cannot use a
+FixCom constraint; its default `--com-policy auto` zeroes the center-of-mass
+momentum once (NHC conserves it) so the whole cell does not drift and bias
+MSD-based transport.
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \
