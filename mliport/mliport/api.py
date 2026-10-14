@@ -113,6 +113,8 @@ def _api_resolve(
     model_alias: str | None,
     profile: str | None,
     strict_config: bool | None,
+    *,
+    overwrite: bool = False,
 ) -> EngineConfig:
     """Thin wrapper around resolve_config for the API layer."""
     config, _resolved = _api_resolve_full(
@@ -125,6 +127,7 @@ def _api_resolve(
         model_alias,
         profile,
         strict_config,
+        overwrite=overwrite,
     )
     return config
 
@@ -141,6 +144,7 @@ def _api_resolve_full(
     strict_config: bool | None,
     *,
     incar_layer: dict[str, Any] | None = None,
+    overwrite: bool = False,
 ) -> tuple[EngineConfig, Any]:
     """Resolve API inputs while retaining immutable provenance for workflows."""
     from mliport.config import load_settings  # noqa: PLC0415
@@ -164,6 +168,7 @@ def _api_resolve_full(
     ec.output_dir = Path(output_dir).expanduser().resolve()
     if job_name:
         ec.job_name = job_name
+    ec.overwrite = bool(overwrite)
     return ec, resolved
 
 
@@ -247,8 +252,8 @@ def run_single_point(
         model_alias,
         profile,
         strict_config,
+        overwrite=overwrite,
     )
-    config.overwrite = overwrite
     engine = CalculationEngine.from_config(config)
     return engine.run(
         atoms,
@@ -355,8 +360,8 @@ def run_optimization(
         model_alias,
         profile,
         strict_config,
+        overwrite=overwrite,
     )
-    config.overwrite = overwrite
     engine = CalculationEngine.from_config(config)
     return engine.run(
         atoms,
@@ -490,8 +495,8 @@ def run_md(
         model_alias,
         profile,
         strict_config,
+        overwrite=overwrite,
     )
-    config.overwrite = overwrite
     engine = CalculationEngine.from_config(config)
     return engine.run(
         atoms,

@@ -1825,6 +1825,12 @@ def _maybe_reexec_for_device_isolation(resolved) -> None:
     )
 
 
+def _output_claim(engine):
+    """Claim the run directory for an engine (no-op for engine-like stubs)."""
+    claim = getattr(engine, "output_directory_claim", None)
+    return claim() if callable(claim) else contextlib.nullcontext()
+
+
 def _final_run_dir(config: EngineConfig) -> Path:
     """Directory the calculation actually writes into (job subdir included)."""
     if config.job_name:
@@ -1975,7 +1981,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     engine = CalculationEngine.from_config(engine_config)
     try:
-        with engine.output_directory_claim():
+        with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(engine_config))
             return _run_product(
                 engine, atoms, calc_type=calc_type, started_at=started_at
@@ -2004,7 +2010,7 @@ def cmd_sp(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
-        with engine.output_directory_claim():
+        with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
             return _run_product(
                 engine, atoms, calc_type="sp", started_at=started_at
@@ -2033,7 +2039,7 @@ def cmd_opt(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
-        with engine.output_directory_claim():
+        with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
             return _run_product(
                 engine, atoms, calc_type="opt", started_at=started_at
@@ -2062,7 +2068,7 @@ def cmd_md(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
-        with engine.output_directory_claim():
+        with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
             return _run_product(
                 engine, atoms, calc_type="md", started_at=started_at
@@ -2228,7 +2234,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
                 print(f"No supported structure files found in {input_dir}")
             return 1
         print(f"Found {len(files)} structure files")
-        with engine.output_directory_claim():
+        with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
             summary = engine.run_batch(
                 files,
