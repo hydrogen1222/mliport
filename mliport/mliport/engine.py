@@ -331,6 +331,7 @@ class CalculationEngine:
         from mliport.runners.singlepoint import SinglePointRunner  # noqa: PLC0415
 
         opts = self._effective_run_options()
+
         def option(calc_type: str, key: str) -> Any:
             """Run option, else the single-source built-in default."""
             return opts.get(key, BUILTIN_DEFAULTS[calc_type][key])

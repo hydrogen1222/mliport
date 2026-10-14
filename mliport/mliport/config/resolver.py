@@ -138,6 +138,7 @@ class ResolvedConfig:
 # the engine directly rather than passed through **calculator_options.
 _MODEL_KEYS = {"model_type", "model_path", "task", "device", "inference_mode"}
 
+
 def _is_calculator_key(key: str, model_type: str | None) -> bool:
     """Whether ``key`` is a calculator option of ``model_type``.
 

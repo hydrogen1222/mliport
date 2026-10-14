@@ -437,9 +437,7 @@ class _NeverConvergedFIRE:
         return False
 
 
-def test_pre_relax_nonconvergence_with_safe_forces_continues_md(
-    tmp_path, monkeypatch
-):
+def test_pre_relax_nonconvergence_with_safe_forces_continues_md(tmp_path, monkeypatch):
     monkeypatch.setattr("mliport.runners.md.FIRE", _NeverConvergedFIRE)
     runner = MDRunner(
         _RunWrapper(_FiniteCalc(force_scale=0.5)),

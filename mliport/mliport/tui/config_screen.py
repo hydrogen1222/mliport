@@ -1484,9 +1484,7 @@ class ConfigScreen(Screen):
             com_policy = str(com_select.value)
             ensemble = str(self.app.get_config("ensemble", "NVT")).upper()
             if (
-                thermostat == "NHC"
-                and ensemble == "NVT"
-                and com_policy == "constraint"
+                thermostat == "NHC" and ensemble == "NVT" and com_policy == "constraint"
             ):
                 self.notify(
                     "NHC cannot use a FixCom constraint; use Auto (zero COM "

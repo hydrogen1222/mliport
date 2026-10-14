@@ -2012,9 +2012,7 @@ def cmd_sp(args: argparse.Namespace) -> int:
         engine = CalculationEngine.from_config(config)
         with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
-            return _run_product(
-                engine, atoms, calc_type="sp", started_at=started_at
-            )
+            return _run_product(engine, atoms, calc_type="sp", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
         return EXIT_ERROR
@@ -2041,9 +2039,7 @@ def cmd_opt(args: argparse.Namespace) -> int:
         engine = CalculationEngine.from_config(config)
         with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
-            return _run_product(
-                engine, atoms, calc_type="opt", started_at=started_at
-            )
+            return _run_product(engine, atoms, calc_type="opt", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
         return EXIT_ERROR
@@ -2070,9 +2066,7 @@ def cmd_md(args: argparse.Namespace) -> int:
         engine = CalculationEngine.from_config(config)
         with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
-            return _run_product(
-                engine, atoms, calc_type="md", started_at=started_at
-            )
+            return _run_product(engine, atoms, calc_type="md", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
         return EXIT_ERROR
