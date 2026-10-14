@@ -44,7 +44,7 @@ from mliport.install.sources import (
     resolve_source,
 )
 
-# Python versions supported by mliport (requires-python >=3.10,<3.13).
+# Python versions supported by mliport (requires-python >=3.10,<3.14).
 
 
 # Known engine keys (for normalization).

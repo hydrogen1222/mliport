@@ -6,7 +6,7 @@ UMA checkpoints from Meta FAIR are loaded through the upstream `fairchem-core` s
 
 | Environment | Python | Runtime stack |
 |---|---|---|
-| `.venv` | 3.11, 3.12 | `fairchem-core==2.21.0` (torch 2.8.0) |
+| `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines uma --device auto

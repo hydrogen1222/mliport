@@ -2650,8 +2650,14 @@ def cmd_queue(args: argparse.Namespace) -> int:
             job = mgr.get_job(job_id)
             display_name = job.get("display_name", job_id) if job else job_id
             print(f"  - {display_name} [{job_id}]")
-        print(f"max_concurrent: {max_concurrent} (set in the task file)")
-        print("Start the scheduler with: mliport queue start")
+        print(
+            "Start the scheduler with: "
+            f"mliport queue start --max-concurrent {max_concurrent}"
+        )
+        print(
+            "(the task file's max_concurrent is a suggestion; the running "
+            "scheduler's --max-concurrent is what is enforced)"
+        )
         return 0
 
     if sub == "start":

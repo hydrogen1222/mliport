@@ -173,7 +173,7 @@ def test_auto_kepler_cpu_fallback_with_warning() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("bad", ["3.9", "3.13", "2.7"])
+@pytest.mark.parametrize("bad", ["3.9", "3.14", "2.7"])
 def test_invalid_python_raises(bad: str) -> None:
     with pytest.raises(InstallPlanError):
         generate_plan(None, ["uma"], python_version=bad, device="cpu")

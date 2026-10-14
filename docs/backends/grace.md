@@ -6,7 +6,7 @@ GRACE models are exported SavedModels loaded through `tensorpotential`. `MODEL_P
 
 | Environment | Python | Runtime stack |
 |---|---|---|
-| `.venv-grace` | 3.10, 3.11, 3.12 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
+| `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines grace --device auto

@@ -141,12 +141,12 @@ These failures were observed on a clean V100 installation and fixed before
 the 2.0.0b3 release. They are listed with the exact remedy so the message can
 be recognised in the field.
 
-**The installer stops with "no local Python 3.10-3.12 runtime with
-packaging".** The bootstrap needs a 3.10-3.12 interpreter to plan the
+**The installer stops with "no local Python 3.10-3.13 runtime with
+packaging".** The bootstrap needs a 3.10-3.13 interpreter to plan the
 install. The current installer selects the uv-managed interpreter and, when
 that interpreter has no `packaging`, runs the planner in an ephemeral
 `uv run --with packaging` environment. If you set `MLIPORT_INSTALL_PYTHON`
-yourself, the interpreter must be 3.10-3.12 and must import `packaging`. You
+yourself, the interpreter must be 3.10-3.13 and must import `packaging`. You
 can also preselect one with `uv python install 3.12`.
 
 **`--engines mace dpa grace uma` is rejected as extra arguments.** Fixed in

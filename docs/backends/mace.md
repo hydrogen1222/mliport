@@ -6,7 +6,7 @@ MACE checkpoints are loaded through `mace-torch`. MACE profiles are selected by 
 
 | Environment | Python | Runtime stack |
 |---|---|---|
-| `.venv-mace` | 3.10, 3.11, 3.12 | `mace-torch==0.3.16` (torch 2.8.0) |
+| `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines mace --device auto

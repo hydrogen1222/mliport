@@ -173,7 +173,7 @@ def built_wheel(tmp_path_factory):
     return _build_wheel(tmp / "dist")
 
 
-@pytest.fixture(scope="module", params=["3.10", "3.11", "3.12"])
+@pytest.fixture(scope="module", params=["3.10", "3.11", "3.12", "3.13"])
 def installed_venv(request, tmp_path_factory, built_wheel):
     """Install the wheel into a clean venv pinned to each supported Python."""
     tmp = tmp_path_factory.mktemp(f"wheel-integration-{request.param}")

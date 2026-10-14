@@ -236,7 +236,7 @@ def test_online_planner_falls_back_to_local_runtime_when_target_absent(
     )
     fake_uv.chmod(0o755)
     # A local python3.12 that satisfies the planner contract (any interpreter
-    # 3.10-3.12 with packaging installed). Delegating via a shim instead of a
+    # 3.10-3.13 with packaging installed). Delegating via a shim instead of a
     # symlink matters: a symlink to a uv-venv python resolves past the venv
     # (bin/python is itself a symlink to the managed interpreter), so the
     # planner check would run against the bare managed interpreter and lose

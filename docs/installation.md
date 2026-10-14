@@ -90,10 +90,10 @@ environment.
 <!-- BEGIN GENERATED: backend compatibility matrix -->
 | Backend | Environment | Python | Runtime stack |
 |---|---|---|---|
-| UMA (FAIRChem) | `.venv` | 3.11, 3.12 | `fairchem-core==2.21.0` (torch 2.8.0) |
-| MACE | `.venv-mace` | 3.10, 3.11, 3.12 | `mace-torch==0.3.16` (torch 2.8.0) |
-| DPA (DeepMD-kit) | `.venv-dpa` | 3.10, 3.11, 3.12 | `deepmd-kit==3.1.3` (torch 2.10.0) |
-| GRACE | `.venv-grace` | 3.10, 3.11, 3.12 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
+| UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
+| MACE | `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
+| DPA (DeepMD-kit) | `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit==3.1.3` (torch 2.10.0) |
+| GRACE | `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
 <!-- END GENERATED -->
 
 ## DPA and GRACE device isolation

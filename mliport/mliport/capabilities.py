@@ -83,6 +83,28 @@ def model_identity(model: dict) -> dict:
     return {key: model.get(key) for key in IDENTITY_KEYS}
 
 
+def _comparable_identity(identity: object) -> object:
+    """Identity used for evidence matching.
+
+    A framework's PEP 440 local label (``2.8.0+cu126`` vs ``2.8.0+cu128``)
+    names the CUDA toolkit the wheel was linked against, not different model
+    or autograd code, so evidence recorded with one CUDA channel also holds for
+    the same framework release on another channel. Everything else - model
+    hash, backend and framework release, task, head, dtype, inference mode,
+    compile flag and device type - must still match exactly.
+    """
+    if not isinstance(identity, dict):
+        return identity
+    comparable = dict(identity)
+    versions = comparable.get("framework_versions")
+    if isinstance(versions, dict):
+        comparable["framework_versions"] = {
+            name: str(version).split("+", 1)[0] if version is not None else None
+            for name, version in versions.items()
+        }
+    return comparable
+
+
 def _package_evidence_dir() -> Traversable:
     # Anchor on the real ``mliport.data`` package.  ``importlib.resources.files()``
     # requires Package semantics (``__spec__.submodule_search_locations``) on
@@ -177,7 +199,7 @@ def _record_is_validated(record: dict) -> bool:
 
 
 def _resolve_evidence(model: dict, evidence_dir: Path | Traversable | None):
-    identity = model_identity(model)
+    identity = _comparable_identity(model_identity(model))
     matches: list[tuple[str, dict]] = []
     for name, text in _iter_evidence_documents(evidence_dir):
         try:
@@ -191,7 +213,7 @@ def _resolve_evidence(model: dict, evidence_dir: Path | Traversable | None):
                 f"top-level JSON value must be an object, got {type(record).__name__}",
             )
             continue
-        if record.get("model_identity") != identity:
+        if _comparable_identity(record.get("model_identity")) != identity:
             # Unrelated document: warn only when it *looks* like evidence but is
             # broken, so silent data loss stays visible without failing runs
             # that merely pass by an unrelated malformed file.

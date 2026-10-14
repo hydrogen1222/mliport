@@ -47,7 +47,7 @@ NVIDIA GPU(需要可用的 CUDA 驱动;本路径已在 V100-SXM2-16GB、驱动
 一并安装 analysis、transport 与 electrolyte 功能,并对每个 backend 运行
 `mliport doctor`。四 backend 安装默认使用 Python 3.12。各 backend 的最低
 Python 版本是 MACE/GRACE `>=3.9`、DPA `>=3.10`、UMA `>=3.11`;包本身支持
-Python 3.10-3.12。如果用 `--python` 覆盖解释器,所有被请求的 backend 都
+Python 3.10-3.13。如果用 `--python` 覆盖解释器,所有被请求的 backend 都
 必须支持该版本。
 
 四 backend 安装完成后的环境布局:
@@ -182,8 +182,11 @@ DPA/GRACE 前请自行设置 `CUDA_VISIBLE_DEVICES`。各 backend 手册见
 ### NEB 与 CI-NEB (`neb`)
 
 端点文件定义路径,`--images` 设置中间 image 数,`--climb` 打开 climbing
-image。当前 checkpoint 尚未验证能量-梯度一致性,因此需要显式的实验性
-opt-in,并且结果会标注 `physical_barrier=not_claimed`:
+image。只有当模型/运行时身份(checkpoint 哈希、backend 与框架版本、dtype、
+head、设备类型)与随包提供的能量-梯度一致性验证记录完全一致时,NEB 才无需
+opt-in;目前即 `validation/science/model_manifest.json` 中列出的 MACE、DPA、
+GRACE checkpoint。其他配置需要显式的实验性 opt-in,并且结果会标注
+`physical_barrier=not_claimed`:
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
@@ -286,8 +289,8 @@ CLI、INCAR、TUI)能否表达某个选项记录在
 `validation/science/capability_matrix.json`;标记为 `no` 或 `partial` 表示
 该入口无法表达该选项,不会静默转换。
 
-模型精度属于上游 checkpoint;短 MD 验证的是工作流而不是平衡态;当前
-checkpoint 上的 NEB 属于实验性,需要 `--allow-unvalidated-neb`,并且不声明
+模型精度属于上游 checkpoint;短 MD 验证的是工作流而不是平衡态;已验证
+身份之外的 NEB 属于实验性,需要 `--allow-unvalidated-neb`,并且不声明
 物理势垒。输运分析采样不足时会以明确的 insufficient-sampling 状态失败,
 不会给出数值。
 

@@ -350,12 +350,13 @@ forward barrier.
   --allow-unvalidated-neb --output runs/neb
 ```
 
-The current checkpoints are outside the validated NEB envelope: mliport
-cannot yet certify their energy-gradient consistency for this exact
-model/runtime, so it refuses to run without the explicit
-`--allow-unvalidated-neb` opt-in. Such runs are recorded as
-`workflow_smoke_only` and do not claim a physical barrier. Once a runtime has
-a validated capability record the flag is no longer required.
+NEB runs without an opt-in only when the exact model/runtime identity
+(checkpoint hash, backend and framework release, task, head, dtype, inference
+mode and device type) matches a shipped energy-gradient-consistency record;
+the CUDA channel label of the framework wheel (`+cu126`/`+cu128`) does not
+matter. Every other configuration needs the explicit
+`--allow-unvalidated-neb` opt-in; such runs are recorded as
+`workflow_smoke_only` and do not claim a physical barrier.
 
 ## Important options
 

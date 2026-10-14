@@ -130,6 +130,19 @@ def test_torch_version_mismatch_stays_unknown():
     assert capability.energy_gradient_consistency == "unknown"
 
 
+def test_cuda_channel_label_does_not_change_the_validated_identity():
+    identity = dict(_packaged_identity(DPA_EVIDENCE_ID))
+    torch_release = identity["framework_versions"]["torch"].split("+", 1)[0]
+    identity["framework_versions"] = {"torch": f"{torch_release}+cu128"}
+    capability = resolve_capabilities(identity, ["energy", "forces"])
+    assert capability.energy_gradient_consistency == "validated"
+    assert capability.validation_evidence_id == DPA_EVIDENCE_ID
+
+    identity["actual_device_type"] = "cpu"
+    capability = resolve_capabilities(identity, ["energy", "forces"])
+    assert capability.energy_gradient_consistency == "unknown"
+
+
 def test_missing_energy_force_workload_stays_unknown(tmp_path):
     model = {key: f"value-{key}" for key in IDENTITY_KEYS}
     record = _evidence_record(

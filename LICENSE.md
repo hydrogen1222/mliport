@@ -2,7 +2,13 @@
 
 MIT License
 
-Copyright (c) Meta, Inc. and its affiliates.
+Copyright (c) mliport contributors
+Portions Copyright (c) Meta Platforms, Inc. and affiliates.
+
+mliport is built upon code originally developed by Meta FAIR as
+part of the FAIRChem project (https://github.com/FAIR-Chem/fairchem), licensed
+under the MIT License. The original Meta copyright notices are retained in all
+derived source files, as required by the MIT License.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
