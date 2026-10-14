@@ -28,7 +28,7 @@ from mliport.protocols import CancellationRequested, ProgressCallback, ProgressE
 from mliport.timing import RunTiming, append_timing_to_outputs, timing_log_lines
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
     from typing import Any, Literal
 
     from ase import Atoms
@@ -65,6 +65,10 @@ class EngineConfig:
         strict_config: When True, unknown option keys raise instead of warn
             (plan section 10).
         detach: If True, submit as background job.
+        overwrite: Allow replacing calculation outputs that already exist in
+            the final output directory. The default refuses them, so a rerun
+            can never silently destroy a previous trajectory or a VASP
+            OUTCAR/CONTCAR in the same directory.
     """
 
     calc_type: Literal["sp", "opt", "md", "neb", "batch"]
@@ -86,6 +90,7 @@ class EngineConfig:
     activation_checkpointing: bool | None = None
     strict_config: bool = True
     detach: bool = False
+    overwrite: bool = False
 
     def __post_init__(self) -> None:
         from mliport.backend_selection import (  # noqa: PLC0415
@@ -153,6 +158,7 @@ class CalculationEngine:
 
     def __init__(self, config: EngineConfig):
         self.config = config
+        self._output_claimed = False
         self._validate()
 
     @classmethod
@@ -292,6 +298,33 @@ class CalculationEngine:
             return self.config.output_dir / self.config.job_name
         return self.config.output_dir
 
+    @contextlib.contextmanager
+    def output_directory_claim(self) -> Iterator[Path]:
+        """Own the final output directory for the duration of a run.
+
+        Refuses existing calculation outputs unless ``overwrite`` is set and
+        holds an exclusive lock, so a rerun or a concurrent second run cannot
+        destroy another calculation's trajectory or provenance. Re-entrant for
+        the same engine: frontends claim the directory before writing
+        ``resolved_config.json`` and the run itself then reuses that claim.
+        """
+        from mliport.run_directory import (  # noqa: PLC0415
+            ensure_output_available,
+            run_directory_lock,
+        )
+
+        output = self.output_dir
+        if self._output_claimed:
+            yield output
+            return
+        ensure_output_available(output, overwrite=self.config.overwrite)
+        with run_directory_lock(output):
+            self._output_claimed = True
+            try:
+                yield output
+            finally:
+                self._output_claimed = False
+
     @property
     def run_log_path(self) -> Path:
         """Path of the continuously flushed log for this run."""
@@ -390,6 +423,24 @@ class CalculationEngine:
         Returns:
             Results dictionary.
         """
+        with self.output_directory_claim():
+            return self._run_claimed(
+                atoms,
+                progress_callback=progress_callback,
+                cancel_event=cancel_event,
+                log_fn=log_fn,
+                started_at=started_at,
+            )
+
+    def _run_claimed(
+        self,
+        atoms: Atoms,
+        *,
+        progress_callback: ProgressCallback | None,
+        cancel_event: threading.Event | None,
+        log_fn: Any | None,
+        started_at: float | None,
+    ) -> dict[str, Any]:
         with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
             run_logger(f"Output directory: {self.output_dir.resolve()}")
             run_logger(f"Live log: {self.run_log_path}")
@@ -615,6 +666,22 @@ class CalculationEngine:
         Returns:
             Batch summary dictionary.
         """
+        with self.output_directory_claim():
+            return self._run_batch_claimed(
+                files,
+                progress_callback=progress_callback,
+                log_fn=log_fn,
+                started_at=started_at,
+            )
+
+    def _run_batch_claimed(
+        self,
+        files: list[Path],
+        *,
+        progress_callback: ProgressCallback | None,
+        log_fn: Any | None,
+        started_at: float | None,
+    ) -> dict[str, Any]:
         from mliport.runners.batch import BatchRunner  # noqa: PLC0415
 
         timing = RunTiming(

@@ -118,6 +118,9 @@ Hugging Face 镜像与 SOCKS 代理设置见 `docs/models.md`。
 `run.log`。能量与力必须是有限值;`mliport_results.json` 里记录的是
 backend 实际使用的设备,而不是请求的设备。
 
+如果输出目录里已经有计算输出(之前的运行,或 VASP 的 `OUTCAR`/`CONTCAR`),
+运行会直接拒绝,运行期间也会锁住该目录;确实要覆盖时加 `--overwrite`。
+
 ## 选择 backend
 
 backend 由 `--model-type`、配置中的 alias/profile 决定;无法确定时直接

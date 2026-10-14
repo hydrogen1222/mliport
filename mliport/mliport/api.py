@@ -188,6 +188,7 @@ def run_single_point(
     head: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
+    overwrite: bool = False,
     **kwargs,
 ) -> dict[str, Any]:
     """Run single point calculation.
@@ -210,6 +211,8 @@ def run_single_point(
         head: MACE head or DeepMD/DPA multi-task branch name.
         profile: Reusable profile from settings.ini [profile:NAME].
         strict_config: Override strict-config behaviour.
+        overwrite: Allow replacing calculation outputs that already exist in
+            the output directory (refused by default).
         **kwargs: Additional calc/run options forwarded to the resolver.
 
     Returns:
@@ -245,6 +248,7 @@ def run_single_point(
         profile,
         strict_config,
     )
+    config.overwrite = overwrite
     engine = CalculationEngine.from_config(config)
     return engine.run(
         atoms,
@@ -274,6 +278,7 @@ def run_optimization(
     head: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
+    overwrite: bool = False,
     **kwargs,
 ) -> dict[str, Any]:
     """Run geometry optimization.
@@ -303,6 +308,7 @@ def run_optimization(
         head: MACE head or DeepMD/DPA multi-task branch name.
         profile: Reusable profile from settings.ini.
         strict_config: Override strict-config behaviour.
+        overwrite: Allow replacing existing calculation outputs.
         **kwargs: Additional options forwarded to the resolver.
 
     Returns:
@@ -350,6 +356,7 @@ def run_optimization(
         profile,
         strict_config,
     )
+    config.overwrite = overwrite
     engine = CalculationEngine.from_config(config)
     return engine.run(
         atoms,
@@ -386,6 +393,7 @@ def run_md(
     head: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
+    overwrite: bool = False,
     com_policy: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
@@ -425,6 +433,7 @@ def run_md(
         head: MACE head or DeepMD/DPA multi-task branch name.
         profile: Reusable profile from settings.ini.
         strict_config: Override strict-config behaviour.
+        overwrite: Allow replacing existing calculation outputs.
         com_policy: Center-of-mass policy (auto, none, initialize_only, constraint).
         **kwargs: Additional options forwarded to the resolver.
 
@@ -482,6 +491,7 @@ def run_md(
         profile,
         strict_config,
     )
+    config.overwrite = overwrite
     engine = CalculationEngine.from_config(config)
     return engine.run(
         atoms,
@@ -664,6 +674,7 @@ def calculate_energy(
     head: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
+    output_dir: str | Path | None = None,
     **kwargs,
 ) -> float:
     """Calculate energy of a structure.
@@ -687,6 +698,9 @@ def calculate_energy(
         head: MACE head or DeepMD/DPA multi-task branch name.
         profile: Reusable profile from settings.ini.
         strict_config: Override strict-config behaviour.
+        output_dir: Directory for the calculation files. ``None`` (default)
+            uses a temporary directory that is removed afterwards, so repeated
+            calls never collide with earlier outputs.
         **kwargs: Additional options.
 
     Returns:
@@ -701,6 +715,29 @@ def calculate_energy(
         ...     "structure.cif", "uma-s-1.pt", relax=True
         ... )
     """
+    if output_dir is None:
+        import tempfile  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory(prefix="mliport-energy-") as scratch:
+            return calculate_energy(
+                structure,
+                model_path,
+                model_type=model_type,
+                task=task,
+                device=device,
+                relax=relax,
+                fmax=fmax,
+                max_steps=max_steps,
+                verbose=verbose,
+                settings_path=settings_path,
+                model_alias=model_alias,
+                default_dtype=default_dtype,
+                head=head,
+                profile=profile,
+                strict_config=strict_config,
+                output_dir=scratch,
+                **kwargs,
+            )
     if relax:
         results = run_optimization(
             structure=structure,
@@ -717,6 +754,7 @@ def calculate_energy(
             head=head,
             profile=profile,
             strict_config=strict_config,
+            output_dir=str(output_dir),
             **kwargs,
         )
     else:
@@ -733,6 +771,7 @@ def calculate_energy(
             head=head,
             profile=profile,
             strict_config=strict_config,
+            output_dir=str(output_dir),
             **kwargs,
         )
 

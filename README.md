@@ -144,7 +144,10 @@ and small enough for CPU smoke tests.
 
 The run writes `runs/lgps-mace-sp/mliport_results.json` (energy, forces,
 stress, timing), `resolved_config.json` (what was actually used),
-`OUTCAR`/`OSZICAR`/`CONTCAR`, and `run.log`. Energy and forces must be finite;
+`OUTCAR`/`OSZICAR`/`CONTCAR`, and `run.log`. A run refuses an output directory that
+already holds calculation outputs (an earlier run, or a VASP
+`OUTCAR`/`CONTCAR`) and holds a lock on it while running; pass `--overwrite`
+to replace earlier outputs deliberately. Energy and forces must be finite;
 the device in `mliport_results.json` is the device the backend reported, not
 the one that was requested.
 
