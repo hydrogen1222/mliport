@@ -814,6 +814,10 @@ class MDRunner(BaseRunner):
                 "forces": "constraint-applied compatibility alias",
                 "forces_raw_eV_A": "unprojected calculator forces",
                 "forces_applied_eV_A": "ASE constraint-applied forces",
+                "trajectory_frame_forces": (
+                    "frame calculator 'forces' are constraint-applied; "
+                    "info['forces_raw_eV_A'] holds the unprojected forces"
+                ),
                 "fmax_abort": "evaluated from forces_raw_eV_A",
                 "configurational_stress": "ASE calculator stress; kinetic term excluded",
                 "total_stress": "configurational stress plus ASE ideal-gas kinetic term",
@@ -1464,8 +1468,10 @@ class MDRunner(BaseRunner):
                 snapshot.info["mliport_step"] = int(step)
                 snapshot.info["mliport_time_fs"] = time_fs
                 snapshot.info["mliport_phase"] = phase
+                # The constraint-applied forces are stored once, as the frame
+                # calculator's "forces" below; duplicating them in info only
+                # inflated long trajectories. Raw forces are kept here.
                 snapshot.info["forces_raw_eV_A"] = forces_raw.tolist()
-                snapshot.info["forces_applied_eV_A"] = forces_applied.tolist()
                 snapshot.info["forces_alias"] = "constraint-applied"
                 single_point_results: dict[str, Any] = {
                     "energy": float(pe),

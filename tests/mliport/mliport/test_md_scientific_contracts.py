@@ -143,7 +143,8 @@ def test_fixatoms_never_moves_and_force_views_remain_distinct(tmp_path) -> None:
     assert results["forces_applied_eV_A"][0] == pytest.approx(np.zeros(3))
     assert results["forces"] == pytest.approx(results["forces_applied_eV_A"])
     assert frames[-1].info["forces_raw_eV_A"][0] == pytest.approx([2.0, 0.0, 0.0])
-    assert frames[-1].info["forces_applied_eV_A"][0] == pytest.approx(np.zeros(3))
+    assert "forces_applied_eV_A" not in frames[-1].info
+    assert frames[-1].calc.results["forces"][0] == pytest.approx(np.zeros(3))
     payload = json.loads((tmp_path / "raw" / "mliport_results.json").read_text())
     output = payload["calculation"]["results"]
     assert output["forces_raw_eV_A"][0] == pytest.approx([2.0, 0.0, 0.0])

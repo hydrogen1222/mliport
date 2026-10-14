@@ -14,12 +14,12 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from ase import units
-from ase.io import read
+from ase.io import iread
 from ase.io.trajectory import Trajectory
 from ase.stress import full_3x3_to_voigt_6_stress
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
     from typing import Any
 
     from ase import Atoms
@@ -57,12 +57,134 @@ def _discover_source(source: str | Path) -> tuple[Path, Path]:
     )
 
 
-def _load_frames(path: Path) -> list[Atoms]:
+def _iter_frames(path: Path) -> Iterator[Atoms]:
+    """Yield frames one at a time; a trajectory is never held as Atoms objects.
+
+    Long MLMD trajectories can contain 10^5-10^6 frames with per-frame force
+    metadata. Materialising every ``Atoms`` (with its info dictionary and
+    calculator results) would cost far more memory than the position array the
+    analyses actually need, so frames are reduced to arrays as they are read.
+    """
     if path.suffix.lower() == ".traj":
         with Trajectory(path, mode="r") as trajectory:
-            return list(trajectory)
-    frames = read(path, index=":")
-    return frames if isinstance(frames, list) else [frames]
+            yield from trajectory
+        return
+    yield from iread(path, index=":")
+
+
+#: Per-frame ``atoms.info`` keys the dataset contract consumes.
+_FRAME_INFO_KEYS = (
+    "mliport_time_fs",
+    "mliport_step",
+    "mliport_phase",
+    "trajectory_kind",
+)
+
+
+@dataclass(slots=True)
+class _CollectedFrames:
+    """Array form of a frame sequence (see :func:`_collect_frames`)."""
+
+    symbols: tuple[str, ...]
+    masses: np.ndarray
+    pbc: np.ndarray
+    positions: np.ndarray
+    cells: np.ndarray
+    velocities: np.ndarray | None
+    kinetic_energies: np.ndarray | None
+    temperatures: np.ndarray | None
+    energies: np.ndarray | None
+    stresses: np.ndarray | None
+    info: dict[str, list[Any]]
+
+    @property
+    def nframes(self) -> int:
+        return int(self.positions.shape[0])
+
+    def info_values(self, key: str) -> list[Any] | None:
+        """All per-frame values of ``key``, or ``None`` if any frame lacks it."""
+        values = self.info.get(key, [])
+        if len(values) != self.nframes or any(value is None for value in values):
+            return None
+        return values
+
+
+def _collect_frames(frames: Iterable[Atoms]) -> _CollectedFrames | None:
+    """Reduce frames to arrays one frame at a time; ``None`` for no frames."""
+    symbols: tuple[str, ...] | None = None
+    masses = pbc = None
+    natoms = 0
+    positions: list[np.ndarray] = []
+    cells: list[np.ndarray] = []
+    velocities: list[np.ndarray] | None = []
+    kinetic: list[float] | None = []
+    temperatures: list[float] | None = []
+    energies: list[float] | None = []
+    stresses: list[np.ndarray] | None = []
+    info: dict[str, list[Any]] = {key: [] for key in _FRAME_INFO_KEYS}
+    for index, atoms in enumerate(frames):
+        if symbols is None:
+            symbols = tuple(atoms.get_chemical_symbols())
+            masses = np.asarray(atoms.get_masses(), dtype=float)
+            pbc = np.asarray(atoms.pbc, dtype=bool)
+            natoms = len(symbols)
+        if len(atoms) != natoms:
+            raise ValueError(f"Frame {index} has a different atom count")
+        if tuple(atoms.get_chemical_symbols()) != symbols:
+            raise ValueError(f"Frame {index} changes atom identity/order")
+        if not np.array_equal(np.asarray(atoms.pbc, bool), pbc):
+            raise ValueError(f"Frame {index} changes PBC flags")
+        positions.append(np.array(atoms.positions, dtype=float, copy=True))
+        cells.append(np.array(atoms.cell.array, dtype=float, copy=True))
+        for key in _FRAME_INFO_KEYS:
+            info[key].append(atoms.info.get(key))
+        if velocities is not None and atoms.has("momenta"):
+            # ASE's internal time unit is not fs. Keep the analysis
+            # contract explicit instead of labelling raw ASE values as
+            # A/fs and silently scaling VACF-derived quantities.
+            velocities.append(
+                np.asarray(atoms.get_velocities(), dtype=float) * units.fs
+            )
+            kinetic.append(float(atoms.get_kinetic_energy()))
+            temperatures.append(float(atoms.get_temperature()))
+        else:
+            velocities = kinetic = temperatures = None
+        results = getattr(atoms.calc, "results", {}) if atoms.calc else {}
+        energy = results.get("energy", results.get("free_energy"))
+        if energy is None:
+            energies = None
+        elif energies is not None:
+            energies.append(float(energy))
+        stress = results.get("stress")
+        if stress is None or stresses is None:
+            stresses = None
+        else:
+            stress = np.asarray(stress, dtype=float)
+            if stress.shape == (3, 3):
+                stress = full_3x3_to_voigt_6_stress(stress)
+            if stress.shape != (6,):
+                stresses = None
+            else:
+                stresses.append(stress)
+    if symbols is None:
+        return None
+
+    def stack(rows):
+        return None if rows is None else np.asarray(rows, dtype=float)
+
+    return _CollectedFrames(
+        symbols=symbols,
+        masses=masses,
+        pbc=pbc,
+        positions=np.asarray(positions, dtype=float),
+        cells=np.asarray(cells, dtype=float),
+        velocities=stack(velocities),
+        kinetic_energies=stack(kinetic),
+        temperatures=stack(temperatures),
+        energies=stack(energies),
+        stresses=stack(stresses),
+        info=info,
+    )
 
 
 def _read_thermodynamics(run_dir: Path) -> dict[str, np.ndarray]:
@@ -90,13 +212,6 @@ def _read_thermodynamics(run_dir: Path) -> dict[str, np.ndarray]:
             columns[key] = np.asarray(values, dtype=float)
         return columns
     return {}
-
-
-def _all_frame_info(frames: list[Atoms], key: str) -> list[Any] | None:
-    values = [atoms.info.get(key) for atoms in frames]
-    if any(value is None for value in values):
-        return None
-    return values
 
 
 def _uniform_interval(times_fs: np.ndarray) -> float | None:
@@ -219,12 +334,12 @@ class TrajectoryDataset:
     ) -> TrajectoryDataset:
         """Build a dataset from ASE frames with explicit trajectory semantics."""
 
-        frame_list = list(frames)
-        if not frame_list:
+        collected = _collect_frames(frames)
+        if collected is None:
             raise ValueError("Trajectory contains no frames")
         source_path = Path(source)
-        return cls._from_loaded_frames(
-            frame_list,
+        return cls._from_collected(
+            collected,
             run_dir=source_path.parent,
             source_path=source_path,
             times_fs=None if times_fs is None else np.asarray(list(times_fs), float),
@@ -255,8 +370,8 @@ class TrajectoryDataset:
         """
 
         run_dir, source_path = _discover_source(source)
-        frames = _load_frames(source_path)
-        if not frames:
+        frames = _collect_frames(_iter_frames(source_path))
+        if frames is None:
             raise ValueError(f"Trajectory contains no frames: {source_path}")
 
         artifacts = _read_json(run_dir / "artifacts.json")
@@ -264,7 +379,7 @@ class TrajectoryDataset:
         trajectory_meta = artifacts.get("trajectory", {})
         run_options = resolved.get("run_options", {})
         thermo = _read_thermodynamics(run_dir)
-        nframes = len(frames)
+        nframes = frames.nframes
 
         metadata_timestep = trajectory_meta.get(
             "md_timestep_fs",
@@ -293,7 +408,7 @@ class TrajectoryDataset:
             explicit_times = np.asarray(thermo["time_fs"], dtype=float)
             time_source = "raw/md.csv"
         else:
-            info_times = _all_frame_info(frames, "mliport_time_fs")
+            info_times = frames.info_values("mliport_time_fs")
             if info_times is not None:
                 explicit_times = np.asarray(info_times, dtype=float)
                 time_source = "ASE frame info"
@@ -344,7 +459,7 @@ class TrajectoryDataset:
             if np.all(np.isfinite(values)):
                 steps = values.astype(int)
         if steps is None:
-            info_steps = _all_frame_info(frames, "mliport_step")
+            info_steps = frames.info_values("mliport_step")
             if info_steps is not None:
                 steps = np.asarray(info_steps, dtype=int)
         if steps is None and stride is not None:
@@ -354,7 +469,7 @@ class TrajectoryDataset:
         if "phase" in thermo and len(thermo["phase"]) == nframes:
             phases = np.asarray(thermo["phase"], dtype="U16")
         if phases is None:
-            info_phases = _all_frame_info(frames, "mliport_phase")
+            info_phases = frames.info_values("mliport_phase")
             if info_phases is not None:
                 phases = np.asarray(info_phases, dtype="U16")
         production_start_step = trajectory_meta.get("production_start_step")
@@ -403,7 +518,7 @@ class TrajectoryDataset:
             if source_path.suffix.lower() == ".traj"
             else "xdatcar",
         }
-        return cls._from_loaded_frames(
+        return cls._from_collected(
             frames,
             run_dir=run_dir,
             source_path=source_path,
@@ -418,9 +533,9 @@ class TrajectoryDataset:
         )
 
     @classmethod
-    def _from_loaded_frames(
+    def _from_collected(
         cls,
-        frames: list[Atoms],
+        frames: _CollectedFrames,
         *,
         run_dir: Path,
         source_path: Path,
@@ -433,7 +548,7 @@ class TrajectoryDataset:
         metadata: dict[str, Any],
         thermodynamics: dict[str, np.ndarray],
     ) -> TrajectoryDataset:
-        frame_kinds = {frame.info.get("trajectory_kind") for frame in frames}
+        frame_kinds = set(frames.info.get("trajectory_kind", []))
         artifact_kind = (metadata.get("artifacts") or {}).get("trajectory_kind")
         if "neb_band" in frame_kinds or artifact_kind == "neb_band":
             from mliport.analysis.validation import (  # noqa: PLC0415
@@ -445,81 +560,40 @@ class TrajectoryDataset:
                 "not a time trajectory; MSD, VACF, kinisi, GEMDAT, and other "
                 "trajectory analyses are forbidden"
             )
-        symbols = tuple(frames[0].get_chemical_symbols())
-        masses = np.asarray(frames[0].get_masses(), dtype=float)
-        pbc = np.asarray(frames[0].pbc, dtype=bool)
-        natoms = len(symbols)
-        positions = np.empty((len(frames), natoms, 3), dtype=float)
-        cells = np.empty((len(frames), 3, 3), dtype=float)
-        velocity_rows: list[np.ndarray] = []
-        kinetic_rows: list[float] = []
-        temperature_rows: list[float] = []
-        energy_rows: list[float] = []
-        stress_rows: list[np.ndarray] = []
-        has_velocities = True
-        has_energies = True
-        has_stresses = True
-        for index, atoms in enumerate(frames):
-            if len(atoms) != natoms:
-                raise ValueError(f"Frame {index} has a different atom count")
-            if tuple(atoms.get_chemical_symbols()) != symbols:
-                raise ValueError(f"Frame {index} changes atom identity/order")
-            if not np.array_equal(np.asarray(atoms.pbc, bool), pbc):
-                raise ValueError(f"Frame {index} changes PBC flags")
-            positions[index] = np.asarray(atoms.positions, dtype=float)
-            cells[index] = np.asarray(atoms.cell.array, dtype=float)
-            if atoms.has("momenta"):
-                # ASE's internal time unit is not fs. Keep the analysis
-                # contract explicit instead of labelling raw ASE values as
-                # A/fs and silently scaling VACF-derived quantities.
-                velocity_rows.append(
-                    np.asarray(atoms.get_velocities(), dtype=float) * units.fs
-                )
-                kinetic_rows.append(float(atoms.get_kinetic_energy()))
-                temperature_rows.append(float(atoms.get_temperature()))
-            else:
-                has_velocities = False
-            results = getattr(atoms.calc, "results", {}) if atoms.calc else {}
-            energy = results.get("energy", results.get("free_energy"))
-            if energy is None:
-                has_energies = False
-            else:
-                energy_rows.append(float(energy))
-            if "stress" not in results:
-                has_stresses = False
-            else:
-                stress = np.asarray(results["stress"], dtype=float)
-                if stress.shape == (3, 3):
-                    stress = full_3x3_to_voigt_6_stress(stress)
-                if stress.shape != (6,):
-                    has_stresses = False
-                else:
-                    stress_rows.append(stress)
+        symbols = frames.symbols
+        masses = frames.masses
+        pbc = frames.pbc
+        positions = frames.positions
+        cells = frames.cells
+        nframes = frames.nframes
+        has_velocities = frames.velocities is not None
+        has_energies = frames.energies is not None
+        has_stresses = frames.stresses is not None
 
         def thermo_column(*names: str) -> np.ndarray | None:
             for name in names:
                 value = thermodynamics.get(name)
-                if value is not None and len(value) == len(frames):
+                if value is not None and len(value) == nframes:
                     return np.asarray(value, dtype=float)
             return None
 
         potential = thermo_column("potential_energy_eV")
         if potential is None and has_energies:
-            potential = np.asarray(energy_rows, dtype=float)
+            potential = frames.energies
         kinetic = thermo_column("kinetic_energy_eV")
         if kinetic is None and has_velocities:
-            kinetic = np.asarray(kinetic_rows, dtype=float)
+            kinetic = frames.kinetic_energies
         total = thermo_column("total_energy_eV")
         temperature = thermo_column("temperature_K")
         if temperature is None and has_velocities:
-            temperature = np.asarray(temperature_rows, dtype=float)
+            temperature = frames.temperatures
         if total is None and potential is not None and kinetic is not None:
             total = potential + kinetic
         volume = thermo_column("volume_A3")
         if volume is None:
             volume = np.asarray([abs(np.linalg.det(cell)) for cell in cells])
         pressure = thermo_column("total_pressure_GPa", "pressure_GPa")
-        stress = np.asarray(stress_rows) if has_stresses else None
+        stress = frames.stresses if has_stresses else None
         if stress is None:
             components = [
                 thermo_column(f"total_stress_{axis}_eV_A3", f"stress_{axis}_eV_A3")
@@ -556,7 +630,7 @@ class TrajectoryDataset:
             md_timestep_fs=md_timestep_fs,
             frame_stride_steps=frame_stride_steps,
             frame_interval_fs=interval,
-            velocities=np.asarray(velocity_rows) if has_velocities else None,
+            velocities=frames.velocities,
             temperature_K=temperature,
             potential_energy_eV=potential,
             kinetic_energy_eV=kinetic,
