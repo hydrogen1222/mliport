@@ -19,6 +19,42 @@ UMA_ALIASES: frozenset[str] = frozenset({"uma", "fairchem"})
 #: Everything accepted by ``MODEL_TYPE`` / ``--model-type`` / API calls.
 SUPPORTED_TYPES: frozenset[str] = frozenset(set(SUPPORTED_BACKENDS) | UMA_ALIASES)
 
+#: Calculator (backend) options each runtime consumes. This is the single
+#: table shared by the resolver, the calculator factory, the engine and the
+#: queue command builder; adding a backend option means editing only here.
+CALCULATOR_OPTION_KEYS: dict[str, frozenset[str]] = {
+    "uma": frozenset(
+        {"inference_mode", "torch_num_threads", "activation_checkpointing"}
+    ),
+    "mace": frozenset({"default_dtype", "head"}),
+    "dpa": frozenset({"head"}),
+    "grace": frozenset(
+        {
+            "cpu_threads",
+            "gpu_memory_growth",
+            "gpu_memory_limit_mb",
+            "neighbor_cache",
+            "neighbor_skin",
+        }
+    ),
+}
+
+#: Every backend-specific calculator option.
+ALL_CALCULATOR_OPTION_KEYS: frozenset[str] = frozenset().union(
+    *CALCULATOR_OPTION_KEYS.values()
+)
+
+#: Options that apply to every backend even though one backend also receives
+#: them as a calculator option (the CPU thread count).
+SHARED_OPTION_KEYS: frozenset[str] = frozenset({"torch_num_threads"})
+
+#: Backends whose CPU intra-op threads are PyTorch threads.
+TORCH_BACKENDS: frozenset[str] = frozenset({"uma", "mace", "dpa"})
+
+#: Backends whose ASE adapters cannot choose a GPU inside an existing process;
+#: they need CUDA_VISIBLE_DEVICES isolation before the framework is imported.
+PROCESS_ISOLATED_BACKENDS: frozenset[str] = frozenset({"dpa", "grace"})
+
 NO_BACKEND_SELECTED_MESSAGE = """No MLIP backend was selected.
 
 Choose one of:
@@ -60,6 +96,18 @@ def is_uma(model_type: str) -> bool:
     return str(model_type).strip().lower() in UMA_ALIASES
 
 
+def calculator_option_keys(model_type: str) -> frozenset[str]:
+    """Calculator options consumed by ``model_type`` (``fairchem`` = ``uma``)."""
+    return CALCULATOR_OPTION_KEYS.get(canonical_model_type(model_type), frozenset())
+
+
+def option_applies_to_backend(key: str, model_type: str) -> bool:
+    """False when ``key`` is a calculator option of other backends only."""
+    if key in SHARED_OPTION_KEYS or key not in ALL_CALCULATOR_OPTION_KEYS:
+        return True
+    return key in calculator_option_keys(model_type)
+
+
 def default_task_for(model_type: str) -> str:
     """Task default that follows the backend, never a backend default.
 
@@ -70,13 +118,20 @@ def default_task_for(model_type: str) -> str:
 
 
 __all__ = [
+    "ALL_CALCULATOR_OPTION_KEYS",
+    "CALCULATOR_OPTION_KEYS",
     "NO_BACKEND_SELECTED_MESSAGE",
+    "PROCESS_ISOLATED_BACKENDS",
+    "SHARED_OPTION_KEYS",
     "SUPPORTED_BACKENDS",
     "SUPPORTED_TYPES",
+    "TORCH_BACKENDS",
     "UMA_ALIASES",
+    "calculator_option_keys",
     "canonical_model_type",
     "default_task_for",
     "is_uma",
     "normalize_model_type",
+    "option_applies_to_backend",
     "require_model_type",
 ]

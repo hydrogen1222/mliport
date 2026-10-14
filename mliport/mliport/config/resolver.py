@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 
 from mliport.backend_selection import (
     NO_BACKEND_SELECTED_MESSAGE,
+    calculator_option_keys,
     default_task_for,
     normalize_model_type,
     require_model_type,
@@ -137,27 +138,16 @@ class ResolvedConfig:
 # the engine directly rather than passed through **calculator_options.
 _MODEL_KEYS = {"model_type", "model_path", "task", "device", "inference_mode"}
 
-# Calculator-option keys, per engine. Anything not here and not a model key is
-# treated as a run option (scoped to the calc_type by the schema).
-_CALCULATOR_KEYS_BY_ENGINE: dict[str, set[str]] = {
-    "uma": {"inference_mode", "torch_num_threads", "activation_checkpointing"},
-    "fairchem": {"inference_mode", "torch_num_threads", "activation_checkpointing"},
-    "mace": {"default_dtype", "head"},
-    "dpa": {"head"},
-    "grace": {
-        "gpu_memory_growth",
-        "gpu_memory_limit_mb",
-        "neighbor_cache",
-        "neighbor_skin",
-    },
-}
-
-
 def _is_calculator_key(key: str, model_type: str | None) -> bool:
+    """Whether ``key`` is a calculator option of ``model_type``.
+
+    Anything that is not a calculator option and not a model key is treated
+    as a run option (scoped to the calc_type by the schema).
+    """
     engine = "" if model_type is None else str(model_type).strip().lower()
     if not engine:
         return False
-    return key in _CALCULATOR_KEYS_BY_ENGINE.get(engine, set())
+    return key in calculator_option_keys(engine)
 
 
 def _settings_layer(

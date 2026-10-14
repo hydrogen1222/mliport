@@ -219,7 +219,10 @@ class MACECalculatorWrapper(BaseMLIPCalculator):
                 if r_max is not None:
                     base["cutoff"] = float(r_max)
             available_heads = getattr(calc, "available_heads", None)
-            if available_heads is not None:
+            if isinstance(available_heads, str):
+                # A single head name must not be split into characters.
+                base["available_heads"] = [available_heads]
+            elif available_heads is not None:
                 base["available_heads"] = list(available_heads)
             active_head = getattr(calc, "head", None)
             if active_head is not None:

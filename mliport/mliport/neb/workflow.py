@@ -32,7 +32,6 @@ from mliport.neb.revisions import (
 )
 from mliport.neb.schema import NEBOptions, NEBPreparationError
 from mliport.protocols import CancellationRequested
-from mliport.queue import resolve_device_uuid
 from mliport.runners.neb import NEBRunner
 
 if TYPE_CHECKING:
@@ -670,13 +669,14 @@ def _run_neb_workflow_locked(
     )
     model["capabilities"] = asdict(capability)
     _restore_checkpoint_model_source(model, checkpoint_record)
-    device_uuid = resolve_device_uuid(resolved.device)
-    if device_uuid is not None:
-        from mliport.devices import verify_runtime_uuid
-
+    if str(resolved.device).strip().lower() != "cpu":
+        # The backend identity (torch/TensorFlow) already verified the actual
+        # GPU against the requested ordinal and any queue lease inside the
+        # framework's own device enumeration; require that evidence here.
         if model["actual_device_type"] != "cuda":
             raise NEBPreparationError("Backend did not confirm actual CUDA execution")
-        verify_runtime_uuid(model["actual_device_uuid"], device_uuid)
+        if not model.get("actual_device_uuid"):
+            raise NEBPreparationError("Backend did not report the actual GPU UUID")
     # On resume the checkpoint band file may materialize implicit defaults
     # (for example UMA's charge/spin 0/0) that the original fingerprint did
     # not record.  Identity is defined by the checkpoint, so validate against

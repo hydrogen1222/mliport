@@ -669,6 +669,44 @@ def test_gpu_uuid_lease_blocks_aliases_of_the_same_device(mgr: JobManager) -> No
     )
 
 
+def test_gpu_lease_can_be_shared_up_to_an_explicit_limit(mgr: JobManager) -> None:
+    ids = [_enqueue(mgr, f"share-{index}", device="cuda:0") for index in range(3)]
+    tokens = [mgr.new_job_id() for _ in ids]
+
+    for job_id, token in zip(ids[:2], tokens[:2], strict=True):
+        assert mgr.claim_job(
+            job_id,
+            claim_token=token,
+            owner_pid=os.getpid(),
+            device_uuid="GPU-shared",
+            max_jobs_per_device=2,
+        )
+    assert (
+        mgr.claim_job(
+            ids[2],
+            claim_token=tokens[2],
+            owner_pid=os.getpid(),
+            device_uuid="GPU-shared",
+            max_jobs_per_device=2,
+        )
+        is None
+    )
+    with pytest.raises(ValueError, match="max_jobs_per_device"):
+        mgr.claim_job(
+            ids[2],
+            claim_token=tokens[2],
+            owner_pid=os.getpid(),
+            device_uuid="GPU-shared",
+            max_jobs_per_device=0,
+        )
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.5])
+def test_scheduler_rejects_invalid_gpu_sharing_limit(tmp_path: Path, value) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        QueueScheduler(jobs_dir=tmp_path / "jobs", max_jobs_per_gpu=value)  # type: ignore[arg-type]
+
+
 def test_stale_claim_recovery_releases_device_lease(
     mgr: JobManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:

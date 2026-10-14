@@ -126,8 +126,18 @@ def resolve_visible_device(
             f"Cannot resolve device {device!r}; expected cpu, cuda, gpu or cuda:N"
         )
     local_ordinal = int(match.group(1) or 0)
-    physical = list(inventory) if inventory is not None else query_physical_gpus()
     env = os.environ if environment is None else environment
+    single_mig = _single_mig_visibility(env)
+    if single_mig is not None:
+        # A scheduler (e.g. Slurm on MIG-partitioned A100/H100 nodes) exposes
+        # exactly one MIG instance. It is the only CUDA device in the process.
+        if local_ordinal != 0:
+            raise RuntimeError(
+                f"CUDA device {device!r} is not visible; CUDA_VISIBLE_DEVICES "
+                "exposes a single MIG instance (use cuda or cuda:0)"
+            )
+        return VisibleGpu(0, single_mig, None, "", None)
+    physical = list(inventory) if inventory is not None else query_physical_gpus()
     visible = visible_gpus(physical, env)
     if not visible:
         raise RuntimeError(
@@ -140,6 +150,22 @@ def resolve_visible_device(
             f"exposes {len(visible)} device(s)"
         )
     return visible[local_ordinal]
+
+
+def _single_mig_visibility(environment: Mapping[str, str]) -> str | None:
+    """Return the MIG UUID when CUDA_VISIBLE_DEVICES selects exactly one."""
+    visibility = (environment.get("CUDA_VISIBLE_DEVICES") or "").strip()
+    if visibility.startswith("MIG-") and "," not in visibility:
+        return visibility
+    return None
+
+
+def uuid_body(uuid: str) -> str:
+    """UUID without its ``GPU-``/``MIG-`` prefix (frameworks differ in prefix)."""
+    for prefix in ("GPU-", "MIG-"):
+        if uuid.startswith(prefix):
+            return uuid[len(prefix) :]
+    return uuid
 
 
 def resolve_device_uuid(
@@ -164,7 +190,8 @@ def verify_runtime_uuid(actual_uuid: str | None, requested_uuid: str) -> str:
     if not actual_uuid:
         raise RuntimeError("Framework did not report an actual GPU UUID")
     lease = os.environ.get("MLIPORT_LEASED_GPU_UUID")
-    if actual_uuid != requested_uuid or (lease and actual_uuid != lease):
+    actual = uuid_body(actual_uuid)
+    if actual != uuid_body(requested_uuid) or (lease and actual != uuid_body(lease)):
         raise RuntimeError("Actual framework GPU UUID differs from request or lease")
     return actual_uuid
 
@@ -244,16 +271,40 @@ def torch_model_identity(model, requested: str) -> dict:
         ),
     }
     if actual.type == "cuda":
-        properties = torch.cuda.get_device_properties(actual.index)
-        uuid = getattr(properties, "uuid", None)
-        if uuid is not None:
-            uuid = str(uuid)
-            if not uuid.startswith("GPU-"):
-                uuid = "GPU-" + uuid
+        # Compare the tensor's GPU with the requested ordinal inside the same
+        # CUDA runtime enumeration. Mapping the ordinal through nvidia-smi
+        # instead disagrees whenever CUDA_DEVICE_ORDER is FASTEST_FIRST on a
+        # mixed-GPU node, needs nvidia-smi on PATH, and cannot see MIG.
+        requested_index = _requested_cuda_ordinal(requested)
+        expected = _torch_device_uuid(torch, requested_index)
+        if expected is None:
+            raise RuntimeError(
+                f"CUDA runtime did not report a UUID for requested {requested!r}"
+            )
         identity["actual_device_uuid"] = verify_runtime_uuid(
-            uuid, resolve_device_uuid(requested)
+            _torch_device_uuid(torch, actual.index), expected
         )
     return identity
+
+
+def _requested_cuda_ordinal(requested: str) -> int:
+    """Logical CUDA ordinal for ``cuda``/``gpu`` (0) or ``cuda:N`` (N)."""
+    value = str(requested).strip().lower()
+    if value.startswith("cuda:") and value[5:].isdigit():
+        return int(value[5:])
+    return 0
+
+
+def _torch_device_uuid(torch, index: int | None) -> str | None:
+    """``GPU-``-prefixed UUID of a CUDA device as the CUDA runtime reports it."""
+    properties = torch.cuda.get_device_properties(0 if index is None else index)
+    uuid = getattr(properties, "uuid", None)
+    if uuid is None:
+        return None
+    uuid = str(uuid)
+    if not uuid.startswith(("GPU-", "MIG-")):
+        uuid = "GPU-" + uuid
+    return uuid
 
 
 def tensorflow_output_identity(outputs, requested: str) -> dict:

@@ -29,6 +29,7 @@ from pathlib import Path
 
 from ase.io import read
 
+from mliport.backend_selection import PROCESS_ISOLATED_BACKENDS
 from mliport.config import (
     IncarConfig,
     get_default_config,
@@ -1400,6 +1401,16 @@ Examples:
         help="How many jobs may run at once (default: 1, single GPU).",
     )
     queue_start.add_argument(
+        "--max-jobs-per-gpu",
+        type=int,
+        default=1,
+        help=(
+            "How many queued jobs may share one GPU (default: 1, exclusive). "
+            "Raise it only for small systems whose models fit together in "
+            "device memory; --max-concurrent still caps the total."
+        ),
+    )
+    queue_start.add_argument(
         "--poll",
         type=float,
         default=5.0,
@@ -1759,7 +1770,7 @@ def _resolve_engine_config(
     return engine_config, resolved, settings
 
 
-_ISOLATION_BACKENDS = {"dpa", "grace"}
+_ISOLATION_BACKENDS = PROCESS_ISOLATED_BACKENDS
 
 
 def _device_visibility_value(device: str) -> str:
@@ -2643,6 +2654,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
                 scheduler = QueueScheduler(
                     max_concurrent=args.max_concurrent,
                     poll_interval=args.poll,
+                    max_jobs_per_gpu=args.max_jobs_per_gpu,
                 )
                 print(
                     "Scheduler running in foreground ",
@@ -2659,6 +2671,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
                 jobs_dir=JobManager().jobs_dir,
                 max_concurrent=args.max_concurrent,
                 poll_interval=args.poll,
+                max_jobs_per_gpu=args.max_jobs_per_gpu,
             )
         except Exception as exc:
             print(f"Error: {exc}")
@@ -2831,6 +2844,12 @@ def cmd_state(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """Main entry point: Ctrl-C anywhere resolves to exit code 130."""
+    # mliport numbers GPUs like nvidia-smi (PCI bus order). CUDA defaults to
+    # FASTEST_FIRST, which renumbers devices on mixed-GPU nodes, so --device
+    # cuda:N and numeric CUDA_VISIBLE_DEVICES entries would name a different
+    # physical GPU. Set before any framework initializes CUDA; an explicit
+    # user choice is respected.
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     try:
         return _main(argv)
     except KeyboardInterrupt:
