@@ -56,7 +56,7 @@ mliport sp structure.cif --model m.model --model-type mace --inference-mode turb
 # Error: Option 'inference_mode' is not applicable to engine 'mace' ...
 ```
 
-For exploratory work you can switch to the old warn-and-continue behaviour, but
+For exploratory work you can switch to the old warn-and-continue behavior, but
 only on purpose:
 
 ```bash
@@ -72,7 +72,7 @@ To look at your configuration, use `mliport config validate settings.ini` to
 check a file and `mliport config explain <KEY>` to see where one value came
 from. `mliport config paths` lists where `settings.ini` is searched for,
 `mliport config init` writes a starter file, `mliport config show` prints the
-resolved configuration, and `mliport config schema` lists every recognised key.
+resolved configuration, and `mliport config schema` lists every recognized key.
 
 ## settings.ini
 
@@ -136,7 +136,7 @@ mliport template sp --output INCAR.neutral   # backend-neutral, MODEL_TYPE=REQUI
 | `ACTIVATION_CHECKPOINTING` | UMA | saves GPU memory |
 | `DEFAULT_DTYPE` | MACE | model precision |
 | `GPU_MEMORY_GROWTH`, `GPU_MEMORY_LIMIT_MB` | GRACE | TensorFlow GPU memory policy |
-| `NEIGHBOR_CACHE`, `NEIGHBOR_SKIN` | GRACE | neighbour-list cache policy |
+| `NEIGHBOR_CACHE`, `NEIGHBOR_SKIN` | GRACE | neighbor-list cache policy |
 | `TORCH_NUM_THREADS` | UMA, MACE, DPA | CPU intra-op threads |
 
 Handing one of these to a different backend is an error under strict

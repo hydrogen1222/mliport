@@ -1,9 +1,7 @@
-# Relaxation / optimization (OPT)
+# Relaxation
 
-**Purpose.** Minimise forces (and optionally the cell) with an ASE optimizer
-through the selected backend.
-
-**Minimal command.**
+`mliport opt` minimizes the forces on the atoms, and optionally the stress on
+the cell, with an ASE optimizer running on whichever backend you chose.
 
 ```bash
 .venv-mace/bin/mliport opt structure.cif \
@@ -11,39 +9,43 @@ through the selected backend.
   --fmax 0.05 --max-steps 50 --output runs/opt
 ```
 
-**Important options.**
+## Options you will use
 
 | Option | Meaning |
 |---|---|
 | `--fmax` | force convergence threshold in eV/Å (default 0.05) |
 | `--max-steps` | hard step limit (default 500) |
-| `--optimizer` | `FIRE` (default), `BFGS`, `LBFGS` |
-| `--cell-opt` | also relax the cell — requires stress support from the model |
-| `--fix-symmetry` | preserve crystal symmetry during the relaxation |
-| `--model`, `--model-type`, `--task`, `--head`, `--device` | model/backend selection as in [single-point.md](single-point.md) |
+| `--optimizer` | `FIRE` (default), `BFGS` or `LBFGS` |
+| `--cell-opt` | relax the cell too; needs a model that provides stress |
+| `--fix-symmetry` | preserve the crystal symmetry during the relaxation |
+| `--model`, `--model-type`, `--task`, `--head`, `--device` | model and backend selection, as for a [single point](single-point.md) |
 
-**Inputs.** A structure, a model, and the same explicit backend selection as
-SP. `--cell-opt` requires a model whose `has_stress` is true; otherwise the
-run fails closed instead of silently doing a fixed-cell optimisation.
+`--cell-opt` is strict about what it accepts. It needs a model with stress
+support, a fully periodic structure, and a bulk task. For an isolated molecule,
+partial periodicity or a model without stress it stops with an explanation
+instead of quietly relaxing the positions only.
 
-**Outputs.** `CONTCAR` (final structure), `OUTCAR`/`OSZICAR` (energy/force
-trace), `XDATCAR` (trajectory), `resolved_config.json`, result JSON with
-`converged`, `nsteps`, final energy/forces, and a failure reason when not
-converged.
+## What you get
 
-**Failure semantics.**
+`CONTCAR` is the final structure. `OUTCAR` and `OSZICAR` hold the energy and
+force trace, and `mliport_results.json` records whether the relaxation
+converged, how many steps it took, and the final energy and forces, alongside
+`resolved_config.json` and `run.log`.
 
-- `converged: false` (step limit reached) exits with the dedicated
-  non-converged status, keeps the partial trajectory and records
-  `failure_reason`. It is **not** a successful relaxation.
-- A backend/runtime error exits non-zero; partial results are retained.
+## Converged or not
 
-**Scientific caveats.** Relaxation is only meaningful within one model
-identity and one reference. A relaxed structure is a minimum of *that*
-potential energy surface, not a DFT minimum. Cell optimisation changes the
-reference volume; compare energies only after checking the final cell.
+If the step limit is reached before `--fmax`, the run exits with status `2`,
+keeps the partial trajectory and records the reason. That is a relaxation that
+did not converge, not a successful one, and the structure it leaves should be
+inspected before you use it. A backend or runtime error exits with `1`, and
+partial results are kept.
 
-**Example.**
+## What a relaxed structure means
+
+The result is a minimum of *this model's* potential energy surface, not a DFT
+minimum, and it is only meaningful within one model identity and one reference.
+Cell optimization changes the reference volume, so look at the final cell before
+comparing energies.
 
 ```bash
 .venv-grace/bin/mliport opt structure.cif --model saved_model \

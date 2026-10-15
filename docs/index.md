@@ -3,7 +3,7 @@
 mliport runs machine-learned interatomic potentials — MACE, DPA, GRACE and
 UMA — from one command line, one terminal UI and one Python API. You hand it a
 structure and a checkpoint; it relaxes the structure, runs molecular dynamics,
-finds a reaction barrier with NEB, or analyses a trajectory. Results come back
+finds a reaction barrier with NEB, or analyzes a trajectory. Results come back
 in files anyone who has used VASP can open: `OUTCAR`, `OSZICAR`, `CONTCAR` and
 `XDATCAR`, next to JSON records of exactly what was run.
 
@@ -51,7 +51,7 @@ where to get the checkpoint.
 | pick a model, or see which ones were validated | [Models](models.md), [Backends](backends/index.md) |
 | set options through the CLI, an INCAR file or `settings.ini` | [Configuration](configuration.md) |
 | run a relaxation, MD, NEB or a batch | [Workflows](workflows/index.md) |
-| analyse a trajectory | [Analysis](analysis/index.md) |
+| analyze a trajectory | [Analysis](analysis/index.md) |
 | know what each output file contains | [Output files](outputs.md) |
 | see what has actually been tested | [Validation](validation.md) |
 | fix an error | [Troubleshooting](troubleshooting.md) |

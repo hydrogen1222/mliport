@@ -11,7 +11,7 @@ That division of labour is worth keeping in mind when you read a result.
 | refusing options the backend cannot express | how accurate the potential is |
 | checking that the backend runtime can really run | the absolute energy scale and conventions |
 
-## Four backends, no favourite
+## Four backends, no favorite
 
 `mace`, `dpa`, `grace` and `uma` are four runtime adapters of equal standing;
 `fairchem` is accepted as another name for `uma`. There is no implicit
@@ -111,8 +111,8 @@ The full hashes are in
     configuration, so the acceptance used hash-verified local copies of all four
     artifacts. If your network needs a proxy, see the recipe below.
 
-Checkpoint licences belong to the upstream projects. In particular, UMA's is a
-non-commercial research licence.
+Checkpoint licenses belong to the upstream projects. In particular, UMA's is a
+non-commercial research license.
 
 ## Proxies and offline use
 

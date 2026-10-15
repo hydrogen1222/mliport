@@ -68,6 +68,19 @@ UNTRANSLATED = frozenset(PAGES) - {
     "installation",
     "models",
     "configuration",
+    "backends/index",
+    "backends/mace",
+    "backends/dpa",
+    "backends/grace",
+    "backends/uma",
+    "workflows/index",
+    "workflows/single-point",
+    "workflows/optimization",
+    "workflows/md",
+    "workflows/neb",
+    "workflows/batch",
+    "workflows/queue",
+    "outputs",
 }
 
 REQUIRED_TREE = tuple(f"docs/{page}.md" for page in PAGES)

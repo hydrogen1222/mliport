@@ -35,7 +35,7 @@ therefore remain auditable; new records use the `mliport.*` schemas.
    Omitting it is a fatal configuration error.
 2. **Strict configuration by default.** Misspelled keys and
    cross-backend options now fail instead of warning. If you truly need the
-   legacy behaviour, opt in explicitly with `--lenient-config` or
+   legacy behavior, opt in explicitly with `--lenient-config` or
    `[general] strict_config = false` in `settings.ini`.
 3. **Model aliases must declare `engine`.** The old implicit-UMA alias no
    longer exists.

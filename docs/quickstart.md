@@ -128,5 +128,5 @@ provenance and hashes.
 - Choose a model with care: [Models](models.md).
 - Control runs and strictness: [Configuration](configuration.md).
 - MD, NEB and batch runs: [Workflows](workflows/index.md).
-- Analyse a trajectory: [Analysis](analysis/index.md).
+- Analyze a trajectory: [Analysis](analysis/index.md).
 - See how far the claims are backed by tests: [Validation](validation.md).

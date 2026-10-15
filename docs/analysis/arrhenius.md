@@ -21,7 +21,7 @@ mliport analyze runs/md-800K arrhenius \
 | `--diffusivity D [D ...]` | diffusivities in m²/s (required; same length as temperatures) |
 | `--diffusivity-std S [S ...]` | optional uncertainties for weighting |
 | `--extrapolate-temperature T [T ...]` | temperatures to extrapolate to (recorded separately) |
-| `--source-run-id ID [ID ...]` | provenance links back to the analysed runs |
+| `--source-run-id ID [ID ...]` | provenance links back to the analyzed runs |
 
 **Inputs.** Diffusivities measured elsewhere with their uncertainties. The
 positional run/trajectory argument is used for provenance and output
@@ -42,7 +42,7 @@ as a negative activation energy.
   different physics.
 - Extrapolation outside the measured range is a prediction, not a
   measurement; it is recorded as extrapolated.
-- Arrhenius behaviour is an assumption: check linearity and the fit quality.
+- Arrhenius behavior is an assumption: check linearity and the fit quality.
 
 **Example.**
 

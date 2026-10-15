@@ -139,7 +139,7 @@ check.
 
 These failures were observed on a clean V100 installation and fixed before
 the 2.0.0b3 release. They are listed with the exact remedy so the message can
-be recognised in the field.
+be recognized in the field.
 
 **The installer stops with "no local Python 3.10-3.13 runtime with
 packaging".** The bootstrap needs a 3.10-3.13 interpreter to plan the
@@ -196,7 +196,7 @@ requires either `--sites` or `--discover-sites-from-density`. `rdf` requires
 `--center` and `--neighbor`; `density` and `msd` require `--mobile`.
 
 **GEMDAT on a long, large trajectory takes very long.** Site discovery on a
-1 ns, 400-atom LGPS run exceeds a short acceptance budget. Analyse a segment
+1 ns, 400-atom LGPS run exceeds a short acceptance budget. Analyze a segment
 with an explicit `--frame-interval-fs`, or give it a longer window.
 
 **`mliport tui` waits when started from a script.** The TUI requires an

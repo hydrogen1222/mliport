@@ -23,7 +23,7 @@ mliport analyze <RUN_DIR|trajectory> <task> [task options]
 - for external trajectories: `--positions-convention` (wrapped/unwrapped) and
   `--frame-interval-fs` — mliport refuses to guess when trusted metadata
   conflicts with a stated convention;
-- the mobile species / centre / neighbour selections required by each task.
+- the mobile species / center / neighbor selections required by each task.
 
 ## Outputs
 

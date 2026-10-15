@@ -1,7 +1,7 @@
 # RDF
 
-**Purpose.** Compute the radial distribution function between a centre and a
-neighbour species, with a coordination-number estimate.
+**Purpose.** Compute the radial distribution function between a center and a
+neighbor species, with a coordination-number estimate.
 
 **Minimal command.**
 
@@ -13,8 +13,8 @@ mliport analyze runs/md rdf --center Li --neighbor O --rmax 6.0 --bins 200
 
 | Option | Meaning |
 |---|---|
-| `--center SPECIES` | centre species (required) |
-| `--neighbor SPECIES` | neighbour species (required) |
+| `--center SPECIES` | center species (required) |
+| `--neighbor SPECIES` | neighbor species (required) |
 | `--rmax Å` | maximum radius |
 | `--bins` | histogram bins |
 | `--cn-cutoff Å` | coordination-number cutoff radius |
@@ -29,7 +29,7 @@ plus RDF/coordination tables and plots under `<run>/analysis/<id>/`.
 Wrapped/unwrapped conventions must be stated for external trajectories.
 
 **Scientific caveats.** The RDF is a structural average, not a bond
-definition: report the cutoff used for coordination and the analysed window.
+definition: report the cutoff used for coordination and the analyzed window.
 A single-snapshot RDF is a diagnostic; a converged RDF needs sufficient
 frames and a homogeneous cell.
 
