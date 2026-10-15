@@ -52,7 +52,8 @@ def test_runtime_table_rows_are_backed_by_records() -> None:
         label = row[0]
         statuses = row[1:6]
         record_links = re.findall(
-            r"\]\((?:\.\./)?(validation/runtime/v100/[^)]+)\)",
+            r"\]\((?:\.\./|https://github\.com/hydrogen1222/mliport/blob/main/)?"
+            r"(validation/runtime/v100/[^)]+)\)",
             " | ".join(row),
         )
         has_passed = "passed" in statuses

@@ -89,3 +89,6 @@ config.yml
 /packages/
 /mliport/uv.lock
 /uv.lock
+
+# mkdocs build output
+/site/

@@ -4,6 +4,7 @@ GRACE models are exported SavedModels loaded through `tensorpotential`. `MODEL_P
 
 ## Install environment
 
+<!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
 |---|---|---|
 | `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
@@ -11,13 +12,16 @@ GRACE models are exported SavedModels loaded through `tensorpotential`. `MODEL_P
 ```bash
 ./scripts/install_mliport.sh --engines grace --device auto
 ```
+<!-- END GENERATED -->
 
 ## Supported profiles
 
+<!-- BEGIN GENERATED: profiles -->
 | Profile | Identity | dtype | task | head | model SHA-256 |
 |---|---|---|---|---|---|
 | `grace_omat` | GRACE-2L-OMAT-medium-base (upstream default precision build) | upstream/model-defined | bulk | None | `d497af4c7d9a...` |
 | `grace_omat_fp64` | GRACE-2L-OMAT-medium-base fp64 build | float64 | bulk | None | `53b945efce37...` |
+<!-- END GENERATED -->
 
 ## Minimal command
 

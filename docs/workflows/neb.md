@@ -75,6 +75,7 @@ with different settings.
 
 ## Interface capability matrix
 
+<!-- BEGIN GENERATED: neb-capability -->
 | Feature | API | direct CLI | INCAR | TUI |
 |---|---|---|---|---|
 | endpoints | yes | yes | yes | yes |
@@ -86,6 +87,7 @@ with different settings.
 | method climb | yes | yes | yes | yes |
 | pre relaxation | yes | yes | yes | yes |
 | min distance guard | yes | yes | yes | yes |
+<!-- END GENERATED -->
 
 This matrix is generated from `validation/science/capability_matrix.json`. A `yes` means the entry point can express the feature; it is not an equivalence or validation claim. A `no`/`partial` entry carries a note in that file.
 

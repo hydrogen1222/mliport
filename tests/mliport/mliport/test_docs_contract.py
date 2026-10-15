@@ -4,6 +4,11 @@ Facts that must not be hand-copied are byte-compared against the generators;
 internal links and anchors are checked; documented CLI commands are smoke
 tested; Python snippets are compiled; the DOC-04 DPA-head fix and the
 "VASP-shaped, not DFT" boundary are asserted.
+
+The site is bilingual: ``page.md`` is the English default and ``page.zh.md``
+its Chinese twin (mkdocs-static-i18n suffix layout). Both languages are held to
+the same structure, so a translation cannot silently drop a command, a link or
+a section.
 """
 
 from __future__ import annotations
@@ -20,36 +25,50 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 DOCS = REPO / "docs"
 
-REQUIRED_TREE = (
-    "docs/index.md",
-    "docs/quickstart.md",
-    "docs/installation.md",
-    "docs/configuration.md",
-    "docs/models.md",
-    "docs/backends/mace.md",
-    "docs/backends/dpa.md",
-    "docs/backends/grace.md",
-    "docs/backends/uma.md",
-    "docs/workflows/single-point.md",
-    "docs/workflows/optimization.md",
-    "docs/workflows/md.md",
-    "docs/workflows/neb.md",
-    "docs/workflows/batch.md",
-    "docs/workflows/queue.md",
-    "docs/analysis/overview.md",
-    "docs/analysis/msd.md",
-    "docs/analysis/transport.md",
-    "docs/analysis/electrolyte-gemdat.md",
-    "docs/analysis/rdf.md",
-    "docs/analysis/vacf-spectrum.md",
-    "docs/analysis/arrhenius.md",
-    "docs/outputs.md",
-    "docs/validation.md",
-    "docs/troubleshooting.md",
-    "docs/migration-from-mlipx.md",
-    "docs/citations.md",
-    "docs/development.md",
+PAGES = (
+    "index",
+    "quickstart",
+    "installation",
+    "configuration",
+    "models",
+    "backends/index",
+    "backends/mace",
+    "backends/dpa",
+    "backends/grace",
+    "backends/uma",
+    "workflows/index",
+    "workflows/single-point",
+    "workflows/optimization",
+    "workflows/md",
+    "workflows/neb",
+    "workflows/batch",
+    "workflows/queue",
+    "analysis/index",
+    "analysis/overview",
+    "analysis/msd",
+    "analysis/transport",
+    "analysis/electrolyte-gemdat",
+    "analysis/rdf",
+    "analysis/vacf-spectrum",
+    "analysis/arrhenius",
+    "outputs",
+    "validation",
+    "troubleshooting",
+    "migration-from-mlipx",
+    "citations",
+    "development",
 )
+
+#: Pages whose Chinese version has not been written yet. The site shows the
+#: English text for them (mkdocs-static-i18n fallback). Translating a page
+#: means deleting it from this set; the set must end up empty.
+UNTRANSLATED = frozenset(PAGES)
+
+REQUIRED_TREE = tuple(f"docs/{page}.md" for page in PAGES)
+
+
+def _zh(page: str) -> Path:
+    return DOCS / f"{page}.zh.md"
 
 
 def _safe_parse(block: str) -> str | None:
@@ -80,6 +99,62 @@ def test_required_docs_tree_exists():
     assert not missing, f"missing docs: {missing}"
 
 
+def test_every_page_is_translated_or_listed_as_untranslated():
+    translated = {page for page in PAGES if _zh(page).is_file()}
+    assert not (translated & UNTRANSLATED), (
+        "already translated, remove from UNTRANSLATED: "
+        f"{sorted(translated & UNTRANSLATED)}"
+    )
+    missing = [page for page in PAGES if page not in translated | UNTRANSLATED]
+    assert not missing, f"no Chinese page: {missing}"
+    strays = sorted(
+        str(path.relative_to(REPO))
+        for path in DOCS.rglob("*.zh.md")
+        if str(path.relative_to(DOCS))[: -len(".zh.md")] not in PAGES
+    )
+    assert not strays, f"Chinese page without an English page: {strays}"
+
+
+def _structure(path: Path) -> dict[str, object]:
+    text = path.read_text(encoding="utf-8")
+    fences = re.findall(r"^```(\w*)", text, flags=re.MULTILINE)
+    return {
+        "h2": len(re.findall(r"^## ", text, flags=re.MULTILINE)),
+        "code_blocks": len(fences) // 2,
+        "link_files": sorted(
+            {
+                target.partition("#")[0]
+                for target in _LINK_RE.findall(text)
+                if not target.startswith(("http://", "https://", "mailto:", "#"))
+            }
+        ),
+        "generated_blocks": re.findall(r"<!-- BEGIN GENERATED: ([a-z0-9-]+) -->", text),
+    }
+
+
+@pytest.mark.parametrize("page", [p for p in PAGES if p not in UNTRANSLATED])
+def test_translation_has_the_same_structure_as_the_english_page(page):
+    english, chinese = _structure(DOCS / f"{page}.md"), _structure(_zh(page))
+    assert chinese == english, f"{page}: zh and en structure differ"
+
+
+def test_links_name_the_english_file_and_stay_inside_the_docs_tree():
+    """mkdocs resolves ``page.md`` to the right language itself; a link that
+    leaves ``docs/`` cannot be built by mkdocs, so it must be a GitHub URL."""
+    problems: list[str] = []
+    for path in DOCS.rglob("*.md"):
+        for target in _LINK_RE.findall(path.read_text(encoding="utf-8")):
+            if target.startswith(("http://", "https://", "mailto:", "#")):
+                continue
+            file_part = target.partition("#")[0]
+            if file_part.endswith(".zh.md"):
+                problems.append(f"{path.relative_to(REPO)} -> {target} (use .md)")
+            resolved = (path.parent / file_part).resolve()
+            if file_part and DOCS.resolve() not in (resolved, *resolved.parents):
+                problems.append(f"{path.relative_to(REPO)} -> {target} leaves docs/")
+    assert not problems, "\n".join(problems)
+
+
 # ------------------------------------------------------------- links
 _LINK_RE = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 
@@ -89,7 +164,7 @@ def _slug(text: str) -> str:
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = text.strip().lower()
     text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
-    return re.sub(r"\s+", "-", text)
+    return re.sub(r"\s", "-", text)
 
 
 def _anchors(path: Path) -> set[str]:
@@ -236,16 +311,24 @@ def test_backend_pages_match_the_registry():
     )
 
     for engine, backend in BACKENDS.items():
-        text = (DOCS / "backends" / f"{engine}.md").read_text(encoding="utf-8")
-        assert backend.venv_name in text
-        assert backend.requirement in text
-        assert ", ".join(python_versions_for(engine)) in text
+        for path in (
+            DOCS / "backends" / f"{engine}.md",
+            DOCS / "backends" / f"{engine}.zh.md",
+        ):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            assert backend.venv_name in text, path
+            assert backend.requirement in text, path
+            assert ", ".join(python_versions_for(engine)) in text, path
 
 
 # ------------------------------------------------------------- language
 def test_docs_keep_the_vasp_shaped_not_dft_boundary():
     index = (DOCS / "index.md").read_text(encoding="utf-8")
     assert "not" in index and "DFT" in index
+    if _zh("index").is_file():
+        assert "DFT" in _zh("index").read_text(encoding="utf-8")
     for path in _markdown_files():
         text = path.read_text(encoding="utf-8").lower()
         assert "vasp-compatible" not in text, path

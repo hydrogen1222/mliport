@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+Documentation site:
+
+- **Docs site.** The documentation is now a MkDocs Material site published to
+  GitHub Pages (`mkdocs.yml`, `.github/workflows/docs.yml`, toolchain in
+  `requirements-docs.txt`). English is the default; a language switch in the
+  header selects 中文 (`page.md` / `page.zh.md`, mkdocs-static-i18n).
+- **Generated facts, hand-written prose.** `scripts/generate_docs.py` no longer
+  writes whole pages. It refreshes marker-delimited blocks (backend/Python
+  matrix, GPU install routes, per-backend environment and model profiles, NEB
+  capability matrix) inside pages written by hand, in both languages.
+
 Review fixes (scientific correctness, data safety, robustness):
 
 - **MD / NHC drift.** NHC no longer keeps the random Maxwell-Boltzmann

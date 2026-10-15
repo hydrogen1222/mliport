@@ -13,7 +13,7 @@ mliport has **no DOI of its own yet**. Until one is registered:
 
 - cite the repository `https://github.com/hydrogen1222/mliport` and the
   version you used (`2.0.0b1` at the time of writing), for example with the
-  metadata in [`CITATION.cff`](../CITATION.cff);
+  metadata in [`CITATION.cff`](https://github.com/hydrogen1222/mliport/blob/main/CITATION.cff);
 - do **not** present an upstream DOI (for example the FAIRChem Zenodo DOI or
   a model paper DOI) as mliport's DOI;
 - if a workflow publishes a DOI for mliport later, this file and
