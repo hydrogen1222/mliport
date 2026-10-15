@@ -1,66 +1,83 @@
-# Analysis overview
+# Overview
 
-mliport analyses are explicit, provenance-recording subcommands:
+Every analysis is an explicit command that records where its numbers came from:
 
 ```bash
 mliport analyze <RUN_DIR|trajectory> <task> [task options]
 ```
 
-| Task | Question it answers | Page |
-|---|---|---|
-| `msd` | how far do the mobile species move, and in which regime? | [msd.md](msd.md) |
-| `transport` | diffusivity / ionic conductivity with uncertainty | [transport.md](transport.md) |
-| `electrolyte` | site-to-site jumps and mechanisms (GEMDAT) | [electrolyte-gemdat.md](electrolyte-gemdat.md) |
-| `rdf` | local structure around a species | [rdf.md](rdf.md) |
-| `vacf` / `spectrum` | velocity correlations and vibrational spectrum | [vacf-spectrum.md](vacf-spectrum.md) |
-| `arrhenius` | temperature trend of diffusivity | [arrhenius.md](arrhenius.md) |
-| `thermo`, `density`, `rmsd` | energy/temperature/density and structural drift diagnostics | this page |
+Analyses are diagnostics, not verdicts. An MSD exponent, a diffusivity or a jump
+count has to be read together with the sampling and model caveats on its own page.
 
-## Inputs
+## What goes in
 
-- an mliport run directory (preferred: its own metadata is trusted), an ASE
-  trajectory (`.traj`) or an XDATCAR;
-- for external trajectories: `--positions-convention` (wrapped/unwrapped) and
-  `--frame-interval-fs` — mliport refuses to guess when trusted metadata
-  conflicts with a stated convention;
-- the mobile species / centre / neighbour selections required by each task.
+Prefer an mliport run directory: its metadata (frame spacing, coordinate
+convention, whether frames belong to equilibration) is trusted. An ASE trajectory
+(`.traj`) or an XDATCAR also works. For those external files you tell mliport what
+it cannot know:
 
-## Outputs
+- `--positions-convention` — `wrapped`, `unwrapped` or `unknown`. If you state a
+  convention that contradicts trusted metadata, mliport refuses rather than guess.
+- `--frame-interval-fs` — the time between **saved** frames, which is not the MD
+  integration step.
 
-Each analysis writes to `<run>/analysis/<analysis_id>/` with:
+Each task also needs its own selections, such as the mobile species, a center and
+neighbor pair, or a temperature.
 
-- `analysis.json` (requested parameters, resolved provenance, results),
-- plots/tables where applicable,
-- the software commit, model identity and input artifact hashes used.
+## What comes out
 
-Analyses are **diagnostics**, not automatic scientific verdicts. An MSD
-exponent, a diffusivity or a jump count must be interpreted with the sampling
-and model caveats on the relevant page.
+Each analysis gets its own directory, `<run>/analysis/<task>/<analysis-id>/`. The
+id is derived from the request, so asking the same question of the same
+trajectory again reuses the stored result; add `--force` to recompute.
 
-## Sampling sanity checks
+- `results.json` — the requested parameters and the results,
+- `request.json` and `provenance.json` — the exact request and where everything
+  came from (software commit, model identity, hashes of the input artifacts),
+- CSV tables and PNG/SVG figures where they make sense,
+- `attempts/` — an immutable record of each attempt, with `latest.json` pointing
+  at the newest.
 
-- Use the production part of the trajectory (`--start-frame`,
-  `--include-equilibration` only when you mean it).
-- Know the **saved** frame spacing (`--frame-interval-fs` for external
-  trajectories); it is not the integration timestep.
-- Longer, well-equilibrated trajectories are required for transport
-  coefficients than for RDF/thermo diagnostics.
-- Re-running with different windows is expected and recorded via `--force`
-  and analysis IDs.
+## Sampling sense
 
-## Acceptance-verified invocations
+- Analyze the production part of the trajectory. Equilibration frames are left
+  out unless you pass `--include-equilibration` on purpose, and
+  `--start-frame` / `--stop-frame` narrow the window where a task accepts them.
+- Know the saved frame spacing. For external trajectories that is
+  `--frame-interval-fs`.
+- Transport coefficients need longer, better equilibrated trajectories than RDF or
+  thermodynamic diagnostics do.
+- Running again with different windows is normal; each distinct request gets its
+  own analysis id.
 
-The LGPS acceptance suite exercises these commands on real trajectories:
+## The tasks without their own page
+
+**`validate`** checks the trajectory's semantics: coordinate convention, frame
+interval, which frames are production, and which later tasks it is eligible for.
+It reports metadata problems rather than letting a later task produce a number
+from a trajectory it should not trust.
+
+**`thermo`** reports temperature, energy drift and pressure. `--block-size-frames`
+sets the block size for the block statistics, and for an NVE run the energy drift
+is the thing to look at first.
+
+**`rmsd`** computes RMSD and RMSF from periodic displacements, a quick check
+that a crystal stays a crystal. `--species` restricts it to one species and
+`--drift-reference none|nonmobile|indices` chooses how drift is removed.
+
+**`density`** builds a periodic 3-D density map of a mobile species and needs
+`--mobile`. `--spacing` sets the voxel size (default 0.25 Å),
+`--smoothing-sigma-A` adds smoothing, and `--stride` thins the frames.
+
+## Commands the acceptance suite runs
+
+The LGPS acceptance suite exercises these on real trajectories:
 
 ```bash
-# tested example
 .venv-mace/bin/mliport analyze runs/lgps-md validate
 .venv-mace/bin/mliport analyze runs/lgps-md thermo
 .venv-mace/bin/mliport analyze runs/lgps-md rmsd
 .venv-mace/bin/mliport analyze runs/lgps-md density --mobile Li
 ```
 
-`density` needs `--mobile`. `validate` and `thermo` run on short trajectories
-as well as long ones; they report metadata problems instead of producing a
-number when the trajectory is not suitable for a later task. Every task
-writes JSON plus CSV and, where useful, PNG/SVG figures, all headless.
+`validate` and `thermo` work on short trajectories as well as long ones. Every task
+writes JSON plus CSV and, where useful, PNG and SVG figures, headlessly.

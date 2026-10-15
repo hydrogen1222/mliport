@@ -1,8 +1,11 @@
 # MACE
 
-MACE checkpoints are loaded through `mace-torch`. MACE profiles are selected by checkpoint plus dtype (`float64` is the primary accuracy-first profile; `float32` is a separate identity and is never mixed with float64 results).
+MACE checkpoints are loaded through `mace-torch`. A MACE profile is a
+checkpoint plus a precision, and mliport treats the two precisions as different
+models: `float64` is the primary, accuracy-first profile, while `float32` is a
+separate identity and its results are never mixed with float64 ones.
 
-## Install environment
+## Install
 
 <!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
@@ -14,7 +17,7 @@ MACE checkpoints are loaded through `mace-torch`. MACE profiles are selected by 
 ```
 <!-- END GENERATED -->
 
-## Supported profiles
+## Pinned profiles
 
 <!-- BEGIN GENERATED: profiles -->
 | Profile | Identity | dtype | task | head | model SHA-256 |
@@ -23,35 +26,35 @@ MACE checkpoints are loaded through `mace-torch`. MACE profiles are selected by 
 | `mace_omat_float32` | MACE-OMAT-0 medium, float32 inference | float32 | bulk | None | `d4b14be9afa2...` |
 <!-- END GENERATED -->
 
-## Minimal command
+The `mace_omat` profiles use `mace-omat-0-medium.model` from the upstream
+MACE releases, referenced by SHA-256 in
+`validation/science/model_manifest.json`. See [Models](../models.md) for the
+download link.
+
+## Run it
 
 ```bash
-.venv-mace/bin/mliport sp structure.cif --model /path/to/mace-omat-0-medium.model --model-type mace
+.venv-mace/bin/mliport sp structure.cif \
+  --model /path/to/mace-omat-0-medium.model --model-type mace
 ```
 
-## Precision
+`--task` is the explicit periodic-boundary semantic (`bulk` or `molecule`).
+`--dtype float32` is faster and less precise; use it deliberately and say so
+when you compare numbers.
 
-The dtype is part of the profile identity. MACE profiles declare `float64` (primary) and `float32` (separate identity) explicitly.
+## Things to know
 
-## Stress
+- **Heads.** If a checkpoint offers several heads you must name one with
+  `--head`; mliport will not pick for you. Single-head checkpoints need nothing.
+- **Precision is part of the identity.** The recorded dtype always comes from
+  the backend, never from an assumption. Don't compare `float32` energies with
+  `float64` ones without saying so.
+- **Stress** is reported only if the loaded checkpoint provides it
+  (`implemented_properties`), and that differs between checkpoints, so check the
+  `stress_supported` field of the validation record or run `mliport doctor`
+  rather than assuming.
+- **NEB** works with MACE because its forces are derived from the energy; the
+  run-time consistency check is described in [NEB](../workflows/neb.md).
 
-mliport reports stress only if the loaded checkpoint exposes it (`implemented_properties`). Never assume stress support from the engine name: the T1 evidence records `stress_supported` per profile, and `mliport doctor` reports what the current model provides.
-
-## Head / task semantics
-
-`HEAD` selects a head when the checkpoint provides several; single-head checkpoints do not need it. `TASK` is the explicit PBC semantic (`bulk`/`molecule`).
-
-## Model acquisition
-
-Download MACE checkpoints from the upstream MACE releases. The pinned `mace_omat` profiles use `mace-omat-0-medium.model` and are referenced by SHA-256 in `validation/science/model_manifest.json`.
-
-
-## License and citation
-
-mliport is MIT-licensed; the upstream model/software must be cited separately. See [citations](../citations.md) for the authoritative upstream references.
-
-## Known limitations
-
-- The float32 profile is a separate identity; never compare its energies with float64 results without saying so.
-- Multi-head checkpoints require an explicit `HEAD`; mliport refuses to guess.
-- MACE stress support depends on the checkpoint; check the T1 `stress_supported` record.
+mliport is MIT-licensed. The upstream software and model must be cited
+separately; see [Citations](../citations.md).

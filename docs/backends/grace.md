@@ -1,8 +1,10 @@
 # GRACE
 
-GRACE models are exported SavedModels loaded through `tensorpotential`. `MODEL_PATH` points at the SavedModel directory, not a single file.
+GRACE models are exported TensorFlow SavedModels, loaded through
+`tensorpotential`. The model path is the SavedModel **directory**, not a single
+file.
 
-## Install environment
+## Install
 
 <!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
@@ -14,7 +16,7 @@ GRACE models are exported SavedModels loaded through `tensorpotential`. `MODEL_P
 ```
 <!-- END GENERATED -->
 
-## Supported profiles
+## Pinned profiles
 
 <!-- BEGIN GENERATED: profiles -->
 | Profile | Identity | dtype | task | head | model SHA-256 |
@@ -23,35 +25,31 @@ GRACE models are exported SavedModels loaded through `tensorpotential`. `MODEL_P
 | `grace_omat_fp64` | GRACE-2L-OMAT-medium-base fp64 build | float64 | bulk | None | `53b945efce37...` |
 <!-- END GENERATED -->
 
-## Minimal command
+## Run it
 
 ```bash
-.venv-grace/bin/mliport sp structure.cif --model /path/to/saved_model --model-type grace
+.venv-grace/bin/mliport sp structure.cif \
+  --model /path/to/saved_model --model-type grace
 ```
 
-## Precision
+Official exported SavedModels come from the upstream AMS-ICAMS-RUB release
+channels; point `--model` (`MODEL_PATH`) at the directory you unpack.
 
-The dtype is part of the profile identity. This backend's precision is model-defined; mliport records the effective dtype from the backend, never a value it assumes.
+## Things to know
 
-## Stress
+- **No heads.** GRACE models do not expose an mliport-level head; `--task` is the
+  explicit periodic-boundary semantic (`bulk` or `molecule`).
+- **GPU isolation.** TensorFlow's GPU visibility has to be fixed per process. The
+  CLI restarts a command with `CUDA_VISIBLE_DEVICES` when it is unset; the Python
+  API and the queue worker need the same isolation.
+- **GPU memory and neighbor lists** are tunable. TensorFlow normally reserves
+  nearly all visible memory, so memory growth is on by default
+  (`--gpu-memory-growth`, `--gpu-memory-limit-mb`). A Verlet-style neighbor
+  cache (`--neighbor-cache`, `--neighbor-skin`, default skin 1.5 Å) is on by
+  default and rebuilds the table when an atom moves more than half the skin.
+- **Precision** follows the model: the pinned profiles include the upstream
+  default build and an fp64 build, as listed above.
+- **Stress** depends on the checkpoint.
 
-mliport reports stress only if the loaded checkpoint exposes it (`implemented_properties`). Never assume stress support from the engine name: the T1 evidence records `stress_supported` per profile, and `mliport doctor` reports what the current model provides.
-
-## Head / task semantics
-
-GRACE models do not expose mliport-level heads; `TASK` is the explicit PBC semantic (`bulk`/`molecule`).
-
-## Model acquisition
-
-Download official GRACE exported SavedModels from the upstream AMS-ICAMS-RUB release channels; the model path is the SavedModel directory.
-
-
-## License and citation
-
-mliport is MIT-licensed; the upstream model/software must be cited separately. See [citations](../citations.md) for the authoritative upstream references.
-
-## Known limitations
-
-- `MODEL_PATH` must be the SavedModel directory.
-- TensorFlow GPU visibility must be isolated per process. The CLI restarts a command with `CUDA_VISIBLE_DEVICES` when it is unset; the Python API and the queue worker need the same isolation.
-- Stress support depends on the checkpoint.
+mliport is MIT-licensed. The upstream software and model must be cited
+separately; see [Citations](../citations.md).

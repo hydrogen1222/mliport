@@ -1,110 +1,86 @@
 # mliport
 
-mliport 用同一套命令行流程运行 MACE、DPA (DeepMD-kit)、GRACE
-(tensorpotential) 与 UMA (FAIRChem) 机器学习势。它读取 ASE 能读的结构,
-接受 INCAR 风格的选项,并写出 VASP 风格的 `OUTCAR`、`OSZICAR`、`CONTCAR`
-与 `XDATCAR`,方便已经习惯 POSCAR/OUTCAR 的用户。
+用同一套命令行、同一个终端界面和同一个 Python API 来运行机器学习势：MACE、DPA、GRACE 和 UMA。你给它
+一个结构和一个检查点，它就能做弛豫、跑分子动力学、找 NEB 势垒或分析轨迹，并写出 VASP 用户熟悉的文
+件：`OUTCAR`、`OSZICAR`、`CONTCAR`、`XDATCAR`。
 
-每次计算都会记录模型文件及其 SHA-256(可得时)、请求的设备与后端实际使用的
-设备、解析后的配置和 mliport 版本。配置错误默认直接失败:拼错的键、或者把
-别的 backend 的选项写进当前 backend,都不会被静默忽略。同一次计算可以从
-CLI、INCAR 风格文件、TUI、后台队列或 Python API 启动。
+**文档：<https://hydrogen1222.github.io/mliport/>**（默认英文，用顶栏的语言切换按钮可切到中文）。同样
+的页面也在 [`docs/`](docs/) 里。
 
-工作流:单点、固定/可变晶胞弛豫、分子动力学(NVE,以及 Langevin、Bussi、
-Nose-Hoover chain 三种 NVT 恒温器)、NEB/CI-NEB、批量扫描。分析:轨迹校验、
-热力学量、RDF、RMSD/RMSF、MSD、VACF、速度谱、可动离子密度、kinisi 输运、
-GEMDAT 电解质分析和 Arrhenius 拟合。
+mliport 是工作流层，不是模型，也不是 DFT 程序。文件是 VASP 风格的，但没有 SCF，也没有 POTCAR；一个势
+对你的化学体系对不对，取决于你选的检查点。
+
+它能给你：
+
+- **四个后端，同一套工作流。** 单点、固定与可变晶胞弛豫、NVE/NVT 分子动力学（Langevin、Bussi、
+  Nosé–Hoover 链）、NEB 与 CI-NEB、批量扫描和作业队列；入口可以是 CLI、INCAR 风格文件、TUI 或
+  Python。
+- **不会悄悄猜测。** 没有默认后端；拼错的选项，或者属于另一个后端的选项，都会让运行停下。配置错误
+  默认直接失败。
+- **一份可追溯的记录。** 每次运行都记录模型文件及其 SHA-256、请求的与实际的设备、解析后的配置和
+  mliport 版本。
+- **数据太短时会明说的分析。** 轨迹校验、热力学量、RDF、RMSD/RMSF、MSD、VACF、振动谱、可移动离子
+  密度、kinisi 输运、GEMDAT 电解质分析和 Arrhenius 拟合。
 
 ## 安装
 
-支持 Linux 与 WSL2。安装脚本需要 `git` 和
-[uv](https://docs.astral.sh/uv/);它会为每个 backend 创建一个 Python 环境,
-并在 `bin/` 下生成 launcher。
+支持 Linux 与 WSL2。需要 `git` 和 [uv](https://docs.astral.sh/uv/)；安装脚本会为每个后端建一个 Python
+环境，并在 `bin/` 下为每个后端生成启动器。
 
 ```bash
-# 1. 如果还没有 uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. 获取仓库
+curl -LsSf https://astral.sh/uv/install.sh | sh     # 还没有 uv 的话
 git clone https://github.com/hydrogen1222/mliport
 cd mliport
-```
 
-NVIDIA GPU(需要可用的 CUDA 驱动;本路径已在 V100-SXM2-16GB、驱动
-580.173.02 上验证):
-
-```bash
+# NVIDIA GPU（需要可用的 CUDA 驱动）
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device auto
-```
 
-仅 CPU:
-
-```bash
+# 或者只用 CPU
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
-安装脚本按 `mliport/install/compatibility.py` 固定各 backend 的上游版本,
-一并安装 analysis、transport 与 electrolyte 功能,并对每个 backend 运行
-`mliport doctor`。四 backend 安装默认使用 Python 3.12。各 backend 的最低
-Python 版本是 MACE/GRACE `>=3.9`、DPA `>=3.10`、UMA `>=3.11`;包本身支持
-Python 3.10-3.13。如果用 `--python` 覆盖解释器,所有被请求的 backend 都
-必须支持该版本。
+安装脚本会固定上游后端的版本、安装分析所需的额外依赖，并对每个引擎运行 `mliport doctor`。四个引擎一
+起装时默认用 Python 3.12；包本身支持 Python 3.10-3.13，如果你传了 `--python`，所请求的每个后端都必须
+接受它（UMA 需要 3.11 或更高）。这套安装在驱动为 580.173.02 的 V100 上验证过；更老和更新的 GPU 家族走
+别的 wheel 路线，列在 [docs/installation.md](docs/installation.md) 里，那里还有 CPU、离线、代理的配置
+和卸载方法。
 
-四 backend 安装完成后的环境布局:
-
-| Backend | 环境 | Launcher |
+| 引擎 | 环境 | 启动器 |
 |---|---|---|
 | MACE | `.venv-mace` | `bin/mliport-mace` |
 | DPA | `.venv-dpa` | `bin/mliport-dpa` |
 | GRACE | `.venv-grace` | `bin/mliport-grace` |
 | UMA | `.venv` | `bin/mliport-uma` |
 
-从目标 backend 的环境或 launcher 运行:
-
-```bash
-.venv-mace/bin/mliport --help
-./bin/mliport-mace --help
-```
-
-然后检查运行环境。必需项失败时命令返回非零;可选功能会单独列出:
+请在你要用的那个后端的环境里运行 mliport，或者通过它的启动器：
 
 ```bash
 .venv-mace/bin/mliport doctor --engine mace --device auto
+./bin/mliport-mace --help
 ```
 
-成功时的结尾类似:
-
-```text
- Environment checks passed for MACE on CUDA.
-```
-
-Windows 下每个环境提供 `Scripts\mliport.exe`,安装器还会生成
-`bin\mliport-*.cmd` launcher。`mliport doctor --json` 输出同样的检查结果,
-便于脚本和集群配置使用。CPU 安装、自定义源、离线机器、代理、磁盘占用和
-卸载步骤见 [docs/installation.md](docs/installation.md)。
+结果良好时，输出以 `Environment checks passed for MACE on CUDA.` 结尾。在 Windows 上，每个环境里有
+`Scripts\mliport.exe`，安装脚本还会写出 `bin\mliport-*.cmd` 启动器。`mliport doctor --json` 会以 JSON
+给出同样的检查，方便脚本使用。
 
 ### 模型
 
-mliport 不自动下载模型。请用上游工具获取 checkpoint,再用 `--model` 指向
-本地文件;本地目录/文件即可离线运行。
+mliport 不下载检查点。请用上游工具取得检查点，再用 `--model` 传入路径；本地目录可以离线使用。
 
-| Backend | Checkpoint | 获取地址 |
+| 引擎 | 检查点 | 来源 |
 |---|---|---|
 | MACE | `mace-omat-0-medium.model` | [mace-foundations release](https://github.com/ACEsuit/mace-foundations/releases/tag/mace_omat_0) |
 | DPA | `DPA-3.1-3M.pt` | [deepmodelingcommunity/DPA-3.1-3M](https://huggingface.co/deepmodelingcommunity/DPA-3.1-3M) |
 | GRACE | `GRACE-2L-OMAT-medium-base` | [AMS-ICAMS-RUB/grace-foundation-models](https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models) |
 | UMA | `uma-s-1p2.pt` | [facebook/UMA](https://huggingface.co/facebook/UMA) |
 
-验证套件使用的精确文件哈希固定记录在
-[`validation/science/model_manifest.json`](validation/science/model_manifest.json)。
-checkpoint 的许可证由上游项目决定;UMA checkpoint 使用非商业研究许可证。
-Hugging Face 镜像与 SOCKS 代理设置见 `docs/models.md`。
+验证套件用到的哈希固定在 [`validation/science/model_manifest.json`](validation/science/model_manifest.json)。
+许可证归上游项目所有；UMA 的检查点采用非商业研究许可。Hugging Face 镜像和 SOCKS 代理见
+[docs/models.md](docs/models.md)。
 
 ## 第一次计算
 
-仓库自带一个 50 原子的 Li10GeP2S12 (LGPS) 原胞:
-`examples/structures/li10gep2s12_primitive.vasp`。它是真实的周期性晶胞,
-适合做短时间验收和 CPU smoke。
+仓库里带了一个 50 原子的 Li10GeP2S12（LGPS）晶胞，小到可以在 CPU 上做冒烟测试：
 
 ```bash
 .venv-mace/bin/mliport sp examples/structures/li10gep2s12_primitive.vasp \
@@ -113,65 +89,45 @@ Hugging Face 镜像与 SOCKS 代理设置见 `docs/models.md`。
   --output runs/lgps-mace-sp
 ```
 
-运行会写出 `runs/lgps-mace-sp/mliport_results.json`(能量、力、应力、计时)、
-`resolved_config.json`(实际使用的配置)、`OUTCAR`/`OSZICAR`/`CONTCAR` 和
-`run.log`。能量与力必须是有限值;`mliport_results.json` 里记录的是
-backend 实际使用的设备,而不是请求的设备。
+在 `runs/lgps-mace-sp/` 里你会得到 `mliport_results.json`（能量、力、应力、耗时）、
+`resolved_config.json`（实际用到的配置）、`OUTCAR`、`CONTCAR`、`run.log`，弛豫或 MD 运行还会有
+`OSZICAR`。如果输出目录里已经有结果，运行会拒绝它，并在运行期间锁住该目录；`--overwrite` 表示你有意
+覆盖。结果里的设备是后端报告的设备，不是你请求的设备。
 
-如果输出目录里已经有计算输出(之前的运行,或 VASP 的 `OUTCAR`/`CONTCAR`),
-运行会直接拒绝,运行期间也会锁住该目录;确实要覆盖时加 `--overwrite`。
+## 选择后端
 
-## 选择 backend
-
-backend 由 `--model-type`、配置中的 alias/profile 决定;无法确定时直接
-失败,不会自动改用别的模型。
+后端来自 `--model-type` 或配置好的别名。两者都没有时运行会失败；mliport 绝不会自己换成另一个模型。
 
 ```bash
-# MACE
-.venv-mace/bin/mliport sp LGPS.vasp --model mace-omat-0-medium.model --model-type mace --task bulk --device cuda
-
-# DPA
-.venv-dpa/bin/mliport sp LGPS.vasp --model DPA-3.1-3M.pt --model-type dpa --task bulk --head Omat24 --device cuda
-
-# GRACE
+.venv-mace/bin/mliport  sp LGPS.vasp --model mace-omat-0-medium.model --model-type mace  --task bulk --device cuda
+.venv-dpa/bin/mliport   sp LGPS.vasp --model DPA-3.1-3M.pt --model-type dpa --task bulk --head Omat24 --device cuda
 .venv-grace/bin/mliport sp LGPS.vasp --model GRACE-2L-OMAT-medium-base --model-type grace --task bulk --device cuda
-
-# UMA
-.venv/bin/mliport sp LGPS.vasp --model uma-s-1p2.pt --model-type uma --task omat --device cuda
+.venv/bin/mliport       sp LGPS.vasp --model uma-s-1p2.pt --model-type uma --task omat --device cuda
 ```
 
-| Backend | Model type | Task/head | 说明 |
+| 引擎 | `--model-type` | Task / head | 需要知道的 |
 |---|---|---|---|
-| MACE | `mace` | `bulk` | 默认 float64;`--dtype float32` 更快、精度更低 |
-| DPA | `dpa` | `bulk`,`--head Omat24` | 多任务 checkpoint,branch 从模型文件读取 |
-| GRACE | `grace` | `bulk` | TensorFlow 运行时,支持 CPU 与 GPU |
-| UMA | `uma`(`fairchem` alias) | `omat` | 分子用 `--task omol`;非商业研究许可证 |
+| MACE | `mace` | `bulk` | 默认 float64；`--dtype float32` 更快但精度更低 |
+| DPA | `dpa` | `bulk`、`--head Omat24` | 多任务检查点；缺少 head 是错误，不是猜测 |
+| GRACE | `grace` | `bulk` | TensorFlow 运行时，支持 CPU 和 GPU |
+| UMA | `uma`（`fairchem` 是别名） | `omat` | 分子用 `--task omol`；非商业研究许可 |
 
-DPA 与 GRACE 在框架加载后无法再切换 CUDA context。如果
-`CUDA_VISIBLE_DEVICES` 尚未设置,CLI 会用一个可见目标 GPU 的新进程重启
-同一条命令,并打印一行说明。Python API 不能重启调用方;在 Python 里调用
-DPA/GRACE 前请自行设置 `CUDA_VISIBLE_DEVICES`。各 backend 手册见
+DPA 和 GRACE 在框架加载之后无法切换 GPU，所以当 `CUDA_VISIBLE_DEVICES` 未设置时，CLI 会在设好正确
+GPU 的新进程里重启命令。从 Python 调用时，请在导入它们之前设置 `CUDA_VISIBLE_DEVICES`。更多见
 [docs/backends/index.md](docs/backends/index.md)。
 
 ## 主要工作流
 
-### 结构弛豫 (`opt`)
-
-`--fmax`、`--max-steps` 控制收敛,`--cell-opt` 同时弛豫晶胞与离子。
+**结构弛豫。** `--fmax` 和 `--max-steps` 控制收敛；`--cell-opt` 让晶胞与离子一起弛豫。
 
 ```bash
 .venv-mace/bin/mliport opt LGPS.vasp --model model.model --model-type mace \
   --fmax 0.05 --max-steps 200 --cell-opt --device cuda --output runs/lgps-opt
 ```
 
-### 分子动力学 (`md`)
-
-`--ensemble` 选择 `NVE` 或 `NVT`,`--thermostat` 选择 `LANGEVIN`、`BUSSI`
-或 `NHC`;`--temp`、`--timestep`、`--steps`、`--save-interval` 决定运行规模。
-要接着已有轨迹继续跑,可从带速度的保存帧开始,并加
-`--velocity-policy preserve --no-pre-relax`。NHC 不能使用 FixCom 约束;
-默认 `--com-policy auto` 会在初始化时把质心动量清零一次(NHC 会保持它为零),
-避免整个晶胞漂移污染基于 MSD 的输运结果。
+**分子动力学。** `--ensemble` 取 `NVE` 或 `NVT`，`--thermostat` 取 `LANGEVIN`、`BUSSI` 或 `NHC`。运行可
+以从带速度的已保存帧继续，用 `--velocity-policy preserve --no-pre-relax`。使用 NHC 时，默认的
+`--com-policy auto` 会把质心动量一次性清零，这样整个晶胞不会漂移，也不会让基于 MSD 的输运产生偏差。
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \
@@ -179,14 +135,10 @@ DPA/GRACE 前请自行设置 `CUDA_VISIBLE_DEVICES`。各 backend 手册见
   --steps 10000 --save-interval 100 --device cuda --output runs/lgps-md
 ```
 
-### NEB 与 CI-NEB (`neb`)
-
-端点文件定义路径,`--images` 设置中间 image 数,`--climb` 打开 climbing
-image。在第一步 NEB 之前,mliport 会在你的路径上(两个端点和插值 image)用考虑
-浮点噪声的有限差分检查模型的力是否确实是其能量的梯度,不一致就拒绝运行(UMA
-这类直接预测力的模型一律拒绝)。检查结果记录在 `neb_results.json` /
-`run_context.json` 的 `gradient_preflight` 中。它是力-能量一致性的抽查,不代表
-模型精度,也不是对整个势能面的证明:
+**NEB 与 CI-NEB。** 两个端点文件确定能带，`--images` 设定中间镜像数，`--climb` 打开爬升镜像。第一步之
+前，mliport 会在你自己的能带上检查模型的力是否为其能量的梯度（考虑噪声的有限差分），不是就拒绝继续；
+像 UMA 这样直接预测力的模型一律被拒绝。测量结果保存为 `gradient_preflight`。它只是一致性的抽查，不是
+对精度的陈述。
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
@@ -194,57 +146,34 @@ image。在第一步 NEB 之前,mliport 会在你的路径上(两个端点和插
   --model model.model --model-type mace --device cuda --output runs/lgps-neb
 ```
 
-用 `--resume runs/lgps-neb --output runs/lgps-neb` 续跑已经停止的 band。
-已记录的步数预算属于 run identity,当前 beta 中 resume 时修改
-`--max-steps` 会被拒绝。高级的显式 atom mapping/image-shift 控制只能通过
-API/直接 CLI/TUI 使用。
+用 `--resume runs/lgps-neb --output runs/lgps-neb` 续跑。步数预算是运行身份的一部分，所以续跑时改
+`--max-steps` 会被拒绝。显式的原子映射与镜像平移这类高级控制，仅在 API、直接 CLI 和 TUI 中可用
+。
 
-### 批量计算 (`batch`)
-
-一次扫描使用一个目录、一个模型和一种计算类型。
+**批量、INCAR 风格运行、队列、TUI、Python。**
 
 ```bash
 .venv-mace/bin/mliport batch structures/ --pattern "*.vasp" --calc-type sp \
   --model model.model --model-type mace --device cuda --output runs/batch
-```
 
-### INCAR 风格运行 (`run`)
-
-先生成模板,编辑后再运行。
-
-```bash
-.venv-mace/bin/mliport template sp --output INCAR.mliport
-# 填写 MODEL_PATH、MODEL_TYPE、TASK、DEVICE(DPA 还要填 HEAD)
+.venv-mace/bin/mliport template sp --output INCAR.mliport     # 编辑 MODEL_PATH、MODEL_TYPE 等
 .venv-mace/bin/mliport run -i INCAR.mliport -s LGPS.vasp -o runs/incar-sp
+
+.venv-mace/bin/mliport queue submit tasks.json                # 之后：queue start、jobs、queue stop
 ```
 
-### 队列 (`queue`、`jobs`、`kill`、`clean`)
-
-把多个计算写进 JSON 任务文件,后台启动调度器,再查看任务。
-
-```bash
-.venv-mace/bin/mliport queue submit tasks.json
-.venv-mace/bin/mliport queue start
-.venv-mace/bin/mliport jobs
-.venv-mace/bin/mliport queue stop
-```
-
-### TUI
-
-`mliport tui` 打开交互界面,需要终端;没有终端时会报错退出。
-
-### Python API
+`mliport tui` 打开交互式应用（需要终端）。从 Python 调用：
 
 ```python
 from mliport.api import calculate_energy, run_single_point
 
-energy = calculate_energy("examples/structures/li10gep2s12_primitive.vasp", "model.model", model_type="mace", device="cuda")
-result = run_single_point("examples/structures/li10gep2s12_primitive.vasp", "model.model", model_type="mace", device="cuda")
+energy = calculate_energy("LGPS.vasp", "model.model", model_type="mace", device="cuda")
+result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device="cuda")
 ```
 
 ## 分析轨迹
 
-`analyze` 接受 mliport run 目录或 ASE trajectory:
+`analyze` 接受 mliport 运行目录或 ASE 轨迹：
 
 ```bash
 .venv-mace/bin/mliport analyze runs/lgps-md validate
@@ -259,52 +188,28 @@ result = run_single_point("examples/structures/li10gep2s12_primitive.vasp", "mod
 .venv-mace/bin/mliport analyze runs/lgps-md electrolyte --mobile Li --discover-sites-from-density
 ```
 
-分析结果写到 `runs/lgps-md/analysis/<task>/<id>/`,包括 JSON、CSV,以及
-适合作图时的 PNG 与 SVG。绘图以 headless 方式完成,不需要 X11。
-
-短轨迹是合法输入,但不会被过度解读:`msd` 与 `transport` 会返回明确的
-insufficient-window / insufficient-sampling 状态,而不是给出扩散系数;
-`transport` 的默认 lag grid 超过内存保护时会要求显式传入
-`--lag-step-ps`/`--lag-stop-ps`。`arrhenius` 只拟合 `transport` 实际给出的
-温度/扩散系数对,不会为失败的点编造数值。各任务的选项和语义见
-[docs/analysis/index.md](docs/analysis/index.md)。
+结果写到 `runs/lgps-md/analysis/<task>/<id>/`，格式为 JSON、CSV，合适时还有 PNG 和 SVG；绘图无需显
+示器。短轨迹会被接受，但不会被过度解读：`msd` 和 `transport` 返回明确的采样不足状态，而不是扩散系
+数；`arrhenius` 只拟合你给它的点。各任务的选项见 [docs/analysis/index.md](docs/analysis/index.md)。
 
 ## 配置
 
-- backend 必须显式选择:`--model-type mace|dpa|grace|uma` 加 `--model`,
-  或使用配置好的 alias/profile。`fairchem` 是 `uma` 的别名。
-- 严格配置是默认行为。未知键或跨 backend 键直接失败;探索性运行可以用
-  `--lenient-config` 放宽。
-- `mliport config` 用于查看和管理设置。项目 `settings.ini` 可以定义模型
-  alias 与 profile;显式 `--settings PATH` 优先于用户级和项目级文件。
-- 每次运行都会写 `resolved_config.json`,记录每个值的来源,便于事后审计。
+后端始终是显式的（`--model-type mace|dpa|grace|uma` 加 `--model`，或使用别名）。配置是严格的：未知
+的键和跨后端的键都是错误，探索性运行可以用 `--lenient-config` 把它们降级。`mliport config` 用来查看设
+置；项目里的 `settings.ini` 可以定义别名，`--settings PATH` 的优先级高于用户和项目文件。每次运行都会
+写出 `resolved_config.json`，记录每个值的来源。
 
-## 验证与限制
+## 状态与限制
 
-当前版本是 beta candidate (2.0.0b3),已在干净的 V100 主机上按本文档安装,
-并通过 LGPS 工作流与分析矩阵验收;下面的生成状态块给出报告链接。
+这是一个 beta candidate（2.0.0b4）。它已在干净的 V100 机器上按这些说明安装，并跑通了 LGPS 工作流和
+分析矩阵；下面的区块由验证报告生成。
 
-INCAR 风格输入覆盖常用控制项,但不等同于全部接口。每个入口(API、直接
-CLI、INCAR、TUI)能否表达某个选项记录在
-`validation/science/capability_matrix.json`;标记为 `no` 或 `partial` 表示
-该入口无法表达该选项,不会静默转换。
+INCAR 风格输入覆盖常用控制项，不是全部接口。每个入口（API、直接 CLI、INCAR、TUI）能表达哪些选项，
+记录在 `validation/science/capability_matrix.json` 里；那里标为 `no` 或 `partial` 就表示该入口无法表
+达，也不会被悄悄转换。
 
-模型精度属于上游 checkpoint;短 MD 验证的是工作流而不是平衡态;NEB 会在运行时检查模型的力是否与能量的
-有限差分一致,不一致即拒绝;这不代表势垒本身的精度。输运分析采样不足时会以明确的 insufficient-sampling 状态失败,
-不会给出数值。
-
-## 文档
-
-- [安装](docs/installation.md)
-- [快速上手](docs/quickstart.md)
-- [Backend](docs/backends/index.md)
-- [工作流](docs/workflows/index.md)
-- [分析](docs/analysis/index.md)
-- [输出文件](docs/outputs.md)
-- [配置](docs/configuration.md)
-- [模型与许可证](docs/models.md)
-- [故障排查](docs/troubleshooting.md)
-- [验证](docs/validation.md)
+模型精度属于上游检查点。短 MD 检查的是工作流，不是平衡。NEB 的预检说明力与能量一致，这并不意味着势
+垒本身准确。输运分析在采样不足时以明确的 insufficient-sampling 状态失败，而不是返回一个数。
 
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
 Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).
@@ -326,10 +231,9 @@ Per-workload tables, tier scopes and limitations live in the reports; the README
 
 ## 引用
 
-见 [docs/citations.md](docs/citations.md) 与 [`CITATION.cff`](CITATION.cff)。
-使用某个 backend 模型时,请同时引用上游模型并遵守其许可证。
+见 [docs/citations.md](docs/citations.md) 和 [`CITATION.cff`](CITATION.cff)。如果你使用了某个后端模型，请
+引用上游模型并遵守其许可证。
 
 ## 许可证
 
-mliport 包使用 [`LICENSE.md`](LICENSE.md) 中的许可证。模型 checkpoint 与上游框架
-各自保留其许可证。
+mliport 包采用 [`LICENSE.md`](LICENSE.md) 中的许可证。模型检查点和上游框架保留各自的许可证。
