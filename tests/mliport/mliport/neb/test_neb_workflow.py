@@ -55,7 +55,8 @@ class FiniteForceCalculator(Calculator):
         super().calculate(atoms, properties, system_changes)
         forces = np.zeros_like(atoms.positions, dtype=float)
         forces[-1, 0] = 1.0
-        self.results = {"energy": 0.0, "forces": forces}
+        # E = -x_last keeps the force the exact gradient (NEB pre-flight).
+        self.results = {"energy": -float(atoms.positions[-1, 0]), "forces": forces}
 
 
 class FakeMACEWrapper:
@@ -85,6 +86,37 @@ class FakeMACEWrapper:
             "default_dtype": "float64",
             "active_head": "default",
         }
+
+
+class ConsistencyWrapper(FakeMACEWrapper):
+    """Fake backend whose static capability state is configurable."""
+
+    def __init__(self, calculator=None, state="unknown") -> None:
+        super().__init__(calculator)
+        self.state = state
+
+    def capabilities(self, model_record):
+        from mliport.capabilities import CalculatorCapabilities
+
+        return CalculatorCapabilities(True, True, False, self.state, None)
+
+
+class InconsistentCalculator(Calculator):
+    """Forces that are not the gradient of the energy."""
+
+    implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
+
+    def calculate(
+        self,
+        atoms=None,
+        properties=("energy", "forces"),
+        system_changes=all_changes,
+    ) -> None:
+        super().calculate(atoms, properties, system_changes)
+        positions = atoms.positions
+        energy = float(0.5 * np.sum(positions**2))
+        # exact gradient is -positions; this is 1.5x too large
+        self.results = {"energy": energy, "forces": -1.5 * positions}
 
 
 def _endpoints() -> tuple[Atoms, Atoms]:
@@ -144,7 +176,7 @@ def test_workflow_writes_context_result_complete_band_and_vasp_export(
 ) -> None:
     _model, output, wrapper, result = _run(tmp_path)
 
-    assert wrapper.get_calls == 1
+    assert wrapper.get_calls == 2  # pre-flight + runner; one cached calculator
     assert result["status"] == "completed"
     assert result["converged"] is True
     assert result["failure_reason"] is None
@@ -217,7 +249,7 @@ def test_engine_entrypoint_locks_before_logging_and_loads_one_model(
     result = engine.run_neb(resolved, initial=initial, final=final)
 
     assert result["status"] == "completed"
-    assert wrapper.get_calls == 1
+    assert wrapper.get_calls == 2  # pre-flight + runner; one cached calculator
     assert (engine.output_dir / "run.log").is_file()
     assert (engine.output_dir / "run_context.json").is_file()
 
@@ -507,3 +539,75 @@ def test_artifacts_pointer_follows_each_published_checkpoint(
         (output / "artifacts.json").read_text(encoding="utf-8")
     )
     assert final_artifacts["status"] == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Runtime energy-force consistency pre-flight
+# ---------------------------------------------------------------------------
+
+
+def test_unvalidated_model_runs_without_opt_in_after_passing_preflight(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model identity")
+    output = tmp_path / "run"
+    initial, final = _endpoints()
+
+    result = run_neb_workflow(
+        ConsistencyWrapper(state="unknown"),
+        _resolved(model),
+        output_dir=output,
+        initial=initial,
+        final=final,
+        verbose=False,
+    )
+
+    assert result["gradient_preflight"]["status"] == "passed"
+    assert result["gradient_preflight"]["n_checks"] >= 2
+    context = json.loads((output / "run_context.json").read_text(encoding="utf-8"))
+    assert context["gradient_preflight"]["status"] == "passed"
+
+
+def test_inconsistent_forces_are_refused_before_any_neb_step(tmp_path: Path) -> None:
+    from mliport.neb.preflight import NEBGradientConsistencyError
+
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model identity")
+    output = tmp_path / "run"
+    initial, final = _endpoints()
+
+    # even a statically "validated" capability cannot bypass the measurement,
+    # and the deprecated opt-in flag does not either
+    with pytest.raises(NEBGradientConsistencyError, match="not verifiably"):
+        run_neb_workflow(
+            ConsistencyWrapper(InconsistentCalculator(), state="validated"),
+            _resolved(model, allow_unvalidated_neb=True),
+            output_dir=output,
+            initial=initial,
+            final=final,
+            verbose=False,
+        )
+
+    assert not (output / "neb_results.json").exists()
+    assert not (output / "vasp_path").exists()
+
+
+def test_direct_force_model_is_still_rejected_before_preflight(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"model identity")
+    initial, final = _endpoints()
+    wrapper = ConsistencyWrapper(state="not_guaranteed")
+
+    with pytest.raises(ValueError, match="non-guaranteed"):
+        run_neb_workflow(
+            wrapper,
+            _resolved(model, allow_unvalidated_neb=True),
+            output_dir=tmp_path / "run",
+            initial=initial,
+            final=final,
+            verbose=False,
+        )
+    assert wrapper.get_calls == 0

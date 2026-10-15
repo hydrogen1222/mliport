@@ -508,7 +508,7 @@ _SPECS: list[OptionSpec] = [
         bool,
         frozenset({"neb"}),
         aliases={"NEB_ALLOW_UNVALIDATED"},
-        description="Explicit experimental override for unknown energy-gradient consistency.",
+        description="Deprecated, no effect: NEB runs a runtime energy-force consistency pre-flight instead.",
     ),
     OptionSpec(
         "ensemble",

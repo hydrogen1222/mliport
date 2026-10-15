@@ -25,6 +25,7 @@ from mliport.neb.io import (
     load_checkpoint,
     resolve_checkpoint_path,
 )
+from mliport.neb.preflight import run_gradient_preflight
 from mliport.neb.prepare import BandInput, prepare_band
 from mliport.neb.revisions import (
     NEB_CHECKPOINT_SCHEMA_REVISION,
@@ -552,6 +553,7 @@ def _record_failed_attempt(
         "neb_band_forces_eV_A": None,
         "stages": [],
         "model": model,
+        "gradient_preflight": context.get("gradient_preflight"),
         "device": context["device"],
         "initial_identity": context["initial_identity"],
         "final_identity": context["final_identity"],
@@ -663,9 +665,14 @@ def _run_neb_workflow_locked(
             model, calculator.get_calculator().implemented_properties
         )
     )
-    require_neb_capability(
-        capability,
-        experimental=resolved.run_options.get("allow_unvalidated_neb", False),
+    # Structural gate: energy and forces available, no direct-force model.
+    # Energy-force consistency itself is measured on this band below instead of
+    # being looked up in static evidence recorded on another software stack.
+    require_neb_capability(capability, experimental=True)
+    gradient_preflight = run_gradient_preflight(
+        calculator.get_calculator(),
+        band.images,
+        dtype=model.get("dtype_effective"),
     )
     model["capabilities"] = asdict(capability)
     _restore_checkpoint_model_source(model, checkpoint_record)
@@ -726,6 +733,7 @@ def _run_neb_workflow_locked(
         "python_version": platform.python_version(),
         "platform": platform.platform(),
         "model": model,
+        "gradient_preflight": gradient_preflight,
         "device": {
             "requested": resolved.device,
             "effective": "cpu" if device_uuid is None else device_uuid,
@@ -855,6 +863,7 @@ def _run_neb_workflow_locked(
                 "attempt_id": attempt_id,
                 "trajectory_kind": "neb_band",
                 "model": model,
+                "gradient_preflight": gradient_preflight,
                 "device": context["device"],
                 "initial_identity": context["initial_identity"],
                 "final_identity": context["final_identity"],
