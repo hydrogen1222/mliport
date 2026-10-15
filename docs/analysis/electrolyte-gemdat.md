@@ -1,61 +1,55 @@
 # GEMDAT electrolyte analysis
 
-**Purpose.** Map mobile-ion positions onto crystallographic/interstitial
-sites, count site-to-site jumps and percolation pathways, and report
-mechanism-level diagnostics with GEMDAT.
+`electrolyte` uses GEMDAT to map the mobile ion's positions onto sites, count
+site-to-site jumps, and look for percolating pathways. It is about *mechanism*:
+where the ion sits and how it hops, as opposed to how fast it diffuses overall.
 
-**Minimal command.**
-
-```bash
-mliport analyze runs/md electrolyte --mobile Li --sites sites.yaml \
-  --temperature-K 800
-```
-
-or discover sites from the mobile-species density:
+GEMDAT needs a definition of the sites, from exactly one of two sources: your own
+site file, or sites discovered from the density of the mobile species.
 
 ```bash
+mliport analyze runs/md electrolyte --mobile Li --sites sites.yaml --temperature-K 800
 mliport analyze runs/md electrolyte --mobile Li --discover-sites-from-density
 ```
 
-**Important options.**
+A site definition has to match the structure and its atom order; a mismatch is a
+configuration error, not something to ignore.
+
+## Options you will use
 
 | Option | Meaning |
 |---|---|
-| `--mobile SPECIES` | mobile species (required) |
-| `--sites PATH` | explicit site definitions (YAML/JSON) |
-| `--discover-sites-from-density` | derive sites from the density instead of an explicit file |
-| `--resolution-A`, `--smoothing-sigma-A`, `--background-level` | density/site-discovery parameters |
+| `--mobile SPECIES` | the mobile species (required) |
+| `--sites PATH` or `--discover-sites-from-density` | an explicit site file, or density-based discovery (exactly one is required) |
+| `--resolution-A`, `--background-level` | density and site-discovery parameters (defaults 0.5 Å, 0.1) |
 | `--site-radius-A` | capture radius around a site |
-| `--minimal-residence` | minimum residence time counted as a site visit |
-| `--jump-dimensions {1,2,3}` | dimensionality for jump/percolation analysis |
-| `--percolation-axes` | axes considered for percolation |
-| `--drift-reference`, `--drift-mode`, `--drift-indices` | framework-drift correction |
+| `--minimal-residence` | minimum residence, in frames, to count as a site visit (default 0) |
+| `--jump-dimensions` | dimensionality of the jump analysis: 1, 2 or 3 (default 3) |
+| `--percolation-axes` | axes tested for percolation (default `xyz`) |
+| `--temperature-K` | temperature for derived quantities |
+| `--drift-reference`, `--drift-mode`, `--drift-indices` | framework-drift correction (mode default `arithmetic_mean`) |
 
-**Inputs.** A production trajectory plus either explicit sites or density
-discovery. Site definitions must match the structure/atom ordering; a
-mismatch is a configuration error, not something to ignore.
+## What comes out
 
-**Outputs.** `analysis.json` with the site list, visit/jump counts, jump
-vectors/residence statistics and percolation diagnostics; provenance as for
-all analyses.
+`results.json` has the site list, visit and jump counts, jump vectors and
+residence statistics, and the percolation diagnostics, with the provenance that
+every analysis carries.
 
-**Failure semantics.** GEMDAT backend errors are reported as
-**backend failures** (`backend_error`), never as "zero jumps". Zero jumps is
-only reported when the analysis actually ran and found none. Invalid/empty
-site definitions or a mobile selection that matches no atoms fail closed.
+If GEMDAT itself fails, that is reported as a **backend failure**
+(`backend_error`), never as "zero jumps". Zero jumps is reported only when the
+analysis ran and found none. Empty or invalid site definitions, or a mobile
+selection that matches no atoms, fail closed.
 
-**Scientific caveats.**
+## Reading the result
 
-- Site mapping is a model of the transport mechanism: different site
-  definitions can change jump counts. State the site source.
-- `backend_error` ≠ "no diffusion"; check the error before interpreting a
-  mechanism.
-- Jump counts depend on `--minimal-residence`, drift policy and frame
+- A site mapping is a model of the transport mechanism. Different site
+  definitions can change the jump counts, so state where your sites came from.
+- `backend_error` does not mean "no diffusion". Read the error before you
+  interpret any mechanism.
+- Jump counts depend on `--minimal-residence`, the drift policy and the frame
   spacing; report them together.
-- Percolation along chosen axes is not automatically 3D long-range
-  transport; say which dimensions/axes were tested.
-
-**Example.**
+- Percolation along chosen axes is not automatically 3-D long-range transport.
+  Say which dimensions and axes were tested.
 
 ```bash
 mliport analyze runs/md-800K electrolyte --mobile Li \
@@ -63,18 +57,15 @@ mliport analyze runs/md-800K electrolyte --mobile Li \
   --jump-dimensions 3 --percolation-axes xyz
 ```
 
-## Required site input and budget
+## Cost
 
-GEMDAT needs a site definition. Use either an explicit site file or the
-automatic density-based discovery:
+Discovering sites on a full 1 ns, 400-atom trajectory is expensive. The
+acceptance suite runs it on a 30 ps segment with `--frame-interval-fs 100`:
 
 ```bash
-# tested example
 .venv-grace/bin/mliport analyze results/lgps-1ns electrolyte \
   --mobile Li --discover-sites-from-density
 ```
 
-Site discovery on a full 1 ns, 400-atom trajectory is expensive; the
-acceptance suite runs it on a 30 ps segment with
-`--frame-interval-fs 100`. Partial-occupancy warnings from GEMDAT are reported
-by the upstream library and do not change the requested site set.
+GEMDAT's partial-occupancy warnings come from the upstream library and do not
+change the requested site set.
