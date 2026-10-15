@@ -236,10 +236,9 @@ def render_package_readme(root_readme: str) -> str:
 
 
 def _generated_files() -> dict[Path, callable]:
+    package_readme = REPO / "mliport" / "README.md"
     files: dict[Path, callable] = {
-        REPO
-        / "mliport"
-        / "README.md": lambda: render_package_readme(
+        package_readme: lambda: render_package_readme(
             (REPO / "README.md").read_text(encoding="utf-8")
         ),
     }
