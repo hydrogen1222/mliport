@@ -14,7 +14,6 @@ def _clean_wheel() -> list[str]:
         "mliport/__init__.py",
         "mliport/cli.py",
         "mliport/data/compatibility/gpu_architecture_theory.json",
-        "mliport/data/validation/mace-v100.json",
         "mliport-2.0.0b4.dist-info/METADATA",
         "mliport-2.0.0b4.dist-info/WHEEL",
         "mliport-2.0.0b4.dist-info/entry_points.txt",

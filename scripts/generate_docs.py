@@ -5,8 +5,7 @@ Generated artifacts (never edit them by hand):
 - ``docs/installation.md`` -- environment/Python matrix from the
   compatibility registry;
 - ``docs/backends/<engine>.md`` -- supported profiles from the pinned model
-  manifest, runtime facts from the compatibility registry and V100
-  capability evidence from the packaged capability records;
+  manifest and runtime facts from the compatibility registry;
 - ``mliport/README.md`` -- PyPI/package README generated from the root
   README with repository-relative links rewritten to GitHub URLs.
 
@@ -38,7 +37,6 @@ from mliport.install.docs import (  # noqa: E402
 )
 
 MANIFEST_PATH = REPO / "validation" / "science" / "model_manifest.json"
-CAPABILITY_DIR = REPO / "mliport" / "mliport" / "data" / "validation"
 GITHUB_URL = "https://github.com/hydrogen1222/mliport"
 
 _BACKEND_INTRO = {
@@ -156,15 +154,6 @@ def _profiles_for(engine: str) -> dict[str, dict]:
     }
 
 
-def _capability_evidence(engine: str) -> list[dict]:
-    evidence = []
-    for path in sorted(CAPABILITY_DIR.glob("*.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("model_identity", {}).get("model_type") == engine:
-            evidence.append(payload)
-    return evidence
-
-
 def _sha_short(sha: object) -> str:
     text = str(sha or "")
     return text[:12] + "..." if len(text) > 12 else text
@@ -175,7 +164,6 @@ def render_backend_page(engine: str) -> str:
     backend = BACKENDS[engine]
     versions = python_versions_for(engine)
     profiles = _profiles_for(engine)
-    evidence = _capability_evidence(engine)
     lines = [
         f"# {backend.label}",
         "",
@@ -263,31 +251,7 @@ def render_backend_page(engine: str) -> str:
         "",
         _MODEL_ACQUISITION[engine],
         "",
-        "## V100 capability evidence",
-        "",
     ]
-    if evidence:
-        lines += [
-            "| evidence id | dtype | head | backend | workloads |",
-            "|---|---|---|---|---|",
-        ]
-        for item in evidence:
-            identity = item["model_identity"]
-            workloads = ", ".join(
-                f"{name}:{entry.get('status')}"
-                for name, entry in sorted(item["workloads"].items())
-            )
-            lines.append(
-                f"| `{item['evidence_id']}` | {identity.get('dtype_effective')} "
-                f"| {identity.get('head_effective')} "
-                f"| {identity.get('backend_version')} "
-                f"({identity.get('framework_versions')}) | {workloads} |"
-            )
-    else:
-        lines.append(
-            "No packaged capability evidence for this backend yet; see the "
-            "validation report for the current campaign records."
-        )
     lines += [
         "",
         "## License and citation",
@@ -379,7 +343,6 @@ statement about model accuracy.
 | `--neb-spring`, `--neb-maxstep`, `--neb-min-distance` | band/spring parameters |
 | `--checkpoint-interval` | band checkpoint frequency |
 | `--resume` | resume from a checkpoint/directory |
-| `--allow-unvalidated-neb` | deprecated, has no effect: the runtime pre-flight replaces the opt-in |
 
 ## Inputs
 

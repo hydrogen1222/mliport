@@ -40,9 +40,6 @@ mliport reports stress only if the loaded checkpoint exposes it (`implemented_pr
 
 Download UMA checkpoints from the upstream fairchem/UMA release channels and verify the SHA-256 before use. mliport never redistributes model weights; see [citations](../citations.md).
 
-## V100 capability evidence
-
-No packaged capability evidence for this backend yet; see the validation report for the current campaign records.
 
 ## License and citation
 

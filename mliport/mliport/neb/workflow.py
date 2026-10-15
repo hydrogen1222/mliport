@@ -677,7 +677,7 @@ def _run_neb_workflow_locked(
     # Structural gate: energy and forces available, no direct-force model.
     # Energy-force consistency itself is measured on this band below instead of
     # being looked up in static evidence recorded on another software stack.
-    require_neb_capability(capability, experimental=True)
+    require_neb_capability(capability)
     _report(
         progress_callback,
         "Energy-force consistency pre-flight: finite differences on "

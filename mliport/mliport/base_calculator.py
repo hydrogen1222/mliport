@@ -93,7 +93,7 @@ class BaseMLIPCalculator(ABC):
         return list(calc.implemented_properties)
 
     def capabilities(self, model_record: dict):
-        """Return evidence-bound capabilities for this exact loaded model."""
+        """Return the capabilities this loaded model advertises (see NEB pre-flight)."""
         from mliport.capabilities import resolve_capabilities
 
         return resolve_capabilities(model_record, self.implemented_properties)

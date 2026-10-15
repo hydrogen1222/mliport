@@ -849,9 +849,6 @@ def _ci_neb_record(
         "endpoint_fmax": ENDPOINT_FMAX,
         "endpoint_steps": ENDPOINT_STEPS,
         "endpoint_policy": "validate",
-        # the harness proves calculator identity itself (common.calculator_identity);
-        # this only skips the engine-evidence table check for these profiles
-        "allow_unvalidated_neb": True,
     }
     if extra_run_options:
         run_options.update(extra_run_options)
@@ -1047,7 +1044,6 @@ def workflow_resume_identity(ctx, args, out_dir) -> int:
         "endpoint_fmax": ENDPOINT_FMAX,
         "endpoint_steps": ENDPOINT_STEPS,
         "endpoint_policy": "validate",
-        "allow_unvalidated_neb": True,  # harness proves identity itself
         "checkpoint_interval": RESUME_CHECKPOINT_INTERVAL,
     }
     run_dir = _run_dir(Path(args.out), args.tag, "t5g_resume")
@@ -1326,7 +1322,6 @@ def workflow_na3ps4_hop(ctx, args, out_dir) -> int:
             "endpoint_fmax": ENDPOINT_FMAX,
             "endpoint_steps": ENDPOINT_STEPS,
             "endpoint_policy": "validate",
-            "allow_unvalidated_neb": True,  # harness proves identity itself
         }
         resolved = _neb_resolved(ctx, args, **run_options)
         run_dir = _run_dir(Path(args.out), args.tag, "t5i_na3ps4_hop")

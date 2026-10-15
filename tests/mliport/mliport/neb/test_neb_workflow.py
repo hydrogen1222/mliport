@@ -66,9 +66,7 @@ class FakeMACEWrapper:
     def capabilities(self, model_record):
         from mliport.capabilities import CalculatorCapabilities
 
-        return CalculatorCapabilities(
-            True, True, False, "validated", "test-known-answer"
-        )
+        return CalculatorCapabilities(True, True, False, "unknown")
 
     def __init__(self, calculator=None) -> None:
         self.calculator = calculator or ZeroCalculator()
@@ -98,8 +96,7 @@ class ConsistencyWrapper(FakeMACEWrapper):
     def capabilities(self, model_record):
         from mliport.capabilities import CalculatorCapabilities
 
-        evidence = "test-known-answer" if self.state == "validated" else None
-        return CalculatorCapabilities(True, True, False, self.state, evidence)
+        return CalculatorCapabilities(True, True, False, self.state)
 
 
 class InconsistentCalculator(Calculator):
@@ -582,12 +579,10 @@ def test_inconsistent_forces_are_refused_before_any_neb_step(tmp_path: Path) -> 
     output = tmp_path / "run"
     initial, final = _endpoints()
 
-    # even a statically "validated" capability cannot bypass the measurement,
-    # and the deprecated opt-in flag does not either
     with pytest.raises(NEBGradientConsistencyError, match="not verifiably"):
         run_neb_workflow(
-            ConsistencyWrapper(InconsistentCalculator(), state="validated"),
-            _resolved(model, allow_unvalidated_neb=True),
+            ConsistencyWrapper(InconsistentCalculator()),
+            _resolved(model),
             output_dir=output,
             initial=initial,
             final=final,
@@ -609,7 +604,7 @@ def test_direct_force_model_is_still_rejected_before_preflight(
     with pytest.raises(ValueError, match="non-guaranteed"):
         run_neb_workflow(
             wrapper,
-            _resolved(model, allow_unvalidated_neb=True),
+            _resolved(model),
             output_dir=tmp_path / "run",
             initial=initial,
             final=final,

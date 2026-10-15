@@ -34,6 +34,14 @@ Review fixes (scientific correctness, data safety, robustness):
   instance in `CUDA_VISIBLE_DEVICES` is supported.
 - **Queue.** `mliport queue start --max-jobs-per-gpu N` lets small jobs share
   a GPU (default 1, exclusive).
+- **Static NEB evidence removed.** The packaged `mliport/data/validation`
+  records, the evidence matching in `mliport.capabilities` and the wheel
+  smoke assertions that depended on them are gone: the runtime pre-flight is
+  the only energy-force check. `--allow-unvalidated-neb` /
+  `allow_unvalidated_neb` / `NEB_ALLOW_UNVALIDATED` no longer exist in the
+  CLI, config, TUI, queue and API (strict config rejects them). Direct-force
+  models are still rejected. The V100 provenance records under `validation/`
+  are kept as history.
 - **NEB docs.** README wording on NEB validation fixed (evidence matching is
   unchanged and stays exact).
 - **NEB runtime pre-flight.** Before the first step NEB measures whether the

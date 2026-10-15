@@ -41,7 +41,6 @@ DENIED_SUFFIXES = (".pyc", ".pyo", ".so", ".dll", ".dylib")
 REQUIRED_WHEEL_MEMBERS = (
     "mliport/__init__.py",
     "mliport/data/compatibility/gpu_architecture_theory.json",
-    "mliport/data/validation/mace-v100.json",
 )
 
 REQUIRED_WHEEL_METADATA = ("METADATA", "WHEEL", "entry_points.txt")

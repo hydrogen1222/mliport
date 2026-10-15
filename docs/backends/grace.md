@@ -41,11 +41,6 @@ GRACE models do not expose mliport-level heads; `TASK` is the explicit PBC seman
 
 Download official GRACE exported SavedModels from the upstream AMS-ICAMS-RUB release channels; the model path is the SavedModel directory.
 
-## V100 capability evidence
-
-| evidence id | dtype | head | backend | workloads |
-|---|---|---|---|---|
-| `v100-grace-87e72b50a2eb-native-cacheTrue` | ['float32'] | None | 0.6.0 ({'tensorflow': '2.20.0'}) | energy_force_consistency:passed, neb:passed, shared_calculator:passed, short_md:passed, single_point:passed |
 
 ## License and citation
 

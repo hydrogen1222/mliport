@@ -1158,16 +1158,12 @@ def task_neb(campaign: Campaign) -> None:
             str(out),
         ]
         argv.append("--climb" if climb else "--no-climb")
-        # mliport refuses NEB when the energy-gradient consistency of the exact
-        # model/runtime has not been validated; the acceptance run opts in
-        # explicitly and records the experimental status (section 40).
-        argv.append("--allow-unvalidated-neb")
         record = campaign.run(name, argv, timeout=2400)
         record.checks.update(
             {
                 "workflow_smoke_only": True,
-                "capability": "energy-gradient consistency unvalidated for this "
-                "exact model/runtime; run used explicit --allow-unvalidated-neb",
+                "capability": "energy-gradient consistency measured by the NEB "
+                "runtime pre-flight; the run is a workflow smoke only",
                 "saddle_validation": "not_performed",
                 "physical_barrier": "not_claimed",
                 "images": 3,
@@ -1221,7 +1217,6 @@ def task_neb_restart(campaign: Campaign) -> None:
         "0.5",
         "--endpoint-steps",
         "20",
-        "--allow-unvalidated-neb",
     ]
     r1 = campaign.run(
         "g17_neb_restart_leg1",
