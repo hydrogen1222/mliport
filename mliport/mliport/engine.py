@@ -383,8 +383,7 @@ class CalculationEngine:
                 # explosions). An explicit user setting always wins.
                 pre_relax=opts.get(
                     "pre_relax",
-                    str(option("md", "ensemble")).upper()
-                    != "NVE",
+                    str(option("md", "ensemble")).upper() != "NVE",
                 ),
                 pre_relax_steps=option("md", "pre_relax_steps"),
                 pre_relax_fmax=option("md", "pre_relax_fmax"),

@@ -2,7 +2,7 @@
 
 The workflows must use currently supported action majors (Node 24 runtime),
 configure the uv cache against files that actually exist in the repository,
-and keep the supported Python matrix at 3.10/3.11/3.12.
+and keep the supported Python matrix at 3.10/3.11/3.12/3.13.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
-SUPPORTED_PYTHONS = {"3.10", "3.11", "3.12"}
+SUPPORTED_PYTHONS = {"3.10", "3.11", "3.12", "3.13"}
 
 #: Minimum major that runs on a currently supported Node runtime / action API.
 MINIMUM_MAJOR = {
