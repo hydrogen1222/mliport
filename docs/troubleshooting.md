@@ -1,208 +1,160 @@
 # Troubleshooting
 
-Each entry follows: **symptom → likely cause → diagnostic → action**. Fix the
-first failing cause; do not work around a fail-closed error by disabling a
-check.
+Most of mliport's errors are deliberate: it stops where a guess would give you a
+wrong answer that looks right. So the fix is nearly always to supply the missing
+fact, not to find a switch that turns the check off. Each entry below gives the
+symptom, the usual cause, how to confirm it and what to do.
 
 ## Installation
 
-- **Symptom:** `./scripts/install_mliport.sh` exits before installing.
-  **Cause:** unknown engine, unsupported `--python`, or `--device cuda`
-  without a supported GPU.
-  **Diagnostic:** `./scripts/install_mliport.sh --dry-run ...` prints the
-  plan; the error names the constraint.
-  **Action:** request a Python version compatible with **every** requested
-  backend (UMA needs >=3.11) and a supported device; see
-  [installation.md](installation.md).
+**The installer exits before installing anything.** An unknown engine, a
+`--python` that one of the requested backends cannot use, or `--device cuda` on
+a machine without a supported GPU. Run it again with `--dry-run`; the plan it
+prints, and the error, name the constraint. Ask for a Python version that every
+requested backend accepts (UMA needs 3.11 or newer) and a device the machine has.
+See [Installation](installation.md).
 
-- **Symptom:** launcher missing or points at the wrong environment.
-  **Cause:** the installer did not finish, or mliport was installed manually.
-  **Diagnostic:** `ls bin/`, `readlink -f bin/mliport-mace`.
-  **Action:** re-run the installer for that engine; never hand-edit a
-  launcher.
+**A launcher is missing or points at the wrong environment.** The installer
+did not finish, or mliport was installed by hand. `ls bin/` and
+`readlink -f bin/mliport-mace` show where it points. Re-run the installer for
+that engine; do not edit a launcher.
 
-## GPU runtime
+## Devices and GPUs
 
-- **Symptom:** the backend reports CPU despite `--device cuda`, or crashes on
-  the first kernel.
-  **Cause:** framework wheel does not contain kernels for the GPU, or the
-  device is not visible.
-  **Diagnostic:** `mliport doctor --engine <engine> --device cuda` and
-  `nvidia-smi`.
-  **Action:** use the installer's pinned wheel route for your architecture;
-  do not override `CUDA_VISIBLE_DEVICES` inside a queued job.
+**The backend runs on the CPU although you asked for `--device cuda`, or crashes
+on the first kernel.** Either the framework wheel has no kernels for your GPU
+architecture or the GPU is not visible. `mliport doctor --engine <engine>
+--device cuda` and `nvidia-smi` tell you which. Use the installer's pinned wheel
+route for your architecture, and do not override `CUDA_VISIBLE_DEVICES` inside a
+queued job.
 
-- **Symptom:** run says `actual_device: unknown`.
-  **Cause:** the backend does not expose a device identity (or the run fell
-  back). **Action:** treat the record as not GPU-attributed; fix visibility
-  and re-run before writing methods claims.
+**A run records `actual_device: unknown`.** The backend does not expose which
+device it used, or the run fell back. Treat that record as not attributed to a
+GPU; fix the visibility and run again before you write down a methods claim.
 
-## Model access
+## Models and configuration
 
-- **Symptom:** model not found or checksum mismatch.
-  **Cause:** wrong path, incomplete download, or a different checkpoint.
-  **Diagnostic:** compare the SHA-256 with
-  `validation/science/model_manifest.json` (`mliport doctor` reports what it
-  can).
-  **Action:** re-download from the upstream source; never rename a different
-  checkpoint to match.
+**Model not found, or the checksum does not match.** A wrong path, an
+incomplete download or a different checkpoint. Compare the SHA-256 with
+`validation/science/model_manifest.json` (`mliport doctor` reports what it can)
+and download again from the upstream source. Never rename a different checkpoint
+to make it match.
 
-## Configuration
+**`No MLIP backend was selected.`** There is no default backend. Pass
+`--model-type mace|dpa|grace|uma`, or declare `engine` in a `[model:...]` alias.
 
-- **Symptom:** `No MLIP backend was selected.`
-  **Cause:** no `--model-type`/`MODEL_TYPE` and no model alias/profile.
-  **Action:** pass an explicit backend (`--model-type mace|dpa|grace|uma`) or
-  declare `engine` in a `[model:...]` alias. There is no implicit default.
+**`Strict config validation failed` or `not applicable to engine`.** A
+misspelled key, or an option that belongs to another backend. The message names
+the key and where it came from, and `mliport config explain <KEY>` shows the
+canonical spelling. Fix the key. Use `--lenient-config` (or `strict_config =
+false`) only when you really do want warnings instead of errors.
 
-- **Symptom:** `Strict config validation failed` / `not applicable to engine`.
-  **Cause:** misspelled key or a backend-specific option given to another
-  backend (CFG-01).
-  **Diagnostic:** the error names the key and source;
-  `mliport config explain <KEY>` shows the canonical name.
-  **Action:** fix the key/backend. Only use `--lenient-config` /
-  `strict_config = false` when you deliberately accept warnings.
+**A DPA checkpoint wants a `HEAD`.** The checkpoint has several branches and you
+did not say which. `dp --pt show <model> model-branch` lists them; pass the one
+you mean with `--head`. mliport fails closed here and never silently picks a
+"default" head, so a result from the wrong head cannot be produced this way.
 
-## DPA head
+**Stress, or `--cell-opt`, is refused.** The loaded checkpoint does not implement
+stress. `mliport doctor --model <model> --engine <engine>` reports `has_stress`.
+Use a checkpoint that does, or run with a fixed cell. A stress tensor is never
+made up from forces.
 
-- **Symptom:** `HEAD` required / branch error on a multi-task DPA checkpoint.
-  **Cause:** the checkpoint exposes several branches and no head was given.
-  **Diagnostic:** `dp --pt show <model> model-branch`.
-  **Action:** pass the intended branch with `--head`/`HEAD`. mliport
-  **fails closed**; it never silently picks a "default" head, so a wrong-head
-  result cannot be produced this way.
+**A change of model or option seems to have no effect.** An existing run
+directory or analysis ID was reused. Compare `resolved_config.json` and the model
+identity in the result with what you asked for; use `--force` to recompute an
+analysis, or write to a new `--output`. mliport does not reuse a calculator across
+a changed model identity.
 
-## Stress unsupported
+## Runs
 
-- **Symptom:** `--cell-opt` or a stress request fails, or stress is absent
-  from the output.
-  **Cause:** the loaded checkpoint does not implement stress.
-  **Diagnostic:** `mliport doctor --model <model> --engine <engine>` reports
-  `has_stress`; the T1 evidence records `stress_supported` per profile.
-  **Action:** use a stress-capable checkpoint or run fixed-cell; do not
-  fabricate a stress tensor from forces.
+**An MD run aborts: a force above `--fmax-abort`, a NaN energy, a runaway
+temperature.** The timestep is too large, the structure was not relaxed, the
+charge or spin state is inconsistent, or the model is being used outside its
+domain. Look at `raw/md.csv` and `vasp/OUTCAR` around the abort; the abort record
+names the threshold. Pre-relax, shorten the timestep, check the task, and run
+again with a recorded seed. Raising `--fmax-abort` only hides the problem.
 
-## MD instability
+**NEB does not converge.** Typical causes are endpoints that were not relaxed or
+do not match, a wrong atom map, too few images or too few steps. Look at the
+band energies and `run_context.json`. Fix the endpoints or the mapping, add
+images or steps, or tune the spring. A saddle candidate is not a verified
+transition state; confirming one with a Hessian is a separate step.
 
-- **Symptom:** run aborts with a force above `--fmax-abort`, NaN energy, or
-  exploding temperature.
-  **Cause:** timestep too large, bad structure/pre-relaxation, inconsistent
-  charge/spin, or a model outside its domain.
-  **Diagnostic:** inspect `raw/md.csv` and `vasp/OUTCAR` around the abort;
-  the abort record names the force threshold.
-  **Action:** pre-relax, reduce the timestep, check the task/electronic
-  state, and re-run with a recorded seed. Do not lower `--fmax-abort` to
-  "make it pass".
+**NEB is refused: "not verifiably the gradient of its energy".** Before the first
+step, NEB compares the model's forces with finite differences of its energy on
+your band. The refusal means the forces do not match the energy (a model that
+predicts forces directly, such as UMA), a value was not finite, or the energy
+resolution is too coarse to tell (a large float32 cell: use float64 or a smaller
+cell). The message gives the image, the direction and the error, and the whole
+record is in `NEBGradientConsistencyError.summary`.
 
-## NEB non-convergence
+**NEB resume says "Resume fingerprint is incompatible".** A resume continues in the
+original run directory with the recorded options, and the step budgets are part of
+that identity. Changing `--max-steps` while resuming is rejected, so leave it out
+and the recorded budget is used.
 
-- **Symptom:** `neb_results.json` reports not converged.
-  **Cause:** endpoints not pre-relaxed/mismatched, bad atom map, too few
-  images, insufficient steps.
-  **Diagnostic:** inspect the band energies/images and
-  `run_context.json`.
-  **Action:** fix endpoints/mapping, increase images/steps or tune the
-  spring; a saddle candidate is not a verified transition state — Hessian
-  verification remains separate.
+## Analysis
 
-## Transport insufficient sampling
+**`analyze` asks for options.** `transport` needs `--mobile`, `--charge` and
+`--fit-start-ps`, and an explicit `--lag-step-ps` with `--lag-stop-ps` when the
+default lag grid would pass the memory guard. `electrolyte` needs either `--sites`
+or `--discover-sites-from-density`. `rdf` needs `--center` and `--neighbor`;
+`msd` needs `--mobile`.
 
-- **Symptom:** transport refuses to fit, or `D` has huge uncertainty.
-  **Cause:** too few saved frames in the diffusive regime, wrong saved-frame
-  interval, or drift policy masking the signal.
-  **Diagnostic:** the analysis JSON reports the lag grid, fit window and
-  sampling diagnostics.
-  **Action:** run longer/equilibrate more, state the saved-frame interval,
-  and re-fit over an explicit diffusive window. Never lower the sampling
-  requirement to force a number.
+**Transport refuses to fit, or `D` has a huge uncertainty.** There are too few
+saved frames in the diffusive regime, the saved-frame interval is wrong, or the
+drift policy is hiding the signal. The result JSON reports the lag grid, the fit
+window and the sampling diagnostics. Run longer, state the frame interval, and fit
+again over an explicit diffusive window. Do not lower the sampling requirement to
+get a number out.
 
-## GEMDAT backend failure
+**GEMDAT reports `backend_error`.** The GEMDAT backend failed (site mapping,
+density parameters, a missing dependency). That is not "zero jumps". Read the error
+in `results.json`, try explicit `--sites`, and fix the definition or the
+environment. Keep the `backend_error` record rather than reporting a mechanism.
 
-- **Symptom:** `backend_error` in the electrolyte analysis.
-  **Cause:** the GEMDAT backend failed (site mapping/density parameters,
-  missing dependency), which is **not** "zero jumps".
-  **Diagnostic:** read the error in `analysis.json`; re-run with explicit
-  `--sites`.
-  **Action:** fix the site definition/parameters or the environment; keep the
-  backend_error record rather than reporting a mechanism.
+**GEMDAT takes very long on a long trajectory.** Discovering sites on a 1 ns,
+400-atom LGPS run is expensive. Analyze a segment with an explicit
+`--frame-interval-fs`, or allow it more time.
 
-## Cache invalidation
+## Fresh-install notes (2.0.0b3)
 
-- **Symptom:** changing a model/option appears to have no effect, or results
-  look stale.
-  **Cause:** an existing run directory/analysis ID was reused.
-  **Diagnostic:** compare `resolved_config.json` and model identity in the
-  result with your request; use `--force` for analyses.
-  **Action:** write to a new `--output` directory. mliport does not silently
-  reuse a calculator across changed model identity.
+These were seen on a clean V100 machine and fixed before 2.0.0b3. They are here so
+that you recognize the message if you meet it.
 
-## Fresh-install acceptance notes (2.0.0b3)
-
-These failures were observed on a clean V100 installation and fixed before
-the 2.0.0b3 release. They are listed with the exact remedy so the message can
-be recognized in the field.
-
-**The installer stops with "no local Python 3.10-3.13 runtime with
-packaging".** The bootstrap needs a 3.10-3.13 interpreter to plan the
-install. The current installer selects the uv-managed interpreter and, when
-that interpreter has no `packaging`, runs the planner in an ephemeral
+**"no local Python 3.10-3.13 runtime with packaging".** The installer needs a
+3.10–3.13 interpreter to plan the install. It now picks the uv-managed one and,
+when that has no `packaging`, runs the planner in a throwaway
 `uv run --with packaging` environment. If you set `MLIPORT_INSTALL_PYTHON`
-yourself, the interpreter must be 3.10-3.13 and must import `packaging`. You
-can also preselect one with `uv python install 3.12`.
+yourself, it has to be 3.10–3.13 and import `packaging`; `uv python install 3.12`
+gives you one.
 
-**`--engines mace dpa grace uma` is rejected as extra arguments.** Fixed in
-2.0.0b3: `--engines` accepts both the documented space-separated form and the
-comma-separated form.
+**`--engines mace dpa grace uma` is rejected as extra arguments.** Fixed: `--engines`
+takes the space-separated and the comma-separated form.
 
-**The doctor passes but `analyze transport`/`electrolyte` are missing.**
-Fixed in 2.0.0b3: the installer now installs `mliport[analysis-all]`, which
-covers scipy/matplotlib, kinisi and gemdat. Re-run the installer instead of
-adding packages by hand.
+**The doctor passes but `analyze transport` or `electrolyte` is missing.** Fixed:
+the installer now installs `mliport[analysis-all]`, which brings scipy, matplotlib,
+kinisi and gemdat. Run the installer again instead of adding packages by hand.
 
-**DPA fails with `No package metadata was found for mpich`.** `deepmd-kit`
-imports MPICH metadata from its `torch` extra. Fixed in 2.0.0b3: the DPA
-environment installs a matching `mpich` package. Reinstalling DPA is enough:
+**DPA fails with `No package metadata was found for mpich`.** `deepmd-kit` reads
+MPICH metadata through its `torch` extra. The DPA environment now installs a
+matching `mpich`, so reinstalling DPA is enough:
 
 ```bash
 ./scripts/install_mliport.sh --engines dpa --device auto --clean
 ```
 
-**DPA or GRACE says "requires process-level device isolation".** The CLI
-restarts DPA/GRACE commands in a fresh process with `CUDA_VISIBLE_DEVICES`
-when the variable is unset, so the documented per-environment command works.
-The Python API cannot restart the caller: export
-`CUDA_VISIBLE_DEVICES=<uuid>` (or `""` for CPU) before importing those
-frameworks. One GPU UUID can be read with
+**DPA or GRACE says "requires process-level device isolation".** The CLI restarts
+DPA and GRACE commands in a fresh process with `CUDA_VISIBLE_DEVICES` set when it
+is unset, so the documented per-environment command just works. The Python API
+cannot restart its caller: export `CUDA_VISIBLE_DEVICES=<uuid>` (or `""` for the
+CPU) before importing those frameworks. A GPU's UUID comes from
 `nvidia-smi --query-gpu=uuid --format=csv,noheader`.
 
-**NEB is refused with "not verifiably the gradient of its energy".** Before
-the first step NEB compares the model's forces with finite differences of its
-energy on your band. The refusal means the forces do not match the energy
-(for example a model that predicts forces directly), a value was non-finite,
-or the energy resolution is too coarse to check (a large float32 cell: use
-float64 or a smaller cell). The failing image, direction and error are in the
-message; the full record is in the `NEBGradientConsistencyError.summary`.
+**`mliport tui` waits when started from a script.** The TUI needs an interactive
+terminal and now exits with an error without one. For headless automation use the
+Python API.
 
-**NEB resume says "Resume fingerprint is incompatible".** Resume continues in
-the original run directory and keeps the recorded options. In this beta the
-step budgets are part of the identity, so changing `--max-steps` during a
-resume is rejected; drop the override to continue with the recorded budget.
-For UMA the checkpoint's implicit charge/spin defaults are now carried into
-the comparison, so a plain resume works.
-
-**`analyze` asks for missing options.** `transport` requires
-`--charge` and `--fit-start-ps` (and explicit `--lag-step-ps`/`--lag-stop-ps`
-when the default lag grid would exceed the memory guard). `electrolyte`
-requires either `--sites` or `--discover-sites-from-density`. `rdf` requires
-`--center` and `--neighbor`; `density` and `msd` require `--mobile`.
-
-**GEMDAT on a long, large trajectory takes very long.** Site discovery on a
-1 ns, 400-atom LGPS run exceeds a short acceptance budget. Analyze a segment
-with an explicit `--frame-interval-fs`, or give it a longer window.
-
-**`mliport tui` waits when started from a script.** The TUI requires an
-interactive terminal; without one it now exits with an error. Use the TUI
-tests or the Python API for headless automation.
-
-**Hugging Face downloads fail behind a SOCKS proxy.** Install
-`httpx[socks]` in the download environment and keep `NO_PROXY` free of
-bracketed entries; see [models.md](models.md).
+**Hugging Face downloads fail behind a SOCKS proxy.** Install `httpx[socks]` in the
+download environment and keep bracketed entries out of `NO_PROXY`; see
+[Models](models.md).
