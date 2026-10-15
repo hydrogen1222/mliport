@@ -3,8 +3,7 @@
 After the documentation restructure (task book section 8) the runtime table
 lives in ``docs/validation.md`` and the GPU install-route table is generated
 into ``docs/installation.md``. The runtime table may only claim ``passed`` for
-runtimes whose sanitized records exist in the repository *and* whose primary
-evidence is promoted in the curated capability registry. The compatibility
+runtimes whose sanitized records exist in the repository. The compatibility
 table may only use the two honest install-route states from
 ``mliport/install/compatibility.py`` (``experimental`` / ``needs runtime smoke
 test``). This guards against documentation drift when a runtime contract
@@ -16,7 +15,6 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -45,22 +43,11 @@ def _runtime_table_rows() -> list[list[str]]:
     return rows
 
 
-def _registry_evidence_ids() -> set[str]:
-    ids: set[str] = set()
-    for path in sorted((REPO_ROOT / "mliport/mliport/data/validation").glob("*.json")):
-        record: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-        ids.add(record["evidence_id"])
-    return ids
-
-
 def test_runtime_table_exists() -> None:
     assert _runtime_table_rows(), "README runtime-validation table missing"
 
 
 def test_runtime_table_rows_are_backed_by_records() -> None:
-    registry_ids = _registry_evidence_ids()
-    assert registry_ids, "curated registry is empty"
-
     for row in _runtime_table_rows():
         label = row[0]
         statuses = row[1:6]
@@ -72,8 +59,8 @@ def test_runtime_table_rows_are_backed_by_records() -> None:
 
         if has_passed:
             assert record_links, f"{label} claims passed without records"
-            # The primary record must exist, be passed on every workload, and
-            # be promoted in the curated registry (RC-03: no doc-only truth).
+            # The primary record must exist and be passed on every workload
+            # (RC-03: no doc-only truth).
             primary = REPO_ROOT / record_links[0]
             assert primary.exists(), f"{label}: missing record {record_links[0]}"
             record = json.loads(primary.read_text(encoding="utf-8"))
@@ -83,10 +70,6 @@ def test_runtime_table_rows_are_backed_by_records() -> None:
                 assert (
                     workload_status == "passed"
                 ), f"{label}: workload {workload} is {workload_status!r}"
-            assert record["evidence_id"] in registry_ids, (
-                f"{label}: evidence_id {record['evidence_id']} is not in the "
-                f"curated capability registry"
-            )
         else:
             assert "not run" in statuses, f"{label}: unexpected status row {statuses}"
 

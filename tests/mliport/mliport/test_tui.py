@@ -907,7 +907,6 @@ async def test_neb_run_command_matches_shared_queue_helper(tmp_path: Path) -> No
             "fmax": 0.05,
             "max_steps": 200,
             "endpoint_policy": "relax",
-            "allow_unvalidated_neb": True,
             "inference_mode": "default",
             "fmax_abort": 15,
         }
@@ -937,7 +936,6 @@ async def test_neb_run_command_matches_shared_queue_helper(tmp_path: Path) -> No
             "fmax": 0.05,
             "max_steps": 200,
             "endpoint_policy": "relax",
-            "allow_unvalidated_neb": True,
             "inference_mode": "default",
             "default_dtype": "float64",
             "fmax_abort": 15,
@@ -960,7 +958,6 @@ async def test_neb_run_command_matches_shared_queue_helper(tmp_path: Path) -> No
     assert command[command.index("--fmax") + 1] == "0.05"
     assert command[command.index("--max-steps") + 1] == "200"
     assert command[command.index("--endpoint-policy") + 1] == "relax"
-    assert "--allow-unvalidated-neb" in command
     assert command[command.index("--atom-map") + 1] == "1,0"
     assert command[command.index("--image-shifts") + 1] == "0,0,0"
     # Blank/None options must not hard-code TUI defaults.
@@ -1060,7 +1057,6 @@ async def test_neb_config_screen_sections_and_idpp_toggle(tmp_path: Path) -> Non
             "#max_steps-input",
             "#checkpoint_interval-input",
             "#fmax_abort-input",
-            "#allow-unvalidated-neb-switch",
             "#neb-validation-note",
         ):
             screen.query_one(selector)

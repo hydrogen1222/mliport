@@ -14,7 +14,6 @@ validation/science/campaigns/<campaign>.json     campaign manifest (target commi
 validation/science/archive_manifest.json         evidence archive + checksums
 validation/science/model_manifest.json           pinned model profiles
 validation/science/capability_matrix.json        interface expressibility matrix
-mliport/mliport/data/validation/*.json           packaged capability evidence
 ```
 
 ## Installer smoke evidence (historical)

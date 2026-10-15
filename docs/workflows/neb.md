@@ -41,7 +41,6 @@ statement about model accuracy.
 | `--neb-spring`, `--neb-maxstep`, `--neb-min-distance` | band/spring parameters |
 | `--checkpoint-interval` | band checkpoint frequency |
 | `--resume` | resume from a checkpoint/directory |
-| `--allow-unvalidated-neb` | deprecated, has no effect: the runtime pre-flight replaces the opt-in |
 
 ## Inputs
 

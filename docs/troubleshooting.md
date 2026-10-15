@@ -181,7 +181,6 @@ energy on your band. The refusal means the forces do not match the energy
 or the energy resolution is too coarse to check (a large float32 cell: use
 float64 or a smaller cell). The failing image, direction and error are in the
 message; the full record is in the `NEBGradientConsistencyError.summary`.
-`--allow-unvalidated-neb` no longer exists as a bypass.
 
 **NEB resume says "Resume fingerprint is incompatible".** Resume continues in
 the original run directory and keeps the recorded options. In this beta the

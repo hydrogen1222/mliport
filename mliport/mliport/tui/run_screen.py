@@ -235,7 +235,6 @@ class RunScreen(Screen):
                 "neb_min_distance",
                 "checkpoint_interval",
                 "fmax_abort",
-                "allow_unvalidated_neb",
             ):
                 value = self.app.get_config(key)
                 if value is not None:

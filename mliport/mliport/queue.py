@@ -126,7 +126,6 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "idpp_mic": ("--idpp-mic", "--no-idpp-mic"),
     "neb_min_distance": ("--min-distance",),
     "checkpoint_interval": ("--checkpoint-interval",),
-    "allow_unvalidated_neb": ("--allow-unvalidated-neb", "--no-allow-unvalidated-neb"),
 }
 
 

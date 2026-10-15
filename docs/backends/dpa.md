@@ -40,11 +40,6 @@ Multi-task checkpoints expose named branches. Pass the intended branch with `--h
 
 Download DPA checkpoints from the upstream DeePMD-kit/DPA release channels. Read the available branches with `dp --pt show <model> model-branch` and pass the intended branch as `HEAD`.
 
-## V100 capability evidence
-
-| evidence id | dtype | head | backend | workloads |
-|---|---|---|---|---|
-| `v100-dpa-876354744aea-native-cacheTrue` | ['float32'] | Domains_Alloy | 3.1.3 ({'torch': '2.10.0+cu126'}) | energy_force_consistency:passed, neb:passed, shared_calculator:passed, short_md:passed, single_point:passed |
 
 ## License and citation
 

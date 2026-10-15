@@ -188,7 +188,6 @@ def main():
                     "endpoint_policy": "validate",
                     "path_convention": "unwrapped",
                     "checkpoint_interval": 5,
-                    "allow_unvalidated_neb": True,
                 },
             )
             result = run_neb_workflow(

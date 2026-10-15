@@ -41,12 +41,6 @@ mliport reports stress only if the loaded checkpoint exposes it (`implemented_pr
 
 Download MACE checkpoints from the upstream MACE releases. The pinned `mace_omat` profiles use `mace-omat-0-medium.model` and are referenced by SHA-256 in `validation/science/model_manifest.json`.
 
-## V100 capability evidence
-
-| evidence id | dtype | head | backend | workloads |
-|---|---|---|---|---|
-| `v100-mace-75428afe3a1d-float32-cacheTrue` | float32 | default | 0.3.16 ({'torch': '2.8.0+cu126'}) | energy_force_consistency:passed, neb:passed, shared_calculator:passed, short_md:passed, single_point:passed |
-| `v100-mace-75428afe3a1d-float64-cacheTrue` | float64 | default | 0.3.16 ({'torch': '2.8.0+cu126'}) | energy_force_consistency:passed, neb:passed, shared_calculator:passed, short_md:passed, single_point:passed |
 
 ## License and citation
 

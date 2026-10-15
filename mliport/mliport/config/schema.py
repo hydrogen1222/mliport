@@ -504,13 +504,6 @@ _SPECS: list[OptionSpec] = [
     ),
     # --- MD run options ---
     OptionSpec(
-        "allow_unvalidated_neb",
-        bool,
-        frozenset({"neb"}),
-        aliases={"NEB_ALLOW_UNVALIDATED"},
-        description="Deprecated, no effect: NEB runs a runtime energy-force consistency pre-flight instead.",
-    ),
-    OptionSpec(
         "ensemble",
         str,
         frozenset({"md"}),

@@ -650,14 +650,10 @@ class ConfigScreen(Screen):
             yield Label("Force-safety Abort Threshold (eV/Å):")
             yield neb_number("fmax_abort")
 
-            yield Horizontal(
-                Label("Allow unvalidated NEB (skip engine evidence check):"),
-                neb_bool("allow_unvalidated_neb", "allow-unvalidated-neb-switch"),
-                classes="switch-row",
-            )
             yield Static(
-                "NEB runs are checked against the installed validation records; "
-                "unvalidated engines require an explicit opt-in here.",
+                "Before the first step NEB checks, with finite differences on "
+                "your band, that the model's forces match its energy, and "
+                "refuses to run otherwise.",
                 id="neb-validation-note",
             )
 
@@ -1535,10 +1531,6 @@ class ConfigScreen(Screen):
             )
             self.app.update_config(
                 "idpp_mic", self.query_one("#idpp-mic-switch", Switch).value
-            )
-            self.app.update_config(
-                "allow_unvalidated_neb",
-                self.query_one("#allow-unvalidated-neb-switch", Switch).value,
             )
 
             int_fields = (
