@@ -30,11 +30,13 @@ PATTERNS = (
 ALLOWED_FILES = {
     "CHANGELOG.md",  # changelog mentions the old name as history
     "docs/migration-from-mlipx.md",  # the migration guide itself
+    "docs/migration-from-mlipx.zh.md",  # ...and its Chinese twin
     "docs/index.md",  # "migrate from the old mlipx name" table row
     "README.md",  # links to the migration guide
     "README_CN.md",
     "mliport/README.md",  # generated from the root README
     "docs/development.md",  # build check: "no mlipx namespace in the wheel"
+    "docs/development.zh.md",
     "validation/science/evidence/constants.py",  # legacy schema/namespace migration
     "validation/science/evidence/loader.py",  # legacy schema normalization
     "validation/science/reports/BETA_VALIDATION.md",  # historical rename note
