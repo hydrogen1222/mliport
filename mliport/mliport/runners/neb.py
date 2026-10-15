@@ -17,6 +17,9 @@ from mliport.neb.schema import (
 )
 from mliport.protocols import CancellationRequested, ProgressEvent
 
+#: Log a progress line for the first optimizer step and then every Nth step.
+PROGRESS_STEP_INTERVAL = 5
+
 
 class NEBRunner:
     """Run a prepared band serially with one calculator instance.
@@ -167,20 +170,44 @@ class NEBRunner:
         # before the optimizer is allowed to take its next step.
         self._physical_snapshot(neb.images[1:-1], context=f"NEB {stage}")
         optimizer = FIRE(neb, maxstep=self.options.maxstep_A, logfile=None)
+        self._emit(
+            f"NEB {stage}: FIRE started (band fmax target {fmax:g} eV/A, "
+            f"up to {steps} steps, {len(neb.images) - 2} interior images)",
+            step=0,
+            stage=stage,
+        )
         for _ in optimizer.irun(fmax=fmax, steps=steps):
             if self._is_cancelled():
                 raise CancellationRequested(f"NEB {stage} cancelled by user")
             # ASE optimizes constraint-applied forces. Check the raw physical
             # state at every accepted optimizer state so a frozen high force,
             # NaN, or Inf cannot be hidden until the final result snapshot.
-            self._physical_snapshot(neb.images[1:-1], context=f"NEB {stage}")
+            energies, raw_forces = self._physical_snapshot(
+                neb.images[1:-1], context=f"NEB {stage}"
+            )
+            step = int(optimizer.nsteps)
+            if step == 1 or step % PROGRESS_STEP_INTERVAL == 0:
+                self._emit(
+                    f"NEB {stage} step {step}/{steps}: "
+                    f"max |F_physical| {self._fmax(raw_forces):.4f} eV/A, "
+                    f"highest interior image E {float(np.max(energies)):.4f} eV "
+                    f"(target band fmax {fmax:g} eV/A)",
+                    step=step,
+                    stage=stage,
+                )
             if self.checkpoint_callback is not None:
-                self.checkpoint_callback(stage, int(optimizer.nsteps), neb.images)
+                self.checkpoint_callback(stage, step, neb.images)
         neb_forces = np.asarray(neb.get_forces(), dtype=float).copy()
         if not np.all(np.isfinite(neb_forces)):
             raise NEBPreparationError(f"NEB {stage} produced a non-finite band force")
         max_neb = self._fmax(
             neb_forces.reshape(len(neb.images) - 2, len(neb.images[0]), 3)
+        )
+        self._emit(
+            f"NEB {stage}: finished after {int(optimizer.nsteps)} steps, "
+            f"max band force {max_neb:.4f} eV/A (target {fmax:g})",
+            step=int(optimizer.nsteps),
+            stage=stage,
         )
         stage_result = {
             "stage": stage,

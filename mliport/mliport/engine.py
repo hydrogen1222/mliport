@@ -530,6 +530,15 @@ class CalculationEngine:
                         )
                     )
                 calculator = self._create_calculator()
+
+                def forward_progress(event) -> None:
+                    # Optimizer/pre-flight progress belongs in run.log too, not
+                    # only in a frontend callback that the CLI does not attach.
+                    if event.message:
+                        run_logger(event.message)
+                    if progress_callback is not None:
+                        progress_callback(event)
+
                 try:
                     result = _run_neb_workflow_locked(
                         calculator,
@@ -541,7 +550,7 @@ class CalculationEngine:
                         atom_map=atom_map,
                         image_shifts=image_shifts,
                         verbose=False,
-                        progress_callback=progress_callback,
+                        progress_callback=forward_progress,
                         cancel_event=cancel_event,
                     )
                 except CancellationRequested as exc:

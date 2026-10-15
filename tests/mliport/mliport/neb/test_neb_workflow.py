@@ -253,6 +253,10 @@ def test_engine_entrypoint_locks_before_logging_and_loads_one_model(
     assert wrapper.get_calls == 2  # pre-flight + runner; one cached calculator
     assert (engine.output_dir / "run.log").is_file()
     assert (engine.output_dir / "run_context.json").is_file()
+    # pre-flight and optimizer progress reach run.log, not only a callback
+    log_text = (engine.output_dir / "run.log").read_text(encoding="utf-8")
+    assert "Pre-flight passed" in log_text
+    assert "FIRE started" in log_text
 
 
 def test_runner_failure_records_failed_status_and_last_complete_checkpoint(

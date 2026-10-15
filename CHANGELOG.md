@@ -47,6 +47,12 @@ Review fixes (scientific correctness, data safety, robustness):
   `--allow-unvalidated-neb` is deprecated and has no effect; it can no longer
   bypass a failed check. This is a spot check, not a proof over the whole
   energy surface and not a statement about model accuracy.
+- **NEB progress in run.log.** The NEB runner never wrote optimizer progress,
+  so `run.log` stayed silent until the end. It now logs the pre-flight, the
+  start/finish of every FIRE stage and a progress line (max physical force,
+  highest interior image energy) for the first step and every 5th step.
+- **Contributing.** The development-environment commands match CI
+  (`uv sync` at the repository root installs nothing).
 - **Python 3.13** is supported (package, installer, CI).
 - **Maintainability.** One backend calculator-option table replaces three
   copies; engine fallbacks read `BUILTIN_DEFAULTS`; unused `mliport/templates`
