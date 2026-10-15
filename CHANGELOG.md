@@ -34,8 +34,8 @@ Review fixes (scientific correctness, data safety, robustness):
   instance in `CUDA_VISIBLE_DEVICES` is supported.
 - **Queue.** `mliport queue start --max-jobs-per-gpu N` lets small jobs share
   a GPU (default 1, exclusive).
-- **NEB evidence.** Capability evidence ignores the framework wheel's CUDA
-  channel label (`+cu126`/`+cu128`); README wording on NEB validation fixed.
+- **NEB docs.** README wording on NEB validation fixed (evidence matching is
+  unchanged and stays exact).
 - **Python 3.13** is supported (package, installer, CI).
 - **Maintainability.** One backend calculator-option table replaces three
   copies; engine fallbacks read `BUILTIN_DEFAULTS`; unused `mliport/templates`
