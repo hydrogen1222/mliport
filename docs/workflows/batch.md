@@ -1,9 +1,7 @@
-# Batch processing
+# Batch
 
-**Purpose.** Run the same calculation (default: single point) over many
-structure files with one model, one backend and one configuration.
-
-**Minimal command.**
+`mliport batch` runs one calculation, a single point by default, over every
+structure in a directory, with one model, one backend and one configuration.
 
 ```bash
 .venv-mace/bin/mliport batch structures/ \
@@ -12,32 +10,36 @@ structure files with one model, one backend and one configuration.
   --output batch_results
 ```
 
-**Important options.**
+The model is loaded once and the calculator is reused for every structure, which
+is the point of batching: you pay the startup cost a single time.
+
+## Options you will use
 
 | Option | Meaning |
 |---|---|
-| `--calc-type` | sub-calculation to run per structure: `sp` (default), `opt` |
-| `--pattern` | file glob; when omitted, discovers `*.cif`, `*.xyz`, `*.vasp`, `POSCAR*` |
-| `--output` | batch output directory (default `batch_results`) |
-| `--model`, `--model-type`, `--task`, `--head`, `--device` | model/backend selection |
+| `--calc-type` | what to run per structure: `sp` (default) or `opt` |
+| `--pattern` | file glob; without it mliport finds `*.cif`, `*.xyz`, `*.vasp` and `POSCAR*` |
+| `--output` | the batch output directory (default `batch_results`) |
+| `--model`, `--model-type`, `--task`, `--head`, `--device` | model and backend selection |
 
-**Inputs.** A directory of structures and one model/backend. All structures
-share the same calculator and configuration; the batch runner loads the model
-once and reuses the calculator for efficiency.
+## What you get
 
-**Outputs.** One run directory per structure under `--output`, each with the
-normal SP/OPT outputs, plus batch-level progress/failure reporting.
+One run directory per structure under `--output`, each with the usual single
+point or relaxation files, plus progress and failure reporting for the batch as
+a whole. Every structure keeps its own model identity and resolved
+configuration.
 
-**Failure semantics.** A failing structure is reported as failed and does not
-silently produce a zero-energy entry. Missing/empty inputs fail closed.
-Batch results retain per-structure model identity and resolved configuration.
+## When something fails
 
-**Scientific caveats.** Batch mode is a throughput feature, not a
-consistency guarantee: check that every structure matches the backend's task
-semantics (periodic vs molecular). Do not mix structures requiring different
-heads/tasks in one batch — use separate batch runs and say so.
+A structure that fails is reported as failed; it never turns into a zero-energy
+entry. A missing or empty input directory fails closed.
 
-**Example.**
+## A caution
+
+Batch mode is for throughput, not a consistency guarantee. Check that every
+structure fits the backend's task (periodic or molecular), and do not mix
+structures that need different heads or tasks in one batch; run them separately
+and say so.
 
 ```bash
 .venv-dpa/bin/mliport batch structures/ \

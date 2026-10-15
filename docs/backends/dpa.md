@@ -1,8 +1,10 @@
 # DPA (DeepMD-kit)
 
-DPA checkpoints are loaded through `deepmd-kit`. Multi-task checkpoints require an explicit branch `HEAD`; mliport fails closed instead of guessing a head.
+DPA checkpoints are loaded through `deepmd-kit`. Many of them are multi-task
+models with several named branches, and mliport will not guess which branch you
+mean: you pass it explicitly as the head, or the run fails closed.
 
-## Install environment
+## Install
 
 <!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
@@ -14,7 +16,10 @@ DPA checkpoints are loaded through `deepmd-kit`. Multi-task checkpoints require 
 ```
 <!-- END GENERATED -->
 
-## Supported profiles
+The model loader needs the `deepmd-kit[torch]` metadata, and the installer
+brings along the matching `mpich` package.
+
+## Pinned profiles
 
 <!-- BEGIN GENERATED: profiles -->
 | Profile | Identity | dtype | task | head | model SHA-256 |
@@ -22,37 +27,32 @@ DPA checkpoints are loaded through `deepmd-kit`. Multi-task checkpoints require 
 | `dpa_omat` | DPA-3.1-3M, branch Omat24 | upstream/model-defined | bulk | Omat24 | `86dd3a804d78...` |
 <!-- END GENERATED -->
 
-## Minimal command
+## Run it
 
 ```bash
-.venv-dpa/bin/mliport sp structure.cif --model /path/to/DPA-3.1-3M.pt --model-type dpa --head Omat24
+.venv-dpa/bin/mliport sp structure.cif \
+  --model /path/to/DPA-3.1-3M.pt --model-type dpa --head Omat24
 ```
 
-## Precision
+To see which branches a checkpoint offers, ask DeePMD-kit, then pass the one you
+want as `--head` (`HEAD` in an INCAR file):
 
-The dtype is part of the profile identity. This backend's precision is model-defined; mliport records the effective dtype from the backend, never a value it assumes.
+```bash
+dp --pt show DPA-3.1-3M.pt model-branch
+```
 
-## Stress
+## Things to know
 
-mliport reports stress only if the loaded checkpoint exposes it (`implemented_properties`). Never assume stress support from the engine name: the T1 evidence records `stress_supported` per profile, and `mliport doctor` reports what the current model provides.
+- **Leaving out the head on a multi-task checkpoint is a fatal configuration
+  error.** There is no silent default branch.
+- **Precision** is defined by the model. mliport records the dtype the backend
+  actually reports and never substitutes its own idea of it.
+- **Stress** is reported only if the checkpoint and branch you loaded expose it.
+- **DPA needs per-process GPU isolation.** The CLI restarts a command with
+  `CUDA_VISIBLE_DEVICES` when it is unset; from the Python API, set the variable
+  in the calling process before importing the framework.
+- DPA has no `inference_mode`. UMA-only options are rejected under strict
+  configuration rather than ignored.
 
-## Head / task semantics
-
-Multi-task checkpoints expose named branches. Pass the intended branch with `--head`/`HEAD`; omitting it on a multi-task checkpoint is a fatal configuration error, never a silent default branch.
-
-## Model acquisition
-
-Download DPA checkpoints from the upstream DeePMD-kit/DPA release channels. Read the available branches with `dp --pt show <model> model-branch` and pass the intended branch as `HEAD`.
-
-
-## License and citation
-
-mliport is MIT-licensed; the upstream model/software must be cited separately. See [citations](../citations.md) for the authoritative upstream references.
-
-## Known limitations
-
-- Multi-task checkpoints require an explicit `HEAD`; the product fails closed rather than using an arbitrary branch.
-- DPA has no `inference_mode` concept; UMA-only options are rejected in strict config mode.
-- Stress support depends on the checkpoint and its branch.
-- DPA needs process-level CUDA isolation. The CLI restarts a command with `CUDA_VISIBLE_DEVICES` when it is unset; the Python API needs the variable set in the caller.
-- `deepmd-kit[torch]` metadata is required for the model loader; the installer carries the matching `mpich` package.
+mliport is MIT-licensed. The upstream software and model must be cited
+separately; see [Citations](../citations.md).

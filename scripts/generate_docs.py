@@ -245,10 +245,6 @@ def _generated_files() -> dict[Path, callable]:
     for page in GENERATED_PAGES:
         for lang in LANGUAGES:
             path = REPO / "docs" / f"{page}{_SUFFIX[lang]}.md"
-            # A page that has no translation yet falls back to English on the
-            # site; there is nothing to refresh until it exists.
-            if lang != "en" and not path.is_file():
-                continue
             files[path] = lambda page=page, lang=lang: render_page(page, lang)
     return files
 

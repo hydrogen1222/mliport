@@ -1,53 +1,50 @@
-# MSD and local exponent
+# MSD and the local exponent
 
-**Purpose.** Compute the mean-squared displacement of the mobile species and
-the local MSD exponent `alpha(t) = d log(MSD) / d log(t)` as a **diagnostic**
-of the diffusion regime.
-
-**Minimal command.**
+`msd` computes the mean-squared displacement of the mobile species and the local
+exponent `alpha(t) = d log(MSD) / d log(t)`. Treat it as a diagnostic of which
+diffusion regime the trajectory is in, not as a diffusivity.
 
 ```bash
-mliport analyze runs/md msd --mobile Li --axes xyz --force
+mliport analyze runs/md msd --mobile Li --axes xyz
 ```
 
-**Important options.**
+`--mobile` is required. If you analyze an external trajectory, say whether its
+coordinates are wrapped or unwrapped (`--positions-convention`) and give the saved
+frame spacing (`--frame-interval-fs`) when the metadata lacks it; with missing
+information mliport fails rather than assume.
+
+## Options you will use
 
 | Option | Meaning |
 |---|---|
-| `--mobile SPECIES` | mobile species/selection (required) |
-| `--axes` | `x`, `y`, `z`, or combinations (`xy`, `xyz`, ...) |
-| `--positions-convention` | `wrapped`/`unwrapped`/`unknown` for external trajectories |
-| `--frame-interval-fs` | saved-frame interval when metadata lacks it |
-| `--drift-reference`, `--drift-mode`, `--drift-indices` | how framework drift is removed (`none`, `nonmobile`, `all`, `indices`) |
-| `--start-frame`, `--stop-frame`, `--include-equilibration` | analysis window |
-| `--alpha-window-decades`, `--alpha-min-points`, `--alpha-min-origins` | local-exponent windowing/support |
-| `--alpha-consistency-band`, `--alpha-max-lag-ps`, `--alpha-focus-band`, `--alpha-log-x` | alpha diagnostics/plots |
-| `--method fft|direct` | MSD algorithm |
-| `--fit-start-ps`, `--fit-stop-ps` | fit window recorded with the result |
+| `--mobile SPECIES` | the mobile species (required) |
+| `--axes` | `x`, `y`, `z` or a combination such as `xy` or `xyz` (default `xyz`) |
+| `--drift-reference`, `--drift-mode`, `--drift-indices` | how framework drift is removed: reference `none`, `nonmobile`, `all` or `indices`; mode `none`, `arithmetic_mean` or `mass_weighted_com` (default) |
+| `--start-frame`, `--stop-frame`, `--include-equilibration` | the analysis window |
+| `--method fft\|direct` | the MSD algorithm (default `fft`) |
+| `--fit-start-ps`, `--fit-stop-ps` | a fit window, recorded with the result |
+| `--alpha-window-decades` | full width of the local log–log regression window (default 0.25) |
+| `--alpha-min-points`, `--alpha-min-origins` | minimum points in a window (5) and time origins for an alpha point to count (8) |
+| `--alpha-consistency-band` | half-band around `alpha = 1` accepted as diffusive (default 0.2) |
+| `--alpha-max-lag-ps` | ignore longer lags for alpha only; the raw MSD is untouched |
+| `--alpha-focus-band LOW HIGH`, `--alpha-log-x` | plot options: zoom the alpha figure, use a log time axis |
 
-**Inputs / outputs.** One trajectory and the mobile selection in;
-`analysis.json` plus MSD/alpha tables and plots under
-`<run>/analysis/<analysis_id>/`, including the exact fit and alpha windows
-used.
+## Reading alpha
 
-**Failure semantics.** Missing or wrapped-coordinate data without a stated
-convention fails closed; too few time origins for an alpha point is reported
-as insufficient support rather than as an exponent.
+`alpha ≈ 1` is consistent with Fickian diffusion, `alpha < 1` with subdiffusion
+and `alpha > 1` with superdiffusive or ballistic motion, but only inside the time
+window you fitted. A point outside the consistency band is marked
+`not_diffusive`; one with too few time origins is reported as insufficient
+support, not as an exponent. Read the whole alpha curve with its band, never a
+single number.
 
-**Scientific caveats.**
+Other things that matter:
 
-- `alpha ≈ 1` is consistent with Fickian diffusion, `alpha < 1` with
-  subdiffusion, `alpha > 1` with superdiffusive/ballistic motion — but only
-  inside a fitted time window. Read the alpha curve with its consistency
-  band, never a single number.
-- Drift removal changes the long-time MSD; state the drift policy.
-- MSD is a statistical estimator: report multiple fit windows/uncertainty,
+- Drift removal changes the long-time MSD, so state the drift policy.
+- MSD is a statistical estimator. Report several fit windows or an uncertainty,
   not one fit.
-- **Alpha is not a conductivity verdict.** Transport needs charge, collective
-  correlations and the Nernst-Einstein treatment; use
-  [transport](transport.md).
-
-**Example.**
+- Alpha is not a conductivity verdict. Conductivity needs the charge, collective
+  correlations and a Nernst–Einstein treatment; use [Transport](transport.md).
 
 ```bash
 mliport analyze runs/md-800K msd --mobile Li --axes xyz \
@@ -55,11 +52,14 @@ mliport analyze runs/md-800K msd --mobile Li --axes xyz \
   --fit-start-ps 50 --fit-stop-ps 400 --alpha-focus-band 0.8 1.2
 ```
 
-## Short-trajectory semantics
+## Short trajectories
 
-`msd` requires `--mobile <species>`. A 5-step smoke trajectory is accepted:
-the result carries an explicit insufficient-diffusive-window status and the
-alpha/diagnostics fields remain finite. The acceptance suite treats that as
-an expected limitation, never as a diffusion measurement. For a real MSD,
-give the run at least a few hundred saved frames and let the fit window cover
-a diffusive regime.
+A 5-step smoke trajectory is accepted. The result carries an explicit
+"insufficient diffusive window" status and the alpha and diagnostic fields stay
+finite. The acceptance suite treats that as an expected limitation, never as a
+diffusion measurement. For a real MSD give the run at least a few hundred saved
+frames and let the fit window cover a diffusive regime.
+
+The results are written to `results.json` and the MSD and alpha tables and plots
+under `<run>/analysis/msd/<analysis-id>/`, including the exact fit and alpha
+windows that were used.

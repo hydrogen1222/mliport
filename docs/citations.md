@@ -1,101 +1,93 @@
-# Citations and upstream credits
+# Citations and credits
 
-mliport is a **backend-neutral MLIP inference and workflow framework**. It
-does not define or train potentials: it orchestrates upstream MLIP runtimes
-(UMA/fairchem, MACE, DPA/DeePMD-kit, GRACE/tensorpotential), the ASE
-ecosystem and analysis libraries (kinisi, GEMDAT) behind one CLI/TUI/Python
-workflow. When you publish work done with mliport, cite the upstream
-software and the specific model checkpoint you actually used.
+mliport is a workflow layer. It does not define or train potentials; it drives
+other people's software (UMA/fairchem, MACE, DPA/DeePMD-kit, GRACE/tensorpotential,
+ASE, kinisi, GEMDAT) behind one CLI, TUI and Python API. So when you publish
+something computed with it, the people to credit are mostly upstream: the software
+and, above all, the exact model checkpoint you used.
 
 ## Citing mliport
 
-mliport has **no DOI of its own yet**. Until one is registered:
+mliport has **no DOI of its own yet**. Until it does:
 
-- cite the repository `https://github.com/hydrogen1222/mliport` and the
-  version you used (`2.0.0b1` at the time of writing), for example with the
-  metadata in [`CITATION.cff`](https://github.com/hydrogen1222/mliport/blob/main/CITATION.cff);
-- do **not** present an upstream DOI (for example the FAIRChem Zenodo DOI or
-  a model paper DOI) as mliport's DOI;
-- if a workflow publishes a DOI for mliport later, this file and
-  `CITATION.cff` will be updated together.
+- cite the repository, `https://github.com/hydrogen1222/mliport`, and the version
+  you ran (`mliport --version`). The metadata in
+  [`CITATION.cff`](https://github.com/hydrogen1222/mliport/blob/main/CITATION.cff)
+  is ready for reference managers;
+- do not present an upstream DOI (the FAIRChem Zenodo DOI, a model paper's DOI) as
+  mliport's;
+- if mliport gets a DOI later, this page and `CITATION.cff` will change together.
 
-## Upstream software and model citations
+## What to cite upstream
 
-### ASE — Atomic Simulation Environment
+### ASE
 
-mliport uses ASE for structures, calculators, optimizers, MD integrators and
-file formats. Cite:
+mliport uses ASE for structures, calculators, optimizers, MD integrators and file
+formats.
 
-> A. H. Larsen et al., *The atomic simulation environment — a Python library
-> for working with atoms*, J. Phys.: Condens. Matter **29**, 273002 (2017),
-> doi:10.1088/1361-648X/aa680e.
-> <https://wiki.fysik.dtu.dk/ase/>
+> A. H. Larsen et al., *The atomic simulation environment — a Python library for
+> working with atoms*, J. Phys.: Condens. Matter **29**, 273002 (2017),
+> doi:10.1088/1361-648X/aa680e. <https://wiki.fysik.dtu.dk/ase/>
 
-### FAIRChem / UMA — `uma` backend
+### FAIRChem and UMA (`uma` backend)
 
-The `uma` backend loads UMA checkpoints through `fairchem-core` (Meta FAIR).
-Cite the UMA model publication listed by the upstream project for the exact
-checkpoint you used, and the fairchem software:
+The `uma` backend loads UMA checkpoints through `fairchem-core` from Meta FAIR. Cite
+the UMA publication that the upstream project lists for the checkpoint you used,
+together with the fairchem software.
 
 > <https://github.com/facebookresearch/fairchem> · <https://fair-chem.github.io/>
 
-### MACE — `mace` backend
+### MACE (`mace` backend)
 
-The `mace` backend loads MACE checkpoints through `mace-torch`. Cite the
-MACE paper and the checkpoint's upstream release:
+The `mace` backend loads checkpoints through `mace-torch`. Cite the MACE paper and
+the release of the checkpoint you used.
 
 > I. Batatia et al., *MACE: Higher Order Equivariant Message Passing Neural
-> Networks for Fast and Accurate Force Fields*, NeurIPS 2022,
-> arXiv:2206.07697.
+> Networks for Fast and Accurate Force Fields*, NeurIPS 2022, arXiv:2206.07697.
 > <https://github.com/ACEsuit/mace>
 
-### DeePMD-kit / DPA — `dpa` backend
+### DeePMD-kit and DPA (`dpa` backend)
 
-The `dpa` backend loads DPA checkpoints through `deepmd-kit`. Cite:
+The `dpa` backend loads checkpoints through `deepmd-kit`.
 
 > H. Wang, L. Zhang, J. Han, W. E, *DeePMD-kit: A deep learning package for
-> many-body potential energy representation and molecular dynamics*,
-> Comput. Phys. Commun. **228**, 178–184 (2018),
-> doi:10.1016/j.cpc.2018.03.016.
+> many-body potential energy representation and molecular dynamics*, Comput.
+> Phys. Commun. **228**, 178–184 (2018), doi:10.1016/j.cpc.2018.03.016.
 > <https://github.com/deepmodeling/deepmd-kit>
 
-For DPA-2/DPA-3 model checkpoints, cite the technical report referenced by
-the upstream DeePMD project for that checkpoint.
+For a DPA-2 or DPA-3 checkpoint, also cite the technical report the DeePMD project
+references for it.
 
-### GRACE — `grace` backend
+### GRACE (`grace` backend)
 
-The `grace` backend loads GRACE exported SavedModels through
-`tensorpotential`. Cite the GRACE publication referenced by the upstream
-project for the checkpoint you used:
+The `grace` backend loads exported SavedModels through `tensorpotential`. Cite the
+GRACE publication the upstream project gives for your checkpoint.
 
 > <https://github.com/ICAMS/grace-tensorpotential>
 
-### kinisi — transport analysis
+### kinisi
 
-`mliport analyze transport` uses kinisi for covariance-aware Bayesian
-tracer/collective transport. Cite the kinisi paper referenced by the
-upstream project:
+`mliport analyze transport` uses kinisi for covariance-aware Bayesian tracer and
+collective transport. Cite the kinisi paper the upstream project references.
 
 > <https://github.com/bjmorgan/kinisi> · <https://kinisi.rtfd.io>
 
-### GEMDAT — mechanism analysis
+### GEMDAT
 
-`mliport analyze electrolyte` uses GEMDAT for site occupancy and jump
-analysis. Cite the GEMDAT paper referenced by the upstream project:
+`mliport analyze electrolyte` uses GEMDAT for site occupancy and jump analysis.
+Cite the GEMDAT paper the upstream project references.
 
 > <https://github.com/GEMDAT-repos/GEMDAT> · <https://gemdat.readthedocs.io>
 
-## Data and benchmark provenance
+## Data and model provenance
 
-- The OMat24 validation subset used by the T3 accuracy workload is derived
-  from the public OMat24 release; its pinned provenance is recorded in
-  `validation/science/data_manifest.json`.
-- Model artifacts are referenced by upstream model identity plus SHA-256 in
-  `validation/science/model_manifest.json`; model weights are not
-  redistributed by mliport.
+- The OMat24 subset used by the accuracy workload comes from the public OMat24
+  release; its pinned provenance is in `validation/science/data_manifest.json`.
+- Models are identified by their upstream identity and SHA-256 in
+  `validation/science/model_manifest.json`. mliport does not redistribute weights.
 
-## Reporting missing or stale citations
+## If something is missing
 
-If an upstream project, model card or license notice is missing or out of
-date here, please open an issue. Upstream copyright and license notices are
-never removed from this repository.
+If an upstream project, model card or licence notice is absent or out of date here,
+please open an issue. Upstream copyright and licence notices are never removed from
+the repository.
