@@ -776,7 +776,11 @@ Examples:
     neb_parser.add_argument("--min-distance", dest="neb_min_distance", type=float)
     neb_parser.add_argument("--checkpoint-interval", type=int, default=None)
     neb_parser.add_argument(
-        "--allow-unvalidated-neb", action=argparse.BooleanOptionalAction, default=None
+        "--allow-unvalidated-neb",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Deprecated, no effect: NEB runs a runtime energy-force "
+        "consistency pre-flight and refuses inconsistent models.",
     )
     neb_parser.add_argument("--fmax-abort", type=float, default=None)
     neb_parser.add_argument(

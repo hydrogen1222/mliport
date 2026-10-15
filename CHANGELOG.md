@@ -36,6 +36,17 @@ Review fixes (scientific correctness, data safety, robustness):
   a GPU (default 1, exclusive).
 - **NEB docs.** README wording on NEB validation fixed (evidence matching is
   unchanged and stays exact).
+- **NEB runtime pre-flight.** Before the first step NEB measures whether the
+  model's forces are the gradient of its energy on the band to be optimized
+  (endpoints and interpolated images; force and random directions; central
+  finite differences at two step sizes with Richardson extrapolation and a
+  dtype-aware energy-noise tolerance) and refuses to run otherwise, instead
+  of relying on static evidence recorded on another PyTorch/CUDA build.
+  Direct-force models are still always refused. The record is stored as
+  `gradient_preflight` in `run_context.json`/`neb_results.json`.
+  `--allow-unvalidated-neb` is deprecated and has no effect; it can no longer
+  bypass a failed check. This is a spot check, not a proof over the whole
+  energy surface and not a statement about model accuracy.
 - **Python 3.13** is supported (package, installer, CI).
 - **Maintainability.** One backend calculator-option table replaces three
   copies; engine fallbacks read `BUILTIN_DEFAULTS`; unused `mliport/templates`
