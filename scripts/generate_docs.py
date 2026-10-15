@@ -352,9 +352,8 @@ forward barrier.
 
 NEB runs without an opt-in only when the exact model/runtime identity
 (checkpoint hash, backend and framework release, task, head, dtype, inference
-mode and device type) matches a shipped energy-gradient-consistency record;
-the CUDA channel label of the framework wheel (`+cu126`/`+cu128`) does not
-matter. Every other configuration needs the explicit
+mode and device type) matches a shipped energy-gradient-consistency record.
+Every other configuration needs the explicit
 `--allow-unvalidated-neb` opt-in; such runs are recorded as
 `workflow_smoke_only` and do not claim a physical barrier.
 
