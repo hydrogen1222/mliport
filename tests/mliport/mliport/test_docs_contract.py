@@ -59,38 +59,6 @@ PAGES = (
     "development",
 )
 
-#: Pages whose Chinese version has not been written yet. The site shows the
-#: English text for them (mkdocs-static-i18n fallback). Translating a page
-#: means deleting it from this set; the set must end up empty.
-UNTRANSLATED = frozenset(PAGES) - {
-    "index",
-    "quickstart",
-    "installation",
-    "models",
-    "configuration",
-    "backends/index",
-    "backends/mace",
-    "backends/dpa",
-    "backends/grace",
-    "backends/uma",
-    "workflows/index",
-    "workflows/single-point",
-    "workflows/optimization",
-    "workflows/md",
-    "workflows/neb",
-    "workflows/batch",
-    "workflows/queue",
-    "outputs",
-    "analysis/index",
-    "analysis/overview",
-    "analysis/msd",
-    "analysis/transport",
-    "analysis/electrolyte-gemdat",
-    "analysis/rdf",
-    "analysis/vacf-spectrum",
-    "analysis/arrhenius",
-}
-
 REQUIRED_TREE = tuple(f"docs/{page}.md" for page in PAGES)
 
 
@@ -126,13 +94,8 @@ def test_required_docs_tree_exists():
     assert not missing, f"missing docs: {missing}"
 
 
-def test_every_page_is_translated_or_listed_as_untranslated():
-    translated = {page for page in PAGES if _zh(page).is_file()}
-    assert not (translated & UNTRANSLATED), (
-        "already translated, remove from UNTRANSLATED: "
-        f"{sorted(translated & UNTRANSLATED)}"
-    )
-    missing = [page for page in PAGES if page not in translated | UNTRANSLATED]
+def test_every_page_has_a_chinese_twin_and_no_chinese_page_is_orphaned():
+    missing = [page for page in PAGES if not _zh(page).is_file()]
     assert not missing, f"no Chinese page: {missing}"
     strays = sorted(
         str(path.relative_to(REPO))
@@ -159,7 +122,7 @@ def _structure(path: Path) -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("page", [p for p in PAGES if p not in UNTRANSLATED])
+@pytest.mark.parametrize("page", PAGES)
 def test_translation_has_the_same_structure_as_the_english_page(page):
     english, chinese = _structure(DOCS / f"{page}.md"), _structure(_zh(page))
     assert chinese == english, f"{page}: zh and en structure differ"
@@ -342,8 +305,6 @@ def test_backend_pages_match_the_registry():
             DOCS / "backends" / f"{engine}.md",
             DOCS / "backends" / f"{engine}.zh.md",
         ):
-            if not path.is_file():
-                continue
             text = path.read_text(encoding="utf-8")
             assert backend.venv_name in text, path
             assert backend.requirement in text, path
@@ -354,8 +315,7 @@ def test_backend_pages_match_the_registry():
 def test_docs_keep_the_vasp_shaped_not_dft_boundary():
     index = (DOCS / "index.md").read_text(encoding="utf-8")
     assert "not" in index and "DFT" in index
-    if _zh("index").is_file():
-        assert "DFT" in _zh("index").read_text(encoding="utf-8")
+    assert "DFT" in _zh("index").read_text(encoding="utf-8")
     for path in _markdown_files():
         text = path.read_text(encoding="utf-8").lower()
         assert "vasp-compatible" not in text, path
