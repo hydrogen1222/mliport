@@ -437,7 +437,10 @@ class _NeverConvergedFIRE:
         return False
 
 
-def test_pre_relax_nonconvergence_with_safe_forces_continues_md(tmp_path, monkeypatch):
+def test_pre_relax_nonconvergence_stops_before_md_even_with_safe_forces(
+    tmp_path, monkeypatch
+):
+    """Fail closed: forces far below fmax_abort must not let MD start."""
     monkeypatch.setattr("mliport.runners.md.FIRE", _NeverConvergedFIRE)
     runner = MDRunner(
         _RunWrapper(_FiniteCalc(force_scale=0.5)),
@@ -448,13 +451,12 @@ def test_pre_relax_nonconvergence_with_safe_forces_continues_md(tmp_path, monkey
         save_interval=1,
         verbose=False,
     )
-    results = runner.run(_bulk_atoms(n=4))
-
-    assert (tmp_path / "raw" / "trajectory.traj").exists()
-    pre_relax = results["md_provenance"]["pre_relax"]
-    assert pre_relax["status"] == "not_converged"
-    assert pre_relax["steps_taken"] == 2
-    assert pre_relax["final_fmax_eV_A"] == pytest.approx(0.5)
+    with pytest.raises(RuntimeError, match="production MD was not started"):
+        runner.run(_bulk_atoms(n=4))
+    assert not (tmp_path / "raw" / "trajectory.traj").exists()
+    assert runner.pre_relax_status == "not_converged"
+    assert runner.pre_relax_steps_taken == 2
+    assert runner.pre_relax_final_fmax == pytest.approx(0.5)
 
 
 def test_pre_relax_nonconvergence_with_unsafe_forces_stops_before_md(

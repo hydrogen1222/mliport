@@ -1192,7 +1192,7 @@ class MDRunner(BaseRunner):
             optimizer.run(fmax=self.pre_relax_fmax, steps=self.pre_relax_steps)
 
             e_final = float(atoms.get_potential_energy())
-            forces_raw, forces_applied = self._force_views(
+            _, forces_applied = self._force_views(
                 atoms, e_final, context="MD pre-relaxation final state"
             )
             delta_e = e_final - e_init
@@ -1202,34 +1202,25 @@ class MDRunner(BaseRunner):
                 f"Energy change: {delta_e:.6f} eV ({delta_e / len(atoms):.6f} eV/atom)"
             )
             final_fmax = float(np.max(np.linalg.norm(forces_applied, axis=1)))
-            final_raw_fmax = float(np.max(np.linalg.norm(forces_raw, axis=1)))
             self.pre_relax_steps_taken = int(optimizer.nsteps)
             self.pre_relax_final_fmax = final_fmax
 
             if optimizer.converged():
                 self.pre_relax_status = "converged"
                 self.log("✓ Pre-relaxation converged")
-            elif final_raw_fmax > self.fmax_abort:
+            else:
+                # Fail closed: a structure that did not reach the requested
+                # force threshold is not a validated MD starting point, so
+                # production MD must not start from it. The state is recorded
+                # for diagnosis only; nothing is written as an MD result.
+                self.pre_relax_status = "not_converged"
                 raise RuntimeError(
                     "Pre-relaxation did not converge after "
-                    f"{optimizer.nsteps} steps and the largest raw force "
-                    f"({final_raw_fmax:.6g} eV/Angstrom) still exceeds "
-                    f"fmax_abort={self.fmax_abort:.6g}; production MD was not "
-                    "started. Check the structure, or increase pre_relax_steps."
-                )
-            else:
-                # Pre-relaxation only removes risky initial forces; it is not a
-                # requirement that a fixed-cell 0 K minimum is reached (large
-                # or disordered cells rarely reach fmax=0.1 within 50 steps).
-                # The force-safety gate still applies at every MD step.
-                self.pre_relax_status = "not_converged"
-                self.log(
-                    "Pre-relaxation stopped after "
-                    f"{optimizer.nsteps} steps without reaching "
-                    f"pre_relax_fmax={self.pre_relax_fmax:g} (final fmax="
-                    f"{final_fmax:.6g} eV/Angstrom, below fmax_abort="
-                    f"{self.fmax_abort:g}); continuing with MD from this state.",
-                    level="warning",
+                    f"{optimizer.nsteps} steps (final fmax={final_fmax:.6g} "
+                    f"eV/Angstrom, target pre_relax_fmax="
+                    f"{self.pre_relax_fmax:g}); production MD was not started. "
+                    "Increase pre_relax_steps, loosen pre_relax_fmax with "
+                    "scientific justification, or disable pre_relax explicitly."
                 )
 
         except CancellationRequested:

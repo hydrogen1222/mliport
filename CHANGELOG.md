@@ -16,9 +16,12 @@ Review fixes (scientific correctness, data safety, robustness):
   already holds calculation outputs (earlier runs, or VASP OUTCAR/CONTCAR)
   unless `--overwrite`/`overwrite=True`, and hold an exclusive run lock.
   `calculate_energy()` uses a temporary directory by default.
-- **Pre-relaxation.** Not reaching `pre_relax_fmax` is recorded
-  (`md_provenance.pre_relax.status`) and MD continues; MD stops only if the
-  largest raw force still exceeds `fmax_abort`.
+- **Pre-relaxation stays fail-closed.** If it does not reach
+  `pre_relax_fmax` within `pre_relax_steps`, the run stops before production
+  MD with an actionable error (raise the step budget, loosen the threshold
+  with scientific justification, or disable pre-relaxation explicitly). The
+  outcome of a completed pre-relaxation is recorded in
+  `md_provenance.pre_relax`.
 - **UMA MD precision.** MD no longer defaults to `inference_mode=turbo`
   (TF32 + torch.compile); turbo is opt-in.
 - **TUI templates** are the backend-neutral single-source templates (the old
