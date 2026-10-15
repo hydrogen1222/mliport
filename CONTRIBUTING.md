@@ -10,19 +10,27 @@ mliport has a **core development environment** and separate **backend
 runtime environments** (MACE, DPA, GRACE, UMA). They are not
 interchangeable:
 
-- `uv sync` sets up the core environment for unit tests, lint, docs and
-  synthetic calculators. **`uv sync` does not install any MLIP runtime** —
-  in particular it does not install UMA.
+- The repository root is tooling configuration only: `uv sync` there installs
+  nothing (no numpy, no pytest) and does not install any MLIP runtime, in
+  particular not UMA. The **core development environment** for unit tests,
+  lint, docs and synthetic calculators is built from the package metadata, as
+  CI does.
 - Real backend checks need the installer-built environments; see
   [docs/installation.md](docs/installation.md).
 
 ```bash
-# core development environment
-uv sync
-.venv/bin/python -m pytest -q
-.venv/bin/ruff check mliport/mliport tests scripts
-.venv/bin/ruff format --check mliport/mliport tests scripts
+# core development environment (what CI runs)
+uv venv .venv-dev
+uv pip install --python .venv-dev/bin/python -e './mliport[dev]'
+uv pip install --python .venv-dev/bin/python torch --index-url https://download.pytorch.org/whl/cpu
+.venv-dev/bin/python -m pytest -q
+.venv-dev/bin/ruff check mliport/mliport tests scripts
+.venv-dev/bin/ruff format --check mliport/mliport tests scripts
 python scripts/check_repository_hygiene.py
+
+# alternative on a machine that already has a backend environment:
+# .venv-mace/bin/python -m pip install -e './mliport[dev]'  (or uv pip install --python ...)
+# .venv-mace/bin/python -m pytest tests/mliport/mliport/neb -q
 
 # package build
 uv build mliport

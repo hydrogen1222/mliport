@@ -206,6 +206,26 @@ def test_ci_neb_double_well_known_barrier_and_force() -> None:
     assert result.stages[1]["stage"] == "ci_neb"
 
 
+def test_runner_reports_stage_and_step_progress() -> None:
+    options = _double_well_options()
+    initial, final = _double_well_endpoints()
+    events = []
+
+    NEBRunner(
+        DoubleWellCalculator(),
+        options,
+        verbose=False,
+        progress_callback=events.append,
+    ).run(prepare_band(initial, final, options))
+
+    messages = [event.message for event in events]
+    assert any("neb_pre: FIRE started" in message for message in messages)
+    assert any("ci_neb: finished" in message for message in messages)
+    assert any(" step 1/" in message for message in messages)
+    steps = [event.step for event in events if event.step is not None]
+    assert steps and all(isinstance(step, int) for step in steps)
+
+
 def test_asymmetric_double_well_forward_reverse_and_reaction_energy() -> None:
     options = _double_well_options()
     initial, final = _double_well_endpoints()

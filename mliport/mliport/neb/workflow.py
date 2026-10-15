@@ -595,6 +595,15 @@ def _record_failed_attempt(
     )
 
 
+def _report(progress_callback, message: str) -> None:
+    """Forward a progress line to the frontend (run.log, TUI) when attached."""
+    if progress_callback is None:
+        return
+    from mliport.protocols import ProgressEvent
+
+    progress_callback(ProgressEvent(phase="running", message=message))
+
+
 def _run_neb_workflow_locked(
     calculator: BaseMLIPCalculator,
     resolved: ResolvedConfig,
@@ -669,10 +678,22 @@ def _run_neb_workflow_locked(
     # Energy-force consistency itself is measured on this band below instead of
     # being looked up in static evidence recorded on another software stack.
     require_neb_capability(capability, experimental=True)
+    _report(
+        progress_callback,
+        "Energy-force consistency pre-flight: finite differences on "
+        "sampled band images (a few dozen model evaluations)...",
+    )
     gradient_preflight = run_gradient_preflight(
         calculator.get_calculator(),
         band.images,
         dtype=model.get("dtype_effective"),
+    )
+    _report(
+        progress_callback,
+        f"Pre-flight {gradient_preflight['status']}: "
+        f"{gradient_preflight['n_checks']} checks on images "
+        f"{gradient_preflight['sampled_images']}, max |FD - (-F.u)| = "
+        f"{gradient_preflight['max_abs_error_eV_A']:.2e} eV/A",
     )
     model["capabilities"] = asdict(capability)
     _restore_checkpoint_model_source(model, checkpoint_record)
