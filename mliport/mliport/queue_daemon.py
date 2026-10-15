@@ -21,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mliport.queue_daemon", add_help=False)
     parser.add_argument("jobs_dir")
     parser.add_argument("--max-concurrent", type=int, default=1)
+    parser.add_argument("--max-jobs-per-gpu", type=int, default=1)
     parser.add_argument("--poll", type=float, default=5.0)
     parser.add_argument("--lock-fd", type=int)
     args = parser.parse_args(argv)
@@ -29,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
         jobs_dir=Path(args.jobs_dir),
         max_concurrent=args.max_concurrent,
         poll_interval=args.poll,
+        max_jobs_per_gpu=args.max_jobs_per_gpu,
     )
 
     def _handle_sigterm(signum, frame):  # noqa: ARG001

@@ -32,8 +32,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mliport.backend_selection import (
+    ALL_CALCULATOR_OPTION_KEYS,
+    CALCULATOR_OPTION_KEYS,
     SUPPORTED_TYPES,
     UMA_ALIASES,
+    calculator_option_keys,
     require_model_type,
 )
 from mliport.base_calculator import BaseMLIPCalculator
@@ -42,23 +45,11 @@ if TYPE_CHECKING:
     from typing import Any
 
 
-# Calculator-option keys each engine actually consumes. Keys that belong to a
-# *different* engine are dropped with a warning (benign cross-engine leftover);
-# keys that match no engine are treated as potential typos.
-_CALC_KEYS: dict[str, set[str]] = {
-    "uma": {"inference_mode", "torch_num_threads", "activation_checkpointing"},
-    "fairchem": {"inference_mode", "torch_num_threads", "activation_checkpointing"},
-    "mace": {"default_dtype", "head"},
-    "dpa": {"head"},
-    "grace": {
-        "cpu_threads",
-        "gpu_memory_growth",
-        "gpu_memory_limit_mb",
-        "neighbor_cache",
-        "neighbor_skin",
-    },
-}
-_ALL_CALC_KEYS: set[str] = set().union(*_CALC_KEYS.values())
+# Calculator-option keys each engine consumes come from the central backend
+# table. Keys that belong to a *different* engine are rejected in strict mode
+# (warn-and-drop in lenient mode); keys that match no engine are typos.
+_CALC_KEYS = CALCULATOR_OPTION_KEYS
+_ALL_CALC_KEYS = ALL_CALCULATOR_OPTION_KEYS
 
 
 def _check_unknown_kwargs(
@@ -75,7 +66,7 @@ def _check_unknown_kwargs(
     Returns:
         The subset of ``kwargs`` that ``model_type`` actually consumes.
     """
-    accepted = _CALC_KEYS.get(model_type, set())
+    accepted = calculator_option_keys(model_type)
     kept: dict[str, Any] = {}
     for key, value in kwargs.items():
         if key in accepted:

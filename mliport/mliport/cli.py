@@ -29,6 +29,7 @@ from pathlib import Path
 
 from ase.io import read
 
+from mliport.backend_selection import PROCESS_ISOLATED_BACKENDS
 from mliport.config import (
     IncarConfig,
     get_default_config,
@@ -38,6 +39,7 @@ from mliport.config import (
 from mliport.config.settings import init_settings_file
 from mliport.engine import CalculationEngine, EngineConfig
 from mliport.protocols import CancellationRequested
+from mliport.run_directory import OutputDirectoryInUseError
 from mliport.run_status import (
     EXIT_CANCELLED,
     EXIT_ERROR,
@@ -358,6 +360,14 @@ Examples:
             "directory)"
         ),
     )
+    run_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "Allow replacing calculation outputs (an earlier run, or VASP "
+            "OUTCAR/CONTCAR) already present in the output directory"
+        ),
+    )
 
     # sp command
     sp_parser = subparsers.add_parser(
@@ -401,6 +411,14 @@ Examples:
         type=str,
         default=None,
         help="Output directory (default: settings OUTPUT_DIR, else '.')",
+    )
+    sp_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "Allow replacing calculation outputs (an earlier run, or VASP "
+            "OUTCAR/CONTCAR) already present in the output directory"
+        ),
     )
     sp_parser.add_argument(
         "--name",
@@ -483,6 +501,14 @@ Examples:
         type=str,
         default=None,
         help="Output directory (default: settings OUTPUT_DIR, else '.')",
+    )
+    opt_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "Allow replacing calculation outputs (an earlier run, or VASP "
+            "OUTCAR/CONTCAR) already present in the output directory"
+        ),
     )
     opt_parser.add_argument(
         "--name",
@@ -639,7 +665,10 @@ Examples:
         "--com-policy",
         choices=["auto", "none", "initialize_only", "constraint"],
         default=None,
-        help="Center-of-mass policy (default: auto; NHC requires explicit none).",
+        help=(
+            "Center-of-mass policy (default: auto; for NHC auto zeroes the "
+            "COM momentum once, which NHC conserves)."
+        ),
     )
     md_parser.add_argument(
         "--fmax-abort",
@@ -653,6 +682,14 @@ Examples:
         type=str,
         default=None,
         help="Output directory (default: settings OUTPUT_DIR, else '.')",
+    )
+    md_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "Allow replacing calculation outputs (an earlier run, or VASP "
+            "OUTCAR/CONTCAR) already present in the output directory"
+        ),
     )
     md_parser.add_argument(
         "--name",
@@ -824,6 +861,14 @@ Examples:
         type=str,
         default="batch_results",
         help="Output directory (default: batch_results)",
+    )
+    batch_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "Allow replacing calculation outputs (an earlier run, or VASP "
+            "OUTCAR/CONTCAR) already present in the output directory"
+        ),
     )
     batch_parser.add_argument(
         "--name",
@@ -1356,6 +1401,16 @@ Examples:
         help="How many jobs may run at once (default: 1, single GPU).",
     )
     queue_start.add_argument(
+        "--max-jobs-per-gpu",
+        type=int,
+        default=1,
+        help=(
+            "How many queued jobs may share one GPU (default: 1, exclusive). "
+            "Raise it only for small systems whose models fit together in "
+            "device memory; --max-concurrent still caps the total."
+        ),
+    )
+    queue_start.add_argument(
         "--poll",
         type=float,
         default=5.0,
@@ -1710,11 +1765,12 @@ def _resolve_engine_config(
     engine_config.job_name = (
         job_name if job_name is not None else getattr(args, "name", None)
     )
+    engine_config.overwrite = bool(getattr(args, "overwrite", False))
     _maybe_reexec_for_device_isolation(resolved)
     return engine_config, resolved, settings
 
 
-_ISOLATION_BACKENDS = {"dpa", "grace"}
+_ISOLATION_BACKENDS = PROCESS_ISOLATED_BACKENDS
 
 
 def _device_visibility_value(device: str) -> str:
@@ -1767,6 +1823,12 @@ def _maybe_reexec_for_device_isolation(resolved) -> None:
         [sys.executable, "-m", "mliport.cli", *sys.argv[1:]],
         env,
     )
+
+
+def _output_claim(engine):
+    """Claim the run directory for an engine (no-op for engine-like stubs)."""
+    claim = getattr(engine, "output_directory_claim", None)
+    return claim() if callable(claim) else contextlib.nullcontext()
 
 
 def _final_run_dir(config: EngineConfig) -> Path:
@@ -1918,8 +1980,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
 
     engine = CalculationEngine.from_config(engine_config)
-    _emit_resolved_config(resolved, _final_run_dir(engine_config))
-    return _run_product(engine, atoms, calc_type=calc_type, started_at=started_at)
+    try:
+        with _output_claim(engine):
+            _emit_resolved_config(resolved, _final_run_dir(engine_config))
+            return _run_product(
+                engine, atoms, calc_type=calc_type, started_at=started_at
+            )
+    except OutputDirectoryInUseError as exc:
+        print(f"Error: {exc}")
+        return EXIT_ERROR
 
 
 def cmd_sp(args: argparse.Namespace) -> int:
@@ -1941,8 +2010,9 @@ def cmd_sp(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
-        _emit_resolved_config(resolved, _final_run_dir(config))
-        return _run_product(engine, atoms, calc_type="sp", started_at=started_at)
+        with _output_claim(engine):
+            _emit_resolved_config(resolved, _final_run_dir(config))
+            return _run_product(engine, atoms, calc_type="sp", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
         return EXIT_ERROR
@@ -1967,8 +2037,9 @@ def cmd_opt(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
-        _emit_resolved_config(resolved, _final_run_dir(config))
-        return _run_product(engine, atoms, calc_type="opt", started_at=started_at)
+        with _output_claim(engine):
+            _emit_resolved_config(resolved, _final_run_dir(config))
+            return _run_product(engine, atoms, calc_type="opt", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
         return EXIT_ERROR
@@ -1993,8 +2064,9 @@ def cmd_md(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
-        _emit_resolved_config(resolved, _final_run_dir(config))
-        return _run_product(engine, atoms, calc_type="md", started_at=started_at)
+        with _output_claim(engine):
+            _emit_resolved_config(resolved, _final_run_dir(config))
+            return _run_product(engine, atoms, calc_type="md", started_at=started_at)
     except Exception as e:
         print(f"Error: {e}")
         return EXIT_ERROR
@@ -2134,12 +2206,6 @@ def cmd_batch(args: argparse.Namespace) -> int:
     pattern = resolved.run_options.get("pattern")
 
     try:
-        _emit_resolved_config(
-            resolved,
-            config.output_dir / (config.job_name or "")
-            if config.job_name
-            else config.output_dir,
-        )
         engine = CalculationEngine.from_config(config)
         if "pattern" in resolved.run_options:
             files = sorted(input_dir.glob(pattern))
@@ -2162,11 +2228,13 @@ def cmd_batch(args: argparse.Namespace) -> int:
                 print(f"No supported structure files found in {input_dir}")
             return 1
         print(f"Found {len(files)} structure files")
-        summary = engine.run_batch(
-            files,
-            log_fn=_console_log,
-            started_at=started_at,
-        )
+        with _output_claim(engine):
+            _emit_resolved_config(resolved, _final_run_dir(config))
+            summary = engine.run_batch(
+                files,
+                log_fn=_console_log,
+                started_at=started_at,
+            )
         if summary["failed"] > 0:
             return 1
         return 0
@@ -2541,6 +2609,9 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             print(f"WARNING: {warning}")
     elif args.analysis_task == "transport":
         _print_transport_summary(outcome.get("results") or {})
+    elif args.analysis_task == "msd":
+        for warning in (outcome.get("results") or {}).get("warnings", []):
+            print(f"WARNING: {warning}")
     return 0
 
 
@@ -2573,8 +2644,14 @@ def cmd_queue(args: argparse.Namespace) -> int:
             job = mgr.get_job(job_id)
             display_name = job.get("display_name", job_id) if job else job_id
             print(f"  - {display_name} [{job_id}]")
-        print(f"max_concurrent: {max_concurrent} (set in the task file)")
-        print("Start the scheduler with: mliport queue start")
+        print(
+            "Start the scheduler with: "
+            f"mliport queue start --max-concurrent {max_concurrent}"
+        )
+        print(
+            "(the task file's max_concurrent is a suggestion; the running "
+            "scheduler's --max-concurrent is what is enforced)"
+        )
         return 0
 
     if sub == "start":
@@ -2583,6 +2660,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
                 scheduler = QueueScheduler(
                     max_concurrent=args.max_concurrent,
                     poll_interval=args.poll,
+                    max_jobs_per_gpu=args.max_jobs_per_gpu,
                 )
                 print(
                     "Scheduler running in foreground ",
@@ -2599,6 +2677,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
                 jobs_dir=JobManager().jobs_dir,
                 max_concurrent=args.max_concurrent,
                 poll_interval=args.poll,
+                max_jobs_per_gpu=args.max_jobs_per_gpu,
             )
         except Exception as exc:
             print(f"Error: {exc}")
@@ -2771,6 +2850,12 @@ def cmd_state(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """Main entry point: Ctrl-C anywhere resolves to exit code 130."""
+    # mliport numbers GPUs like nvidia-smi (PCI bus order). CUDA defaults to
+    # FASTEST_FIRST, which renumbers devices on mixed-GPU nodes, so --device
+    # cuda:N and numeric CUDA_VISIBLE_DEVICES entries would name a different
+    # physical GPU. Set before any framework initializes CUDA; an explicit
+    # user choice is respected.
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     try:
         return _main(argv)
     except KeyboardInterrupt:

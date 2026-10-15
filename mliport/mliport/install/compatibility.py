@@ -32,11 +32,11 @@ from typing import Literal
 
 from packaging.specifiers import SpecifierSet
 
-PROJECT_REQUIRES_PYTHON = SpecifierSet(">=3.10,<3.13")
+PROJECT_REQUIRES_PYTHON = SpecifierSet(">=3.10,<3.14")
 #: Python versions mliport's installer may target.  Backend specs narrow this
 #: list; the installer fails closed when a requested version is incompatible
 #: with any requested backend.
-SUPPORTED_PYTHON_VERSIONS: tuple[str, ...] = ("3.10", "3.11", "3.12")
+SUPPORTED_PYTHON_VERSIONS: tuple[str, ...] = ("3.10", "3.11", "3.12", "3.13")
 # Fixed-version PyPI Requires-Python and published CPython wheel tags.
 # Update together with framework pins; an unknown pin requires a new audit.
 FRAMEWORK_PYTHON = {

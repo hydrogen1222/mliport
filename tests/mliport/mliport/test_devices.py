@@ -182,17 +182,36 @@ def test_mg07_queue_and_cli_resolvers_agree(inventory, monkeypatch):
             assert _device_visibility_value(device) == expected
 
 
-def test_mig_selectors_fail_closed(inventory):
+def test_single_mig_instance_is_the_only_visible_device(inventory):
+    from mliport.devices import resolve_visible_device
+
+    env = {"CUDA_VISIBLE_DEVICES": "MIG-abc"}
+    for device in ("cuda", "gpu", "cuda:0"):
+        resolved = resolve_visible_device(device, inventory=inventory, environment=env)
+        assert resolved.uuid == "MIG-abc"
+        assert resolved.logical_index == 0
+    with pytest.raises(RuntimeError, match="single MIG"):
+        resolve_visible_device("cuda:1", inventory=inventory, environment=env)
+
+
+def test_mig_lists_and_mig_device_strings_fail_closed(inventory):
     from mliport.devices import resolve_visible_device
 
     with pytest.raises(RuntimeError, match="MIG"):
         resolve_visible_device(
             "cuda:0",
             inventory=inventory,
-            environment={"CUDA_VISIBLE_DEVICES": "MIG-abc"},
+            environment={"CUDA_VISIBLE_DEVICES": "MIG-abc,MIG-def"},
         )
     with pytest.raises(ValueError, match="MIG"):
         resolve_visible_device("MIG-abc", inventory=inventory, environment={})
+
+
+def test_runtime_uuid_comparison_ignores_framework_prefix(monkeypatch):
+    monkeypatch.setenv("MLIPORT_LEASED_GPU_UUID", "MIG-1234")
+    assert verify_runtime_uuid("GPU-1234", "MIG-1234") == "GPU-1234"
+    with pytest.raises(RuntimeError):
+        verify_runtime_uuid("GPU-9999", "MIG-1234")
 
 
 def test_invalid_device_string_fails(inventory):

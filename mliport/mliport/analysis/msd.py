@@ -16,6 +16,7 @@ from mliport.analysis.drift import (
     drift_displacement,
     drift_semantics,
     reference_indices,
+    system_com_drift_diagnostics,
 )
 from mliport.analysis.validation import require_analysis
 
@@ -150,6 +151,12 @@ def displacement_trajectory(
         },
         "drift_semantics": semantics,
         "unwrap_diagnostics": diagnostics,
+        "com_drift_diagnostics": system_com_drift_diagnostics(
+            continuous,
+            masses=dataset.masses,
+            mobile=mobile,
+            drift_reference=drift_reference,
+        ),
     }
 
 
@@ -195,6 +202,10 @@ def fft_windowed_msd_components(displacements_A: np.ndarray) -> np.ndarray:
     tolerance = np.finfo(float).eps * max(1.0, float(np.max(np.abs(result)))) * 100
     result[np.abs(result) < tolerance] = 0.0
     return result
+
+
+def _non_empty(values: list[str | None]) -> list[str]:
+    return [value for value in values if value]
 
 
 def _axis_msd(components: np.ndarray, axes: str) -> np.ndarray:
@@ -882,4 +893,6 @@ def calculate_msd(
         "drift_semantics": prepared["drift_semantics"],
         "framework_drift_A": prepared["framework_drift_A"],
         "unwrap_diagnostics": prepared["unwrap_diagnostics"],
+        "com_drift_diagnostics": prepared["com_drift_diagnostics"],
+        "warnings": _non_empty([prepared["com_drift_diagnostics"]["warning"]]),
     }

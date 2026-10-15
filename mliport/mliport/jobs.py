@@ -590,32 +590,49 @@ class JobManager:
         claim_token: str,
         owner_pid: int,
         device_uuid: str | None,
+        max_jobs_per_device: int = 1,
     ) -> dict[str, Any] | None:
-        """CAS PENDING -> CLAIMED and acquire the GPU UUID lease atomically."""
+        """CAS PENDING -> CLAIMED and acquire the GPU UUID lease atomically.
+
+        A GPU is leased to at most ``max_jobs_per_device`` active jobs (one by
+        default). Sharing a GPU is an explicit scheduler choice for small
+        systems whose models fit side by side in device memory.
+        """
         self._validate_new_job_id(job_id)
         self._validate_new_job_id(claim_token)
         if not _pid_alive(owner_pid):
             raise ValueError("claim owner PID must identify a live process")
+        if (
+            isinstance(max_jobs_per_device, bool)
+            or not isinstance(max_jobs_per_device, int)
+            or max_jobs_per_device < 1
+        ):
+            raise ValueError("max_jobs_per_device must be an integer >= 1")
         with self._locked():
             data = self._read_job_state_unlocked(job_id)
             if data is None or data.get("status") != JobStatus.PENDING.value:
                 return None
             if device_uuid is not None:
+                sharing = 0
                 for path in self.jobs_dir.glob("*.json"):
                     other = self._read_job_state_unlocked(path.stem)
                     if (
-                        other is not None
-                        and other.get("job_id") != job_id
-                        and other.get("status") in _ACTIVE_LEASE_STATUSES
-                        and (
-                            other.get("device_uuid") == device_uuid
-                            or (
-                                other.get("device_uuid") is None
-                                and str(other.get("device", "cpu")).lower() != "cpu"
-                            )
-                        )
+                        other is None
+                        or other.get("job_id") == job_id
+                        or other.get("status") not in _ACTIVE_LEASE_STATUSES
                     ):
+                        continue
+                    if (
+                        other.get("device_uuid") is None
+                        and str(other.get("device", "cpu")).lower() != "cpu"
+                    ):
+                        # A GPU job without a recorded lease could be on any
+                        # GPU; never share with it.
                         return None
+                    if other.get("device_uuid") == device_uuid:
+                        sharing += 1
+                if sharing >= max_jobs_per_device:
+                    return None
             now = _utc_now()
             data.update(
                 {

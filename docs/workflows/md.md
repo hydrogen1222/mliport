@@ -27,7 +27,7 @@ record a reproducible trajectory for analysis (MSD/transport/VACF).
 | `--save-interval` | trajectory save interval in steps (default 10) |
 | `--seed` | random seed; auto-generated and recorded when omitted |
 | `--velocity-policy`, `--com-policy` | velocity/centre-of-mass policies |
-| `--pre-relax`, `--pre-relax-steps`, `--pre-relax-fmax` | pre-relaxation before production (default on for NVT, off for NVE) |
+| `--pre-relax`, `--pre-relax-steps`, `--pre-relax-fmax` | positions-only force reduction before MD (default on for NVT, off for NVE). If `--pre-relax-fmax` is not reached within `--pre-relax-steps`, the run stops before production MD; raise the step budget, loosen the threshold with scientific justification, or turn pre-relaxation off explicitly. The result is recorded in `md_provenance.pre_relax` |
 | `--fmax-abort` | abort threshold for unphysical forces (default 20 eV/Å) |
 | `--write-outcar`, `--write-xdatcar`, `--write-trajectory` | output selection |
 
@@ -55,7 +55,9 @@ option combination exits before dynamics start.
   `--equilibration-steps` and analyse only the production segment.
 - NVT thermostats change the dynamics (LANGEVIN is stochastic, BUSSI/NHC are
   deterministic); transport coefficients depend on that choice.
-- `--com-policy` matters for drift; NHC requires an explicit policy.
+- `--com-policy` matters for drift. For NHC, `auto` zeroes the COM momentum
+  once (conserved by NHC); `none` keeps the Maxwell-Boltzmann COM momentum and
+  the whole cell drifts.
 - Constraints/fixed atoms are applied through the calculator/runners; state
   them when reporting diffusion.
 - NVE and NVT are different ensembles: never average them together.
@@ -69,16 +71,20 @@ option combination exits before dynamics start.
 .venv/bin/mliport md structure.cif --model uma.pt --model-type uma --task omat \
   --ensemble NVT --temp 800 --timestep 1.0 \
   --equilibration-steps 5000 --steps 50000 --save-interval 10 \
-  --thermostat NHC --com-policy none \
+  --thermostat NHC \
   --output runs/md-800K
 ```
 
 ## Thermostats and continuation
 
-`--thermostat` selects `LANGEVIN`, `BUSSI` or `NHC` for NVT. NHC requires
-`--com-policy none`: constrained NHC cannot run together with automatic
-center-of-mass removal, and mliport fails closed instead of silently dropping
-one of them.
+`--thermostat` selects `LANGEVIN`, `BUSSI` or `NHC` for NVT. NHC cannot run
+with a FixCom (or any other) constraint. Its default `--com-policy auto`
+(equivalently `initialize_only`) zeroes the center-of-mass momentum once after
+velocity initialization; NHC's uniform momentum scaling conserves it, so the
+run has `3N-3` kinetic degrees of freedom and the thermostat set point is
+scaled by `(3N-3)/3N` (recorded as `nhc_set_temperature_K`). `--com-policy
+none` keeps the drawn COM momentum: the whole cell then drifts ballistically,
+which dominates the MSD of mobile ions unless analysis removes the drift.
 
 To continue a trajectory, read a saved frame that contains momenta and start a
 new run from it with `--velocity-policy preserve --no-pre-relax`. The new run

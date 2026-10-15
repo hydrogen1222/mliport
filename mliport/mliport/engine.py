@@ -21,6 +21,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from mliport.backend_selection import (
+    ALL_CALCULATOR_OPTION_KEYS,
+    TORCH_BACKENDS,
+    canonical_model_type,
+)
 from mliport.base_calculator import BaseMLIPCalculator
 from mliport.config.defaults import BUILTIN_DEFAULTS
 from mliport.logger import LiveRunLogger, follow_log_command
@@ -28,10 +33,15 @@ from mliport.protocols import CancellationRequested, ProgressCallback, ProgressE
 from mliport.timing import RunTiming, append_timing_to_outputs, timing_log_lines
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
     from typing import Any, Literal
 
     from ase import Atoms
+
+
+#: Calculator keys that may arrive through the deprecated ``options`` bag
+#: (``cpu_threads`` is derived from ``torch_num_threads`` and never accepted).
+_LEGACY_CALC_OPTION_KEYS = ALL_CALCULATOR_OPTION_KEYS - {"cpu_threads"}
 
 
 @dataclass
@@ -65,6 +75,10 @@ class EngineConfig:
         strict_config: When True, unknown option keys raise instead of warn
             (plan section 10).
         detach: If True, submit as background job.
+        overwrite: Allow replacing calculation outputs that already exist in
+            the final output directory. The default refuses them, so a rerun
+            can never silently destroy a previous trajectory or a VASP
+            OUTCAR/CONTCAR in the same directory.
     """
 
     calc_type: Literal["sp", "opt", "md", "neb", "batch"]
@@ -86,6 +100,7 @@ class EngineConfig:
     activation_checkpointing: bool | None = None
     strict_config: bool = True
     detach: bool = False
+    overwrite: bool = False
 
     def __post_init__(self) -> None:
         from mliport.backend_selection import (  # noqa: PLC0415
@@ -153,6 +168,7 @@ class CalculationEngine:
 
     def __init__(self, config: EngineConfig):
         self.config = config
+        self._output_claimed = False
         self._validate()
 
     @classmethod
@@ -199,17 +215,7 @@ class CalculationEngine:
 
     # Calculator-option keys that may live in the legacy ``options`` dict and
     # must be routed to ``calculator_options`` for backward compatibility.
-    _CALC_OPTION_KEYS = {
-        "default_dtype",
-        "head",
-        "inference_mode",
-        "torch_num_threads",
-        "activation_checkpointing",
-        "gpu_memory_growth",
-        "gpu_memory_limit_mb",
-        "neighbor_cache",
-        "neighbor_skin",
-    }
+    _CALC_OPTION_KEYS: ClassVar[frozenset[str]] = _LEGACY_CALC_OPTION_KEYS
 
     def _effective_calculator_options(self) -> dict:
         """Return calculator options, merging legacy ``options`` calc keys."""
@@ -242,20 +248,18 @@ class CalculationEngine:
         from mliport.calculators.factory import CalculatorFactory  # noqa: PLC0415
 
         calc_opts = self._effective_calculator_options()
+        backend = canonical_model_type(self.config.model_type)
         # Apply a user-selected thread limit to every PyTorch backend before
         # its model is imported/constructed. UMA also receives the value in its
         # InferenceSettings below.
-        if (
-            self.config.torch_num_threads is not None
-            and self.config.model_type.lower() in {"uma", "fairchem", "mace", "dpa"}
-        ):
+        if self.config.torch_num_threads is not None and backend in TORCH_BACKENDS:
             import torch  # noqa: PLC0415
 
             torch.set_num_threads(self.config.torch_num_threads)
         # The UMA-only top-level fields feed the calculator for UMA engines;
         # they are intentionally NOT forwarded to MACE/DPA/GRACE (which would
         # otherwise trigger a cross-engine warning in the factory).
-        if self.config.model_type.lower() in {"uma", "fairchem"}:
+        if backend == "uma":
             calc_opts.setdefault("inference_mode", self.config.inference_mode)
             if self.config.torch_num_threads is not None:
                 calc_opts.setdefault("torch_num_threads", self.config.torch_num_threads)
@@ -263,19 +267,14 @@ class CalculationEngine:
                 calc_opts.setdefault(
                     "activation_checkpointing", self.config.activation_checkpointing
                 )
-        elif (
-            self.config.model_type.lower() == "grace"
-            and self.config.torch_num_threads is not None
-        ):
+        elif backend == "grace" and self.config.torch_num_threads is not None:
             calc_opts.setdefault("cpu_threads", self.config.torch_num_threads)
-        if self.config.model_type.lower() == "grace":
-            # Polite TensorFlow allocation is the safe package default. A user
-            # can additionally set gpu_memory_limit_mb for hard isolation.
-            calc_opts.setdefault("gpu_memory_growth", True)
-        # MACE uses an accuracy-first float64 default for every calculation type.
-        # A higher config layer may explicitly opt into float32 for performance.
-        if self.config.model_type.lower() == "mace":
-            calc_opts.setdefault("default_dtype", "float64")
+        # Engine built-in calculator defaults come from the single defaults
+        # source (GRACE: polite TensorFlow allocation and the neighbour cache;
+        # MACE: accuracy-first float64). Higher config layers override them.
+        for key, value in BUILTIN_DEFAULTS.get(f"calculator.{backend}", {}).items():
+            if value is not None:
+                calc_opts.setdefault(key, value)
         return CalculatorFactory.create(
             model_type=self.config.model_type,
             model_path=self.config.model_path,
@@ -292,6 +291,33 @@ class CalculationEngine:
             return self.config.output_dir / self.config.job_name
         return self.config.output_dir
 
+    @contextlib.contextmanager
+    def output_directory_claim(self) -> Iterator[Path]:
+        """Own the final output directory for the duration of a run.
+
+        Refuses existing calculation outputs unless ``overwrite`` is set and
+        holds an exclusive lock, so a rerun or a concurrent second run cannot
+        destroy another calculation's trajectory or provenance. Re-entrant for
+        the same engine: frontends claim the directory before writing
+        ``resolved_config.json`` and the run itself then reuses that claim.
+        """
+        from mliport.run_directory import (  # noqa: PLC0415
+            ensure_output_available,
+            run_directory_lock,
+        )
+
+        output = self.output_dir
+        if self._output_claimed:
+            yield output
+            return
+        ensure_output_available(output, overwrite=self.config.overwrite)
+        with run_directory_lock(output):
+            self._output_claimed = True
+            try:
+                yield output
+            finally:
+                self._output_claimed = False
+
     @property
     def run_log_path(self) -> Path:
         """Path of the continuously flushed log for this run."""
@@ -305,6 +331,11 @@ class CalculationEngine:
         from mliport.runners.singlepoint import SinglePointRunner  # noqa: PLC0415
 
         opts = self._effective_run_options()
+
+        def option(calc_type: str, key: str) -> Any:
+            """Run option, else the single-source built-in default."""
+            return opts.get(key, BUILTIN_DEFAULTS[calc_type][key])
+
         common = dict(
             calculator=calculator,
             output_dir=self.config.output_dir,
@@ -325,40 +356,40 @@ class CalculationEngine:
             return SinglePointRunner(**common)
         elif self.config.calc_type == "opt":
             return OptimizationRunner(
-                fmax=opts.get("fmax", 0.05),
-                max_steps=opts.get("max_steps", 500),
-                optimizer=opts.get("optimizer", "FIRE"),
-                cell_opt=opts.get("cell_opt", False),
-                fix_symmetry=opts.get("fix_symmetry", False),
+                fmax=option("opt", "fmax"),
+                max_steps=option("opt", "max_steps"),
+                optimizer=option("opt", "optimizer"),
+                cell_opt=option("opt", "cell_opt"),
+                fix_symmetry=option("opt", "fix_symmetry"),
                 **common,
             )
         elif self.config.calc_type == "md":
             return MDRunner(
-                ensemble=opts.get("ensemble", "NVT"),
-                temperature=opts.get("temperature", 300.0),
-                timestep=opts.get("timestep", 1.0),
-                steps=opts.get("steps", 1000),
-                equilibration_steps=opts.get("equilibration_steps", 0),
-                thermostat=opts.get("thermostat", "LANGEVIN"),
-                friction=opts.get("friction", 0.001),
-                bussi_tau=opts.get("bussi_tau", 1000.0),
-                nhc_tdamp=opts.get("nhc_tdamp", 100.0),
-                nhc_tchain=opts.get("nhc_tchain", 3),
-                nhc_tloop=opts.get("nhc_tloop", 1),
-                save_interval=opts.get("save_interval", 10),
+                ensemble=option("md", "ensemble"),
+                temperature=option("md", "temperature"),
+                timestep=option("md", "timestep"),
+                steps=option("md", "steps"),
+                equilibration_steps=option("md", "equilibration_steps"),
+                thermostat=option("md", "thermostat"),
+                friction=option("md", "friction"),
+                bussi_tau=option("md", "bussi_tau"),
+                nhc_tdamp=option("md", "nhc_tdamp"),
+                nhc_tchain=option("md", "nhc_tchain"),
+                nhc_tloop=option("md", "nhc_tloop"),
+                save_interval=option("md", "save_interval"),
                 # NVE is energy-conserving: pre-relaxing first moves the
                 # structure to a 0 K minimum and changes the conserved-energy
                 # baseline, so default it OFF for NVE (still ON for NVT to avoid
                 # explosions). An explicit user setting always wins.
                 pre_relax=opts.get(
                     "pre_relax",
-                    str(opts.get("ensemble", "NVT")).upper() != "NVE",
+                    str(option("md", "ensemble")).upper() != "NVE",
                 ),
-                pre_relax_steps=opts.get("pre_relax_steps", 50),
-                pre_relax_fmax=opts.get("pre_relax_fmax", 0.1),
+                pre_relax_steps=option("md", "pre_relax_steps"),
+                pre_relax_fmax=option("md", "pre_relax_fmax"),
                 seed=opts.get("seed"),
                 velocity_policy=opts.get("velocity_policy", "auto"),
-                com_policy=opts.get("com_policy", "auto"),
+                com_policy=option("md", "com_policy"),
                 pre_relax_mode=opts.get("pre_relax_mode", "none"),
                 fmax_abort=opts.get(
                     "fmax_abort", BUILTIN_DEFAULTS["safety"]["fmax_abort"]
@@ -390,6 +421,24 @@ class CalculationEngine:
         Returns:
             Results dictionary.
         """
+        with self.output_directory_claim():
+            return self._run_claimed(
+                atoms,
+                progress_callback=progress_callback,
+                cancel_event=cancel_event,
+                log_fn=log_fn,
+                started_at=started_at,
+            )
+
+    def _run_claimed(
+        self,
+        atoms: Atoms,
+        *,
+        progress_callback: ProgressCallback | None,
+        cancel_event: threading.Event | None,
+        log_fn: Any | None,
+        started_at: float | None,
+    ) -> dict[str, Any]:
         with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
             run_logger(f"Output directory: {self.output_dir.resolve()}")
             run_logger(f"Live log: {self.run_log_path}")
@@ -615,6 +664,22 @@ class CalculationEngine:
         Returns:
             Batch summary dictionary.
         """
+        with self.output_directory_claim():
+            return self._run_batch_claimed(
+                files,
+                progress_callback=progress_callback,
+                log_fn=log_fn,
+                started_at=started_at,
+            )
+
+    def _run_batch_claimed(
+        self,
+        files: list[Path],
+        *,
+        progress_callback: ProgressCallback | None,
+        log_fn: Any | None,
+        started_at: float | None,
+    ) -> dict[str, Any]:
         from mliport.runners.batch import BatchRunner  # noqa: PLC0415
 
         timing = RunTiming(

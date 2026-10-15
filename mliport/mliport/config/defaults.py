@@ -64,7 +64,10 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "fix_symmetry": False,
     },
     "md": {
-        "inference_mode": "turbo",
+        # Accuracy-first, like MACE's float64 default: UMA "turbo" enables
+        # TF32 matmuls and torch.compile, i.e. reduced precision. It stays an
+        # explicit opt-in (INFERENCE_MODE = turbo / --inference-mode turbo).
+        "inference_mode": "default",
         "ensemble": "NVT",
         "temperature": 300.0,
         "timestep": 1.0,
@@ -197,10 +200,9 @@ def _engine_model_section(engine: str, calc_type: str) -> list[str]:
         lines.append("TASK = omat")
         lines.append("# Molecular tasks only: CHARGE = 0")
         lines.append("# UMA omol spin multiplicity: SPIN = 1")
+        lines.append("INFERENCE_MODE = default")
         if calc_type == "md":
-            lines.append("INFERENCE_MODE = turbo")
-        else:
-            lines.append("INFERENCE_MODE = default")
+            lines.append("# INFERENCE_MODE = turbo  # faster: TF32 + torch.compile")
     elif normalized == "mace":
         lines.append("TASK = bulk")
         lines.append("# Optional MACE fields:")

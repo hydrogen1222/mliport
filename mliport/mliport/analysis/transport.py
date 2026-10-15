@@ -33,6 +33,7 @@ from mliport.analysis.drift import (
     drift_displacement,
     drift_semantics,
     reference_indices as drift_reference_indices,
+    system_com_drift_diagnostics,
 )
 
 
@@ -941,7 +942,7 @@ def kinisi_transport(
         lag_stop_ps=lag_stop_ps,
         covariance_memory_limit_bytes=parser_limit_bytes,
     )
-    _, unwrap_diagnostics = unwrap_positions(view)
+    continuous_view, unwrap_diagnostics = unwrap_positions(view)
     input_class = displacement_input_class(view, unwrap_diagnostics)
     if input_class == DISPLACEMENT_INSUFFICIENT:
         raise InsufficientTrajectoryInformationError(
@@ -1106,6 +1107,13 @@ def kinisi_transport(
     sigma_ne_posterior_mS_cm = _numeric_sample_summary(
         sigma_samples_S_m * S_M_TO_MS_CM, unit="mS/cm"
     )
+    com_drift = system_com_drift_diagnostics(
+        continuous_view,
+        masses=view.masses,
+        mobile=mobile,
+        drift_reference=drift_reference,
+    )
+    del continuous_view
     result: dict[str, Any] = {
         "mobile_species": mobile_species,
         "analysis_phase": "production",
@@ -1449,4 +1457,7 @@ def kinisi_transport(
             "experimental grouping (collective_system_particles > 1): "
             "cross-group correlations are not guaranteed to be preserved"
         )
+    result["com_drift_diagnostics"] = com_drift
+    if com_drift["warning"]:
+        result.setdefault("warnings", []).append(com_drift["warning"])
     return result

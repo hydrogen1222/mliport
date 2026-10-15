@@ -12,12 +12,12 @@ forward barrier.
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp   --model mace-omat-0-medium.model --model-type mace --images 7   --allow-unvalidated-neb --output runs/neb
 ```
 
-The current checkpoints are outside the validated NEB envelope: mliport
-cannot yet certify their energy-gradient consistency for this exact
-model/runtime, so it refuses to run without the explicit
-`--allow-unvalidated-neb` opt-in. Such runs are recorded as
-`workflow_smoke_only` and do not claim a physical barrier. Once a runtime has
-a validated capability record the flag is no longer required.
+NEB runs without an opt-in only when the exact model/runtime identity
+(checkpoint hash, backend and framework release, task, head, dtype, inference
+mode and device type) matches a shipped energy-gradient-consistency record.
+Every other configuration needs the explicit
+`--allow-unvalidated-neb` opt-in; such runs are recorded as
+`workflow_smoke_only` and do not claim a physical barrier.
 
 ## Important options
 

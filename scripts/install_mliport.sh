@@ -80,7 +80,7 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 1
 fi
 
-# Pick a Python 3.10-3.12 interpreter (uv-managed preferred) to run the
+# Pick a Python 3.10-3.13 interpreter (uv-managed preferred) to run the
 # modern mliport.install planner.  A bare uv-managed interpreter often has
 # no third-party packages, so when the selected interpreter lacks
 # ``packaging`` the planner runs in an ephemeral ``uv run --with packaging``
@@ -88,9 +88,9 @@ fi
 # only uv and no project venv).
 if [[ -z "${MLIPORT_INSTALL_PYTHON:-}" && "$HELP_ONLY" -eq 0 ]]; then
     case "$TARGET_PYTHON" in
-        3.10|3.11|3.12) ;;
+        3.10|3.11|3.12|3.13) ;;
         *)
-            echo "[mliport] ERROR: unsupported Python $TARGET_PYTHON; choose 3.10, 3.11, or 3.12." >&2
+            echo "[mliport] ERROR: unsupported Python $TARGET_PYTHON; choose 3.10, 3.11, 3.12, or 3.13." >&2
             exit 2
             ;;
     esac
@@ -98,10 +98,10 @@ fi
 PY_SPEC="${MLIPORT_INSTALL_PYTHON:-$TARGET_PYTHON}"
 
 _python_range_ok() {
-    "$1" -c 'import sys; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1
+    "$1" -c 'import sys; assert (3, 10) <= sys.version_info < (3, 14)' >/dev/null 2>&1
 }
 _planner_ok() {
-    "$1" -c 'import sys, packaging.specifiers; assert (3, 10) <= sys.version_info < (3, 13)' >/dev/null 2>&1
+    "$1" -c 'import sys, packaging.specifiers; assert (3, 10) <= sys.version_info < (3, 14)' >/dev/null 2>&1
 }
 
 if [[ "$SOURCE_PROFILE" == "offline" || "$READ_ONLY" -eq 1 ]]; then
@@ -122,7 +122,7 @@ if [[ "$SOURCE_PROFILE" == "offline" || "$READ_ONLY" -eq 1 ]]; then
 else
     if [[ -n "${MLIPORT_INSTALL_PYTHON:-}" ]]; then
         if ! _planner_ok "$MLIPORT_INSTALL_PYTHON"; then
-            echo "[mliport] ERROR: MLIPORT_INSTALL_PYTHON must be a local Python 3.10-3.12 with packaging installed." >&2
+            echo "[mliport] ERROR: MLIPORT_INSTALL_PYTHON must be a local Python 3.10-3.13 with packaging installed." >&2
             exit 1
         fi
         UV_PY="$MLIPORT_INSTALL_PYTHON"
@@ -134,7 +134,7 @@ else
             UV_PY=""
         fi
         if [[ -z "$UV_PY" ]]; then
-            for CANDIDATE in "$REPO_ROOT/.venv/bin/python" python3.12 python3.11 python3.10 python3 python; do
+            for CANDIDATE in "$REPO_ROOT/.venv/bin/python" python3.12 python3.13 python3.11 python3.10 python3 python; do
                 if _python_range_ok "$CANDIDATE"; then
                     UV_PY="$CANDIDATE"
                     break
@@ -142,7 +142,7 @@ else
             done
         fi
         if [[ -z "$UV_PY" ]]; then
-            echo "[mliport] ERROR: no local Python 3.10-3.12 runtime found to plan the install. Run 'uv python install 3.12' first, or set MLIPORT_INSTALL_PYTHON to a 3.10-3.12 interpreter with packaging." >&2
+            echo "[mliport] ERROR: no local Python 3.10-3.13 runtime found to plan the install. Run 'uv python install 3.12' first, or set MLIPORT_INSTALL_PYTHON to a 3.10-3.13 interpreter with packaging." >&2
             exit 1
         fi
         echo "[mliport] Planner runtime: $UV_PY (target environment: Python $TARGET_PYTHON)"

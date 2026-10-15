@@ -215,3 +215,28 @@ def test_legacy_calculator_module_is_a_compatibility_shim():
     from mliport.calculators.uma import UMACalculator as NewUMA
 
     assert LegacyUMA is NewUMA
+
+
+@pytest.mark.parametrize("calc_type", ["sp", "opt", "md", "neb"])
+def test_tui_generated_template_is_the_backend_neutral_single_source(
+    tmp_path, monkeypatch, calc_type
+):
+    from unittest.mock import MagicMock
+
+    from mliport.config.schema import get_schema
+    from mliport.tui.main_screen import TemplateScreen
+
+    monkeypatch.chdir(tmp_path)
+    screen = TemplateScreen()
+    screen.selected_type = calc_type
+    app = MagicMock()
+    with patch.object(TemplateScreen, "app", new=app):
+        screen._generate_template()
+
+    text = (tmp_path / f"INCAR.{calc_type}.template").read_text(encoding="utf-8")
+    assert text == build_incar_default(calc_type)
+    values = _incar_values(text)
+    assert values["MODEL_TYPE"] == "REQUIRED"
+    schema = get_schema()
+    unknown = [key for key in values if schema.resolve(key) is None]
+    assert unknown == []

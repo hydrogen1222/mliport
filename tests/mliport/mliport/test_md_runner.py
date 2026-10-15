@@ -422,27 +422,53 @@ def test_timestep_and_saved_time_metadata_are_consistent(tmp_path):
     assert manifest["trajectory"]["saved_interval_fs"] == 1.0
 
 
-def test_pre_relax_nonconvergence_stops_before_md(tmp_path, monkeypatch):
-    class NeverConvergedFIRE:
-        def __init__(self, atoms, logfile=None):
-            self.atoms = atoms
-            self.nsteps = 0
+class _NeverConvergedFIRE:
+    def __init__(self, atoms, logfile=None):
+        self.atoms = atoms
+        self.nsteps = 0
 
-        def attach(self, callback, interval=1):
-            self.callback = callback
+    def attach(self, callback, interval=1):
+        self.callback = callback
 
-        def run(self, fmax, steps):
-            self.nsteps = steps
+    def run(self, fmax, steps):
+        self.nsteps = steps
 
-        def converged(self):
-            return False
+    def converged(self):
+        return False
 
-    monkeypatch.setattr("mliport.runners.md.FIRE", NeverConvergedFIRE)
+
+def test_pre_relax_nonconvergence_stops_before_md_even_with_safe_forces(
+    tmp_path, monkeypatch
+):
+    """Fail closed: forces far below fmax_abort must not let MD start."""
+    monkeypatch.setattr("mliport.runners.md.FIRE", _NeverConvergedFIRE)
     runner = MDRunner(
-        _RunWrapper(_FiniteCalc()),
+        _RunWrapper(_FiniteCalc(force_scale=0.5)),
         output_dir=tmp_path,
         pre_relax=True,
         pre_relax_steps=2,
+        steps=2,
+        save_interval=1,
+        verbose=False,
+    )
+    with pytest.raises(RuntimeError, match="production MD was not started"):
+        runner.run(_bulk_atoms(n=4))
+    assert not (tmp_path / "raw" / "trajectory.traj").exists()
+    assert runner.pre_relax_status == "not_converged"
+    assert runner.pre_relax_steps_taken == 2
+    assert runner.pre_relax_final_fmax == pytest.approx(0.5)
+
+
+def test_pre_relax_nonconvergence_with_unsafe_forces_stops_before_md(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("mliport.runners.md.FIRE", _NeverConvergedFIRE)
+    runner = MDRunner(
+        _RunWrapper(_FiniteCalc(force_scale=5.0)),
+        output_dir=tmp_path,
+        pre_relax=True,
+        pre_relax_steps=2,
+        fmax_abort=1.0,
         verbose=False,
     )
     with pytest.raises(RuntimeError, match="did not converge"):
@@ -542,6 +568,7 @@ def test_nve_provenance_has_null_thermostat_and_no_coupling_parameters(tmp_path)
         "com_policy_effective",
         "constraints",
         "degrees_of_freedom",
+        "pre_relax",
         "force_contract",
     }
 

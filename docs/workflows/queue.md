@@ -19,6 +19,7 @@ tracking.
 |---|---|---|
 | `queue submit` | task-file (positional) | JSON task spec: calc type, structure(s), model, backend, options |
 | `queue start` | `--max-concurrent N` | jobs allowed to run at once (default 1 for a single GPU) |
+| `queue start` | `--max-jobs-per-gpu N` | jobs that may share one physical GPU (default 1: exclusive lease); raise only for small systems that fit together in GPU memory |
 | `queue start` | `--poll SECONDS` | scheduler poll interval (default 5) |
 | `queue start` | `--foreground` | run the scheduler in the foreground (Ctrl-C stops it) |
 | `queue status` | — | pending/running/finished jobs with their device lease |
@@ -36,7 +37,7 @@ platform-appropriate user/jobs directory), per-job logs and run directories,
 and a physical-GPU lease recorded per job.
 
 **Failure semantics.** A job that cannot acquire a device stays pending
-rather than sharing the GPU; a crash/exception is recorded as failed with its
+rather than sharing the GPU beyond `--max-jobs-per-gpu`; a crash/exception is recorded as failed with its
 reason, and the device lease is released. Stale claims are recovered on
 scheduler start. `CUDA_VISIBLE_DEVICES` is resolved to the leased physical
 GPU UUID by the queue — do not override it inside a job.

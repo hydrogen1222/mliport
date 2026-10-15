@@ -1,7 +1,7 @@
 """Installer bootstrap regression tests (INSTALL-001).
 
 The shell bootstrap must work on a fresh machine that has uv but no local
-Python 3.10-3.12 with ``packaging`` installed: it may run the planner inside
+Python 3.10-3.13 with ``packaging`` installed: it may run the planner inside
 an ephemeral ``uv run --with packaging`` environment.  These tests use stub
 ``uv``/``python`` executables so they stay fast and do not install anything.
 """
@@ -114,7 +114,7 @@ def test_bootstrap_execs_planner_directly_when_packaging_is_present(tmp_path):
 
 
 def test_bootstrap_error_mentions_uv_python_install_when_no_interpreter(tmp_path):
-    """A missing 3.10-3.12 interpreter gets actionable guidance, not a puzzle."""
+    """A missing 3.10-3.13 interpreter gets actionable guidance, not a puzzle."""
     bin_dir = _make_stub_bin(tmp_path, has_packaging=False)
     stub_uv = bin_dir / "uv"
     stub_uv.write_text(

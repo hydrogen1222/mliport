@@ -72,6 +72,8 @@ and framework versions, the GPU/driver, and the complete error output.
 ## License
 
 By contributing you agree that your contributions are licensed under the MIT
-License (see `LICENSE.md`). mliport builds on upstream projects (FAIRChem,
-MACE, DeePMD-kit, tensorpotential and others); their license notices are kept
-in `licenses/` and their citations in `docs/citations.md`.
+License (see `LICENSE.md`). mliport is derived from FAIRChem (MIT; the Meta
+notices are retained in the derived source files) and drives MACE,
+DeePMD-kit, tensorpotential and FAIRChem as separately installed packages under
+their own licenses. `licenses/` keeps the notices (CGCNN, MMF) inherited from
+the FAIRChem code base; citations are in `docs/citations.md`.

@@ -143,7 +143,8 @@ def test_fixatoms_never_moves_and_force_views_remain_distinct(tmp_path) -> None:
     assert results["forces_applied_eV_A"][0] == pytest.approx(np.zeros(3))
     assert results["forces"] == pytest.approx(results["forces_applied_eV_A"])
     assert frames[-1].info["forces_raw_eV_A"][0] == pytest.approx([2.0, 0.0, 0.0])
-    assert frames[-1].info["forces_applied_eV_A"][0] == pytest.approx(np.zeros(3))
+    assert "forces_applied_eV_A" not in frames[-1].info
+    assert frames[-1].calc.results["forces"][0] == pytest.approx(np.zeros(3))
     payload = json.loads((tmp_path / "raw" / "mliport_results.json").read_text())
     output = payload["calculation"]["results"]
     assert output["forces_raw_eV_A"][0] == pytest.approx([2.0, 0.0, 0.0])
@@ -199,19 +200,62 @@ def test_nhc_rejects_every_constraint_combination(
     assert wrapper.load_calls == 0
 
 
-def test_nhc_requires_explicit_none_instead_of_auto_com_policy(tmp_path) -> None:
-    wrapper = _Wrapper(_ZeroCalculator())
+@pytest.mark.parametrize("com_policy", ["auto", "initialize_only"])
+def test_nhc_auto_zeroes_com_momentum_with_exact_dof(tmp_path, com_policy) -> None:
+    atoms = _atoms(4)
     runner = _runner(
-        wrapper,
+        _Wrapper(_ZeroCalculator()),
+        tmp_path,
+        ensemble="NVT",
+        thermostat="NHC",
+        com_policy=com_policy,
+    )
+    runner._configure_com_policy(atoms)
+    runner._initialize_velocities(atoms)
+    atoms.calc = _ZeroCalculator()
+    dynamics = runner._build_dynamics(atoms)
+    thermostat = dynamics._thermostat
+
+    assert runner.com_policy_effective == "initialize_only"
+    assert not atoms.constraints
+    assert np.sum(atoms.get_momenta(), axis=0) == pytest.approx(
+        np.zeros(3), abs=1.0e-12
+    )
+    internal_dof = 3 * len(atoms) - 3
+    assert runner.md_degrees_of_freedom == internal_dof
+    assert runner._calculate_temperature(atoms) == pytest.approx(300.0)
+    # ASE NHC targets 3N * kT_set; the set point is scaled so that this
+    # equals (3N - 3) * kT for the momentum-conserving dynamics.
+    assert thermostat._kT * 3 * len(atoms) == pytest.approx(
+        units.kB * 300.0 * internal_dof
+    )
+
+
+def test_nhc_auto_run_has_no_whole_system_drift(tmp_path) -> None:
+    atoms = _atoms(4)
+    runner = _runner(
+        _Wrapper(_ZeroCalculator()),
         tmp_path,
         ensemble="NVT",
         thermostat="NHC",
         com_policy="auto",
+        steps=20,
+        timestep=1.0,
     )
 
-    with pytest.raises(ValueError, match="com_policy='none'"):
-        runner.run(_atoms(3))
-    assert wrapper.load_calls == 0
+    results = runner.run(atoms)
+
+    with Trajectory(results["trajectory_path"]) as trajectory:
+        frames = list(trajectory)
+    com = np.array([frame.get_center_of_mass() for frame in frames])
+    assert np.max(np.linalg.norm(com - com[0], axis=1)) < 1.0e-9
+    provenance = results["md_provenance"]
+    assert provenance["com_policy_effective"] == "initialize_only"
+    assert provenance["com_momentum_conserved_zero"] is True
+    assert provenance["degrees_of_freedom"] == 3 * len(atoms) - 3
+    assert provenance["nhc_set_temperature_K"] == pytest.approx(
+        300.0 * (3 * len(atoms) - 3) / (3 * len(atoms))
+    )
 
 
 def test_unconstrained_nhc_with_explicit_no_com_is_supported(tmp_path) -> None:

@@ -727,7 +727,7 @@ def run_diagnostics(
     py_ver = (
         f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     )
-    if (3, 10) <= sys.version_info < (3, 13):
+    if (3, 10) <= sys.version_info < (3, 14):
         checks.append({"name": "Python", "value": py_ver, "status": "ok"})
     else:
         checks.append(
@@ -735,7 +735,7 @@ def run_diagnostics(
                 "name": "Python",
                 "value": py_ver,
                 "status": "fail",
-                "detail": f"mliport requires Python >=3.10,<3.13; found {py_ver}",
+                "detail": f"mliport requires Python >=3.10,<3.14; found {py_ver}",
             }
         )
 

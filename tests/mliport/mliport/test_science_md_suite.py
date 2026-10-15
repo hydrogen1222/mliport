@@ -221,7 +221,6 @@ def test_product_rejects_nhc_with_constraints_and_com_removal(emt, tmp_path):
             "none",
             md_suite._atoms_with(md_suite.cu32(), FixAtoms(indices=fixed)),
         ),
-        ("nhc_auto_com", "nhc", "auto", md_suite.cu32()),
         ("nhc_com_constraint", "nhc", "constraint", md_suite.cu32()),
     ]
     for label, thermostat, com_policy, work in cases:
@@ -351,7 +350,6 @@ def test_t6d_nhc_allowed_run_and_rejection_matrix(ctx, args):
     cases = {r["case"]: r for r in m["rejection_matrix"]}
     assert set(cases) == {
         "nhc_fixatoms",
-        "nhc_auto_com",
         "nhc_com_constraint",
         "langevin_compound_constraint",
     }

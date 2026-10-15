@@ -48,7 +48,7 @@ def test_builtin_md_defaults() -> None:
     rc = resolve_config(calc_type="md")
     assert rc.model_type == "uma"
     assert rc.device == "cpu"
-    assert rc.inference_mode == "turbo"
+    assert rc.inference_mode == "default"
     # MD auto-seeds
     assert "seed" in rc.run_options
     assert rc.sources["seed"].source == "auto-generated"
@@ -78,7 +78,6 @@ def test_md_thermostat_options_are_run_options_only() -> None:
 @pytest.mark.parametrize(
     "cli",
     [
-        {"ensemble": "NVT", "thermostat": "NHC", "com_policy": "auto"},
         {"ensemble": "NVT", "thermostat": "NHC", "com_policy": "constraint"},
         {"ensemble": "NVT", "thermostat": "BUSSI", "temperature": 0.0},
         {
@@ -536,12 +535,12 @@ def test_settings_sp_section_does_not_leak_into_other_calc_types() -> None:
         ini = Path(d) / "settings.ini"
         ini.write_text("[sp]\ndevice = cuda:1\ninference_mode = turbo\n")
         s = load_settings(explicit=str(ini))
-        # opt/batch default to inference_mode="default"; if [sp] leaked they
-        # would become "turbo". md defaults to "turbo" but device must stay
-        # "cpu" (not the [sp] "cuda:1").
+        # Every calc type defaults to inference_mode="default"; if [sp] leaked
+        # they would become "turbo", and the device must stay "cpu" (not the
+        # [sp] "cuda:1").
         for ct, expected_device, expected_mode in (
             ("opt", "cpu", "default"),
-            ("md", "cpu", "turbo"),
+            ("md", "cpu", "default"),
             ("batch", "cpu", "default"),
         ):
             rc = resolve_config(calc_type=ct, settings=s)

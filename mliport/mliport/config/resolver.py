@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 
 from mliport.backend_selection import (
     NO_BACKEND_SELECTED_MESSAGE,
+    calculator_option_keys,
     default_task_for,
     normalize_model_type,
     require_model_type,
@@ -137,27 +138,17 @@ class ResolvedConfig:
 # the engine directly rather than passed through **calculator_options.
 _MODEL_KEYS = {"model_type", "model_path", "task", "device", "inference_mode"}
 
-# Calculator-option keys, per engine. Anything not here and not a model key is
-# treated as a run option (scoped to the calc_type by the schema).
-_CALCULATOR_KEYS_BY_ENGINE: dict[str, set[str]] = {
-    "uma": {"inference_mode", "torch_num_threads", "activation_checkpointing"},
-    "fairchem": {"inference_mode", "torch_num_threads", "activation_checkpointing"},
-    "mace": {"default_dtype", "head"},
-    "dpa": {"head"},
-    "grace": {
-        "gpu_memory_growth",
-        "gpu_memory_limit_mb",
-        "neighbor_cache",
-        "neighbor_skin",
-    },
-}
-
 
 def _is_calculator_key(key: str, model_type: str | None) -> bool:
+    """Whether ``key`` is a calculator option of ``model_type``.
+
+    Anything that is not a calculator option and not a model key is treated
+    as a run option (scoped to the calc_type by the schema).
+    """
     engine = "" if model_type is None else str(model_type).strip().lower()
     if not engine:
         return False
-    return key in _CALCULATOR_KEYS_BY_ENGINE.get(engine, set())
+    return key in calculator_option_keys(engine)
 
 
 def _settings_layer(
@@ -468,12 +459,11 @@ def resolve_config(
             ),
         ).value
     )
-    # inference_mode defaults: 'turbo' for MD (historical behaviour),
-    # 'default' for everything else.
-    _default_inference = "turbo" if calc_type == "md" else "default"
+    # inference_mode defaults to the full-precision 'default' preset for every
+    # calculation type; UMA 'turbo' (TF32 + torch.compile) is an explicit opt-in.
     inference_mode = str(
         sources.get(
-            "inference_mode", ResolvedValue(_default_inference, "built-in defaults")
+            "inference_mode", ResolvedValue("default", "built-in defaults")
         ).value
     )
     if model_type not in {"uma", "fairchem"}:
@@ -635,16 +625,17 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
             if value <= 0.0:
                 raise ValueError(f"{name} must be > 0 for MD")
         if com_policy == "initialize_only" and (
-            ensemble == "nve" or thermostat in {"bussi", "nhc"}
+            ensemble == "nve" or thermostat == "bussi"
         ):
             integrator = "NVE" if ensemble == "nve" else thermostat.upper()
             raise ValueError(
                 f"{integrator} does not support com_policy='initialize_only'"
             )
-        if ensemble == "nvt" and thermostat == "nhc" and com_policy != "none":
+        if ensemble == "nvt" and thermostat == "nhc" and com_policy == "constraint":
             raise ValueError(
-                "NHC requires explicit com_policy='none'; constrained NHC and "
-                "automatic COM removal are unsupported"
+                "NHC does not support com_policy='constraint' (a FixCom projector); "
+                "use auto/initialize_only (zero COM momentum, conserved by NHC) "
+                "or none"
             )
         if ensemble == "nvt" and thermostat in {"bussi", "nhc"} and temperature <= 0.0:
             raise ValueError(

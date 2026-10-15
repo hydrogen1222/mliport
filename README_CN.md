@@ -47,7 +47,7 @@ NVIDIA GPU(需要可用的 CUDA 驱动;本路径已在 V100-SXM2-16GB、驱动
 一并安装 analysis、transport 与 electrolyte 功能,并对每个 backend 运行
 `mliport doctor`。四 backend 安装默认使用 Python 3.12。各 backend 的最低
 Python 版本是 MACE/GRACE `>=3.9`、DPA `>=3.10`、UMA `>=3.11`;包本身支持
-Python 3.10-3.12。如果用 `--python` 覆盖解释器,所有被请求的 backend 都
+Python 3.10-3.13。如果用 `--python` 覆盖解释器,所有被请求的 backend 都
 必须支持该版本。
 
 四 backend 安装完成后的环境布局:
@@ -118,6 +118,9 @@ Hugging Face 镜像与 SOCKS 代理设置见 `docs/models.md`。
 `run.log`。能量与力必须是有限值;`mliport_results.json` 里记录的是
 backend 实际使用的设备,而不是请求的设备。
 
+如果输出目录里已经有计算输出(之前的运行,或 VASP 的 `OUTCAR`/`CONTCAR`),
+运行会直接拒绝,运行期间也会锁住该目录;确实要覆盖时加 `--overwrite`。
+
 ## 选择 backend
 
 backend 由 `--model-type`、配置中的 alias/profile 决定;无法确定时直接
@@ -166,8 +169,9 @@ DPA/GRACE 前请自行设置 `CUDA_VISIBLE_DEVICES`。各 backend 手册见
 `--ensemble` 选择 `NVE` 或 `NVT`,`--thermostat` 选择 `LANGEVIN`、`BUSSI`
 或 `NHC`;`--temp`、`--timestep`、`--steps`、`--save-interval` 决定运行规模。
 要接着已有轨迹继续跑,可从带速度的保存帧开始,并加
-`--velocity-policy preserve --no-pre-relax`。NHC 需要 `--com-policy none`,
-因为有约束的 NHC 不能与自动质心移除同时使用。
+`--velocity-policy preserve --no-pre-relax`。NHC 不能使用 FixCom 约束;
+默认 `--com-policy auto` 会在初始化时把质心动量清零一次(NHC 会保持它为零),
+避免整个晶胞漂移污染基于 MSD 的输运结果。
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \
@@ -178,8 +182,11 @@ DPA/GRACE 前请自行设置 `CUDA_VISIBLE_DEVICES`。各 backend 手册见
 ### NEB 与 CI-NEB (`neb`)
 
 端点文件定义路径,`--images` 设置中间 image 数,`--climb` 打开 climbing
-image。当前 checkpoint 尚未验证能量-梯度一致性,因此需要显式的实验性
-opt-in,并且结果会标注 `physical_barrier=not_claimed`:
+image。只有当模型/运行时身份(checkpoint 哈希、backend 与框架版本、dtype、
+head、设备类型)与随包提供的能量-梯度一致性验证记录完全一致时,NEB 才无需
+opt-in;目前即 `validation/science/model_manifest.json` 中列出的 MACE、DPA、
+GRACE checkpoint。其他配置需要显式的实验性 opt-in,并且结果会标注
+`physical_barrier=not_claimed`:
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
@@ -282,8 +289,8 @@ CLI、INCAR、TUI)能否表达某个选项记录在
 `validation/science/capability_matrix.json`;标记为 `no` 或 `partial` 表示
 该入口无法表达该选项,不会静默转换。
 
-模型精度属于上游 checkpoint;短 MD 验证的是工作流而不是平衡态;当前
-checkpoint 上的 NEB 属于实验性,需要 `--allow-unvalidated-neb`,并且不声明
+模型精度属于上游 checkpoint;短 MD 验证的是工作流而不是平衡态;已验证
+身份之外的 NEB 属于实验性,需要 `--allow-unvalidated-neb`,并且不声明
 物理势垒。输运分析采样不足时会以明确的 insufficient-sampling 状态失败,
 不会给出数值。
 

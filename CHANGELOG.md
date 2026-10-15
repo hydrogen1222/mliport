@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+Review fixes (scientific correctness, data safety, robustness):
+
+- **MD / NHC drift.** NHC no longer keeps the random Maxwell-Boltzmann
+  centre-of-mass momentum: `com_policy=auto` (and `initialize_only`) zero it
+  once, NHC conserves it, the run reports `3N-3` kinetic DOF and the
+  thermostat set point is scaled by `(3N-3)/3N` (`nhc_set_temperature_K`).
+  Previously every NHC run translated the whole cell ballistically.
+- **Analysis COM-drift guard.** `msd` and `transport` record
+  `com_drift_diagnostics` and warn when an uncorrected whole-system COM
+  displacement exceeds 5% of the mobile-ion MSD.
+- **No silent overwrite.** sp/opt/md/batch refuse an output directory that
+  already holds calculation outputs (earlier runs, or VASP OUTCAR/CONTCAR)
+  unless `--overwrite`/`overwrite=True`, and hold an exclusive run lock.
+  `calculate_energy()` uses a temporary directory by default.
+- **Pre-relaxation stays fail-closed.** If it does not reach
+  `pre_relax_fmax` within `pre_relax_steps`, the run stops before production
+  MD with an actionable error (raise the step budget, loosen the threshold
+  with scientific justification, or disable pre-relaxation explicitly). The
+  outcome of a completed pre-relaxation is recorded in
+  `md_provenance.pre_relax`.
+- **UMA MD precision.** MD no longer defaults to `inference_mode=turbo`
+  (TF32 + torch.compile); turbo is opt-in.
+- **TUI templates** are the backend-neutral single-source templates (the old
+  ones hard-coded UMA and used unknown NEB keys).
+- **Analysis memory.** Trajectories are streamed frame by frame; MD frames no
+  longer duplicate the constraint-applied forces in `atoms.info`.
+- **GPU identity.** torch backends verify the device inside the CUDA
+  runtime's own enumeration (no nvidia-smi dependency, correct on mixed-GPU
+  nodes); CLI/queue default `CUDA_DEVICE_ORDER=PCI_BUS_ID`; a single MIG
+  instance in `CUDA_VISIBLE_DEVICES` is supported.
+- **Queue.** `mliport queue start --max-jobs-per-gpu N` lets small jobs share
+  a GPU (default 1, exclusive).
+- **NEB docs.** README wording on NEB validation fixed (evidence matching is
+  unchanged and stays exact).
+- **Python 3.13** is supported (package, installer, CI).
+- **Maintainability.** One backend calculator-option table replaces three
+  copies; engine fallbacks read `BUILTIN_DEFAULTS`; unused `mliport/templates`
+  removed; root `LICENSE.md` matches the package license.
+- **CI.** pytest failures and ruff findings are emitted as GitHub
+  annotations.
+
 ## 2.0.0b4
 
 Repository freeze / state isolation / compatibility audit beta:

@@ -6,7 +6,7 @@ DPA checkpoints are loaded through `deepmd-kit`. Multi-task checkpoints require 
 
 | Environment | Python | Runtime stack |
 |---|---|---|
-| `.venv-dpa` | 3.10, 3.11, 3.12 | `deepmd-kit==3.1.3` (torch 2.10.0) |
+| `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit==3.1.3` (torch 2.10.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines dpa --device auto

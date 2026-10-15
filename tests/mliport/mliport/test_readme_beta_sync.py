@@ -67,7 +67,7 @@ def test_generated_validation_block_exists_exactly_once() -> None:
 
 
 def test_readme_claims_match_pyproject_python_range() -> None:
-    """``requires-python = ">=3.10,<3.13"`` means 3.10-3.12; the READMEs
+    """``requires-python = ">=3.10,<3.14"`` means 3.10-3.13; the READMEs
     must state the last supported minor, not the exclusive bound."""
     pyproject = PYPROJECT.read_text(encoding="utf-8")
     match = re.search(r"requires-python\s*=\s*\"([^\"]+)\"", pyproject)

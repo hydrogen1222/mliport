@@ -34,6 +34,7 @@ def leased_process_environment(
     ):
         raise RuntimeError("Invalid GPU UUID lease")
     env["CUDA_VISIBLE_DEVICES"] = uuid or ""
+    env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     env["LOCAL_RANK"] = "0"
     env["DEVICE"] = "cuda" if uuid else "cpu"
     env.pop("MLIPORT_LEASED_GPU_UUID", None)

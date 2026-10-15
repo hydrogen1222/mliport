@@ -142,99 +142,21 @@ class TemplateScreen(Screen):
             self._generate_template()
 
     def _generate_template(self) -> None:
-        """Generate INCAR template file."""
+        """Write a backend-neutral INCAR template from the single defaults source.
+
+        The template deliberately selects no backend (``MODEL_TYPE =
+        REQUIRED``); a template that silently defaults to one model would
+        contradict mliport's explicit backend-selection contract.
+        """
+        from mliport.config.defaults import build_incar_default  # noqa: PLC0415
+
         template_type = getattr(self, "selected_type", "sp")
-
-        templates = {
-            "sp": self._sp_template(),
-            "opt": self._opt_template(),
-            "md": self._md_template(),
-            "neb": self._neb_template(),
-        }
-
-        content = templates.get(template_type, self._sp_template())
+        if template_type not in {"sp", "opt", "md", "neb"}:
+            template_type = "sp"
         filename = f"INCAR.{template_type}.template"
-
         try:
-            with open(filename, "w") as f:
-                f.write(content)
+            with open(filename, "w", encoding="utf-8") as handle:
+                handle.write(build_incar_default(template_type))
             self.app.notify(f"Template saved to {filename}", title="Success")
         except Exception as e:
             self.app.notify(f"Error: {e}", title="Error", severity="error")
-
-    def _sp_template(self) -> str:
-        return """# Single Point Calculation Template
-CALC_TYPE = SP
-TASK = omat
-MODEL_PATH = uma-s-1.pt
-DEVICE = cpu
-
-# Output Control
-WRITE_FORCES = .TRUE.
-WRITE_STRESS = .TRUE.
-"""
-
-    def _opt_template(self) -> str:
-        return """# Geometry Optimization Template
-CALC_TYPE = OPT
-TASK = omat
-MODEL_PATH = uma-s-1.pt
-DEVICE = cpu
-
-# Optimization Settings
-OPT_ALGO = FIRE
-FMAX = 0.05
-MAX_STEPS = 500
-CELL_OPT = .FALSE.
-FIX_SYMMETRY = .FALSE.
-"""
-
-    def _md_template(self) -> str:
-        return """# Molecular Dynamics Template
-CALC_TYPE = MD
-TASK = omat
-MODEL_PATH = uma-s-1.pt
-DEVICE = cpu
-
-# MD Settings
-ENSEMBLE = NVT
-TEMPERATURE = 300.0
-TIMESTEP = 1.0
-EQUILIBRATION_STEPS = 0
-STEPS = 1000
-SAVE_INTERVAL = 10
-
-# Pre-relaxation (recommended)
-PRE_RELAX = .TRUE.
-PRE_RELAX_STEPS = 50
-PRE_RELAX_FMAX = 0.1
-"""
-
-    def _neb_template(self) -> str:
-        return """# Nudged Elastic Band (NEB) Template
-CALC_TYPE = NEB
-INITIAL = initial.vasp
-FINAL = final.vasp
-MODEL_PATH = uma-s-1.pt
-DEVICE = cpu
-
-# Path settings
-IMAGES = 7  # intermediate images (endpoints are additional)
-INTERPOLATION = linear  # linear or idpp
-CLIMB = .FALSE.  # .TRUE. enables CI-NEB
-SPRING = 0.1
-PATH_CONVENTION = mic
-
-# Endpoint handling
-ENDPOINT_POLICY = validate  # validate or relax
-ENDPOINT_FMAX = 0.02
-ENDPOINT_STEPS = 500
-
-# Convergence
-FMAX = 0.03
-MAX_STEPS = 1000
-PRE_FMAX = 0.1
-PRE_MAX_STEPS = 300
-MAXSTEP = 0.1
-CHECKPOINT_INTERVAL = 10
-"""

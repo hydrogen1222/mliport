@@ -19,6 +19,7 @@ from mliport.analysis.drift import (
     drift_displacement,
     drift_semantics,
     reference_indices,
+    system_com_drift_diagnostics,
 )
 from mliport.analysis.msd import calculate_msd
 from mliport.analysis.transport import _production_positions_with_drift
@@ -211,3 +212,46 @@ def test_cross_backend_comparability_flag_is_not_backend_agreement():
         },
     )
     assert matched["definitions_match"] is True
+
+
+def _uniform_translation(frames: int = 11, natoms: int = 4) -> np.ndarray:
+    rng = np.random.default_rng(3)
+    base = rng.uniform(0.0, 5.0, size=(natoms, 3))
+    shift = np.arange(frames, dtype=float)[:, None, None] * np.array([0.5, 0.0, 0.0])
+    return base[None, :, :] + shift
+
+
+def test_whole_system_translation_is_flagged_without_drift_correction() -> None:
+    positions = _uniform_translation()
+    masses = np.ones(positions.shape[1])
+    mobile = np.array([0, 1])
+
+    report = system_com_drift_diagnostics(
+        positions, masses=masses, mobile=mobile, drift_reference="none"
+    )
+
+    assert report["system_com_sq_over_mobile_msd"] == pytest.approx(1.0)
+    assert report["system_com_final_displacement_A"] == pytest.approx(5.0)
+    assert report["warning"] is not None
+    assert "--drift-reference" in report["warning"]
+
+
+def test_corrected_or_stationary_com_is_not_flagged() -> None:
+    positions = _uniform_translation()
+    masses = np.ones(positions.shape[1])
+    mobile = np.array([0, 1])
+    corrected = system_com_drift_diagnostics(
+        positions, masses=masses, mobile=mobile, drift_reference="nonmobile"
+    )
+    assert corrected["warning"] is None
+    assert corrected["drift_corrected"] is True
+
+    stationary = positions.copy()
+    stationary[:, 0] += np.arange(len(stationary))[:, None] * 0.3
+    stationary[:, 1] -= np.arange(len(stationary))[:, None] * 0.3
+    stationary -= np.arange(len(stationary))[:, None, None] * np.array([0.5, 0, 0])
+    report = system_com_drift_diagnostics(
+        stationary, masses=masses, mobile=mobile, drift_reference="none"
+    )
+    assert report["system_com_final_displacement_A"] == pytest.approx(0.0, abs=1e-12)
+    assert report["warning"] is None

@@ -47,7 +47,7 @@ def test_no_inference_mode_in_calculator_scope() -> None:
 def test_inference_mode_in_calc_type_scopes() -> None:
     assert BUILTIN_DEFAULTS["sp"]["inference_mode"] == "default"
     assert BUILTIN_DEFAULTS["opt"]["inference_mode"] == "default"
-    assert BUILTIN_DEFAULTS["md"]["inference_mode"] == "turbo"
+    assert BUILTIN_DEFAULTS["md"]["inference_mode"] == "default"
     assert BUILTIN_DEFAULTS["neb"]["inference_mode"] == "default"
 
 
@@ -123,7 +123,8 @@ def test_build_incar_default_md() -> None:
     assert "MODEL_TYPE = REQUIRED" in neutral
 
     uma = build_incar_default("md", engine="uma")
-    assert "INFERENCE_MODE = turbo" in uma
+    assert "INFERENCE_MODE = default" in uma
+    assert "\nINFERENCE_MODE = turbo" not in uma
 
 
 def test_build_incar_default_neb() -> None:

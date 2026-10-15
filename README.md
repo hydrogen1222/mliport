@@ -52,7 +52,7 @@ The installer pins the upstream backend versions from
 electrolyte features, and runs `mliport doctor` for every requested engine.
 Python 3.12 is the default for the four-engine install. Per-backend minimums
 are MACE and GRACE `>=3.9`, DPA `>=3.10` and UMA `>=3.11`; the package itself
-supports Python 3.10-3.12. If you override the interpreter with `--python`,
+supports Python 3.10-3.13. If you override the interpreter with `--python`,
 every requested backend must accept it.
 
 ### Older GPUs
@@ -144,7 +144,10 @@ and small enough for CPU smoke tests.
 
 The run writes `runs/lgps-mace-sp/mliport_results.json` (energy, forces,
 stress, timing), `resolved_config.json` (what was actually used),
-`OUTCAR`/`OSZICAR`/`CONTCAR`, and `run.log`. Energy and forces must be finite;
+`OUTCAR`/`OSZICAR`/`CONTCAR`, and `run.log`. A run refuses an output directory that
+already holds calculation outputs (an earlier run, or a VASP
+`OUTCAR`/`CONTCAR`) and holds a lock on it while running; pass `--overwrite`
+to replace earlier outputs deliberately. Energy and forces must be finite;
 the device in `mliport_results.json` is the device the backend reported, not
 the one that was requested.
 
@@ -198,9 +201,10 @@ cell together with the ions.
 `--ensemble` selects `NVE` or `NVT`, and `--thermostat` selects `LANGEVIN`,
 `BUSSI` or `NHC`. `--temp`, `--timestep`, `--steps` and `--save-interval`
 size the run. A trajectory can continue from a saved frame that contains
-velocities with `--velocity-policy preserve --no-pre-relax`. NHC requires
-`--com-policy none`, because constrained NHC cannot run with automatic
-center-of-mass removal.
+velocities with `--velocity-policy preserve --no-pre-relax`. NHC cannot use a
+FixCom constraint; its default `--com-policy auto` zeroes the center-of-mass
+momentum once (NHC conserves it) so the whole cell does not drift and bias
+MSD-based transport.
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \
@@ -211,9 +215,13 @@ center-of-mass removal.
 ### NEB and CI-NEB (`neb`)
 
 The endpoint files define the band, `--images` sets the number of
-intermediates, and `--climb` enables the climbing image. Current checkpoints
-have not had their energy-gradient consistency validated, so the run requires
-the explicit experimental opt-in and reports `physical_barrier=not_claimed`:
+intermediates, and `--climb` enables the climbing image. NEB runs without an
+opt-in only when the exact model/runtime identity (checkpoint hash, backend and
+framework release, dtype, head, device type) matches a shipped
+energy-gradient-consistency record; currently those are the MACE, DPA and
+GRACE checkpoints listed in `validation/science/model_manifest.json`. Any
+other configuration needs the explicit experimental opt-in and reports
+`physical_barrier=not_claimed`:
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
@@ -328,8 +336,9 @@ entry means that entry point cannot express the option and no silent
 translation happens.
 
 Model accuracy belongs to the upstream checkpoint. Short MD runs verify the
-workflow, not equilibration. NEB on the current checkpoints is experimental:
-it requires `--allow-unvalidated-neb` and does not claim a physical barrier.
+workflow, not equilibration. NEB outside the validated model/runtime
+identities is experimental: it requires `--allow-unvalidated-neb` and does
+not claim a physical barrier.
 Transport analyses fail closed with an explicit insufficient-sampling status
 instead of returning a number.
 

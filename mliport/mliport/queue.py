@@ -32,7 +32,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mliport.backend_selection import canonical_model_type
+from mliport.backend_selection import canonical_model_type, option_applies_to_backend
 from mliport.config import get_schema
 from mliport.devices import resolve_device_uuid
 from mliport.jobs import JobManager, JobStatus, _lock_file, _unlock_file
@@ -292,32 +292,12 @@ def build_mliport_command(
     if job_name and resume is None:
         cmd.extend(["--name", job_name])
 
-    engine = model_type.lower()
     for key, value in sorted((options or {}).items()):
         if key not in _OPT_FLAGS or value is None:
             continue
-        # UMA-only options must not leak to other engines; MACE/DPA head and
-        # dtype are engine-specific too. The CLI itself already ignores
-        # inapplicable flags, but keeping the argv clean is friendlier.
-        if key in {"inference_mode", "activation_checkpointing"} and engine not in {
-            "uma",
-            "fairchem",
-        }:
-            continue
-        if key == "default_dtype" and engine != "mace":
-            continue
-        if key == "head" and engine not in {"mace", "dpa"}:
-            continue
-        if (
-            key
-            in {
-                "gpu_memory_growth",
-                "gpu_memory_limit_mb",
-                "neighbor_cache",
-                "neighbor_skin",
-            }
-            and engine != "grace"
-        ):
+        # Backend-specific calculator options never leak to another engine
+        # (central table in mliport.backend_selection).
+        if not option_applies_to_backend(key, model_type):
             continue
         flags = _OPT_FLAGS[key]
         if isinstance(value, bool):
@@ -669,13 +649,19 @@ class QueueScheduler:
         poll_interval: float = 5.0,
         device_uuid_resolver: Callable[[str], str | None] = resolve_device_uuid,
         stale_claim_seconds: float = 60.0,
+        max_jobs_per_gpu: int = 1,
     ):
         self.mgr = JobManager(jobs_dir)
         if isinstance(max_concurrent, bool) or not isinstance(max_concurrent, int):
             raise TypeError("max_concurrent must be an integer")
         if max_concurrent < 1:
             raise ValueError("max_concurrent must be >= 1")
+        if isinstance(max_jobs_per_gpu, bool) or not isinstance(max_jobs_per_gpu, int):
+            raise TypeError("max_jobs_per_gpu must be an integer")
+        if max_jobs_per_gpu < 1:
+            raise ValueError("max_jobs_per_gpu must be >= 1")
         self.max_concurrent = max_concurrent
+        self.max_jobs_per_gpu = max_jobs_per_gpu
         self.poll_interval = float(poll_interval)
         if not math.isfinite(self.poll_interval) or self.poll_interval <= 0:
             raise ValueError("poll_interval must be finite and > 0")
@@ -793,6 +779,7 @@ class QueueScheduler:
                         claim_token=token,
                         owner_pid=os.getpid(),
                         device_uuid=device_uuid,
+                        max_jobs_per_device=self.max_jobs_per_gpu,
                     )
                 except ValueError as exc:
                     self.mgr.update_status(
@@ -931,12 +918,17 @@ def start_scheduler(
     jobs_dir: str | Path,
     max_concurrent: int = 1,
     poll_interval: float = 5.0,
+    max_jobs_per_gpu: int = 1,
 ) -> int:
     """Launch a detached background scheduler; returns its PID."""
     if isinstance(max_concurrent, bool) or not isinstance(max_concurrent, int):
         raise TypeError("max_concurrent must be an integer")
     if max_concurrent < 1:
         raise ValueError("max_concurrent must be >= 1")
+    if isinstance(max_jobs_per_gpu, bool) or not isinstance(max_jobs_per_gpu, int):
+        raise TypeError("max_jobs_per_gpu must be an integer")
+    if max_jobs_per_gpu < 1:
+        raise ValueError("max_jobs_per_gpu must be >= 1")
     poll_interval = float(poll_interval)
     if not math.isfinite(poll_interval) or poll_interval <= 0:
         raise ValueError("poll_interval must be finite and > 0")
@@ -970,6 +962,8 @@ def start_scheduler(
                 str(Path(jobs_dir).resolve()),
                 "--max-concurrent",
                 str(max_concurrent),
+                "--max-jobs-per-gpu",
+                str(max_jobs_per_gpu),
                 "--poll",
                 str(poll_interval),
                 "--lock-fd",

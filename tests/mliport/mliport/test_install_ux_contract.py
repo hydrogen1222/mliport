@@ -42,12 +42,12 @@ def test_environment_matrix_is_backend_specific():
 
     rows = {row["engine"]: row for row in backend_environment_rows()}
     assert rows["uma"]["environment"] == ".venv"
-    assert rows["uma"]["python"] == "3.11, 3.12"
+    assert rows["uma"]["python"] == "3.11, 3.12, 3.13"
     assert rows["mace"]["environment"] == ".venv-mace"
     assert rows["dpa"]["environment"] == ".venv-dpa"
     assert rows["grace"]["environment"] == ".venv-grace"
     for engine in ("mace", "dpa", "grace"):
-        assert rows[engine]["python"] == "3.10, 3.11, 3.12", engine
+        assert rows[engine]["python"] == "3.10, 3.11, 3.12, 3.13", engine
 
 
 # --------------------------------------------------------------- DOC-02
