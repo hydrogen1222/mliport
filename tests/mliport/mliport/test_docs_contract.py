@@ -62,7 +62,13 @@ PAGES = (
 #: Pages whose Chinese version has not been written yet. The site shows the
 #: English text for them (mkdocs-static-i18n fallback). Translating a page
 #: means deleting it from this set; the set must end up empty.
-UNTRANSLATED = frozenset(PAGES)
+UNTRANSLATED = frozenset(PAGES) - {
+    "index",
+    "quickstart",
+    "installation",
+    "models",
+    "configuration",
+}
 
 REQUIRED_TREE = tuple(f"docs/{page}.md" for page in PAGES)
 

@@ -1,7 +1,9 @@
 # Configuration
 
-mliport resolves one configuration from several layers. Later layers
-override earlier ones:
+Most of the time you will set everything on the command line. When runs get
+more involved you can move settings into a `settings.ini`, a model alias or an
+INCAR-style job file. They all feed one resolver, which applies the layers in
+this order, each overriding the one before:
 
 ```text
 built-in defaults
@@ -12,23 +14,24 @@ built-in defaults
   < CLI flags / API arguments
 ```
 
-Higher layers do not silently merge semantics: an option is resolved to
-exactly one source and the provenance is recorded in
-`resolved_config.json` (see [outputs.md](outputs.md)).
+The resolver never merges two layers' ideas of an option. Each option ends up
+with exactly one value from exactly one source, and that source is written to
+`resolved_config.json` (see [Output files](outputs.md)). When you wonder why a
+run behaved as it did, that file has the answer.
 
-## Required configuration
+## What a run needs
 
-| Item | How to provide it |
+| What | Where it comes from |
 |---|---|
-| calculation type | the subcommand (`sp`, `opt`, `md`, `neb`, `batch`) or `CALC_TYPE`/`CALCULATION` |
-| backend | `--model-type`/`MODEL_TYPE`, or a model alias with `engine` |
-| model path | `--model`/`MODEL_PATH`, or an alias `path` |
-| structure | positional argument, or `--structure`/INCAR structure keys for `run` |
-| DPA branch | `--head`/`HEAD` when the checkpoint is multi-task |
-| NEB endpoints | `--initial`/`--final` or `NEB_INITIAL`/`NEB_FINAL` |
+| calculation type | the subcommand (`sp`, `opt`, `md`, `neb`, `batch`), or `CALC_TYPE` / `CALCULATION` |
+| backend | `--model-type` / `MODEL_TYPE`, or a model alias that declares `engine` |
+| model path | `--model` / `MODEL_PATH`, or the alias's `path` |
+| structure | the positional argument, or `--structure` / the INCAR structure keys with `run` |
+| DPA branch | `--head` / `HEAD`, when the checkpoint is multi-task |
+| NEB endpoints | `--initial` / `--final`, or `NEB_INITIAL` / `NEB_FINAL` |
 
-There is **no implicit UMA default**. With no backend from any layer the
-resolver fails closed:
+There is no implicit UMA default, or any other. If no layer names a backend,
+the resolver stops:
 
 ```text
 Error: No MLIP backend was selected.
@@ -42,18 +45,19 @@ Choose one of:
 or use a configured model alias/profile.
 ```
 
-## Strict configuration (default)
+## Strict by default
 
-Scientific configuration is **strict by default**: a misspelled key or a key
-belonging to another backend is a fatal configuration error, not a warning.
-This prevents "typo -> warning -> run anyway".
+A misspelled key, or a key that belongs to another backend, is a fatal error.
+The alternative — a warning and a run that carries on with the wrong settings —
+is exactly how a wrong result gets produced and trusted.
 
 ```bash
 mliport sp structure.cif --model m.model --model-type mace --inference-mode turbo
 # Error: Option 'inference_mode' is not applicable to engine 'mace' ...
 ```
 
-The legacy warning behaviour is an explicit opt-in, never a default:
+For exploratory work you can switch to the old warn-and-continue behaviour, but
+only on purpose:
 
 ```bash
 mliport sp ... --lenient-config
@@ -64,14 +68,17 @@ mliport sp ... --lenient-config
 strict_config = false
 ```
 
-Use `mliport config validate settings.ini` and
-`mliport config explain <KEY>` to inspect and debug configuration.
+To look at your configuration, use `mliport config validate settings.ini` to
+check a file and `mliport config explain <KEY>` to see where one value came
+from. `mliport config paths` lists where `settings.ini` is searched for,
+`mliport config init` writes a starter file, `mliport config show` prints the
+resolved configuration, and `mliport config schema` lists every recognised key.
 
 ## settings.ini
 
-Search paths (highest priority first) are printed by
-`mliport config paths`. The environment variable `MLIPORT_SETTINGS` points at
-an explicit file; the global `--settings PATH` flag overrides it.
+The search paths, highest priority first, are printed by `mliport config paths`.
+Set `MLIPORT_SETTINGS` to point at one explicit file; the global
+`--settings PATH` flag beats even that.
 
 ```ini
 [general]
@@ -91,17 +98,18 @@ calc_type = sp
 device = cuda
 ```
 
-- `[model:NAME]` must declare `engine` (`uma`/`mace`/`dpa`/`grace`; `fairchem`
-  is an alias for `uma`).
-- `[profile:NAME]` bundles calculator/run options without a model.
-- Section names such as `[sp]`, `[md]`, `[neb]` scope defaults to one
-  calculation type; `[general]`, `[resources]`, `[output]`, `[safety]` apply
-  globally.
+- A `[model:NAME]` section must declare `engine` (`uma`, `mace`, `dpa` or
+  `grace`; `fairchem` is another name for `uma`).
+- A `[profile:NAME]` section bundles calculator and run options without
+  naming a model.
+- Sections named after a calculation type (`[sp]`, `[md]`, `[neb]`, …) set
+  defaults for that type only. `[general]`, `[resources]`, `[output]` and
+  `[safety]` apply everywhere.
 
 ## INCAR-style jobs
 
-`mliport run --incar INCAR.mliport` accepts the VASP-shaped key/value file
-(INCAR-style, **not** a DFT input):
+`mliport run --incar INCAR.mliport` reads a key/value file in the style of a
+VASP INCAR. It is only the style: this is not a DFT input.
 
 ```text
 CALC_TYPE = SP
@@ -110,36 +118,36 @@ MODEL_PATH = /models/mace-omat-0-medium.model
 DEVICE = cpu                        # explicit cuda / cuda:0 for GPU runs
 ```
 
-Generate a template and fill in the backend explicitly:
+Let mliport write a template, and fill in the backend yourself:
 
 ```bash
 mliport template sp --engine mace --output INCAR.mace
 mliport template sp --output INCAR.neutral   # backend-neutral, MODEL_TYPE=REQUIRED
 ```
 
-## Backend-specific options
+## Options that belong to one backend
 
-| Option | Backend | Meaning |
+| Option | Backend | What it does |
 |---|---|---|
-| `TASK` / `--task` | UMA | UMA task family (`omat`, `omol`, `oc20`, ...) |
-| `TASK` / `--task` | MACE/DPA/GRACE | explicit PBC semantic (`bulk`/`molecule`) |
-| `HEAD` / `--head` | DPA, MACE | checkpoint branch/head (`default` for many MACE models) |
-| `INFERENCE_MODE` | UMA | `default`/`turbo`/`trained` inference preset |
-| `ACTIVATION_CHECKPOINTING` | UMA | GPU memory saving |
-| `DEFAULT_DTYPE` | MACE | model precision selection |
+| `TASK` / `--task` | UMA | task family (`omat`, `omol`, `oc20`, …) |
+| `TASK` / `--task` | MACE, DPA, GRACE | explicit PBC semantic (`bulk` / `molecule`) |
+| `HEAD` / `--head` | DPA, MACE | checkpoint branch or head (`default` for many MACE models) |
+| `INFERENCE_MODE` | UMA | `default`, `turbo` or `trained` inference preset |
+| `ACTIVATION_CHECKPOINTING` | UMA | saves GPU memory |
+| `DEFAULT_DTYPE` | MACE | model precision |
 | `GPU_MEMORY_GROWTH`, `GPU_MEMORY_LIMIT_MB` | GRACE | TensorFlow GPU memory policy |
-| `NEIGHBOR_CACHE`, `NEIGHBOR_SKIN` | GRACE | neighbor-list cache policy |
-| `TORCH_NUM_THREADS` | UMA/MACE/DPA | CPU intra-op threads |
+| `NEIGHBOR_CACHE`, `NEIGHBOR_SKIN` | GRACE | neighbour-list cache policy |
+| `TORCH_NUM_THREADS` | UMA, MACE, DPA | CPU intra-op threads |
 
-Supplying a backend-specific option to a different backend is an error under
-strict configuration; the option is never silently dropped.
+Handing one of these to a different backend is an error under strict
+configuration. The option is never silently dropped.
 
 ## Scientific defaults
 
-Scientific defaults (temperature, timestep, steps, thermostat, optimizer,
-fmax, NEB settings, ...) live in mliport's built-in defaults, are scoped per
-calculation type, and are recorded per run in `resolved_config.json`. Inspect
-the authoritative list with:
+Defaults for temperature, timestep, step counts, thermostat, optimizer, `fmax`,
+NEB settings and so on live in mliport's built-in defaults, are scoped to the
+calculation type, and are recorded for every run in `resolved_config.json`.
+The authoritative list is one command away:
 
 ```bash
 mliport config schema
@@ -150,27 +158,26 @@ mliport config show --settings settings.ini
 
 | Key | Meaning |
 |---|---|
-| `DEVICE` / `--device` | `cpu`, `cuda`, `cuda:N` (requested device is recorded separately from the actual one) |
-| `OUTPUT_DIR` / `--output` | run directory |
-| `WRITE_OUTCAR`, `WRITE_XDATCAR`, `WRITE_TRAJECTORY` | output files |
-| `WRITE_FORCES`, `WRITE_STRESS` | result arrays/columns |
+| `DEVICE` / `--device` | `cpu`, `cuda` or `cuda:N`; the requested device is recorded separately from the one actually used |
+| `OUTPUT_DIR` / `--output` | the run directory |
+| `WRITE_OUTCAR`, `WRITE_XDATCAR`, `WRITE_TRAJECTORY` | which files are written |
+| `WRITE_FORCES`, `WRITE_STRESS` | which arrays and columns are written |
 
-NEB rejects disabling its mandatory outputs rather than producing a silently
-incomplete result.
+NEB refuses to switch off its mandatory outputs, rather than hand you a result
+that quietly lacks them.
 
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
-| `MLIPORT_SETTINGS` | explicit settings.ini path |
-| `MLIPORT_JOBS_DIR` | queue/job registry directory |
-| `MLIPORT_CANCEL_GRACE_SECONDS` | cancellation grace period |
-| `MLIPORT_LEASED_GPU_UUID` | single-GPU lease used by queue workers |
-| `CUDA_VISIBLE_DEVICES` | device visibility; set by the queue when it leases a GPU — do not override it inside a running job |
+| `MLIPORT_SETTINGS` | explicit `settings.ini` path |
+| `MLIPORT_JOBS_DIR` | queue and job registry directory |
+| `MLIPORT_CANCEL_GRACE_SECONDS` | grace period when cancelling a job |
+| `MLIPORT_LEASED_GPU_UUID` | the single GPU leased to a queue worker |
+| `CUDA_VISIBLE_DEVICES` | device visibility; the queue sets it when it leases a GPU, so do not override it inside a running job |
 
-## TUI
+## The TUI
 
-`mliport tui` exposes the same configuration (including an explicit backend
-selection) and blocks a run until a backend and model are chosen. The TUI
-submits through the same queue helper as the CLI, so the two entry points
-cannot drift.
+`mliport tui` exposes the same configuration, including an explicit backend
+choice, and will not start a run until a backend and a model are chosen. It
+submits through the same queue helper as the CLI, so the two cannot drift apart.
