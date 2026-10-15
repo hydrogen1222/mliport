@@ -1,108 +1,103 @@
 # Transport (kinisi)
 
-**Purpose.** Estimate self-diffusion coefficients and ionic conductivity from
-an MD trajectory with explicit uncertainties, using the kinisi analyzer, plus
-the Nernst-Einstein relation for charged species.
-
-**Minimal command.**
+`transport` estimates the tracer diffusion coefficient of the mobile ion from an
+MD trajectory, with an uncertainty, using the kinisi analyzer, and converts it to
+a Nernst–Einstein ionic conductivity for charged species.
 
 ```bash
 mliport analyze runs/md transport --mobile Li --charge 1 \
-  --fit-start-ps 50 --temperature-K 800 --dimensions 3
+  --fit-start-ps 50 --temperature-K 800
 ```
 
-**Important options.**
+You need a production trajectory with a known **saved-frame** spacing
+(`--frame-interval-fs` for external files), the mobile species, its charge in
+units of e, and the start of the diffusive fit. Equilibration frames are left out.
+
+## Options you will use
 
 | Option | Meaning |
 |---|---|
-| `--mobile SPECIES` | mobile species (required) |
-| `--charge eV` | ionic charge in units of e (required; used for conductivity) |
-| `--fit-start-ps` | start of the diffusion fit (required) |
-| `--lag-step-ps`, `--lag-stop-ps` | explicit kinisi lag grid (must be given together) |
-| `--dimensions {1,2,3}` | dimensionality of the diffusion/conductivity estimate |
-| `--temperature-K` | temperature used in the Nernst-Einstein conversion |
-| `--drift-reference`, `--drift-mode`, `--drift-indices` | framework-drift correction |
-| `--collective-conductivity`, `--collective-system-particles` | charge-collective (Onsager) conductivity |
-| `--jump-diffusion` | also run kinisi's jump-diffusion analyzer |
-| `--n-samples`, `--n-walkers`, `--n-burn`, `--n-thin`, `--random-seed` | kinisi sampling controls |
-| `--parser-memory-limit-gib` | fail before parsing when the trajectory is too large |
-| `--allow-reconstructed-fallback` | opt-in fallback when native artifacts are missing (recorded) |
+| `--mobile SPECIES` | the mobile species (required) |
+| `--charge` | ionic charge in units of e (required; used for conductivity) |
+| `--fit-start-ps` | where the diffusion fit starts (required) |
+| `--lag-step-ps`, `--lag-stop-ps` | an explicit, sparser kinisi lag grid; give both or neither |
+| `--dimensions` | which Cartesian axes enter the estimate, as a subset of `xyz` (default `xyz`) |
+| `--temperature-K` | temperature for the Nernst–Einstein conversion |
+| `--drift-reference`, `--drift-mode`, `--drift-indices` | framework-drift correction (mode default `arithmetic_mean`) |
+| `--collective-conductivity`, `--collective-system-particles` | also compute the charge-collective (Onsager) conductivity; kinisi's index-ordered statistical groups (default 1; they are not independent MD replicas) |
+| `--jump-diffusion` | also run kinisi's jump-diffusion analyzer as a diagnostic |
+| `--n-samples`, `--n-walkers`, `--n-burn`, `--n-thin`, `--random-seed` | kinisi sampling controls (defaults 1000, 32, 500, 10, 0) |
+| `--parser-memory-limit-gib` | refuse to parse when the estimated memory peak exceeds this (default 4) |
+| `--allow-reconstructed-fallback` | diagnostic only: fall back to kinisi's unverified displacement reconstruction; the result is marked `publication_grade=false` |
 
-**Inputs.** A production MD trajectory with known **saved-frame** spacing
-(`--frame-interval-fs` for external inputs), mobile species, charge and
-temperature. Equilibration frames are excluded unless explicitly included.
+The lag grid sparsifies lag times, not trajectory frames. On a long trajectory a
+sparse grid is what keeps kinisi's covariance matrix inside the memory guard.
 
-**Outputs.** `analysis.json` with `D` and its uncertainty, conductivity terms
-(self/Nernst-Einstein and, when requested, collective), the lag grid and fit
-window, sampling diagnostics, and provenance (model identity, software
-commit).
+## What comes out
 
-**Failure semantics.** Too-short trajectories, a fit window below the
-required sampling, an unknown frame interval, a wrapped-convention conflict
-or exceeding `--parser-memory-limit-gib` fail closed with the reason. A
-reconstructed fallback is only used when explicitly allowed and is recorded.
+`results.json` holds `D` with its uncertainty, the conductivity terms (the
+tracer-based Nernst–Einstein one and, if requested, the collective one), the lag
+grid and fit window, sampling diagnostics and the provenance (model identity,
+software commit). `transport_summary.csv` has the headline numbers in one row.
 
-**Scientific caveats.**
+A trajectory that is too short, a fit window below the required sampling, an
+unknown frame interval, a coordinate-convention conflict, or a memory estimate
+above the limit all fail closed with the reason. The reconstructed fallback is
+used only when you allow it, and it is recorded.
 
-- Diffusivity from a finite trajectory is only trustworthy when the fit
-  window is inside the diffusive regime and the sampling error is reported.
-  Check the kinisi posterior/uncertainty, not just the mean `D`.
-- Nernst-Einstein conductivity assumes uncorrelated ion motion; it is an
-  upper-bound-like estimate unless collective (Onsager) conductivity is also
-  computed. Report which one you used.
-- **Fixed cell:** simulations at constant volume/cell constrain the
-  mechanism; a packed cell can suppress or bias diffusion. State the cell and
-  whether it was relaxed.
-- Framework drift must be handled explicitly; the drift policy changes `D`.
-- For mechanism questions (which sites/jumps), use
-  [GEMDAT electrolyte](electrolyte-gemdat.md); transport gives rates, not
-  mechanisms.
+## Reading the result
 
-## Estimator comparison (validation audit)
-
-Three estimator families are computed on the *same* trajectory and reported
-separately; they answer different questions and are **not required to agree**:
-
-| Estimator | What it is | Window |
-|---|---|---|
-| plain OLS baseline | `D = slope(MSD)/(2d)` with explicit unit conversion | aligned to the kinisi fit start |
-| native MSD diagnostic | the product's explicit-range OLS diagnostic (regime-aware) | recorded fit window |
-| kinisi posterior | tracer diffusion with a credible interval | kinisi lag/fit window |
-| Nernst-Einstein | `sigma_NE = n (z e)^2 D_tracer / (k_B T)` | derived from the tracer estimate |
-
-The validation report records `kinisi_to_plain_D_ratio` and raises an
-`estimator_disagreement_warning` when the ratio is below 0.5 or above 2. That
-is a prompt to explain the difference (windows, drift, regime), never a
-pass/fail threshold. The units audit is a known-answer check:
-`1 Å²/ps = 1e-8 m²/s`, so a 3D MSD slope of `6 Å²/ps` gives `D = 1e-8 m²/s`.
-
-A large disagreement usually means the fitted window is not in the diffusive
-regime (check the local `alpha`): a "demonstration, not converged" protocol can
-show `alpha ≈ 2` even though the trajectory is finite and healthy.
-
-**Example.**
+- A diffusivity from a finite trajectory deserves trust only when the fit window
+  sits in the diffusive regime and the sampling error is reported. Look at the
+  kinisi uncertainty, not just the mean `D`.
+- Nernst–Einstein conductivity assumes uncorrelated ion motion, so it is not a
+  full conductivity unless collective conductivity is computed as well. Say which
+  one you report.
+- A constant-volume cell constrains the mechanism, and a cramped cell can
+  suppress or bias diffusion. State the cell and whether it was relaxed.
+- Framework drift has to be handled explicitly, and the drift policy changes `D`.
+- For *which* sites and jumps matter, use [GEMDAT](electrolyte-gemdat.md);
+  transport gives rates, not mechanisms.
 
 ```bash
 mliport analyze runs/md-800K transport --mobile Li --charge 1 \
   --fit-start-ps 50 --lag-step-ps 5 --lag-stop-ps 500 \
-  --dimensions 3 --temperature-K 800 --drift-reference nonmobile \
+  --temperature-K 800 --drift-reference nonmobile \
   --drift-mode mass_weighted_com --collective-conductivity --jump-diffusion
 ```
 
-## Acceptance-verified invocation
+## Comparing estimators
 
-`transport` requires an ionic charge and an explicit fit window; a sparse lag
-grid keeps the covariance matrix inside the memory guard:
+The validation audit computes several estimators on the *same* trajectory and
+reports them separately. They answer different questions and are not required to
+agree:
+
+| Estimator | What it is | Window |
+|---|---|---|
+| plain OLS baseline | `D = slope(MSD)/(2d)` with explicit unit conversion | aligned to the kinisi fit start |
+| native MSD diagnostic | the product's explicit-range OLS diagnostic (regime-aware) | the recorded fit window |
+| kinisi posterior | tracer diffusion with a credible interval | the kinisi lag and fit window |
+| Nernst–Einstein | `sigma_NE = n (z e)^2 D_tracer / (k_B T)` | derived from the tracer estimate |
+
+The report records `kinisi_to_plain_D_ratio` and raises an
+`estimator_disagreement_warning` when the ratio falls below 0.5 or above 2. That
+is a prompt to explain the difference (windows, drift, regime), not a pass/fail
+threshold. The unit audit is a known-answer check: `1 Å²/ps = 1e-8 m²/s`, so a 3D
+MSD slope of `6 Å²/ps` gives `D = 1e-8 m²/s`.
+
+A large disagreement usually means the fitted window is not in the diffusive
+regime, so check the local `alpha`: a "demonstration, not converged" protocol can
+show `alpha ≈ 2` even though the trajectory is finite and healthy.
+
+## A tested example
 
 ```bash
-# tested example
 .venv-grace/bin/mliport analyze results/lgps-1ns transport \
   --mobile Li --charge 1 --fit-start-ps 100 \
   --lag-step-ps 1 --lag-stop-ps 200
 ```
 
-On the repository's 1 ns GRACE LGPS run this returns
-`D = 1.885e-09 m^2/s` with a 95% credible interval of
-`[1.492e-09, 2.275e-09] m^2/s` (fit window 100-200 ps). Short trajectories
-instead return an insufficient-sampling status; mliport never fabricates a
-diffusion coefficient for them.
+On the repository's 1 ns GRACE LGPS run this returns `D = 1.885e-09 m²/s` with a
+95% credible interval of `[1.492e-09, 2.275e-09] m²/s` (fit window 100–200 ps).
+Short trajectories return an insufficient-sampling status instead; mliport never
+makes up a diffusion coefficient for them.

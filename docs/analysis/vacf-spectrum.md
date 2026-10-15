@@ -1,60 +1,49 @@
 # VACF and vibrational spectrum
 
-**Purpose.** Compute the velocity autocorrelation function (VACF) and its
-Fourier transform (vibrational/spectral density) as diagnostics of the
-dynamics and phonon-like spectrum.
-
-**Minimal command.**
+`vacf` computes the velocity autocorrelation function and `spectrum` its Fourier
+transform, a vibrational spectral density. Use them as diagnostics of the dynamics.
 
 ```bash
-mliport analyze runs/md vacf --species Li --method fft
-mliport analyze runs/md spectrum --species Li --method fft \
-  --taper one-sided-cosine --normalization normalized_area
+mliport analyze runs/md vacf --species Li
+mliport analyze runs/md spectrum --species Li --taper one-sided-cosine \
+  --normalization normalized_area
 ```
 
-**Important options.**
+Both need only a readable trajectory. Velocities are derived consistently with the
+saved frames, and both run headlessly and write CSV plus PNG and SVG.
+
+## Options you will use
 
 | Option | Meaning |
 |---|---|
-| `--species SPECIES` | species to correlate (all atoms when omitted) |
-| `--method {fft,direct}` | correlation algorithm |
-| `--taper {one-sided-cosine,none}` | window applied before the transform (spectrum) |
-| `--normalization {normalized_area,raw_spectrum}` | spectrum normalisation |
-| `--start-frame`, `--stop-frame`, `--include-equilibration` | analysis window |
-| `--positions-convention`, `--frame-interval-fs` | external trajectory metadata |
+| `--species SPECIES` | the species to correlate (all atoms when omitted) |
+| `--method fft\|direct` | the correlation algorithm (default `fft`) |
+| `--taper one-sided-cosine\|none` | window applied before the transform (`spectrum`; default `one-sided-cosine`) |
+| `--normalization normalized_area\|raw_spectrum` | spectrum normalization (`spectrum`; default `normalized_area`) |
+| `--start-frame`, `--stop-frame`, `--include-equilibration` | the analysis window |
+| `--positions-convention`, `--frame-interval-fs` | metadata for external trajectories |
 
-**Inputs / outputs.** A trajectory (velocities are derived consistently with
-the saved frames); `analysis.json` plus VACF/spectrum arrays and plots. The
-**saved-frame interval** sets the Nyquist frequency — it is not the
-integration timestep.
+## What to watch
 
-**Failure semantics.** A saved-frame interval that is too coarse for the
-requested spectral range is reported as insufficient sampling rather than
-aliased silently.
+The **saved-frame interval** sets the Nyquist frequency, not the integration
+timestep. If it is too coarse for the spectral range you asked for, mliport
+reports insufficient sampling instead of silently aliasing.
 
-**Scientific caveats.** Spectra are sensitive to the frame spacing, taper
-and trajectory length; report all three. A spectrum from a classical MLIP
-trajectory is not a quantitative phonon calculation and does not include
-quantum nuclear effects. Compare spectra only within one model/timestep
-protocol.
-
-**Example.**
+Spectra depend on the frame spacing, the taper and the trajectory length, so
+report all three. A spectrum from a classical MLIP trajectory is not a
+quantitative phonon calculation and carries no quantum nuclear effects. Compare
+spectra only inside one model and timestep protocol. A short trajectory gives a
+noisy but finite spectrum; do not read its frequencies as converged vibrational
+modes.
 
 ```bash
 mliport analyze runs/md-300K spectrum --species O --method fft \
-  --taper one-sided-cosine --normalization normalized_area --stride 1
+  --taper one-sided-cosine --normalization normalized_area
 ```
 
-## Acceptance-verified invocation
-
-`vacf` and `spectrum` need only a readable trajectory:
+The acceptance suite runs the plain forms on the 1 ns GRACE trajectory:
 
 ```bash
-# tested example
 .venv-grace/bin/mliport analyze results/lgps-1ns vacf
 .venv-grace/bin/mliport analyze results/lgps-1ns spectrum
 ```
-
-Both complete headlessly and write CSV plus PNG/SVG. A short trajectory gives
-a noisy but finite spectrum; do not interpret the frequencies as converged
-vibrational modes.
