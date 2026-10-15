@@ -14,6 +14,10 @@ class NEBPreparationError(NEBError):
     """The band cannot be constructed without changing its physical meaning."""
 
 
+class NEBGradientConsistencyError(NEBError):
+    """The model's forces are not (verifiably) the gradient of its energy."""
+
+
 class NEBEndpointNotConvergedError(NEBError):
     """An endpoint requested for relaxation did not converge."""
 

@@ -11,6 +11,7 @@ from mliport.neb.results import NEBResult, barrier_metrics
 from mliport.neb.schema import (
     NEBEndpointNotConvergedError,
     NEBError,
+    NEBGradientConsistencyError,
     NEBOptions,
     NEBPreparationError,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "EndpointDisplacement",
     "NEBEndpointNotConvergedError",
     "NEBError",
+    "NEBGradientConsistencyError",
     "NEBOptions",
     "NEBPreparationError",
     "NEBResult",

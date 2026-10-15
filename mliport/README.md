@@ -217,17 +217,18 @@ MSD-based transport.
 ### NEB and CI-NEB (`neb`)
 
 The endpoint files define the band, `--images` sets the number of
-intermediates, and `--climb` enables the climbing image. NEB runs without an
-opt-in only when the exact model/runtime identity (checkpoint hash, backend and
-framework release, dtype, head, device type) matches a shipped
-energy-gradient-consistency record; currently those are the MACE, DPA and
-GRACE checkpoints listed in `validation/science/model_manifest.json`. Any
-other configuration needs the explicit experimental opt-in and reports
-`physical_barrier=not_claimed`:
+intermediates, and `--climb` enables the climbing image. Before the first NEB
+step, mliport measures on your band (both endpoints and interpolated images)
+whether the model's forces are the gradient of its energy, with noise-aware
+finite differences of the model energy, and refuses to run when they are not
+(direct-force models such as UMA are always refused). The result is recorded
+in `neb_results.json` / `run_context.json` as `gradient_preflight`. It is a
+spot check of force-energy consistency, not a statement about model accuracy
+or a proof over the whole energy surface:
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
-  --images 5 --climb --allow-unvalidated-neb \
+  --images 5 --climb \
   --model model.model --model-type mace --device cuda --output runs/lgps-neb
 ```
 
@@ -338,9 +339,9 @@ entry means that entry point cannot express the option and no silent
 translation happens.
 
 Model accuracy belongs to the upstream checkpoint. Short MD runs verify the
-workflow, not equilibration. NEB outside the validated model/runtime
-identities is experimental: it requires `--allow-unvalidated-neb` and does
-not claim a physical barrier.
+workflow, not equilibration. NEB checks at run time that the model's forces
+match finite differences of its energy and refuses otherwise; that says
+nothing about the accuracy of the barrier itself.
 Transport analyses fail closed with an explicit insufficient-sampling status
 instead of returning a number.
 

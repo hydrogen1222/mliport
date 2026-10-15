@@ -174,10 +174,14 @@ The Python API cannot restart the caller: export
 frameworks. One GPU UUID can be read with
 `nvidia-smi --query-gpu=uuid --format=csv,noheader`.
 
-**NEB refuses to run without `--allow-unvalidated-neb`.** This is the
-capability gate, not a bug: the current checkpoints have no validated
-energy-gradient consistency record for this runtime. The run is explicitly
-experimental and does not claim a physical barrier.
+**NEB is refused with "not verifiably the gradient of its energy".** Before
+the first step NEB compares the model's forces with finite differences of its
+energy on your band. The refusal means the forces do not match the energy
+(for example a model that predicts forces directly), a value was non-finite,
+or the energy resolution is too coarse to check (a large float32 cell: use
+float64 or a smaller cell). The failing image, direction and error are in the
+message; the full record is in the `NEBGradientConsistencyError.summary`.
+`--allow-unvalidated-neb` no longer exists as a bypass.
 
 **NEB resume says "Resume fingerprint is incompatible".** Resume continues in
 the original run directory and keeps the recorded options. In this beta the

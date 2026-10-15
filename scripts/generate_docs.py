@@ -347,15 +347,22 @@ forward barrier.
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
   --model mace-omat-0-medium.model --model-type mace --images 7 \
-  --allow-unvalidated-neb --output runs/neb
+  --output runs/neb
 ```
 
-NEB runs without an opt-in only when the exact model/runtime identity
-(checkpoint hash, backend and framework release, task, head, dtype, inference
-mode and device type) matches a shipped energy-gradient-consistency record.
-Every other configuration needs the explicit
-`--allow-unvalidated-neb` opt-in; such runs are recorded as
-`workflow_smoke_only` and do not claim a physical barrier.
+Before the first NEB step, mliport runs an energy-force consistency
+pre-flight on the band it is about to optimize: for both endpoints and
+interpolated images it compares the model's force projection `-F.u` along the
+force direction and random directions with central finite differences of the
+model energy (two step sizes combined by Richardson extrapolation, tolerance
+including the energy rounding noise of the model's dtype). The run is refused
+when the forces are not the gradient of the energy, when a value is
+non-finite, or when the energy resolution (for example a large float32 cell)
+cannot resolve the check; direct-force models are always refused. The record
+is stored as `gradient_preflight` in `run_context.json` and
+`neb_results.json`. This is a spot check of consistency on the sampled
+structures and directions, not a proof over the whole energy surface and not a
+statement about model accuracy.
 
 ## Important options
 
@@ -372,7 +379,7 @@ Every other configuration needs the explicit
 | `--neb-spring`, `--neb-maxstep`, `--neb-min-distance` | band/spring parameters |
 | `--checkpoint-interval` | band checkpoint frequency |
 | `--resume` | resume from a checkpoint/directory |
-| `--allow-unvalidated-neb` | opt-in for NEB configurations outside the validated envelope (recorded, not silent) |
+| `--allow-unvalidated-neb` | deprecated, has no effect: the runtime pre-flight replaces the opt-in |
 
 ## Inputs
 
