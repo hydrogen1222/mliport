@@ -24,11 +24,11 @@ record-backed — a `passed` cell links to the runtime record that supports it.
 
 | Backend / model | SP | Short MD | E–F gradient | NEB smoke | GRACE cache | Records |
 |---|---|---|---|---|---|---|
-| UMA | not run | not run | not run | not run | n/a | [uma.json](../validation/runtime/v100/uma.json) (no offline wheelhouse on this machine) |
-| MACE float64 | passed | passed | passed | passed | n/a | [mace.json](../validation/runtime/v100/mace.json) |
-| MACE float32 | passed | passed | passed | passed | n/a | [mace-float32.json](../validation/runtime/v100/mace-float32.json) |
-| DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](../validation/runtime/v100/dpa.json) |
-| GRACE float32 | passed | passed | passed | passed | passed (ON and OFF) | [grace.json](../validation/runtime/v100/grace.json), [grace-nocache.json](../validation/runtime/v100/grace-nocache.json) |
+| UMA | not run | not run | not run | not run | n/a | [uma.json](https://github.com/hydrogen1222/mliport/blob/main/validation/runtime/v100/uma.json) (no offline wheelhouse on this machine) |
+| MACE float64 | passed | passed | passed | passed | n/a | [mace.json](https://github.com/hydrogen1222/mliport/blob/main/validation/runtime/v100/mace.json) |
+| MACE float32 | passed | passed | passed | passed | n/a | [mace-float32.json](https://github.com/hydrogen1222/mliport/blob/main/validation/runtime/v100/mace-float32.json) |
+| DPA `Domains_Alloy` | passed | passed | passed | passed | n/a | [dpa.json](https://github.com/hydrogen1222/mliport/blob/main/validation/runtime/v100/dpa.json) |
+| GRACE float32 | passed | passed | passed | passed | passed (ON and OFF) | [grace.json](https://github.com/hydrogen1222/mliport/blob/main/validation/runtime/v100/grace.json), [grace-nocache.json](https://github.com/hydrogen1222/mliport/blob/main/validation/runtime/v100/grace-nocache.json) |
 
 The NEB smoke was a short 5-image fixed-cell run on a 4-atom Cu cell with
 `saddle_validation: not_performed`; a converged band is not a verified
@@ -82,9 +82,9 @@ commands, four GPU backends, the LGPS workflow matrix, the analysis modules,
 a CPU install and a final clean-room pass. The report and its machine-readable
 evidence live here:
 
-- [LGPS_ACCEPTANCE_REPORT.md](../validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)
-- [beta-summary.json](../validation/science/reports/beta-summary.json)
-- [BETA_VALIDATION.md](../validation/science/reports/BETA_VALIDATION.md)
+- [LGPS_ACCEPTANCE_REPORT.md](https://github.com/hydrogen1222/mliport/blob/main/validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)
+- [beta-summary.json](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/beta-summary.json)
+- [BETA_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md)
 
 Installation-matrix rows for the acceptance host, the exact commands and the
 remaining limitations are recorded there rather than inferred from CI.

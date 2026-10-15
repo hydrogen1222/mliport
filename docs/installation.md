@@ -87,7 +87,7 @@ itself and model checkpoints are not touched. `./bin/mliport-*` launchers can
 be removed with the `bin/` directory. Re-run the installer to recreate an
 environment.
 
-<!-- BEGIN GENERATED: backend compatibility matrix -->
+<!-- BEGIN GENERATED: backend-matrix -->
 | Backend | Environment | Python | Runtime stack |
 |---|---|---|---|
 | UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
@@ -155,12 +155,14 @@ for your GPU family (Maxwell/Pascal/Volta use the cu126 legacy channel,
 Turing and newer use cu128+). `mliport setup` prints the detected hardware and
 the matching route.
 
+<!-- BEGIN GENERATED: gpu-routes -->
 | Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
 |---|---|---|---|---|---|---|
 | UMA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
 | MACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
 | DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
 | GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
+<!-- END GENERATED -->
 
 `experimental` means the upstream framework does not test that family;
 `needs runtime smoke test` means a route exists but mliport has not promoted
@@ -170,7 +172,7 @@ Families without real hardware evidence (everything except the V100) are
 classified from exact wheel and native-extension inspection: the compiled
 architecture lists, the `+cu126`/`+cu128` wheel hashes and the `cuobjdump`
 results live in the
-[architecture theory report](../validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md). `mliport doctor` prints that
+[architecture theory report](https://github.com/hydrogen1222/mliport/blob/main/validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md). `mliport doctor` prints that
 classification for the detected GPU instead of claiming "verified".
 
 Pre-Turing GPUs depend on the CUDA 12.6 legacy channel, which PyTorch stops

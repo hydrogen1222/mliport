@@ -1,20 +1,33 @@
-"""Regenerate machine-generated documentation from repository code.
+"""Regenerate the machine-derived parts of the documentation.
 
-Generated artifacts (never edit them by hand):
+The documentation pages are written by hand. Only facts that live in code are
+generated, and only inside marker-delimited blocks::
 
-- ``docs/installation.md`` -- environment/Python matrix from the
-  compatibility registry;
-- ``docs/backends/<engine>.md`` -- supported profiles from the pinned model
-  manifest and runtime facts from the compatibility registry;
-- ``mliport/README.md`` -- PyPI/package README generated from the root
-  README with repository-relative links rewritten to GitHub URLs.
+    <!-- BEGIN GENERATED: backend-matrix -->
+    ...never edit by hand...
+    <!-- END GENERATED -->
+
+Blocks (each page exists in English as ``page.md`` and in Chinese as
+``page.zh.md``; both are filled, with translated table headers):
+
+- ``docs/installation`` -- ``backend-matrix`` (environment and Python
+  versions per backend, from the compatibility registry) and ``gpu-routes``
+  (install-route state per GPU family);
+- ``docs/backends/<engine>`` -- ``environment`` (environment, Python range
+  and runtime stack) and ``profiles`` (pinned model profiles from
+  ``validation/science/model_manifest.json``);
+- ``docs/workflows/neb`` -- ``neb-capability`` (which entry point can express
+  which NEB option, from ``validation/science/capability_matrix.json``).
+
+``mliport/README.md`` (the PyPI/package README) is generated from the root
+``README.md`` with repository-relative links rewritten to GitHub URLs.
 
 Usage::
 
     python scripts/generate_docs.py [--check]
 
-``--check`` exits non-zero when a generated file is out of date instead of
-rewriting it.
+``--check`` exits non-zero when a generated block or file is out of date
+instead of rewriting it.
 """
 
 from __future__ import annotations
@@ -33,116 +46,41 @@ from mliport.install.compatibility import (  # noqa: E402
     python_versions_for,
 )
 from mliport.install.docs import (  # noqa: E402
-    render_installation_markdown,
+    LANGUAGES,
+    render_backend_matrix,
+    render_gpu_route_table,
 )
 
 MANIFEST_PATH = REPO / "validation" / "science" / "model_manifest.json"
+CAPABILITY_MATRIX_PATH = REPO / "validation" / "science" / "capability_matrix.json"
 GITHUB_URL = "https://github.com/hydrogen1222/mliport"
 
-_BACKEND_INTRO = {
-    "uma": (
-        "UMA checkpoints from Meta FAIR are loaded through the upstream "
-        "`fairchem-core` stack. `uma` and the upstream package alias "
-        "`fairchem` are the same runtime; `omol`/`oc20`/`omat` task families "
-        "are selected with `TASK`/`--task`."
-    ),
-    "mace": (
-        "MACE checkpoints are loaded through `mace-torch`. MACE profiles are "
-        "selected by checkpoint plus dtype (`float64` is the primary "
-        "accuracy-first profile; `float32` is a separate identity and is "
-        "never mixed with float64 results)."
-    ),
-    "dpa": (
-        "DPA checkpoints are loaded through `deepmd-kit`. Multi-task "
-        "checkpoints require an explicit branch `HEAD`; mliport fails closed "
-        "instead of guessing a head."
-    ),
-    "grace": (
-        "GRACE models are exported SavedModels loaded through "
-        "`tensorpotential`. `MODEL_PATH` points at the SavedModel directory, "
-        "not a single file."
-    ),
+#: ``page.md`` is English, ``page.zh.md`` is Chinese.
+_SUFFIX = {"en": "", "zh": ".zh"}
+
+_BLOCK_RE = re.compile(
+    r"(?P<begin><!-- BEGIN GENERATED: (?P<name>[a-z0-9-]+) -->)\n"
+    r".*?"
+    r"(?P<end><!-- END GENERATED -->)",
+    flags=re.DOTALL,
+)
+
+_PROFILE_HEADER = {
+    "en": ("Profile", "Identity", "dtype", "task", "head", "model SHA-256"),
+    "zh": ("Profile", "标识", "dtype", "task", "head", "模型 SHA-256"),
+}
+_ENVIRONMENT_HEADER = {
+    "en": ("Environment", "Python", "Runtime stack"),
+    "zh": ("环境", "Python", "运行时"),
+}
+_NEB_HEADER = {
+    "en": ("Feature", "API", "direct CLI", "INCAR", "TUI"),
+    "zh": ("功能", "API", "直接 CLI", "INCAR", "TUI"),
 }
 
-_MODEL_ACQUISITION = {
-    "uma": (
-        "Download UMA checkpoints from the upstream fairchem/UMA release "
-        "channels and verify the SHA-256 before use. mliport never "
-        "redistributes model weights; see [citations](../citations.md)."
-    ),
-    "mace": (
-        "Download MACE checkpoints from the upstream MACE releases. The "
-        "pinned `mace_omat` profiles use "
-        "`mace-omat-0-medium.model` and are referenced by SHA-256 in "
-        "`validation/science/model_manifest.json`."
-    ),
-    "dpa": (
-        "Download DPA checkpoints from the upstream DeePMD-kit/DPA release "
-        "channels. Read the available branches with `dp --pt show <model> "
-        "model-branch` and pass the intended branch as `HEAD`."
-    ),
-    "grace": (
-        "Download official GRACE exported SavedModels from the upstream "
-        "AMS-ICAMS-RUB release channels; the model path is the SavedModel "
-        "directory."
-    ),
-}
 
-_LIMITATIONS = {
-    "uma": [
-        "UMA task families are not interchangeable: a molecule run must use "
-        "an `omol` task and a periodic bulk run an `omat` task.",
-        "Upstream precision is model-defined; mliport reports the framework "
-        "version rather than pretending to control model weights.",
-        "`fairchem` is an alias, not a second backend.",
-    ],
-    "mace": [
-        "The float32 profile is a separate identity; never compare its "
-        "energies with float64 results without saying so.",
-        "Multi-head checkpoints require an explicit `HEAD`; mliport refuses "
-        "to guess.",
-        "MACE stress support depends on the checkpoint; check the T1 "
-        "`stress_supported` record.",
-    ],
-    "dpa": [
-        "Multi-task checkpoints require an explicit `HEAD`; the product "
-        "fails closed rather than using an arbitrary branch.",
-        "DPA has no `inference_mode` concept; UMA-only options are rejected "
-        "in strict config mode.",
-        "Stress support depends on the checkpoint and its branch.",
-        "DPA needs process-level CUDA isolation. The CLI restarts a command "
-        "with `CUDA_VISIBLE_DEVICES` when it is unset; the Python API needs "
-        "the variable set in the caller.",
-        "`deepmd-kit[torch]` metadata is required for the model loader; the "
-        "installer carries the matching `mpich` package.",
-    ],
-    "grace": [
-        "`MODEL_PATH` must be the SavedModel directory.",
-        "TensorFlow GPU visibility must be isolated per process. The CLI "
-        "restarts a command with `CUDA_VISIBLE_DEVICES` when it is unset; "
-        "the Python API and the queue worker need the same isolation.",
-        "Stress support depends on the checkpoint.",
-    ],
-}
-
-_MINIMAL_COMMAND = {
-    "uma": (
-        ".venv/bin/mliport sp structure.cif --model /path/to/uma.pt "
-        "--model-type uma --task omat"
-    ),
-    "mace": (
-        ".venv-mace/bin/mliport sp structure.cif "
-        "--model /path/to/mace-omat-0-medium.model --model-type mace"
-    ),
-    "dpa": (
-        ".venv-dpa/bin/mliport sp structure.cif --model /path/to/DPA-3.1-3M.pt "
-        "--model-type dpa --head Omat24"
-    ),
-    "grace": (
-        ".venv-grace/bin/mliport sp structure.cif --model /path/to/saved_model "
-        "--model-type grace"
-    ),
-}
+def _row(cells) -> str:
+    return "| " + " | ".join(cells) + " |"
 
 
 def _profiles_for(engine: str) -> dict[str, dict]:
@@ -159,238 +97,124 @@ def _sha_short(sha: object) -> str:
     return text[:12] + "..." if len(text) > 12 else text
 
 
-def render_backend_page(engine: str) -> str:
-    """One backend page: facts from registry + manifest + capability records."""
+def render_backend_environment(engine: str, lang: str) -> str:
+    """Environment, Python range and runtime stack of one backend."""
     backend = BACKENDS[engine]
-    versions = python_versions_for(engine)
-    profiles = _profiles_for(engine)
-    lines = [
-        f"# {backend.label}",
-        "",
-        _BACKEND_INTRO[engine],
-        "",
-        "## Install environment",
-        "",
-        "| Environment | Python | Runtime stack |",
-        "|---|---|---|",
-        f"| `{backend.venv_name}` | {', '.join(versions)} | "
-        f"`{backend.requirement}` ({backend.framework} "
-        f"{'/'.join(sorted({p.framework_version for p in backend.arch_profiles.values()}))}) |",
-        "",
-        "```bash",
-        f"./scripts/install_mliport.sh --engines {engine} --device auto",
-        "```",
-        "",
-        "## Supported profiles",
-        "",
-        "| Profile | Identity | dtype | task | head | model SHA-256 |",
-        "|---|---|---|---|---|---|",
-    ]
-    for key, profile in sorted(profiles.items()):
+    frameworks = "/".join(
+        sorted({p.framework_version for p in backend.arch_profiles.values()})
+    )
+    return "\n".join(
+        [
+            _row(_ENVIRONMENT_HEADER[lang]),
+            "|---|---|---|",
+            _row(
+                [
+                    f"`{backend.venv_name}`",
+                    ", ".join(python_versions_for(engine)),
+                    f"`{backend.requirement}` ({backend.framework} {frameworks})",
+                ]
+            ),
+            "",
+            "```bash",
+            f"./scripts/install_mliport.sh --engines {engine} --device auto",
+            "```",
+        ]
+    )
+
+
+def render_backend_profiles(engine: str, lang: str) -> str:
+    """Pinned model profiles of one backend, from the validation manifest."""
+    lines = [_row(_PROFILE_HEADER[lang]), "|---|---|---|---|---|---|"]
+    for key, profile in sorted(_profiles_for(engine).items()):
         lines.append(
-            f"| `{key}` | {profile.get('identity')} | {profile.get('dtype')} "
-            f"| {profile.get('task')} | {profile.get('head')} "
-            f"| `{_sha_short(profile.get('model_sha256'))}` |"
+            _row(
+                [
+                    f"`{key}`",
+                    str(profile.get("identity")),
+                    str(profile.get("dtype")),
+                    str(profile.get("task")),
+                    str(profile.get("head")),
+                    f"`{_sha_short(profile.get('model_sha256'))}`",
+                ]
+            )
         )
-    lines += [
-        "",
-        "## Minimal command",
-        "",
-        "```bash",
-        _MINIMAL_COMMAND[engine],
-        "```",
-        "",
-        "## Precision",
-        "",
-        "The dtype is part of the profile identity. "
-        + (
-            "MACE profiles declare `float64` (primary) and `float32` "
-            "(separate identity) explicitly."
-            if engine == "mace"
-            else "This backend's precision is model-defined; mliport records "
-            "the effective dtype from the backend, never a value it assumes."
-        ),
-        "",
-        "## Stress",
-        "",
-        "mliport reports stress only if the loaded checkpoint exposes it "
-        "(`implemented_properties`). Never assume stress support from the "
-        "engine name: the T1 evidence records `stress_supported` per profile, "
-        "and `mliport doctor` reports what the current model provides.",
-        "",
-        "## Head / task semantics",
-        "",
-    ]
-    if engine == "uma":
-        lines.append(
-            "`TASK` selects the UMA task family (`omat` for periodic bulk, "
-            "`omol` for molecules, `oc20` for catalysis). There is no "
-            "separate `HEAD` field for UMA."
-        )
-    elif engine == "dpa":
-        lines.append(
-            "Multi-task checkpoints expose named branches. Pass the intended "
-            "branch with `--head`/`HEAD`; omitting it on a multi-task "
-            "checkpoint is a fatal configuration error, never a silent "
-            "default branch."
-        )
-    elif engine == "mace":
-        lines.append(
-            "`HEAD` selects a head when the checkpoint provides several; "
-            "single-head checkpoints do not need it. `TASK` is the explicit "
-            "PBC semantic (`bulk`/`molecule`)."
-        )
-    else:
-        lines.append(
-            "GRACE models do not expose mliport-level heads; `TASK` is the "
-            "explicit PBC semantic (`bulk`/`molecule`)."
-        )
-    lines += [
-        "",
-        "## Model acquisition",
-        "",
-        _MODEL_ACQUISITION[engine],
-        "",
-    ]
-    lines += [
-        "",
-        "## License and citation",
-        "",
-        "mliport is MIT-licensed; the upstream model/software must be cited "
-        "separately. See [citations](../citations.md) for the authoritative "
-        "upstream references.",
-        "",
-        "## Known limitations",
-        "",
-    ]
-    lines += [f"- {item}" for item in _LIMITATIONS[engine]]
-    lines.append("")
     return "\n".join(lines)
 
 
-CAPABILITY_MATRIX_PATH = REPO / "validation" / "science" / "capability_matrix.json"
-
-
-def render_neb_capability_table() -> str:
+def render_neb_capability_table(lang: str) -> str:
     """Interface expressibility table generated from the capability matrix."""
     matrix = json.loads(CAPABILITY_MATRIX_PATH.read_text(encoding="utf-8"))
-    lines = [
-        "| Feature | API | direct CLI | INCAR | TUI |",
-        "|---|---|---|---|---|",
-    ]
+    lines = [_row(_NEB_HEADER[lang]), "|---|---|---|---|---|"]
     for feature in matrix["features"]:
         if not feature["feature"].startswith("neb_"):
             continue
         name = feature["feature"].removeprefix("neb_").replace("_", " ")
         lines.append(
-            f"| {name} | {feature['api']} | {feature['direct_cli']} "
-            f"| {feature['incar']} | {feature['tui']} |"
+            _row(
+                [
+                    name,
+                    feature["api"],
+                    feature["direct_cli"],
+                    feature["incar"],
+                    feature["tui"],
+                ]
+            )
         )
-    lines.append("")
-    lines.append(
-        "This matrix is generated from "
-        "`validation/science/capability_matrix.json`. A `yes` means the entry "
-        "point can express the feature; it is not an equivalence or "
-        "validation claim. A `no`/`partial` entry carries a note in that file."
-    )
     return "\n".join(lines)
 
 
-def render_neb_page() -> str:
-    """NEB documentation: curated guidance + generated capability matrix."""
-    return f"""# NEB / CI-NEB
+def _blocks_for(page: str, lang: str) -> dict[str, str]:
+    """The generated blocks a page must contain (empty for hand-only pages)."""
+    if page == "installation":
+        return {
+            "backend-matrix": render_backend_matrix(lang),
+            "gpu-routes": render_gpu_route_table(lang),
+        }
+    if page == "workflows/neb":
+        return {"neb-capability": render_neb_capability_table(lang)}
+    if page.startswith("backends/") and page.removeprefix("backends/") in BACKENDS:
+        engine = page.removeprefix("backends/")
+        return {
+            "environment": render_backend_environment(engine, lang),
+            "profiles": render_backend_profiles(engine, lang),
+        }
+    return {}
 
-## Purpose
 
-Find a minimum-energy path between two endpoints using
-fixed-cell nudged elastic band (with optional climbing image), and report the
-forward barrier.
+def splice_blocks(text: str, blocks: dict[str, str], *, where: str) -> str:
+    """Replace the content of each named marker block; every block must exist."""
+    seen: set[str] = set()
 
-## Minimal command
+    def replace(match: re.Match[str]) -> str:
+        name = match.group("name")
+        if name not in blocks:
+            raise SystemExit(f"{where}: unknown generated block {name!r}")
+        seen.add(name)
+        return f"{match.group('begin')}\n{blocks[name]}\n{match.group('end')}"
 
-```bash
-.venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
-  --model mace-omat-0-medium.model --model-type mace --images 7 \
-  --output runs/neb
-```
+    result = _BLOCK_RE.sub(replace, text)
+    missing = set(blocks) - seen
+    if missing:
+        raise SystemExit(f"{where}: missing generated block(s) {sorted(missing)}")
+    return result
 
-Before the first NEB step, mliport runs an energy-force consistency
-pre-flight on the band it is about to optimize: for both endpoints and
-interpolated images it compares the model's force projection `-F.u` along the
-force direction and random directions with central finite differences of the
-model energy (two step sizes combined by Richardson extrapolation, tolerance
-including the energy rounding noise of the model's dtype). The run is refused
-when the forces are not the gradient of the energy, when a value is
-non-finite, or when the energy resolution (for example a large float32 cell)
-cannot resolve the check; direct-force models are always refused. The record
-is stored as `gradient_preflight` in `run_context.json` and
-`neb_results.json`. This is a spot check of consistency on the sampled
-structures and directions, not a proof over the whole energy surface and not a
-statement about model accuracy.
 
-## Important options
+#: Pages that carry generated blocks.
+GENERATED_PAGES = (
+    "installation",
+    "workflows/neb",
+    *(f"backends/{engine}" for engine in BACKENDS),
+)
 
-| Option | Meaning |
-|---|---|
-| `--initial`, `--final` | endpoint structures (mandatory) |
-| `--images` | number of intermediate images (endpoints additional) |
-| `--climb` / `NEB_CLIMB` | climbing-image refinement |
-| `--atom-map` | 0-based mapping of final indices in initial-atom order |
-| `--image-shifts` | integer lattice shifts per atom (`0,0,0;1,0,0`) |
-| `--neb-interpolation`, `--neb-path-convention` | IDPP interpolation and path convention |
-| `--neb-pre-fmax`, `--neb-pre-max-steps` | endpoint pre-relaxation before interpolation |
-| `--endpoint-policy`, `--endpoint-fmax`, `--endpoint-steps` | how endpoint images are constrained |
-| `--neb-spring`, `--neb-maxstep`, `--neb-min-distance` | band/spring parameters |
-| `--checkpoint-interval` | band checkpoint frequency |
-| `--resume` | resume from a checkpoint/directory |
 
-## Inputs
-
-Two structures with consistent atom order (or an explicit
-`--atom-map`), a model, an explicit backend, and enough memory for
-`images + 2` calculators.
-
-## Outputs
-
-`NEB_BAND`/band trajectory, per-image energies/forces,
-`resolved_config.json`, checkpoint files, and a result JSON with `barrier`,
-convergence state and the sampled barrier value.
-
-## Failure semantics
-
-Non-convergence is reported with the best band and a
-failure reason; it is not a converged barrier. Bad atom mapping or
-inconsistent endpoints fail before the band is built. Checkpoint/resume
-locks the original run directory so the band cannot be silently restarted
-with different settings.
-
-## Scientific caveats
-
-- A NEB saddle candidate is not a verified transition state. Hessian
-  (frequency) verification is a separate analysis and is not implied by a
-  converged band.
-- The barrier is only comparable within one model/head identity and one NEB
-  protocol (images, interpolation, endpoint policy, spring).
-- Endpoint pre-relaxation changes the reference; record it.
-- The saddle is meaningful only if the endpoints are the intended states and
-  the atom mapping is chemically correct.
-
-## Interface capability matrix
-
-{render_neb_capability_table()}
-
-## Example (resume)
-
-```bash
-.venv-mace/bin/mliport neb --resume runs/neb --output runs/neb
-```
-
-Resume continues in the original run directory and checks the recorded
-identity (model, task/head/dtype, cell/PBC, constraints, band setup and
-options). Step budgets are part of that identity in this beta: a resume that
-changes `--max-steps` is rejected with `Resume fingerprint is incompatible`;
-the explicit error leaves the checkpoint untouched.
-"""
+def render_page(page: str, lang: str) -> str:
+    """The committed page with its generated blocks refreshed."""
+    path = REPO / "docs" / f"{page}{_SUFFIX[lang]}.md"
+    return splice_blocks(
+        path.read_text(encoding="utf-8"),
+        _blocks_for(page, lang),
+        where=str(path.relative_to(REPO)),
+    )
 
 
 def render_package_readme(root_readme: str) -> str:
@@ -413,16 +237,20 @@ def render_package_readme(root_readme: str) -> str:
 
 def _generated_files() -> dict[Path, callable]:
     files: dict[Path, callable] = {
-        REPO / "docs" / "installation.md": render_installation_markdown,
-        REPO / "mliport" / "README.md": lambda: render_package_readme(
+        REPO
+        / "mliport"
+        / "README.md": lambda: render_package_readme(
             (REPO / "README.md").read_text(encoding="utf-8")
         ),
     }
-    for engine in BACKENDS:
-        files[REPO / "docs" / "backends" / f"{engine}.md"] = (
-            lambda engine=engine: render_backend_page(engine)
-        )
-    files[REPO / "docs" / "workflows" / "neb.md"] = render_neb_page
+    for page in GENERATED_PAGES:
+        for lang in LANGUAGES:
+            path = REPO / "docs" / f"{page}{_SUFFIX[lang]}.md"
+            # A page that has no translation yet falls back to English on the
+            # site; there is nothing to refresh until it exists.
+            if lang != "en" and not path.is_file():
+                continue
+            files[path] = lambda page=page, lang=lang: render_page(page, lang)
     return files
 
 

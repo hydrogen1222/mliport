@@ -26,15 +26,18 @@ def _backends():
 
 # --------------------------------------------------------------- DOC-01
 def test_installation_doc_is_generated_from_the_registry():
-    from mliport.install.docs import render_installation_markdown
+    from mliport.install.docs import render_backend_matrix, render_gpu_route_table
 
-    path = REPO / "docs" / "installation.md"
-    assert path.is_file(), "docs/installation.md must exist"
-    assert path.read_text(encoding="utf-8") == render_installation_markdown()
-    committed = path.read_text(encoding="utf-8")
-    for engine, backend in _backends().items():
-        assert backend.venv_name in committed, engine
-        assert backend.requirement in committed, engine
+    for name, lang in (("installation.md", "en"), ("installation.zh.md", "zh")):
+        path = REPO / "docs" / name
+        if lang != "en" and not path.is_file():
+            continue  # not translated yet; the site falls back to English
+        committed = path.read_text(encoding="utf-8")
+        assert render_backend_matrix(lang) in committed, name
+        assert render_gpu_route_table(lang) in committed, name
+        for engine, backend in _backends().items():
+            assert backend.venv_name in committed, (name, engine)
+            assert backend.requirement in committed, (name, engine)
 
 
 def test_environment_matrix_is_backend_specific():

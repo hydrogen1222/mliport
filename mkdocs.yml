@@ -1,0 +1,129 @@
+site_name: mliport
+site_description: Machine-learned interatomic potentials behind one command line, with VASP-shaped inputs and outputs.
+site_url: https://hydrogen1222.github.io/mliport/
+repo_url: https://github.com/hydrogen1222/mliport
+repo_name: hydrogen1222/mliport
+edit_uri: edit/main/docs/
+docs_dir: docs
+copyright: mliport is MIT-licensed. Model checkpoints keep their upstream licenses.
+
+theme:
+  name: material
+  language: en
+  # No Google Fonts request: the site renders with system fonts, which also
+  # keeps it fast and readable from networks that cannot reach Google.
+  font: false
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+plugins:
+  - search
+  - i18n:
+      # English is the default and lives in `page.md`; the Chinese version of
+      # the same page is `page.zh.md`. A page without a translation falls back
+      # to the English text instead of breaking the build.
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: zh
+          name: 中文
+          build: true
+          site_name: mliport 文档
+          nav_translations:
+            Getting started: 开始使用
+            Backends: 后端
+            Workflows: 工作流
+            Analysis: 轨迹分析
+            Reference: 参考
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+      # Keep non-ASCII headings readable in URLs and anchors (the default
+      # slug would turn every Chinese heading into an empty id).
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/hydrogen1222/mliport
+
+nav:
+  - Getting started:
+      - index.md
+      - quickstart.md
+      - installation.md
+      - models.md
+      - configuration.md
+  - Backends:
+      - backends/index.md
+      - backends/mace.md
+      - backends/dpa.md
+      - backends/grace.md
+      - backends/uma.md
+  - Workflows:
+      - workflows/index.md
+      - workflows/single-point.md
+      - workflows/optimization.md
+      - workflows/md.md
+      - workflows/neb.md
+      - workflows/batch.md
+      - workflows/queue.md
+  - Analysis:
+      - analysis/index.md
+      - analysis/overview.md
+      - analysis/msd.md
+      - analysis/transport.md
+      - analysis/electrolyte-gemdat.md
+      - analysis/rdf.md
+      - analysis/vacf-spectrum.md
+      - analysis/arrhenius.md
+  - Reference:
+      - outputs.md
+      - validation.md
+      - troubleshooting.md
+      - migration-from-mlipx.md
+      - citations.md
+      - development.md

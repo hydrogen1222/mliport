@@ -4,6 +4,7 @@ UMA checkpoints from Meta FAIR are loaded through the upstream `fairchem-core` s
 
 ## Install environment
 
+<!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
 |---|---|---|
 | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
@@ -11,12 +12,15 @@ UMA checkpoints from Meta FAIR are loaded through the upstream `fairchem-core` s
 ```bash
 ./scripts/install_mliport.sh --engines uma --device auto
 ```
+<!-- END GENERATED -->
 
 ## Supported profiles
 
+<!-- BEGIN GENERATED: profiles -->
 | Profile | Identity | dtype | task | head | model SHA-256 |
 |---|---|---|---|---|---|
 | `uma_omat` | UMA-s 1.2 (OMat task head) | upstream/model-defined | omat | None | `ba5c0d912efa...` |
+<!-- END GENERATED -->
 
 ## Minimal command
 

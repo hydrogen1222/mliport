@@ -4,6 +4,7 @@ MACE checkpoints are loaded through `mace-torch`. MACE profiles are selected by 
 
 ## Install environment
 
+<!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
 |---|---|---|
 | `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
@@ -11,13 +12,16 @@ MACE checkpoints are loaded through `mace-torch`. MACE profiles are selected by 
 ```bash
 ./scripts/install_mliport.sh --engines mace --device auto
 ```
+<!-- END GENERATED -->
 
 ## Supported profiles
 
+<!-- BEGIN GENERATED: profiles -->
 | Profile | Identity | dtype | task | head | model SHA-256 |
 |---|---|---|---|---|---|
 | `mace_omat` | MACE-OMAT-0 medium, float64 inference | float64 | bulk | None | `d4b14be9afa2...` |
 | `mace_omat_float32` | MACE-OMAT-0 medium, float32 inference | float32 | bulk | None | `d4b14be9afa2...` |
+<!-- END GENERATED -->
 
 ## Minimal command
 

@@ -1,0 +1,6 @@
+# Tools that build the documentation site (see mkdocs.yml and
+# .github/workflows/docs.yml). Ranges, not exact pins: the site only needs
+# to build, and a pin that goes stale would break the docs job for no reason.
+mkdocs>=1.6,<2
+mkdocs-material>=9.5,<10
+mkdocs-static-i18n>=1.2.3,<2
