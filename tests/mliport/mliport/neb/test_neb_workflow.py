@@ -98,7 +98,8 @@ class ConsistencyWrapper(FakeMACEWrapper):
     def capabilities(self, model_record):
         from mliport.capabilities import CalculatorCapabilities
 
-        return CalculatorCapabilities(True, True, False, self.state, None)
+        evidence = "test-known-answer" if self.state == "validated" else None
+        return CalculatorCapabilities(True, True, False, self.state, evidence)
 
 
 class InconsistentCalculator(Calculator):
