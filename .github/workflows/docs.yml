@@ -47,7 +47,7 @@ jobs:
       # entry) into a failure, so a pull request cannot break the site.
       - name: Build the site
         run: mkdocs build --strict
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
         with:
           path: site
