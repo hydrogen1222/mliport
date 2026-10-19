@@ -15,6 +15,12 @@ Documentation site:
 
 Review fixes (scientific correctness, data safety, robustness):
 
+- **DPA load retries.** A model that fails metadata/head inspection is never
+  cached; retrying cannot bypass validation.
+- **NEB identity input.** Direct `BandInput` construction rejects float and
+  boolean atom maps/lattice shifts instead of silently converting them to integers.
+- **Spectrum compatibility.** Area normalization works with NumPy 1.x as well
+  as 2.x. The bilingual docs now state that VACF/spectrum require stored velocities.
 - **MD / NHC drift.** NHC no longer keeps the random Maxwell-Boltzmann
   centre-of-mass momentum: `com_policy=auto` (and `initialize_only`) zero it
   once, NHC conserves it, the run reports `3N-3` kinetic DOF and the

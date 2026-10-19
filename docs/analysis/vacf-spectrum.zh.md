@@ -9,8 +9,8 @@ mliport analyze runs/md spectrum --species Li --taper one-sided-cosine \
   --normalization normalized_area
 ```
 
-两者只需要一条可读的轨迹。速度按与保存帧一致的方式导出，都可以无界面运行，并写出 CSV 以及
-PNG 和 SVG。
+两者都要求轨迹已经保存速度，并具有均匀的时间轴；不会从位置重建速度。都可以无界面运行，
+并写出 CSV 以及 PNG 和 SVG。频谱面积归一化同时支持 NumPy 1.x 和 2.x。
 
 ## 常用选项
 

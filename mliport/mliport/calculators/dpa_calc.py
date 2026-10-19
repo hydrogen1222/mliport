@@ -94,15 +94,24 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
             }
             if self._head is not None:
                 kwargs["head"] = self._head
-            self._calculator = DP(**kwargs)
-            self._inspect_loaded_model()
+            calculator = DP(**kwargs)
+            try:
+                self._inspect_loaded_model(calculator)
+            except BaseException:
+                self._active_head = None
+                self._available_heads = []
+                self._model_precision = []
+                raise
+            # Publish only after inspection succeeds. A failed load must not
+            # turn a retry into access to an unvalidated task/head.
+            self._calculator = calculator
         return self._calculator
 
-    def _inspect_loaded_model(self) -> None:
+    def _inspect_loaded_model(self, calculator: Calculator) -> None:
         """Resolve the active DeepMD branch and fail closed for multi-task PESs."""
         import json  # noqa: PLC0415
 
-        evaluator = getattr(self._calculator, "dp", None)
+        evaluator = getattr(calculator, "dp", None)
         getter = getattr(evaluator, "get_model_def_script", None)
         if not callable(getter):
             # Older single-task backends do not expose model metadata.  A
@@ -128,7 +137,6 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
         if self._head is None:
             preview = ", ".join(self._available_heads[:12])
             suffix = " ..." if len(self._available_heads) > 12 else ""
-            self._calculator = None
             raise ValueError(
                 "The DPA/DeepMD model is multi-task, so --head/HEAD is "
                 f"required. Available canonical branches: {preview}{suffix}. "
@@ -148,7 +156,6 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
             if requested == canonical or requested in aliases:
                 matches.append(str(canonical))
         if len(matches) != 1:
-            self._calculator = None
             if not matches:
                 raise ValueError(
                     f"DPA head {requested!r} is not present in this model. "

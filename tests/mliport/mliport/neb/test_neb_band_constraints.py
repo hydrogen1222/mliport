@@ -12,7 +12,7 @@ import pytest
 from ase import Atoms
 from ase.constraints import FixAtoms
 
-from mliport.neb.prepare import prepare_band, validate_band_images
+from mliport.neb.prepare import BandInput, prepare_band, validate_band_images
 from mliport.neb.schema import NEBOptions, NEBPreparationError
 
 
@@ -38,6 +38,26 @@ def _band(*, fixed_x=(5.0, 5.0, 5.0), moving_y=(7.0, 7.1, 7.2)):
 
 def _options():
     return NEBOptions(n_intermediate_images=1, interpolation="linear")
+
+
+@pytest.mark.parametrize(
+    ("atom_map", "image_shifts", "field"),
+    [
+        ([0.9, 1.1], [[0, 0, 0], [0, 0, 0]], "atom_map"),
+        ([0, 1], [[0, 0, 0], [0.9, 0, 0]], "image_shifts"),
+        ([False, True], [[0, 0, 0], [0, 0, 0]], "atom_map"),
+    ],
+)
+def test_direct_band_rejects_noninteger_identity_metadata(
+    atom_map, image_shifts, field
+):
+    with pytest.raises(NEBPreparationError, match=field):
+        BandInput(
+            images=tuple(_band()),
+            atom_map=atom_map,
+            image_shifts=image_shifts,
+            path_convention="unwrapped",
+        )
 
 
 def test_provided_band_rejects_moving_fixed_atom():

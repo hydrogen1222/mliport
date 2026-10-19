@@ -291,6 +291,39 @@ class TestGenericWrappers:
             model=str(model), type_dict=None, head="Huang2021Deep-PBE"
         )
 
+    @pytest.mark.parametrize(
+        "model_definition",
+        ["invalid json", ["not a mapping"], {"model_dict": {"a": {}, "b": {}}}],
+    )
+    def test_dpa_failed_metadata_inspection_never_exposes_cached_model(
+        self, tmp_path, monkeypatch, model_definition
+    ):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+        evaluator = SimpleNamespace(get_model_def_script=lambda: model_definition)
+        calculator = SimpleNamespace(dp=evaluator)
+        constructor = MagicMock(return_value=calculator)
+        monkeypatch.setitem(sys.modules, "deepmd", MagicMock())
+        monkeypatch.setitem(
+            sys.modules, "deepmd.calculator", SimpleNamespace(DP=constructor)
+        )
+        model = tmp_path / "broken.pt"
+        model.write_text("x")
+        wrapper = DPACalculatorWrapper(model)
+
+        # A retry must validate again instead of returning a rejected model.
+        for _ in range(2):
+            with pytest.raises((ValueError, RuntimeError)):
+                wrapper.get_calculator()
+        assert constructor.call_count == 2
+        assert wrapper._calculator is None
+        assert wrapper._available_heads == []
+
+        evaluator.get_model_def_script = lambda: {"precision": "float64"}
+        assert wrapper.get_calculator() is calculator
+        assert wrapper.get_calculator() is calculator
+        assert wrapper._model_precision == ["float64"]
+        assert constructor.call_count == 3
+
     def test_non_uma_task_is_restricted_to_explicit_pbc_semantics(self, tmp_path):
         model = tmp_path / "dpa.pt"
         model.write_text("x")

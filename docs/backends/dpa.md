@@ -45,6 +45,8 @@ dp --pt show DPA-3.1-3M.pt model-branch
 
 - **Leaving out the head on a multi-task checkpoint is a fatal configuration
   error.** There is no silent default branch.
+- A failed model-metadata check leaves no cached calculator. Retrying the same
+  wrapper loads and validates the model again before exposing it.
 - **Precision** is defined by the model. mliport records the dtype the backend
   actually reports and never substitutes its own idea of it.
 - **Stress** is reported only if the checkpoint and branch you loaded expose it.

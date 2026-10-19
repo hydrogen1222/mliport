@@ -59,6 +59,10 @@ about how accurate the model is.
 | `--checkpoint-interval` | save the whole band every N steps (default 10) |
 | `--resume` | continue from a checkpoint or a NEB run directory |
 
+Atom maps and lattice shifts must use integer arrays, including when constructing
+`BandInput` directly in Python. Float and boolean arrays are rejected rather than
+silently converted to different atom identities or winding paths.
+
 ### Endpoints: validate or relax
 
 With the default `--endpoint-policy validate`, the endpoints must already be
