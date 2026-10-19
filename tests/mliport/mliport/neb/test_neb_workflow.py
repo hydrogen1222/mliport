@@ -59,6 +59,22 @@ class FiniteForceCalculator(Calculator):
         self.results = {"energy": -float(atoms.positions[-1, 0]), "forces": forces}
 
 
+class QuarticBarrierCalculator(Calculator):
+    """Stationary endpoints at x=1.5/2.0 with a known nonzero barrier."""
+
+    implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
+
+    def calculate(
+        self, atoms=None, properties=("energy", "forces"), system_changes=all_changes
+    ) -> None:
+        super().calculate(atoms, properties, system_changes)
+        left = float(atoms.positions[1, 0]) - 1.5
+        right = float(atoms.positions[1, 0]) - 2.0
+        forces = np.zeros_like(atoms.positions)
+        forces[1, 0] = -2.0 * left * right * (left + right)
+        self.results = {"energy": (left * right) ** 2, "forces": forces}
+
+
 class FakeMACEWrapper:
     task = "bulk"
     has_stress = False
@@ -143,6 +159,49 @@ def _resolved(model: Path, **overrides):
     }
     cli.update(overrides)
     return resolve_config(calc_type="neb", cli=cli)
+
+
+@pytest.mark.parametrize("key", ["atom_id", "atom_ids"])
+@pytest.mark.parametrize("ids", [[8, 9], ["fixed-H", "moving-He"]])
+@pytest.mark.parametrize("reorder_final", [False, True])
+def test_checkpoint_preserves_array_atom_ids_for_repeated_resume(
+    tmp_path, key, ids, reorder_final
+):
+    initial, final = _endpoints()
+    for atoms in (initial, final):
+        atoms.new_array(key, np.asarray(ids))
+    if reorder_final:
+        final = final[[1, 0]]
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"identity model")
+    resolved = _resolved(model)
+    output = tmp_path / "run"
+    run_neb_workflow(
+        FakeMACEWrapper(QuarticBarrierCalculator()),
+        resolved,
+        output_dir=output,
+        initial=initial,
+        final=final,
+        atom_map=[1, 0] if reorder_final else None,
+    )
+    for _ in range(2):
+        _record, images = load_checkpoint(output)
+        for image in images:
+            np.testing.assert_array_equal(image.info[key], ids)
+        result = run_neb_workflow(
+            FakeMACEWrapper(QuarticBarrierCalculator()),
+            resolved,
+            output_dir=output,
+            resume=output,
+        )
+        assert result["initial_identity"]["atom_ids"] == ids
+        assert result["barrier_forward_sampled_eV"] == pytest.approx(1.0 / 256.0)
+        assert result["final_identity"]["atom_ids"] == (
+            ids[::-1] if reorder_final else ids
+        )
+    # Serialization must not alter the caller's metadata or custom arrays.
+    assert key not in initial.info
+    np.testing.assert_array_equal(initial.arrays[key], ids)
 
 
 def _run(tmp_path: Path):
@@ -324,7 +383,7 @@ def test_resume_rejects_changed_software_revision(tmp_path, monkeypatch, revisio
     checkpoint = output / "checkpoints" / "latest"
     metadata, _ = load_checkpoint(checkpoint)
     assert metadata["resume_fingerprint"]["software"]["mliport_version"]
-    monkeypatch.setattr(workflow, revision, 2)
+    monkeypatch.setattr(workflow, revision, getattr(workflow, revision) + 1)
     with pytest.raises(NEBPreparationError, match="fingerprint is incompatible"):
         run_neb_workflow(
             FakeMACEWrapper(),

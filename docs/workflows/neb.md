@@ -71,6 +71,10 @@ which one. With `relax` it relaxes both endpoints first and builds the band
 afterwards. Either way, the endpoint treatment changes your reference, so
 record it. `relax` cannot rewrite a band that was supplied explicitly.
 
+With `--interpolation idpp`, convergence is checked against the full IDPP NEB
+band force, including its spring term, using `--idpp-fmax`. Small raw pair forces
+alone do not establish convergence; an unfinished IDPP optimization is refused.
+
 ## What you get
 
 `neb_results.json` holds the energies, forces, convergence state and the
@@ -83,6 +87,11 @@ VASP's NEB layout.
 
 The barrier is the *sampled* one: the highest image on the band minus the end
 state. mliport does not fit a saddle and leaves the fitted fields empty.
+
+Checkpoints preserve `atom_id` / `atom_ids` from custom ASE arrays in each image's
+`info`, because ASE trajectory files do not store custom arrays. The caller's
+arrays are unchanged. The corrected IDPP convergence rule uses NEB scientific
+revision 2; checkpoints from revision 1 cannot be resumed under this revision.
 
 ## When it fails or does not converge
 

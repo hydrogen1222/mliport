@@ -357,6 +357,34 @@ def test_idpp_failure_is_fail_closed_without_linear_fallback(
         prepare_band(initial, final, options)
 
 
+def test_idpp_rejects_small_raw_force_with_unconverged_band() -> None:
+    # Pair distances are almost optimal, but the images have not reached
+    # the NEB force criterion used by ASE's IDPP optimizer.
+    initial = Atoms(
+        "H2",
+        positions=[
+            [0.10388603277030788, -0.07247896495738868, -0.6368635300450027],
+            [0.7314074463146, -0.6738530039598079, -1.5110502923581353],
+        ],
+        pbc=False,
+    )
+    final = initial.copy()
+    final.positions = [
+        [2.3147187071468913, -0.3248009153081297, -1.7530468543999294],
+        [0.8616408244297955, 0.3645199917507298, 1.0696461540857654],
+    ]
+    options = NEBOptions(
+        n_intermediate_images=3,
+        interpolation="idpp",
+        idpp_mic=False,
+        idpp_fmax_eV_A=0.03,
+        idpp_steps=200,
+        min_distance_A=0.1,
+    )
+    with pytest.raises(NEBPreparationError, match="IDPP did not reach"):
+        prepare_band(initial, final, options)
+
+
 def test_shared_calculator_recomputes_a_b_a_without_stale_results() -> None:
     calculator = DoubleWellCalculator()
     images = [

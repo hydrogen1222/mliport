@@ -141,6 +141,11 @@ def _calculator_free_band(images: Iterable[Atoms]) -> list[Atoms]:
     for index, image in enumerate(images):
         snapshot = image.copy()
         snapshot.calc = None
+        # ASE .traj omits custom per-atom arrays. Preserve the supported identity
+        # keys in info, which both preparation and resume identity checks read.
+        for key in ("atom_id", "atom_ids"):
+            if key in snapshot.arrays:
+                snapshot.info[key] = snapshot.arrays[key].copy()
         snapshot.info["trajectory_kind"] = _BAND_KIND
         snapshot.info["mliport_neb_image_index"] = index
         snapshots.append(snapshot)

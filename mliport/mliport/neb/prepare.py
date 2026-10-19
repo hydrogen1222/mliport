@@ -371,16 +371,23 @@ def _apply_idpp(images: list[Atoms], options: NEBOptions) -> None:
             mic=options.idpp_mic,
             steps=options.idpp_steps,
         )
-        for index, image in enumerate(images[1:-1], start=1):
-            target = images[0].get_all_distances(mic=options.idpp_mic) + index * (
-                images[-1].get_all_distances(mic=options.idpp_mic)
-                - images[0].get_all_distances(mic=options.idpp_mic)
+        initial_distances = images[0].get_all_distances(mic=options.idpp_mic)
+        final_distances = images[-1].get_all_distances(mic=options.idpp_mic)
+        # ASE restores the original calculators after IDPP optimization. Reattach
+        # IDPP to the complete band, including endpoints, to measure the same
+        # projected-plus-spring force that its optimizer actually minimized.
+        for index, image in enumerate(images):
+            target = initial_distances + index * (
+                final_distances - initial_distances
             ) / (len(images) - 1)
             image.calc = IDPP(target, mic=options.idpp_mic)
-            force = image.get_forces()
+            force = image.get_forces(apply_constraint=False)
             if not np.all(np.isfinite(force)):
                 raise NEBPreparationError("IDPP produced a non-finite force")
-            max_force = max(max_force, float(np.linalg.norm(force, axis=1).max()))
+        band_force = neb.get_forces()
+        if not np.all(np.isfinite(band_force)):
+            raise NEBPreparationError("IDPP produced a non-finite band force")
+        max_force = float(np.linalg.norm(band_force, axis=1).max())
     except NEBPreparationError:
         raise
     except Exception as exc:
