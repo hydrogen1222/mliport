@@ -5,5 +5,5 @@ forces or convergence semantics; increment the checkpoint revision when the
 stored geometry/state contract changes. Neither is a FIRE-state restart.
 """
 
-NEB_SCIENTIFIC_REVISION = 1
+NEB_SCIENTIFIC_REVISION = 2
 NEB_CHECKPOINT_SCHEMA_REVISION = 1

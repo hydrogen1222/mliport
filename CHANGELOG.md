@@ -15,6 +15,12 @@ Documentation site:
 
 Review fixes (scientific correctness, data safety, robustness):
 
+- **IDPP convergence.** Check the projected-plus-spring NEB band force used by
+  ASE's IDPP optimizer, not just raw pair forces. Unfinished bands are refused.
+  NEB scientific revision is now 2, preventing resume across this change.
+- **NEB checkpoint identity.** Preserve custom-array `atom_id` / `atom_ids` in
+  ASE image info so integer/string IDs and explicit atom maps survive repeated
+  save/resume cycles without mutating caller data.
 - **DPA load retries.** A model that fails metadata/head inspection is never
   cached; retrying cannot bypass validation.
 - **NEB identity input.** Direct `BandInput` construction rejects float and
