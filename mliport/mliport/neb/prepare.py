@@ -409,8 +409,6 @@ class BandInput:
 
     def __post_init__(self) -> None:
         self.images = tuple(image.copy() for image in self.images)
-        self.atom_map = np.asarray(self.atom_map, dtype=int).copy()
-        self.image_shifts = np.asarray(self.image_shifts, dtype=int).copy()
         if len(self.images) < 3:
             raise NEBPreparationError(
                 "A NEB band requires at least one intermediate image"
@@ -418,12 +416,14 @@ class BandInput:
         if self.path_convention not in {"mic", "unwrapped"}:
             raise NEBPreparationError("Band path_convention must be mic or unwrapped")
         natoms = len(self.images[0])
-        if self.atom_map.shape != (natoms,) or not np.array_equal(
-            np.sort(self.atom_map), np.arange(natoms)
-        ):
+        self.atom_map = _integer_array(
+            self.atom_map, shape=(natoms,), name="Band atom_map"
+        )
+        self.image_shifts = _integer_array(
+            self.image_shifts, shape=(natoms, 3), name="Band image_shifts"
+        )
+        if not np.array_equal(np.sort(self.atom_map), np.arange(natoms)):
             raise NEBPreparationError("Band atom_map must be a 0-based permutation")
-        if self.image_shifts.shape != (natoms, 3):
-            raise NEBPreparationError("Band image_shifts must have shape (natoms, 3)")
         pbc = np.asarray(self.images[0].pbc, dtype=bool)
         if np.any(self.image_shifts[:, ~pbc] != 0):
             raise NEBPreparationError(

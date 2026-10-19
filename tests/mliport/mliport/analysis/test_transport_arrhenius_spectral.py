@@ -159,9 +159,31 @@ def test_vacf_fft_direct_taper_and_harmonic_peak() -> None:
     peak_index = int(np.argmax(spectrum["spectrum"][1:]) + 1)
     bin_width = spectrum["frequency_THz"][1]
     assert abs(spectrum["frequency_THz"][peak_index] - frequency_THz) <= bin_width
-    assert np.trapezoid(
-        spectrum["spectrum"], spectrum["frequency_THz"]
-    ) == pytest.approx(1.0)
+    values = spectrum["spectrum"]
+    area = np.sum(0.5 * (values[:-1] + values[1:]) * np.diff(spectrum["frequency_THz"]))
+    assert area == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("legacy_numpy", [True, False])
+def test_velocity_spectrum_normalization_supports_numpy_api_versions(
+    monkeypatch, legacy_numpy
+) -> None:
+    # Model both NumPy 1.x (trapz only) and newer NumPy (trapezoid only).
+    integrate = getattr(np, "trapezoid", None)
+    if integrate is None:
+        integrate = np.trapz
+    if legacy_numpy:
+        monkeypatch.setattr(np, "trapz", integrate, raising=False)
+        monkeypatch.delattr(np, "trapezoid", raising=False)
+    else:
+        monkeypatch.setattr(np, "trapezoid", integrate, raising=False)
+        monkeypatch.delattr(np, "trapz", raising=False)
+    result = velocity_spectrum(
+        {"vacf_normalized": np.array([1.0, 0.5, 0.1, 0.0]), "frame_interval_fs": 1.0}
+    )
+    values = result["spectrum"]
+    area = np.sum(0.5 * (values[:-1] + values[1:]) * np.diff(result["frequency_THz"]))
+    assert area == pytest.approx(1.0)
 
 
 def test_velocity_spectrum_retains_negative_estimates() -> None:

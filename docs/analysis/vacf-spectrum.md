@@ -9,8 +9,9 @@ mliport analyze runs/md spectrum --species Li --taper one-sided-cosine \
   --normalization normalized_area
 ```
 
-Both need only a readable trajectory. Velocities are derived consistently with the
-saved frames, and both run headlessly and write CSV plus PNG and SVG.
+Both require stored velocities and a uniform time axis; velocities are not
+reconstructed from positions. Both run headlessly and write CSV plus PNG and SVG.
+Spectrum area normalization supports both NumPy 1.x and 2.x.
 
 ## Options you will use
 

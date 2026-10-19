@@ -116,7 +116,12 @@ def velocity_spectrum(
         spectrum = raw.copy()
         normalization_note = "raw discrete rFFT real part multiplied by dt_fs"
     elif normalization == "normalized_area":
-        area = float(np.trapezoid(raw, frequency_THz))
+        # NumPy 1.x is supported by the package and several model stacks.
+        # Its trapz was renamed in NumPy 2 and removed in newer releases.
+        trapezoid = getattr(np, "trapezoid", None)
+        if trapezoid is None:
+            trapezoid = np.trapz
+        area = float(trapezoid(raw, frequency_THz))
         if not np.isfinite(area) or np.isclose(area, 0.0):
             raise ValueError("Spectrum has zero/non-finite signed area")
         spectrum = raw / area
