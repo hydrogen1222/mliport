@@ -79,7 +79,7 @@ class _FakeBackend(BaseMLIPCalculator):
         return {"model_type": "mace", "model_path": "m.model", "task": "bulk"}
 
 
-@pytest.fixture
+@pytest.fixture()
 def fake_torch_dftd(monkeypatch):
     """Install a fake ``torch_dftd`` whose D3 term is a known constant."""
     created: list[_ConstantCalculator] = []
