@@ -291,6 +291,35 @@ _SPECS: list[OptionSpec] = [
             "rebuild less often but filter longer lists."
         ),
     ),
+    # --- DFT-D3 dispersion correction (every backend) ---
+    OptionSpec(
+        "d3",
+        bool,
+        frozenset({"calculator"}),
+        aliases={"D3"},
+        description=(
+            "Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. "
+            "Only for models trained on dispersion-free reference data."
+        ),
+    ),
+    OptionSpec(
+        "d3_xc",
+        str,
+        frozenset({"calculator"}),
+        aliases={"D3_XC"},
+        description=(
+            "Reference functional of the model's training data, selecting the "
+            "D3 parameters (default: pbe)."
+        ),
+    ),
+    OptionSpec(
+        "d3_damping",
+        str,
+        frozenset({"calculator"}),
+        aliases={"D3_DAMPING"},
+        choices=("zero", "bj", "zerom", "bjm"),
+        description="DFT-D3 damping function (default: bj, i.e. D3(BJ)).",
+    ),
     # --- molecular electronic state (applied to atoms.info by every runner) ---
     OptionSpec(
         "charge",

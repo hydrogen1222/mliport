@@ -298,6 +298,31 @@ Examples:
             default=None,
             help="MACE head or DeepMD/DPA branch name.",
         )
+        p.add_argument(
+            "--d3",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help=(
+                "Add DFT-D3 dispersion (torch-dftd) on top of the model; only "
+                "for models trained on dispersion-free data (default: off)."
+            ),
+        )
+        p.add_argument(
+            "--d3-xc",
+            dest="d3_xc",
+            type=str,
+            default=None,
+            metavar="FUNCTIONAL",
+            help="Reference functional of the model's training data (default: pbe).",
+        )
+        p.add_argument(
+            "--d3-damping",
+            dest="d3_damping",
+            type=str,
+            default=None,
+            choices=["zero", "bj", "zerom", "bjm"],
+            help="DFT-D3 damping function (default: bj).",
+        )
         if trajectory_output_flags:
             p.add_argument(
                 "--write-outcar",
@@ -1619,6 +1644,9 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
         "neighbor_skin",
         "default_dtype",
         "head",
+        "d3",
+        "d3_xc",
+        "d3_damping",
         "write_outcar",
         "write_xdatcar",
         "write_trajectory",

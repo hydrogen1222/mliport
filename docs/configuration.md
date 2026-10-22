@@ -142,6 +142,39 @@ mliport template sp --output INCAR.neutral   # backend-neutral, MODEL_TYPE=REQUI
 Handing one of these to a different backend is an error under strict
 configuration. The option is never silently dropped.
 
+## Dispersion correction (DFT-D3)
+
+An MLIP checkpoint does not contain a dispersion correction. A model trained on
+plain PBE data (MACE `omat` heads, UMA `omat`, most materials models) has learned
+the PBE potential energy surface, which has no long-range dispersion. `--d3`
+adds Grimme's DFT-D3 energy, forces and stress on top of the model, on every
+backend, through `torch-dftd`:
+
+| Option | Default | What it does |
+|---|---|---|
+| `D3` / `--d3` | off | add DFT-D3 to the model |
+| `D3_XC` / `--d3-xc` | `pbe` | reference functional of the model's training data; selects the D3 parameters |
+| `D3_DAMPING` / `--d3-damping` | `bj` | damping function: `zero`, `bj`, `zerom` or `bjm` |
+
+```bash
+uv pip install --python .venv-mace/bin/python torch-dftd
+mliport opt slab.vasp --model model.model --model-type mace --task bulk --d3
+```
+
+Only add D3 to a model whose training reference has no dispersion, and name
+that reference with `--d3-xc`; mliport cannot read it from a MACE, DPA or GRACE
+checkpoint. For UMA the reference of each task is known: D3 is accepted for
+`omat` (PBE) and `oc20` (RPBE) only, and refused for `omol`, `omc`, `odac` and
+`oc25`, whose references already contain dispersion or are not verified to be
+dispersion-free. `D3_XC` or `D3_DAMPING` without `D3` is an error rather than a
+setting that silently does nothing. NEB does not accept D3 yet, and the TUI
+does not expose it.
+
+The correction is recorded with the run: `dispersion` in the model metadata of
+the JSON output and a `Dispersion:` line in the OUTCAR-style header. The
+`torch-dftd` package needs PyTorch, which the MACE, DPA and UMA environments
+already have.
+
 ## Scientific defaults
 
 Defaults for temperature, timestep, step counts, thermostat, optimizer, `fmax`,

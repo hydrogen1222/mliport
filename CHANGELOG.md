@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+New features:
+
+- **DFT-D3 dispersion.** `--d3` / `D3 = .TRUE.` / API `d3=True` adds Grimme
+  DFT-D3 (via `torch-dftd`, float64) on top of any backend as
+  `SumCalculator([model, D3])`; `--d3-xc` (default `pbe`) names the model's
+  reference functional and `--d3-damping` (default `bj`) the damping. Fails
+  closed: UMA tasks whose reference already contains dispersion (`omol`,
+  `omc`, `odac`, `oc25`) are refused, UMA `omat`/`oc20` must use `pbe`/`rpbe`,
+  D3 sub-options without `--d3` are an error, and NEB refuses D3 until its
+  model identity records the term. The correction is recorded as
+  `dispersion` in the run metadata and in the OUTCAR-style header. Optional
+  extra: `mliport[d3]`.
+
 Documentation site:
 
 - **Docs site.** The documentation is now a MkDocs Material site published to

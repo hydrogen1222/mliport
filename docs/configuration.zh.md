@@ -133,6 +133,34 @@ mliport template sp --output INCAR.neutral   # backend-neutral, MODEL_TYPE=REQUI
 
 在严格模式下，把这些选项交给另一个后端会报错，选项绝不会被悄悄丢掉。
 
+## 色散校正（DFT-D3）
+
+MLIP 模型文件里不包含色散校正。在纯 PBE 数据上训练的模型（MACE 的 `omat` head、UMA
+的 `omat`、大多数材料模型）学到的是 PBE 势能面，而 PBE 本身没有长程色散。`--d3` 在
+模型之上叠加 Grimme DFT-D3 的能量、力和应力，对所有后端都适用，实现来自
+`torch-dftd`：
+
+| 选项 | 默认值 | 作用 |
+|---|---|---|
+| `D3` / `--d3` | 关闭 | 在模型之上叠加 DFT-D3 |
+| `D3_XC` / `--d3-xc` | `pbe` | 模型训练数据的参考泛函，决定 D3 参数 |
+| `D3_DAMPING` / `--d3-damping` | `bj` | 阻尼函数：`zero`、`bj`、`zerom` 或 `bjm` |
+
+```bash
+uv pip install --python .venv-mace/bin/python torch-dftd
+mliport opt slab.vasp --model model.model --model-type mace --task bulk --d3
+```
+
+只能给训练参考里不含色散的模型加 D3，并用 `--d3-xc` 写明这个参考泛函；mliport 无法从
+MACE、DPA 或 GRACE 的模型文件里读出它。UMA 每个任务的参考是已知的：只有 `omat`
+（PBE）和 `oc20`（RPBE）接受 D3；`omol`、`omc`、`odac` 和 `oc25` 的参考已经包含色散
+或未确认不含色散，会被拒绝。只写 `D3_XC` 或 `D3_DAMPING` 而不开 `D3` 会报错，而不是
+记录一个实际上不生效的设置。NEB 暂不支持 D3，TUI 也还没有这个选项。
+
+校正会随运行一起记录：JSON 输出的模型元数据里有 `dispersion` 字段，OUTCAR 风格的文件
+头里有一行 `Dispersion:`。`torch-dftd` 需要 PyTorch，MACE、DPA 和 UMA 环境里都已经
+有了。
+
 ## 科学参数的默认值
 
 温度、时间步长、步数、恒温器、优化器、`fmax`、NEB 设置等的默认值都在 mliport 内

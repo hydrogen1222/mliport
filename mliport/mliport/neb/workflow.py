@@ -621,6 +621,14 @@ def _run_neb_workflow_locked(
     """Execute one public NEB run with reproducible output and geometry resume."""
     if resolved.calc_type != "neb":
         raise ValueError("run_neb_workflow requires calc_type='neb'")
+    if resolved.calculator_options.get("d3"):
+        # The NEB model identity (checkpoint/resume compatibility) does not
+        # record an added dispersion term yet; refuse rather than allow a
+        # band to resume across different potential energy surfaces.
+        raise NEBPreparationError(
+            "DFT-D3 (--d3) is not supported for NEB yet: the NEB model "
+            "identity does not record the dispersion term. Run NEB without D3."
+        )
     options = options_from_resolved(resolved)
     output = Path(output_dir).expanduser().resolve()
     checkpoint_record: dict[str, Any] | None = None
