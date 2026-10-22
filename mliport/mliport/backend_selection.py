@@ -19,15 +19,20 @@ UMA_ALIASES: frozenset[str] = frozenset({"uma", "fairchem"})
 #: Everything accepted by ``MODEL_TYPE`` / ``--model-type`` / API calls.
 SUPPORTED_TYPES: frozenset[str] = frozenset(set(SUPPORTED_BACKENDS) | UMA_ALIASES)
 
+#: DFT-D3 dispersion options. The correction is added on top of the model by
+#: the calculator factory, so every backend consumes them.
+DISPERSION_OPTION_KEYS: frozenset[str] = frozenset({"d3", "d3_xc", "d3_damping"})
+
 #: Calculator (backend) options each runtime consumes. This is the single
 #: table shared by the resolver, the calculator factory, the engine and the
 #: queue command builder; adding a backend option means editing only here.
 CALCULATOR_OPTION_KEYS: dict[str, frozenset[str]] = {
     "uma": frozenset(
         {"inference_mode", "torch_num_threads", "activation_checkpointing"}
-    ),
-    "mace": frozenset({"default_dtype", "head"}),
-    "dpa": frozenset({"head"}),
+    )
+    | DISPERSION_OPTION_KEYS,
+    "mace": frozenset({"default_dtype", "head"}) | DISPERSION_OPTION_KEYS,
+    "dpa": frozenset({"head"}) | DISPERSION_OPTION_KEYS,
     "grace": frozenset(
         {
             "cpu_threads",
@@ -36,7 +41,8 @@ CALCULATOR_OPTION_KEYS: dict[str, frozenset[str]] = {
             "neighbor_cache",
             "neighbor_skin",
         }
-    ),
+    )
+    | DISPERSION_OPTION_KEYS,
 }
 
 #: Every backend-specific calculator option.
@@ -120,6 +126,7 @@ def default_task_for(model_type: str) -> str:
 __all__ = [
     "ALL_CALCULATOR_OPTION_KEYS",
     "CALCULATOR_OPTION_KEYS",
+    "DISPERSION_OPTION_KEYS",
     "NO_BACKEND_SELECTED_MESSAGE",
     "PROCESS_ISOLATED_BACKENDS",
     "SHARED_OPTION_KEYS",

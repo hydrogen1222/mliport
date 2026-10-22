@@ -118,6 +118,14 @@
       "incar": "yes",
       "tui": "yes",
       "note": "job queue and batch INCAR scanning"
+    },
+    {
+      "feature": "dispersion_d3",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "no",
+      "note": "d3/d3_xc/d3_damping calculator options (--d3, D3 = .TRUE., API d3=True); the TUI has no D3 field yet; NEB refuses D3"
     }
   ]
 }

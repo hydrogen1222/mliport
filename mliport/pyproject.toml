@@ -25,6 +25,11 @@ dependencies = [
 # the fairchem-core version in mliport/install/compatibility.py. A PyPI extra
 # would drift from the matrix and conflicts with fairchem-core's own Python
 # requirement.
+# DFT-D3 dispersion correction (--d3). Install into an existing backend
+# environment; it needs PyTorch, which the MACE/DPA/UMA environments provide.
+d3 = [
+    "torch-dftd>=0.4",
+]
 analysis = [
     "scipy>=1.11",
     "matplotlib>=3.7",

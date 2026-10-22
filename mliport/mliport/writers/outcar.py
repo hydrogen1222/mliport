@@ -25,6 +25,21 @@ if TYPE_CHECKING:
     from ase import Atoms
 
 
+def _dispersion_label(metadata: dict[str, Any]) -> str | None:
+    """One-line description of an added dispersion term, e.g. ``DFT-D3(BJ)``."""
+    dispersion = metadata.get("dispersion")
+    if not isinstance(dispersion, dict):
+        return None
+    method = dispersion.get("method", "dispersion")
+    damping = str(dispersion.get("damping", "")).upper()
+    label = f"{method}({damping})" if damping else str(method)
+    if dispersion.get("xc"):
+        label += f", xc={dispersion['xc']}"
+    if dispersion.get("implementation"):
+        label += f" ({dispersion['implementation']})"
+    return label
+
+
 class OutcarWriter:
     """Write calculation results in VASP OUTCAR-like format.
 
@@ -136,6 +151,9 @@ class OutcarWriter:
             if "implemented_properties" in metadata:
                 props = ", ".join(metadata["implemented_properties"])
                 self.lines.append(f"Properties:        {props}")
+            dispersion = _dispersion_label(metadata)
+            if dispersion is not None:
+                self.lines.append(f"Dispersion:        {dispersion}")
 
         self.lines.append("")
 
@@ -418,6 +436,9 @@ class MDOutcarWriter:
         ):
             if model.get(key) is not None:
                 lines.append(f"{label + ':':<20}{model[key]}")
+        dispersion = _dispersion_label(model)
+        if dispersion is not None:
+            lines.append(f"{'Dispersion:':<20}{dispersion}")
 
         lines.extend(["", " MD SETTINGS", "-" * 100])
         for key, value in settings.items():

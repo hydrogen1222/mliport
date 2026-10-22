@@ -34,12 +34,18 @@ from typing import TYPE_CHECKING
 from mliport.backend_selection import (
     ALL_CALCULATOR_OPTION_KEYS,
     CALCULATOR_OPTION_KEYS,
+    PROCESS_ISOLATED_BACKENDS,
     SUPPORTED_TYPES,
     UMA_ALIASES,
     calculator_option_keys,
     require_model_type,
 )
 from mliport.base_calculator import BaseMLIPCalculator
+from mliport.calculators.dispersion import (
+    D3CorrectedCalculator,
+    d3_device,
+    normalize_d3_options,
+)
 
 if TYPE_CHECKING:
     from typing import Any
@@ -126,10 +132,14 @@ class CalculatorFactory:
                 accepts ``default_dtype`` (factory fallback ``float64``) and
                 ``head``; DPA accepts ``head`` for multi-task branches; GRACE
                 accepts ``cpu_threads`` for TensorFlow intra-op parallelism and
-                GPU memory-growth / hard-limit controls.
+                GPU memory-growth / hard-limit controls. Every engine accepts
+                ``d3`` (with optional ``d3_xc``/``d3_damping``) to add a
+                DFT-D3 dispersion correction on top of the model.
 
         Returns:
-            A ``BaseMLIPCalculator`` subclass instance.
+            A ``BaseMLIPCalculator`` subclass instance; a
+            :class:`~mliport.calculators.dispersion.D3CorrectedCalculator`
+            around the backend wrapper when ``d3`` is enabled.
 
         Raises:
             ValueError: If ``model_type`` is not supported, or (in strict mode)
@@ -147,11 +157,20 @@ class CalculatorFactory:
                 "engines require the explicit PBC semantic 'bulk' or "
                 "'molecule'."
             )
+        # Validate DFT-D3 before loading anything, so a request that would add
+        # dispersion twice (or not at all) fails before the model is touched.
+        d3_settings = normalize_d3_options(
+            "uma" if m_type in UMA_ALIASES else m_type,
+            normalized_task,
+            d3=kwargs.get("d3", False),
+            d3_xc=kwargs.get("d3_xc"),
+            d3_damping=kwargs.get("d3_damping"),
+        )
 
         if m_type in UMA_ALIASES:
             from mliport.calculators.uma import UMACalculator  # noqa: PLC0415
 
-            return UMACalculator(
+            base: BaseMLIPCalculator = UMACalculator(
                 model_path=model_path,
                 task=normalized_task,
                 device=device,
@@ -164,7 +183,7 @@ class CalculatorFactory:
 
             # Accuracy-first fallback for direct construction. Users must opt
             # in explicitly to float32 when throughput matters more.
-            return MACECalculatorWrapper(
+            base = MACECalculatorWrapper(
                 model_path=model_path,
                 device=device,
                 task=normalized_task,
@@ -174,7 +193,7 @@ class CalculatorFactory:
         elif m_type == "dpa":
             from mliport.calculators.dpa_calc import DPACalculatorWrapper  # noqa: PLC0415
 
-            return DPACalculatorWrapper(
+            base = DPACalculatorWrapper(
                 model_path=model_path,
                 device=device,
                 task=normalized_task,
@@ -183,7 +202,7 @@ class CalculatorFactory:
         elif m_type == "grace":
             from mliport.calculators.grace_calc import GRACECalculatorWrapper  # noqa: PLC0415
 
-            return GRACECalculatorWrapper(
+            base = GRACECalculatorWrapper(
                 model_path=model_path,
                 device=device,
                 task=normalized_task,
@@ -198,3 +217,15 @@ class CalculatorFactory:
                 f"Unsupported model type: '{model_type}'. "
                 f"Supported: {', '.join(sorted(SUPPORTED_TYPES - {'fairchem'}))}"
             )
+
+        if d3_settings is None:
+            return base
+        return D3CorrectedCalculator(
+            base,
+            device=d3_device(
+                device,
+                process_isolated=m_type in PROCESS_ISOLATED_BACKENDS,
+            ),
+            xc=d3_settings["xc"],
+            damping=d3_settings["damping"],
+        )
