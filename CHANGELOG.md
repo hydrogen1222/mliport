@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+Internal (no user-visible behaviour change):
+
+- **Shared runner safety helpers.** The numerical-safety gates that MD already
+  enforced (atomic-state validation, finite energy/force checks, raw vs
+  constraint-applied force views, the raw-force `fmax_abort` evaluation and the
+  per-frame safe-point validation) now live in `mliport/runners/safety.py`, and
+  `MDRunner`/`BaseRunner` delegate to them. The energy–force gradient pre-flight
+  accepts one or more structures (NEB still requires at least two images and
+  keeps its exact refusal wording and schema), and the model-identity record is
+  a shared helper that additionally records `dispersion`. No scientific record
+  invalidated and no result changes.
+
 New features:
 
 - **DFT-D3 dispersion.** `--d3` / `D3 = .TRUE.` / API `d3=True` adds Grimme

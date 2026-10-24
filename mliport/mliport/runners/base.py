@@ -386,26 +386,14 @@ class BaseRunner(ABC):
         distribution. Without this guard ASE integrators propagate NaN to the
         end and write "successful" NaN results. Non-finite values are always
         fatal, so this raises unconditionally (plan safety.abort_on_nan).
-        """
-        import numpy as np  # noqa: PLC0415
 
-        if not np.isfinite(energy):
-            raise RuntimeError(
-                f"Non-finite energy ({energy!r}) during {context}; aborting "
-                "before NaN is written to outputs."
-            )
-        if forces is not None:
-            arr = np.asarray(forces, dtype=float)
-            if arr.size and not np.all(np.isfinite(arr)):
-                fmax = (
-                    float(np.max(np.linalg.norm(arr, axis=1)))
-                    if arr.ndim == 2
-                    else float("nan")
-                )
-                raise RuntimeError(
-                    f"Non-finite forces during {context} (max|F|={fmax}); "
-                    "aborting before NaN is written to outputs."
-                )
+        The check itself lives in :mod:`mliport.runners.safety`, which the
+        confsearch cycle engine also uses; the ``atoms`` argument is kept for
+        backward compatibility with existing runner code.
+        """
+        from mliport.runners.safety import check_finite  # noqa: PLC0415
+
+        check_finite(energy, forces, context=context)
 
     def _write_summary(self, results: dict[str, Any], atoms: Atoms) -> None:
         """Write calculation summary to stdout.

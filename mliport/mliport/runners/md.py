@@ -23,7 +23,6 @@ import sys
 import threading
 import time
 from importlib.metadata import PackageNotFoundError, version
-from numbers import Integral, Real
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -47,6 +46,16 @@ from mliport.runners.md_output import (
     MDFrameStats,
     MDTrajectorySummary,
 )
+from mliport.runners.safety import (
+    ForceSafetyAbort,
+    evaluate_force_abort,
+    finite_float as _finite_float,
+    force_magnitudes,
+    force_views as _force_views_shared,
+    strict_integer as _strict_integer,
+    validate_atomic_state as _validate_atomic_state_shared,
+    validate_safe_point,
+)
 from mliport.writers.contcar import ContcarWriter
 from mliport.writers.outcar import MDOutcarWriter
 from mliport.writers.xdatcar import XdatcarWriter
@@ -59,44 +68,7 @@ if TYPE_CHECKING:
     from mliport.protocols import ProgressCallback
 
 
-class ForceSafetyAbort(RuntimeError):
-    """Raised after checkpointing an MD frame that exceeds ``fmax_abort``."""
-
-    def __init__(
-        self, *, step: int, max_force: float, atom_index: int, threshold: float
-    ):
-        self.step = step
-        self.max_force = max_force
-        self.atom_index = atom_index
-        self.threshold = threshold
-        super().__init__(
-            f"Force safety abort at MD step {step}: atom {atom_index} has "
-            f"raw model force |F|={max_force:.6g} eV/Angstrom, exceeding "
-            f"fmax_abort={threshold:.6g} eV/Angstrom"
-        )
-
-
-def _finite_float(value: object, *, name: str) -> float:
-    """Return a finite real scalar without accepting booleans."""
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
-        raise TypeError(f"{name} must be a finite real number, got {value!r}")
-    numeric = float(value)
-    if not math.isfinite(numeric):
-        raise ValueError(f"{name} must be finite, got {value!r}")
-    return numeric
-
-
-def _strict_integer(value: object, *, name: str) -> int:
-    """Return an integer while rejecting bool and fractional real values."""
-    if isinstance(value, (bool, np.bool_)):
-        raise TypeError(f"{name} must be an integer, got {value!r}")
-    if isinstance(value, Integral):
-        return int(value)
-    if isinstance(value, Real):
-        numeric = float(value)
-        if math.isfinite(numeric) and numeric.is_integer():
-            return int(numeric)
-    raise TypeError(f"{name} must be an integer, got {value!r}")
+__all__ = ["ForceSafetyAbort", "MDRunner"]
 
 
 class MDRunner(BaseRunner):
@@ -403,54 +375,7 @@ class MDRunner(BaseRunner):
 
     def _validate_atomic_state(self, atoms: Atoms, *, context: str) -> None:
         """Validate the complete atomic state before it reaches an integrator."""
-        if len(atoms) == 0:
-            raise ValueError(f"{context}: atoms must contain at least one atom")
-
-        positions = np.asarray(atoms.positions, dtype=float)
-        if positions.shape != (len(atoms), 3) or not np.all(np.isfinite(positions)):
-            raise ValueError(
-                f"{context}: positions must have shape ({len(atoms)}, 3) and "
-                "contain only finite values"
-            )
-
-        cell = np.asarray(atoms.cell, dtype=float)
-        if cell.shape != (3, 3) or not np.all(np.isfinite(cell)):
-            raise ValueError(
-                f"{context}: cell must have shape (3, 3) and contain only "
-                "finite values"
-            )
-        pbc = np.asarray(atoms.pbc, dtype=bool)
-        periodic_dimensions = int(np.count_nonzero(pbc))
-        if (
-            periodic_dimensions
-            and np.linalg.matrix_rank(cell[pbc]) < periodic_dimensions
-        ):
-            raise ValueError(
-                f"{context}: periodic cell vectors must be non-zero and linearly "
-                "independent"
-            )
-
-        masses = np.asarray(atoms.get_masses(), dtype=float)
-        if masses.shape != (len(atoms),) or not np.all(np.isfinite(masses)):
-            raise ValueError(
-                f"{context}: masses must have shape ({len(atoms)},) and contain "
-                "only finite values"
-            )
-        if np.any(masses <= 0.0):
-            raise ValueError(f"{context}: every atomic mass must be > 0")
-
-        if atoms.has("momenta"):
-            momenta = np.asarray(atoms.get_momenta(), dtype=float)
-            if momenta.shape != (len(atoms), 3) or not np.all(np.isfinite(momenta)):
-                raise ValueError(
-                    f"{context}: momenta must have shape ({len(atoms)}, 3) and "
-                    "contain only finite values"
-                )
-            velocities = momenta / masses[:, None]
-            if not np.all(np.isfinite(velocities)):
-                raise ValueError(
-                    f"{context}: velocities must contain only finite values"
-                )
+        _validate_atomic_state_shared(atoms, context=context)
 
     def _degrees_of_freedom(self, atoms: Atoms) -> int:
         try:
@@ -657,31 +582,7 @@ class MDRunner(BaseRunner):
         context: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Return finite raw and constraint-applied force arrays."""
-        raw = np.asarray(atoms.get_forces(apply_constraint=False), dtype=float)
-        expected_shape = (len(atoms), 3)
-        if raw.shape != expected_shape:
-            raise RuntimeError(
-                f"Malformed raw forces during {context}: expected "
-                f"{expected_shape}, got {raw.shape}"
-            )
-        # Validate the calculator result before asking a constraint projector
-        # to transform it. Projecting Inf/NaN can emit warnings and obscure
-        # which layer first violated the finite-state contract.
-        self._check_finite(atoms, energy, raw, context=f"{context} (raw forces)")
-
-        applied = np.asarray(atoms.get_forces(apply_constraint=True), dtype=float)
-        if applied.shape != expected_shape:
-            raise RuntimeError(
-                f"Malformed constraint-applied forces during {context}: expected "
-                f"{expected_shape}, got {applied.shape}"
-            )
-        self._check_finite(
-            atoms,
-            energy,
-            applied,
-            context=f"{context} (constraint-applied forces)",
-        )
-        return raw, applied
+        return _force_views_shared(atoms, energy, context=context)
 
     def _validate_md_safe_point(
         self,
@@ -693,29 +594,14 @@ class MDRunner(BaseRunner):
         context: str,
     ) -> tuple[float, float, float]:
         """Validate positions, momenta and scalar observables at an MD safe point."""
-        self._validate_atomic_state(atoms, context=context)
-        self._check_finite(atoms, energy, forces_raw, context=context)
-        self._check_finite(atoms, energy, forces_applied, context=context)
-        kinetic_energy = float(atoms.get_kinetic_energy())
-        temperature = self._calculate_temperature(atoms)
-        total_energy = float(energy) + kinetic_energy
-        volume = float(atoms.get_volume())
-        for name, value in (
-            ("kinetic energy", kinetic_energy),
-            ("total energy", total_energy),
-            ("temperature", temperature),
-            ("volume", volume),
-        ):
-            if not math.isfinite(value):
-                raise RuntimeError(
-                    f"Non-finite {name} ({value!r}) during {context}; aborting"
-                )
-        # A zero cell volume is valid for isolated molecules and can also be
-        # valid for lower-dimensional PBC. Only a 3D-periodic system requires
-        # a non-zero bulk volume.
-        if bool(np.asarray(atoms.pbc, dtype=bool).all()) and volume <= 0.0:
-            raise RuntimeError(f"Non-positive volume ({volume!r}) during {context}")
-        return kinetic_energy, temperature, total_energy
+        return validate_safe_point(
+            atoms,
+            energy=energy,
+            forces_raw=forces_raw,
+            forces_applied=forces_applied,
+            temperature_fn=self._calculate_temperature,
+            context=context,
+        )
 
     def _write_artifacts_manifest(
         self,
@@ -1414,12 +1300,11 @@ class MDRunner(BaseRunner):
             # The safety threshold is deliberately based on unprojected model
             # forces. A frozen atom can carry a large physical reaction force;
             # constraint projection must never hide it from the safety gate.
-            raw_force_magnitudes = np.linalg.norm(forces_raw, axis=1)
-            applied_force_magnitudes = np.linalg.norm(forces_applied, axis=1)
-            atom_index = int(np.argmax(raw_force_magnitudes))
-            max_force = float(raw_force_magnitudes[atom_index])
-            max_force_applied = float(np.max(applied_force_magnitudes))
-            force_abort = max_force > self.fmax_abort
+            force_gate = evaluate_force_abort(forces_raw, threshold=self.fmax_abort)
+            atom_index = force_gate.atom_index
+            max_force = force_gate.max_force_raw
+            max_force_applied = float(np.max(force_magnitudes(forces_applied)))
+            force_abort = force_gate.abort
 
             # Save regular trajectory frames and always checkpoint the unsafe
             # frame before raising a force-safety abort.

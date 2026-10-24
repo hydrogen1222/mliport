@@ -1,4 +1,4 @@
-"""Runtime energy-force consistency pre-flight for NEB.
+"""Runtime energy-force consistency pre-flight for NEB and confsearch.
 
 NEB feeds the model's forces to the optimizer as if they were ``-grad(E)``.
 That holds by construction for models that obtain forces by automatic
@@ -7,24 +7,25 @@ framework build and device, not of the checkpoint alone.  Instead of looking
 the property up in static evidence recorded on other software stacks, this
 module measures it on the band that is about to be optimized.
 
-For a few structures of the band (both endpoints and interpolated images) and
-a few displacement directions ``u`` (the force direction and random
-directions on the free atoms) it compares the model's force projection
-``-F.u`` with a central finite difference of the model's energy.  Two step
-sizes are combined by Richardson extrapolation, which removes the leading
-truncation error, and the acceptance tolerance includes the energy rounding
-noise implied by the model's floating-point precision (the same noise-aware
-reasoning as ``validation/science/scripts/finite_difference.py``).
+For a few structures (NEB: both endpoints and interpolated images; confsearch:
+the first prepared start) and a few displacement directions ``u`` (the force
+direction and random directions on the free atoms) it compares the model's
+force projection ``-F.u`` with a central finite difference of the model's
+energy.  Two step sizes are combined by Richardson extrapolation, which
+removes the leading truncation error, and the acceptance tolerance includes
+the energy rounding noise implied by the model's floating-point precision (the
+same noise-aware reasoning as ``validation/science/scripts/finite_difference.py``).
 
 This is a spot check, not a proof of consistency over the whole potential
 energy surface.  It fails closed: an inconsistency, a non-finite value or a
-measurement that the energy resolution cannot resolve raises
-:class:`NEBGradientConsistencyError` before any NEB step is taken.
+measurement that the energy resolution cannot resolve raises the caller's
+error class before any dynamics or optimization step is taken.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -66,6 +67,36 @@ MAX_NOISE_ALLOWANCE_EV_A = 0.02
 
 _FLOAT32_EPS = float(np.finfo(np.float32).eps)
 _FLOAT64_EPS = float(np.finfo(np.float64).eps)
+
+
+@dataclass(frozen=True, slots=True)
+class PreflightNaming:
+    """Caller-specific wording and error class for one pre-flight.
+
+    The defaults reproduce the historical NEB messages exactly, so NEB call
+    sites are unchanged.  confsearch passes its own naming (and error class)
+    so its refusals never claim to be NEB refusals.
+    """
+
+    context: str = "NEB"
+    item_label: str = "Image"
+    item_label_lower: str = "image"
+    subject: str = "band"
+    schema: str = PREFLIGHT_SCHEMA
+    sampled_key: str = "sampled_images"
+    error_class: type[BaseException] = NEBGradientConsistencyError
+    scope: str = (
+        "spot check on the sampled band structures and directions; not a "
+        "proof of consistency over the whole potential energy surface"
+    )
+    consequence: str = (
+        "NEB optimizes with these forces, so the band and any barrier would be "
+        "meaningless. Use a conservative (autograd-force) model or precision."
+    )
+
+
+#: The historical NEB wording; kept as the default for ``run_gradient_preflight``.
+NEB_PREFLIGHT_NAMING = PreflightNaming()
 
 
 def energy_noise_floor_eV(total_energy_eV: float, dtype: str | None) -> float:
@@ -157,21 +188,31 @@ def _unit(vector: np.ndarray) -> np.ndarray | None:
 
 def run_gradient_preflight(
     calculator: Any,
-    images: Sequence[Atoms],
+    structures: Sequence[Atoms],
     *,
     dtype: str | None,
+    minimum_structures: int = 2,
+    naming: PreflightNaming = NEB_PREFLIGHT_NAMING,
 ) -> dict[str, Any]:
-    """Check energy-force consistency on a sample of the band.
+    """Check energy-force consistency on a sample of ``structures``.
 
-    ``calculator`` is the ASE calculator the NEB will use.  The images are not
-    modified.  Returns the evidence record when every check passes and raises
-    :class:`NEBGradientConsistencyError` otherwise.
+    ``calculator`` is the ASE calculator the caller will use.  The structures
+    are not modified.  Returns the evidence record when every check passes and
+    raises ``naming.error_class`` otherwise.
+
+    NEB calls this with its defaults (at least two images, NEB wording).
+    confsearch calls it with ``minimum_structures=1`` and its own naming, on the
+    first prepared start.
     """
-    if len(images) < 2:
-        raise NEBGradientConsistencyError("NEB gradient pre-flight needs a band")
+    if minimum_structures < 1:
+        raise ValueError("minimum_structures must be >= 1")
+    if len(structures) < minimum_structures:
+        raise naming.error_class(
+            f"{naming.context} gradient pre-flight needs a {naming.subject}"
+        )
     checks: list[dict[str, Any]] = []
-    for image_index in _sample_indices(len(images)):
-        atoms = images[image_index]
+    for image_index in _sample_indices(len(structures)):
+        atoms = structures[image_index]
         free = _free_mask(atoms)
         if not free.any():
             continue
@@ -187,9 +228,9 @@ def run_gradient_preflight(
         energy0 = energy(base_positions)
         forces = np.asarray(work.get_forces(), dtype=float).copy()
         if not (np.isfinite(energy0) and np.all(np.isfinite(forces))):
-            raise NEBGradientConsistencyError(
-                f"Image {image_index}: the model returned a non-finite energy "
-                "or force; refusing to start NEB"
+            raise naming.error_class(
+                f"{naming.item_label} {image_index}: the model returned a "
+                f"non-finite energy or force; refusing to start {naming.context}"
             )
         noise = energy_noise_floor_eV(energy0, dtype)
         rng = np.random.default_rng(RNG_SEED + image_index)
@@ -227,25 +268,22 @@ def run_gradient_preflight(
         finally:
             work.set_positions(base_positions)
     if not checks:
-        raise NEBGradientConsistencyError(
-            "NEB gradient pre-flight found no free atoms to displace"
+        raise naming.error_class(
+            f"{naming.context} gradient pre-flight found no free atoms to displace"
         )
     failed = [check for check in checks if not check["passed"]]
     errors = [check["abs_error_eV_A"] for check in checks if check["finite"]]
     summary = {
-        "schema": PREFLIGHT_SCHEMA,
+        "schema": naming.schema,
         "status": "failed" if failed else "passed",
         "method": (
             "central finite difference of the model energy along the force "
             "direction and random directions, two step sizes combined by "
             "Richardson extrapolation, compared with -F.u"
         ),
-        "scope": (
-            "spot check on the sampled band structures and directions; not a "
-            "proof of consistency over the whole potential energy surface"
-        ),
+        "scope": naming.scope,
         "dtype_assumed": str(dtype) if dtype else "float32 (unknown)",
-        "sampled_images": sorted({check["image_index"] for check in checks}),
+        naming.sampled_key: sorted({check["image_index"] for check in checks}),
         "n_checks": len(checks),
         "n_failed": len(failed),
         "max_abs_error_eV_A": max(errors) if errors else None,
@@ -274,12 +312,11 @@ def run_gradient_preflight(
                 f"|FD - (-F.u)| = {worst['abs_error_eV_A']:.3g} eV/A > "
                 f"tolerance {worst['tolerance_eV_A']:.3g} eV/A"
             )
-        error = NEBGradientConsistencyError(
-            "NEB refused: the model's forces are not verifiably the gradient of "
-            f"its energy ({len(failed)}/{len(checks)} checks failed; worst: image "
-            f"{worst['image_index']}, {worst['direction']} direction, {reason}). "
-            "NEB optimizes with these forces, so the band and any barrier would be "
-            "meaningless. Use a conservative (autograd-force) model or precision."
+        error = naming.error_class(
+            f"{naming.context} refused: the model's forces are not verifiably "
+            f"the gradient of its energy ({len(failed)}/{len(checks)} checks "
+            f"failed; worst: {naming.item_label_lower} {worst['image_index']}, "
+            f"{worst['direction']} direction, {reason}). {naming.consequence}"
         )
         error.summary = summary  # type: ignore[attr-defined]
         raise error
@@ -287,7 +324,10 @@ def run_gradient_preflight(
 
 
 __all__ = [
+    "NEB_PREFLIGHT_NAMING",
     "NEBGradientConsistencyError",
+    "PREFLIGHT_SCHEMA",
+    "PreflightNaming",
     "directional_check",
     "energy_noise_floor_eV",
     "run_gradient_preflight",
