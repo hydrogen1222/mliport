@@ -221,3 +221,30 @@ def test_workflow_rejects_direct_force_models_unless_allowed(tmp_path, monkeypat
 
     with pytest.raises(ConfsearchGradientConsistencyError, match="direct_forces"):
         run_confsearch_workflow(Wrapper(), resolved, output_dir=tmp_path / "direct")
+
+
+def test_confsearch_resume_cli_accepts_a_recorded_run(tmp_path, capsys, monkeypatch):
+    """A resume must rebuild the config layer from run_context.json.
+
+    Regression: the recorded ``cs_starts`` is a list, and handing that list
+    straight back to the config layer made the resolver validate the
+    stringified list as a path ("cs_starts: path not found").
+    """
+    from mliport.confsearch.workflow import run_confsearch_workflow
+    from tests.mliport.mliport.confsearch.test_resume_identity import _workflow_setup
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "resume-run"
+    run_confsearch_workflow(wrapper, resolved, output_dir=output)
+
+    # The engine builds a real backend; substitute the synthetic wrapper at the
+    # engine seam so the CLI path itself is exercised.
+    monkeypatch.setattr(
+        "mliport.engine.CalculationEngine._create_calculator", lambda self: wrapper
+    )
+    code = main(["confsearch", "resume", str(output)])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "confsearch status: completed" in out
+    context = json.loads((output / "run_context.json").read_text())
+    assert len(context["resumes"]) == 1

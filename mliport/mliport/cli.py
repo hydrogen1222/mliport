@@ -2444,6 +2444,33 @@ def _cmd_confsearch_place(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
+def _confsearch_layer_from_context(context: dict) -> dict:
+    """Rebuild a config layer from a recorded ``run_context.json``.
+
+    The config layers carry ``cs_starts`` as an ``os.pathsep``-joined scalar
+    while the context records it as a list (the CLI/API join the positional
+    starts), so a resume or an extend must convert it back -- otherwise the
+    resolver validates the *stringified list* as a path and refuses.
+    """
+    layer = dict(context.get("options") or {})
+    starts = layer.get("cs_starts")
+    if isinstance(starts, (list, tuple)):
+        layer["cs_starts"] = os.pathsep.join(str(item) for item in starts)
+    model = context.get("model") or {}
+    for key, value in (
+        ("model_type", model.get("model_type")),
+        ("model_path", model.get("model_path")),
+        ("task", model.get("task")),
+        ("device", context.get("device")),
+        ("head", model.get("head_requested")),
+        ("default_dtype", model.get("dtype_requested")),
+        ("inference_mode", model.get("inference_mode")),
+    ):
+        if value is not None:
+            layer[key] = value
+    return layer
+
+
 def _cmd_confsearch_run(args: argparse.Namespace, *, resume: bool) -> int:
     """Run or resume a confsearch job."""
     incar_layer: dict = {}
@@ -2453,19 +2480,7 @@ def _cmd_confsearch_run(args: argparse.Namespace, *, resume: bool) -> int:
         if not context_path.is_file():
             raise ValueError(f"Cannot resume: {context_path} not found")
         context = json.loads(context_path.read_text(encoding="utf-8"))
-        incar_layer.update(context.get("options") or {})
-        model = context.get("model") or {}
-        for key, value in (
-            ("model_type", model.get("model_type")),
-            ("model_path", model.get("model_path")),
-            ("task", model.get("task")),
-            ("device", context.get("device")),
-            ("head", model.get("head_requested")),
-            ("default_dtype", model.get("dtype_requested")),
-            ("inference_mode", model.get("inference_mode")),
-        ):
-            if value is not None:
-                incar_layer[key] = value
+        incar_layer.update(_confsearch_layer_from_context(context))
         args.output = str(run_dir)
         args.starts = None
     else:
