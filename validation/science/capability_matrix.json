@@ -1,7 +1,12 @@
 {
   "schema": "mliport.capability-matrix/1",
   "description": "Machine-readable interface capability matrix (task book section 12). Values describe whether an explicitly documented entry point can express a feature; they are not a claim of behavioural equivalence. 'no'/'partial' entries carry a note.",
-  "values": ["yes", "no", "partial", "not_applicable"],
+  "values": [
+    "yes",
+    "no",
+    "partial",
+    "not_applicable"
+  ],
   "limitations": [
     "Advanced explicit atom mapping/image-shift control is available through API/direct CLI/TUI only; the INCAR-style key set deliberately does not expose neb_atom_map or neb_image_shifts.",
     "The interface capability matrix is not an equivalence claim: a 'yes' means the entry point can express the feature, not that every validation scenario is covered through it."
@@ -126,6 +131,54 @@
       "incar": "yes",
       "tui": "no",
       "note": "d3/d3_xc/d3_damping calculator options (--d3, D3 = .TRUE., API d3=True); the TUI has no D3 field yet; NEB refuses D3"
+    },
+    {
+      "feature": "confsearch_user_starts",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "partial",
+      "tui": "no",
+      "note": "Mode A: API starts/adsorbate_indices, CLI positional STARTS with --adsorbate-indices, INCAR CS_STARTS/CS_ADSORBATE_INDICES (paths only, no per-frame mapping). TUI entry is P5."
+    },
+    {
+      "feature": "confsearch_placement",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "no",
+      "note": "Mode B: API slab/molecule/n_starts, `mliport confsearch place` (placement only, no model), CS_SLAB/CS_MOLECULE/CS_N_STARTS."
+    },
+    {
+      "feature": "confsearch_resume",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "no",
+      "tui": "no",
+      "note": "Resume is a command (API resume=True, `mliport confsearch resume RUN`); INCAR keys cannot express a resume."
+    },
+    {
+      "feature": "confsearch_extend",
+      "api": "no",
+      "direct_cli": "no",
+      "incar": "no",
+      "tui": "no",
+      "note": "Phase P4: `mliport confsearch extend RUN --cycles N` is not implemented yet."
+    },
+    {
+      "feature": "confsearch_merge",
+      "api": "no",
+      "direct_cli": "no",
+      "incar": "no",
+      "tui": "no",
+      "note": "Phase P4: `mliport confsearch merge RUN1 RUN2 --output DIR` is not implemented yet."
+    },
+    {
+      "feature": "confsearch_export",
+      "api": "partial",
+      "direct_cli": "partial",
+      "incar": "no",
+      "tui": "no",
+      "note": "Exports are written by every run (top/rank_NNN). The standalone `mliport confsearch export RUN` re-export command is phase P3 work that is not implemented yet; re-run or read search_results.json."
     }
   ]
 }

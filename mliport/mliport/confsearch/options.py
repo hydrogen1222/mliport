@@ -10,6 +10,7 @@ synthetic structures.
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -669,8 +670,19 @@ class ConfsearchOptions:
 
     @classmethod
     def _normalize_paths(cls, value: object, *, label: str) -> tuple[str, ...] | None:
+        """Accept one path, a sequence of paths, or an ``os.pathsep``-joined list.
+
+        The INCAR/CLI/API config layers carry this key as a scalar, so the CLI
+        and the API join several positional start paths with the platform path
+        separator (``:`` on POSIX, ``;`` on Windows) before resolution.
+        """
         if value is None:
             return None
+        if isinstance(value, str) and os.pathsep in value:
+            parts = [part for part in value.split(os.pathsep) if part.strip()]
+            if not parts:
+                raise ConfsearchError(f"{label} must contain at least one path")
+            return tuple(cls._normalize_path(part, label=label) or "" for part in parts)
         if isinstance(value, (str, Path)):
             return (cls._normalize_path(value, label=label) or "",)
         if isinstance(value, Sequence):

@@ -88,6 +88,49 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "pre_relax_steps": 50,
         "pre_relax_fmax": 0.1,
     },
+    # confsearch mirrors mliport.confsearch.options.CS_DEFAULTS (single source
+    # of truth for the scientific defaults of spec section 7.6 / 12.3).
+    "confsearch": {
+        "cs_mode": "adsorbate",
+        "cs_md_mobile": "adsorbate",
+        "cs_top_depth": 2.0,
+        "cs_temperature_high": 500.0,
+        "cs_temperature_low": 300.0,
+        "cs_hold_ps": 2.0,
+        "cs_cool_ps": 2.0,
+        "cs_snapshot_interval_ps": 0.5,
+        "cs_ramp_interval": 10,
+        "cs_cycles": 5,
+        "cs_save_interval": 100,
+        "cs_accept_temperature": 500.0,
+        "timestep": 0.5,
+        "friction": 0.01,
+        "cs_quench_fmax": 0.05,
+        "cs_quench_steps": 2000,
+        "cs_bond_scale": 1.2,
+        "cs_bond_break_scale": 1.5,
+        "cs_ionic_species": "Li,Na,K,Rb,Cs,Mg,Ca",
+        "cs_reaction_policy": "exclude",
+        "cs_desorption_distance": 5.0,
+        "cs_min_image_distance": 4.0,
+        "cs_min_vacuum_gap": 8.0,
+        "cs_place_contact_scale": 1.5,
+        "cs_place_anchor_scale": 1.1,
+        "cs_place_other_min_scale": 1.3,
+        "cs_place_max_attempts": 1000,
+        "cs_dedup_energy_tol": 0.010,
+        "cs_dedup_geom_tol": 0.20,
+        "cs_dedup_fp_tol": 0.0004,
+        "cs_fp_rcut": 8.0,
+        "cs_fp_binwidth": 0.02,
+        "cs_fp_sigma": 0.20,
+        "cs_top_k": 10,
+        "cs_export_window": 0.5,
+        "cs_refine": True,
+        "cs_refine_fmax": 0.02,
+        "cs_refine_steps": 3000,
+        "cs_allow_direct_forces": False,
+    },
     "neb": {
         "inference_mode": "default",
         "n_intermediate_images": 7,
@@ -150,6 +193,7 @@ DEFAULT_DEVICE_BY_CALC_TYPE: dict[str, str] = {
     "md": "cpu",
     "neb": "cpu",
     "batch": "cpu",
+    "confsearch": "cpu",
 }
 
 
@@ -231,7 +275,7 @@ def build_incar_default(calc_type: str, engine: str | None = None) -> str:
     from mliport.backend_selection import normalize_model_type  # noqa: PLC0415
 
     calc_type = calc_type.lower()
-    if calc_type not in {"sp", "opt", "md", "neb"}:
+    if calc_type not in {"sp", "opt", "md", "neb", "confsearch"}:
         raise ValueError(f"Unknown calculation type: {calc_type}")
     if engine is not None:
         engine = normalize_model_type(engine)
@@ -279,6 +323,59 @@ def build_incar_default(calc_type: str, engine: str | None = None) -> str:
         lines.append(f"NHC_TLOOP = {md['nhc_tloop']}")
         lines.append(f"SAVE_INTERVAL = {md['save_interval']}")
         lines.append(f"COM_POLICY = {md['com_policy']}")
+        lines.append("")
+    elif calc_type == "confsearch":
+        cs = BUILTIN_DEFAULTS["confsearch"]
+        lines.append("# Configuration search Settings (adsorbate mode, NVT)")
+        lines.append(
+            "# CS_STARTS = starts.xyz   # mode A: CS_ADSORBATE_INDICES = 300-341"
+        )
+        lines.append(
+            "# or: CS_SLAB = slab.vasp  CS_MOLECULE = molecule.xyz  CS_N_STARTS = 10"
+        )
+        for key in (
+            "cs_mode",
+            "cs_md_mobile",
+            "cs_cycles",
+            "cs_temperature_high",
+            "cs_temperature_low",
+            "cs_hold_ps",
+            "cs_cool_ps",
+            "cs_snapshot_interval_ps",
+            "cs_ramp_interval",
+            "cs_save_interval",
+            "cs_accept_temperature",
+            "cs_quench_fmax",
+            "cs_quench_steps",
+            "cs_bond_scale",
+            "cs_bond_break_scale",
+            "cs_ionic_species",
+            "cs_reaction_policy",
+            "cs_desorption_distance",
+            "cs_min_image_distance",
+            "cs_min_vacuum_gap",
+            "cs_place_contact_scale",
+            "cs_place_anchor_scale",
+            "cs_place_other_min_scale",
+            "cs_place_max_attempts",
+            "cs_dedup_energy_tol",
+            "cs_dedup_geom_tol",
+            "cs_dedup_fp_tol",
+            "cs_fp_rcut",
+            "cs_fp_binwidth",
+            "cs_fp_sigma",
+            "cs_top_k",
+            "cs_export_window",
+            "cs_refine",
+            "cs_refine_fmax",
+            "cs_refine_steps",
+            "cs_allow_direct_forces",
+        ):
+            lines.append(
+                f"{key.upper()} = {_bool(cs[key]) if isinstance(cs[key], bool) else cs[key]}"
+            )
+        lines.append("TIMESTEP = 0.5")
+        lines.append("FRICTION = 0.01")
         lines.append("")
     elif calc_type == "neb":
         neb = BUILTIN_DEFAULTS["neb"]

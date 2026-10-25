@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import signal
 import sys
@@ -27,7 +28,10 @@ import threading
 import time
 from pathlib import Path
 
+import numpy as np
+
 from ase.io import read
+from ase.io import write as ase_write
 
 from mliport.backend_selection import PROCESS_ISOLATED_BACKENDS
 from mliport.config import (
@@ -41,6 +45,7 @@ from mliport.engine import CalculationEngine, EngineConfig
 from mliport.protocols import CancellationRequested
 from mliport.run_directory import OutputDirectoryInUseError
 from mliport.run_status import (
+    EXIT_SUCCESS,
     EXIT_CANCELLED,
     EXIT_ERROR,
     RunOutcome,
@@ -824,6 +829,113 @@ Examples:
         help="Optional new-run subdirectory (used by queue jobs)",
     )
     _add_resolver_args(neb_parser, trajectory_output_flags=False)
+
+    # confsearch command (spec section 12.1)
+    confsearch_parser = subparsers.add_parser(
+        "confsearch",
+        help="MD-based configuration search (adsorbate mode)",
+        description=(
+            "Search for low-energy adsorbate configurations on a periodic slab "
+            "with Langevin NVT cycles and local quenches. Outputs a ranked, "
+            "deduplicated candidate set for DFT re-ranking (never a "
+            "global-minimum claim)."
+        ),
+    )
+    confsearch_sub = confsearch_parser.add_subparsers(
+        dest="confsearch_command", required=True
+    )
+    conf_run = confsearch_sub.add_parser("run", help="Run (or resume) a search")
+    conf_run.add_argument(
+        "starts",
+        nargs="*",
+        default=None,
+        help="Mode A: one or more start structures (multi-frame files allowed).",
+    )
+    conf_run.add_argument(
+        "--adsorbate-indices",
+        dest="cs_adsorbate_indices",
+        default=None,
+        help="Mode A: 0-based adsorbate atom indices, e.g. '300-341' or '0,5,7-9'.",
+    )
+    conf_run.add_argument("--slab", dest="cs_slab", default=None, help="Mode B slab")
+    conf_run.add_argument(
+        "--molecule", dest="cs_molecule", default=None, help="Mode B conformers"
+    )
+    conf_run.add_argument(
+        "--n-starts", dest="cs_n_starts", type=int, default=None, help="Mode B count"
+    )
+    conf_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate inputs, regions and budget without loading a model.",
+    )
+    conf_run.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume the search in --output from its checkpoint.",
+    )
+    conf_run.add_argument("--model", type=str, default=None)
+    conf_run.add_argument(
+        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+    )
+    conf_run.add_argument("--task", type=str, default=None)
+    conf_run.add_argument("--output", type=str, default=None)
+    conf_run.add_argument("--name", "-n", default=None)
+    conf_run.add_argument("--cycles", dest="cs_cycles", type=int, default=None)
+    conf_run.add_argument("--mode", dest="cs_mode", type=str, default=None)
+    conf_run.add_argument(
+        "--md-mobile",
+        dest="cs_md_mobile",
+        type=str,
+        choices=["adsorbate", "adsorbate_and_top", "all_free"],
+        default=None,
+    )
+    conf_run.add_argument("--temperature-high", type=float, default=None)
+    conf_run.add_argument("--temperature-low", type=float, default=None)
+    conf_run.add_argument("--hold-ps", type=float, default=None)
+    conf_run.add_argument("--cool-ps", type=float, default=None)
+    conf_run.add_argument("--snapshot-interval-ps", type=float, default=None)
+    conf_run.add_argument("--top-k", dest="cs_top_k", type=int, default=None)
+    conf_run.add_argument("--export-window", type=float, default=None)
+    conf_run.add_argument(
+        "--no-refine", dest="cs_refine", action="store_false", default=None
+    )
+    conf_run.add_argument(
+        "--allow-direct-forces",
+        dest="cs_allow_direct_forces",
+        action="store_true",
+        default=None,
+    )
+    conf_run.add_argument("--seed", type=int, default=None)
+    conf_run.add_argument("--timestep", type=float, default=None)
+    conf_run.add_argument("--friction", type=float, default=None)
+    conf_run.add_argument("--fmax-abort", dest="fmax_abort", type=float, default=None)
+    conf_run.add_argument("--quench-fmax", type=float, default=None)
+    conf_run.add_argument("--quench-steps", type=int, default=None)
+    conf_run.add_argument("--reaction-policy", type=str, default=None)
+    _add_resolver_args(conf_run, trajectory_output_flags=False)
+
+    conf_place = confsearch_sub.add_parser(
+        "place", help="Placement only (no model): write starts for inspection"
+    )
+    conf_place.add_argument("--slab", dest="cs_slab", required=True)
+    conf_place.add_argument("--molecule", dest="cs_molecule", required=True)
+    conf_place.add_argument("--n-starts", dest="cs_n_starts", type=int, required=True)
+    conf_place.add_argument("--output", required=True)
+    conf_place.add_argument("--seed", type=int, default=None)
+    conf_place.add_argument("--anchor", dest="cs_place_anchor", default=None)
+    conf_place.add_argument(
+        "--anchor-targets", dest="cs_place_anchor_targets", default=None
+    )
+
+    conf_resume = confsearch_sub.add_parser("resume", help="Resume a search")
+    conf_resume.add_argument("run", help="Run directory to resume")
+    conf_resume.add_argument("--model", type=str, default=None)
+    conf_resume.add_argument(
+        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+    )
+    conf_resume.add_argument("--task", type=str, default=None)
+    _add_resolver_args(conf_resume, trajectory_output_flags=False)
 
     # batch command
     batch_parser = subparsers.add_parser(
@@ -1619,6 +1731,60 @@ def _load_settings(args: argparse.Namespace):
     return load_settings(explicit=getattr(args, "settings", None))
 
 
+#: confsearch keys read straight off the parsed CLI namespace.
+_CONFSEARCH_CLI_KEYS = (
+    "cs_mode",
+    "cs_starts",
+    "cs_adsorbate_indices",
+    "cs_slab",
+    "cs_molecule",
+    "cs_n_starts",
+    "cs_fix_below",
+    "cs_md_mobile",
+    "cs_top_depth",
+    "cs_temperature_high",
+    "cs_temperature_low",
+    "cs_hold_ps",
+    "cs_cool_ps",
+    "cs_snapshot_interval_ps",
+    "cs_ramp_interval",
+    "cs_cycles",
+    "cs_save_interval",
+    "cs_accept_temperature",
+    "cs_quench_fmax",
+    "cs_quench_steps",
+    "cs_bond_scale",
+    "cs_bond_break_scale",
+    "cs_ionic_species",
+    "cs_reaction_policy",
+    "cs_desorption_distance",
+    "cs_min_image_distance",
+    "cs_min_vacuum_gap",
+    "cs_place_contact_scale",
+    "cs_place_anchor",
+    "cs_place_anchor_scale",
+    "cs_place_other_min_scale",
+    "cs_place_anchor_targets",
+    "cs_place_max_attempts",
+    "cs_dedup_energy_tol",
+    "cs_dedup_geom_tol",
+    "cs_dedup_fp_tol",
+    "cs_fp_rcut",
+    "cs_fp_binwidth",
+    "cs_fp_sigma",
+    "cs_top_k",
+    "cs_export_window",
+    "cs_refine",
+    "cs_refine_fmax",
+    "cs_refine_steps",
+    "cs_allow_direct_forces",
+    "timestep",
+    "friction",
+    "seed",
+    "fmax_abort",
+)
+
+
 def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
     """Collect non-None CLI args into a canonical option dict.
 
@@ -1656,6 +1822,11 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             opts[key] = value
     if calc_type == "opt":
         for key in ("fmax", "max_steps", "optimizer", "cell_opt", "fix_symmetry"):
+            value = getattr(args, key, None)
+            if value is not None:
+                opts[key] = value
+    elif calc_type == "confsearch":
+        for key in _CONFSEARCH_CLI_KEYS:
             value = getattr(args, key, None)
             if value is not None:
                 opts[key] = value
@@ -2215,6 +2386,139 @@ def cmd_neb(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"Error: {exc}")
         return EXIT_ERROR
+
+
+def cmd_confsearch(args: argparse.Namespace) -> int:
+    """Execute 'confsearch run|place|resume'."""
+    sub = getattr(args, "confsearch_command", None)
+    try:
+        if sub == "place":
+            return _cmd_confsearch_place(args)
+        if sub in {"run", "resume"}:
+            return _cmd_confsearch_run(args, resume=(sub == "resume"))
+        print(f"Error: unknown confsearch subcommand {sub!r}", file=sys.stderr)
+        return EXIT_ERROR
+    except (KeyboardInterrupt, CancellationRequested) as exc:
+        print(f"\n{describe(classify_exception(exc))}.", file=sys.stderr)
+        return exit_code_for(classify_exception(exc))
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    except Exception as exc:
+        print(f"Error: {exc}")
+        return EXIT_ERROR
+
+
+def _cmd_confsearch_place(args: argparse.Namespace) -> int:
+    """Placement only: no model is loaded, the starts are written for review."""
+    from mliport.confsearch.options import ConfsearchOptions
+    from mliport.confsearch.prepare import prepare_starts
+
+    seed = args.seed if args.seed is not None else 0
+    options = ConfsearchOptions(
+        cs_slab=args.cs_slab,
+        cs_molecule=args.cs_molecule,
+        cs_n_starts=args.cs_n_starts,
+        cs_place_anchor=getattr(args, "cs_place_anchor", None),
+        cs_place_anchor_targets=getattr(args, "cs_place_anchor_targets", None),
+        seed=seed,
+    )
+    sequence = np.random.SeedSequence(seed)
+    placement_ss, *_ = sequence.spawn(1 + int(options.cs_n_starts))
+    starts = prepare_starts(options, placement_rng=np.random.default_rng(placement_ss))
+    output = Path(args.output).expanduser().resolve()
+    starts_dir = output / "starts"
+    starts_dir.mkdir(parents=True, exist_ok=True)
+    for start in starts:
+        ase_write(starts_dir / f"{start.label}.extxyz", start.atoms, format="extxyz")
+        ase_write(starts_dir / f"{start.label}.vasp", start.atoms, format="vasp")
+        if start.placement is not None:
+            (starts_dir / f"{start.label}.placement.json").write_text(
+                json.dumps(start.placement.to_dict(), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+    print(f"Placed {len(starts)} start(s) in {starts_dir}")
+    for warning in sorted(
+        {warning for start in starts for warning in start.regions.warnings}
+    ):
+        print(f"Warning: {warning}")
+    return EXIT_SUCCESS
+
+
+def _cmd_confsearch_run(args: argparse.Namespace, *, resume: bool) -> int:
+    """Run or resume a confsearch job."""
+    incar_layer: dict = {}
+    if resume:
+        run_dir = Path(args.run).expanduser().resolve()
+        context_path = run_dir / "run_context.json"
+        if not context_path.is_file():
+            raise ValueError(f"Cannot resume: {context_path} not found")
+        context = json.loads(context_path.read_text(encoding="utf-8"))
+        incar_layer.update(context.get("options") or {})
+        model = context.get("model") or {}
+        for key, value in (
+            ("model_type", model.get("model_type")),
+            ("model_path", model.get("model_path")),
+            ("task", model.get("task")),
+            ("device", context.get("device")),
+            ("head", model.get("head_requested")),
+            ("default_dtype", model.get("dtype_requested")),
+            ("inference_mode", model.get("inference_mode")),
+        ):
+            if value is not None:
+                incar_layer[key] = value
+        args.output = str(run_dir)
+        args.starts = None
+    else:
+        if args.output is None:
+            raise ValueError("A new confsearch run requires an explicit --output")
+        if args.starts:
+            incar_layer["cs_starts"] = os.pathsep.join(
+                str(item) for item in args.starts
+            )
+        for key in _CONFSEARCH_CLI_KEYS:
+            value = getattr(args, key, None)
+            if value is not None:
+                incar_layer.setdefault(key, value)
+
+    engine_config, resolved, _settings = _resolve_engine_config(
+        args, "confsearch", incar_layer=incar_layer
+    )
+    engine = CalculationEngine.from_config(engine_config)
+    result = engine.run_confsearch(
+        resolved,
+        output_dir=engine_config.output_dir,
+        resume=resume,
+        dry_run=bool(getattr(args, "dry_run", False)),
+        log_fn=_console_log,
+    )
+    if result.get("status") == "dry_run":
+        budget = result.get("budget", {})
+        print("confsearch dry run: inputs and regions are valid")
+        print(f"Starts: {result.get('n_starts')}")
+        print(
+            "Budget: "
+            f"{budget.get('cycles')} cycles x {budget.get('md_steps_per_cycle')} "
+            f"MD steps = {budget.get('md_steps_total')} steps, "
+            f"<= {budget.get('quench_upper_bound')} quenches"
+        )
+        for warning in result.get("warnings", []):
+            print(f"Warning: {warning}")
+        return EXIT_SUCCESS
+
+    ranking = result.get("ranking", {})
+    print(f"confsearch status: {result.get('status')}")
+    print(f"Quenches: {result.get('diagnostics', {}).get('n_quenches')}")
+    if ranking.get("best_energy_eV") is not None:
+        print(f"Lowest found: {ranking['best_energy_eV']:.6f} eV")
+    for entry in (ranking.get("refined") or [])[:5]:
+        print(
+            f"  rank id={entry['id']} E={entry['energy_eV']:.6f} eV "
+            f"hits={entry['hit_count']} replicas={entry['n_replicas']} "
+            f"flags={','.join(entry['flags']) or '-'}"
+        )
+    for warning in result.get("warnings", []):
+        print(f"Warning: {warning}")
+    return exit_code_for(classify_result(result, calc_type="confsearch"))
 
 
 def cmd_batch(args: argparse.Namespace) -> int:
@@ -2937,6 +3241,7 @@ def _main(argv: list[str] | None = None) -> int:
         "opt": cmd_opt,
         "md": cmd_md,
         "neb": cmd_neb,
+        "confsearch": cmd_confsearch,
         "batch": cmd_batch,
         "config": cmd_config,
         "template": cmd_template,

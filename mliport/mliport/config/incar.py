@@ -377,7 +377,7 @@ class IncarConfig(dict):
         # list in sync with CalculationEngine.VALID_CALC_TYPES and the schema
         # choices (schema.py): phonon/analyze were previously accepted here but
         # rejected at engine construction with a confusing late error.
-        valid_calc_types = {"sp", "opt", "md", "neb", "batch"}
+        valid_calc_types = {"sp", "opt", "md", "neb", "batch", "confsearch"}
         calc_declarations = {
             key: self.get_str(key).lower()
             for key in ("CALC_TYPE", "CALCULATION")

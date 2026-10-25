@@ -170,7 +170,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "fmax_abort",
         float,
-        frozenset({"safety"}),
+        frozenset({"safety", "confsearch"}),
         aliases={"FMAX_ABORT"},
         minimum=0.0,
         description="MD force-safety abort threshold in eV/Angstrom.",
@@ -324,7 +324,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "charge",
         int,
-        frozenset({"sp", "opt", "md", "neb", "batch"}),
+        frozenset({"sp", "opt", "md", "neb", "batch", "confsearch"}),
         aliases={"CHARGE"},
         minimum=-100,
         maximum=100,
@@ -333,7 +333,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "spin",
         int,
-        frozenset({"sp", "opt", "md", "neb", "batch"}),
+        frozenset({"sp", "opt", "md", "neb", "batch", "confsearch"}),
         aliases={"SPIN", "SPIN_MULTIPLICITY"},
         minimum=0,
         maximum=100,
@@ -551,7 +551,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "timestep",
         float,
-        frozenset({"md"}),
+        frozenset({"md", "confsearch"}),
         aliases={"TIMESTEP", "timestep_fs"},
         minimum=0.0,
         description="Time step in femtoseconds.",
@@ -584,7 +584,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "friction",
         float,
-        frozenset({"md"}),
+        frozenset({"md", "confsearch"}),
         aliases={"FRICTION", "friction_per_fs"},
         minimum=0.0,
         description="Langevin friction coefficient (1/fs).",
@@ -683,7 +683,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "seed",
         int,
-        frozenset({"md", "general"}),
+        frozenset({"md", "general", "confsearch"}),
         aliases={"SEED", "default_seed", "DEFAULT_SEED"},
         minimum=0,
         description="Random seed for reproducible MD.",
@@ -707,7 +707,7 @@ _SPECS: list[OptionSpec] = [
         # Keep in sync with CalculationEngine.VALID_CALC_TYPES and
         # IncarConfig.validate(): "analyze" was previously accepted here but
         # rejected by the engine with a late, confusing error.
-        choices=("sp", "opt", "md", "neb", "batch"),
+        choices=("sp", "opt", "md", "neb", "batch", "confsearch"),
         description="Top-level calculation type (selects the runner).",
     ),
     OptionSpec(
@@ -787,6 +787,196 @@ _SPECS: list[OptionSpec] = [
         description="Optional job name.",
     ),
 ]
+
+
+# ---------------------------------------------------------------------------
+# confsearch run options (spec section 12.3).  The scientific defaults live in
+# ``mliport.confsearch.options.CS_DEFAULTS`` and are mirrored into
+# BUILTIN_DEFAULTS["confsearch"]; the bounds here are the fail-closed schema
+# bounds, while the cross-key rules live in ConfsearchOptions.
+# ---------------------------------------------------------------------------
+
+
+def _confsearch_specs() -> list[OptionSpec]:
+    scope = frozenset({"confsearch"})
+    specifications: list[tuple] = [
+        ("cs_mode", str, {"CS_MODE"}, ("adsorbate",), None, None, "adsorbate"),
+        ("cs_starts", str, {"CS_STARTS"}, None, None, None, None),
+        ("cs_adsorbate_indices", str, {"CS_ADSORBATE_INDICES"}, None, None, None, None),
+        ("cs_slab", str, {"CS_SLAB"}, None, None, None, None),
+        ("cs_molecule", str, {"CS_MOLECULE"}, None, None, None, None),
+        ("cs_n_starts", int, {"CS_N_STARTS"}, None, 1, None, None),
+        ("cs_fix_below", float, {"CS_FIX_BELOW"}, None, None, None, None),
+        (
+            "cs_md_mobile",
+            str,
+            {"CS_MD_MOBILE"},
+            ("adsorbate", "adsorbate_and_top", "all_free"),
+            None,
+            None,
+            "adsorbate",
+        ),
+        ("cs_top_depth", float, {"CS_TOP_DEPTH"}, None, None, None, 2.0),
+        (
+            "cs_temperature_high",
+            float,
+            {"CS_TEMPERATURE_HIGH"},
+            None,
+            None,
+            None,
+            500.0,
+        ),
+        ("cs_temperature_low", float, {"CS_TEMPERATURE_LOW"}, None, None, None, 300.0),
+        ("cs_hold_ps", float, {"CS_HOLD_PS"}, None, None, None, 2.0),
+        ("cs_cool_ps", float, {"CS_COOL_PS"}, None, None, None, 2.0),
+        (
+            "cs_snapshot_interval_ps",
+            float,
+            {"CS_SNAPSHOT_INTERVAL_PS"},
+            None,
+            None,
+            None,
+            0.5,
+        ),
+        ("cs_ramp_interval", int, {"CS_RAMP_INTERVAL"}, None, 1, None, 10),
+        ("cs_cycles", int, {"CS_CYCLES"}, None, 0, None, 5),
+        ("cs_save_interval", int, {"CS_SAVE_INTERVAL"}, None, 1, None, 100),
+        (
+            "cs_accept_temperature",
+            float,
+            {"CS_ACCEPT_TEMPERATURE"},
+            None,
+            None,
+            None,
+            500.0,
+        ),
+        ("cs_quench_fmax", float, {"CS_QUENCH_FMAX"}, None, None, None, 0.05),
+        ("cs_quench_steps", int, {"CS_QUENCH_STEPS"}, None, 1, None, 2000),
+        ("cs_bond_scale", float, {"CS_BOND_SCALE"}, None, None, None, 1.2),
+        ("cs_bond_break_scale", float, {"CS_BOND_BREAK_SCALE"}, None, None, None, 1.5),
+        (
+            "cs_ionic_species",
+            str,
+            {"CS_IONIC_SPECIES"},
+            None,
+            None,
+            None,
+            "Li,Na,K,Rb,Cs,Mg,Ca",
+        ),
+        (
+            "cs_reaction_policy",
+            str,
+            {"CS_REACTION_POLICY"},
+            ("exclude", "include"),
+            None,
+            None,
+            "exclude",
+        ),
+        (
+            "cs_desorption_distance",
+            float,
+            {"CS_DESORPTION_DISTANCE"},
+            None,
+            None,
+            None,
+            5.0,
+        ),
+        (
+            "cs_min_image_distance",
+            float,
+            {"CS_MIN_IMAGE_DISTANCE"},
+            None,
+            None,
+            None,
+            4.0,
+        ),
+        ("cs_min_vacuum_gap", float, {"CS_MIN_VACUUM_GAP"}, None, None, None, 8.0),
+        (
+            "cs_place_contact_scale",
+            float,
+            {"CS_PLACE_CONTACT_SCALE"},
+            None,
+            None,
+            None,
+            1.5,
+        ),
+        ("cs_place_anchor", str, {"CS_PLACE_ANCHOR"}, None, None, None, None),
+        (
+            "cs_place_anchor_scale",
+            float,
+            {"CS_PLACE_ANCHOR_SCALE"},
+            None,
+            None,
+            None,
+            1.1,
+        ),
+        (
+            "cs_place_other_min_scale",
+            float,
+            {"CS_PLACE_OTHER_MIN_SCALE"},
+            None,
+            None,
+            None,
+            1.3,
+        ),
+        (
+            "cs_place_anchor_targets",
+            str,
+            {"CS_PLACE_ANCHOR_TARGETS"},
+            None,
+            None,
+            None,
+            None,
+        ),
+        ("cs_place_max_attempts", int, {"CS_PLACE_MAX_ATTEMPTS"}, None, 1, None, 1000),
+        (
+            "cs_dedup_energy_tol",
+            float,
+            {"CS_DEDUP_ENERGY_TOL"},
+            None,
+            None,
+            None,
+            0.010,
+        ),
+        ("cs_dedup_geom_tol", float, {"CS_DEDUP_GEOM_TOL"}, None, None, None, 0.20),
+        ("cs_dedup_fp_tol", float, {"CS_DEDUP_FP_TOL"}, None, None, None, 0.0004),
+        ("cs_fp_rcut", float, {"CS_FP_RCUT"}, None, None, None, 8.0),
+        ("cs_fp_binwidth", float, {"CS_FP_BINWIDTH"}, None, None, None, 0.02),
+        ("cs_fp_sigma", float, {"CS_FP_SIGMA"}, None, None, None, 0.20),
+        ("cs_top_k", int, {"CS_TOP_K"}, None, 1, None, 10),
+        ("cs_export_window", float, {"CS_EXPORT_WINDOW"}, None, None, None, 0.5),
+        ("cs_refine", bool, {"CS_REFINE"}, None, None, None, True),
+        ("cs_refine_fmax", float, {"CS_REFINE_FMAX"}, None, None, None, 0.02),
+        ("cs_refine_steps", int, {"CS_REFINE_STEPS"}, None, 1, None, 3000),
+        (
+            "cs_allow_direct_forces",
+            bool,
+            {"CS_ALLOW_DIRECT_FORCES"},
+            None,
+            None,
+            None,
+            False,
+        ),
+    ]
+    specs: list[OptionSpec] = []
+    for name, kind, aliases, choices, minimum, maximum, default in specifications:
+        specs.append(
+            OptionSpec(
+                name,
+                kind,
+                scope,
+                aliases=aliases,
+                choices=choices,
+                minimum=minimum,
+                maximum=maximum,
+                default=default,
+                description=f"confsearch option {name} (spec section 12.3).",
+            )
+        )
+    return specs
+
+
+_SPECS.extend(_confsearch_specs())
 
 
 def get_schema() -> Schema:

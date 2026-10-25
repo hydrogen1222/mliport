@@ -262,8 +262,10 @@ def place_molecule(
     slab_indices = np.arange(n_slab)
     molecule_indices = np.arange(n_slab, n_slab + n_molecule)
 
+    slab_constraints = list(slab.constraints)
+
     def make_candidate(molecule_positions: np.ndarray, numbers: np.ndarray) -> Atoms:
-        return Atoms(
+        candidate = Atoms(
             numbers=np.concatenate([slab_numbers, numbers]),
             positions=np.concatenate(
                 [np.asarray(slab.get_positions(), dtype=float), molecule_positions]
@@ -271,6 +273,11 @@ def place_molecule(
             cell=cell,
             pbc=np.asarray(slab.pbc, dtype=bool),
         )
+        if slab_constraints:
+            candidate.set_constraint(
+                [constraint.copy() for constraint in slab_constraints]
+            )
+        return candidate
 
     for attempt in range(1, int(options.cs_place_max_attempts) + 1):
         conformer_index = int(rng.integers(0, len(conformers)))

@@ -26,7 +26,7 @@ from __future__ import annotations
 import random
 import warnings
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -317,7 +317,7 @@ def resolve_config(
     defaults_layer.update(BUILTIN_DEFAULTS.get("general", {}))
     defaults_layer.update(BUILTIN_DEFAULTS.get(calc_type, {}))
     defaults_layer.update(BUILTIN_DEFAULTS.get("calculator", {}))
-    if calc_type in {"md", "neb"}:
+    if calc_type in {"md", "neb", "confsearch"}:
         # Implemented force guards are resolved like user [safety] overrides,
         # so execution cannot silently fall back to a different threshold.
         defaults_layer.update(BUILTIN_DEFAULTS.get("safety", {}))
@@ -490,7 +490,7 @@ def resolve_config(
     settings_bag: dict[str, Any] = {}
     unknown_options: dict[str, Any] = {}
     scope_errors: list[str] = []
-    calc_scopes = {"sp", "opt", "md", "neb", "batch"}
+    calc_scopes = {"sp", "opt", "md", "neb", "batch", "confsearch"}
 
     for key, rv in sources.items():
         if key in _MODEL_KEYS:
@@ -602,6 +602,47 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
                     f"{unsupported}=true is not a supported NEB output; use the "
                     "complete-band checkpoints and VASP path export"
                 )
+
+    if resolved.calc_type == "confsearch":
+        # Spec 12.3: MD-only keys must be rejected, never ignored.
+        forbidden = (
+            "ensemble",
+            "thermostat",
+            "pre_relax",
+            "pre_relax_steps",
+            "pre_relax_fmax",
+            "pre_relax_mode",
+            "velocity_policy",
+            "com_policy",
+            "bussi_tau",
+            "nhc_tdamp",
+            "nhc_tchain",
+            "nhc_tloop",
+            "steps",
+            "equilibration_steps",
+            "save_interval",
+        )
+        present = sorted(
+            key
+            for key in forbidden
+            if key in resolved.run_options or key in resolved.settings
+        )
+        if present:
+            raise ValueError(
+                "These MD-only options make no sense for confsearch and are "
+                f"rejected rather than ignored: {', '.join(present)}"
+            )
+        from mliport.confsearch.options import (  # noqa: PLC0415
+            ConfsearchOptions,
+        )
+
+        known = {item.name for item in fields(ConfsearchOptions)}
+        values = {
+            key: value
+            for key, value in dict(resolved.run_options).items()
+            if key in known
+        }
+        ConfsearchOptions(**values)
 
     if resolved.calc_type == "md":
         options = resolved.run_options
