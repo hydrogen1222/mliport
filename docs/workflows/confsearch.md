@@ -193,8 +193,10 @@ results = run_confsearch(
 print(results["ranking"]["best_energy_eV"])
 ```
 
-`extend` and `merge` are planned but not implemented yet; the capability matrix
-records that honestly. `mliport confsearch place` runs the placement alone (no
+The interactive terminal app offers the same two start modes on its
+configuration screen, and `extend`/`merge` are available as commands (the TUI
+does not expose them); the capability matrix records exactly which interface
+can express what. `mliport confsearch place` runs the placement alone (no
 model) so you can inspect the starts before spending GPU time:
 
 ```bash

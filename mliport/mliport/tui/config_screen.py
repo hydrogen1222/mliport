@@ -657,6 +657,97 @@ class ConfigScreen(Screen):
                 id="neb-validation-note",
             )
 
+        elif calc_type == "confsearch":
+            yield Static(
+                "Mode A uses the Structure File above as the start structure(s) "
+                "plus 0-based adsorbate indices (ASE convention; CP2K/VMD count "
+                "from 1). Mode B places a molecule above a slab instead.",
+                id="confsearch-mode-note",
+            )
+
+            yield Label("Adsorbate Indices (mode A, e.g. 300-341 or 0,5,7-9):")
+            yield Input(
+                value=str(self.app.get_config("cs_adsorbate_indices", "") or ""),
+                placeholder="0-based, like ASE",
+                id="cs-adsorbate-indices-input",
+            )
+
+            yield Label("Slab File (mode B):")
+            yield Input(
+                value=str(self.app.get_config("cs_slab", "") or ""),
+                placeholder="e.g., slab.vasp (periodic, vacuum on +z)",
+                id="cs-slab-input",
+            )
+
+            yield Label("Molecule File (mode B, multi-frame conformers allowed):")
+            yield Input(
+                value=str(self.app.get_config("cs_molecule", "") or ""),
+                placeholder="e.g., conformers.xyz",
+                id="cs-molecule-input",
+            )
+
+            yield Label("Number of Placed Starts (mode B):")
+            yield Input(
+                value=str(self.app.get_config("cs_n_starts", 8)),
+                id="cs-n-starts-input",
+            )
+
+            yield Label("Cycles per Replica (0 = start-quench baseline only):")
+            yield Input(
+                value=str(self.app.get_config("cs_cycles", 5)),
+                id="cs-cycles-input",
+            )
+
+            yield Label("MD-mobile atoms during the hot MD:")
+            yield Select(
+                [
+                    ("Adsorbate only (default)", "adsorbate"),
+                    ("Adsorbate + top layer", "adsorbate_and_top"),
+                    ("All free atoms", "all_free"),
+                ],
+                value=str(self.app.get_config("cs_md_mobile", "adsorbate")),
+                allow_blank=False,
+                id="cs-md-mobile-select",
+            )
+
+            yield Label("High Temperature (K):")
+            yield Input(
+                value=str(self.app.get_config("cs_temperature_high", 500.0)),
+                id="cs-temperature-high-input",
+            )
+
+            yield Label("Low Temperature (K):")
+            yield Input(
+                value=str(self.app.get_config("cs_temperature_low", 300.0)),
+                id="cs-temperature-low-input",
+            )
+
+            yield Label("Hold / Cool Duration (ps):")
+            yield Horizontal(
+                Input(
+                    value=str(self.app.get_config("cs_hold_ps", 2.0)),
+                    id="cs-hold-ps-input",
+                ),
+                Input(
+                    value=str(self.app.get_config("cs_cool_ps", 2.0)),
+                    id="cs-cool-ps-input",
+                ),
+            )
+
+            yield Label("Exported Top-K Candidates:")
+            yield Input(
+                value=str(self.app.get_config("cs_top_k", 10)),
+                id="cs-top-k-input",
+            )
+
+            yield Static(
+                "The search reports the lowest minimum it found with saturation "
+                "evidence, never a global minimum. The exported candidates are a "
+                "screening list for DFT re-ranking: a one-sided slab needs a "
+                "dipole correction in the DFT single point.",
+                id="confsearch-caveat-note",
+            )
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         button_id = event.button.id
@@ -1067,7 +1158,13 @@ class ConfigScreen(Screen):
             if resume_mode:
                 neb_resume_path = Path(resume_text).resolve()
 
-        if not structure and not resume_mode:
+        confsearch_mode_b = False
+        if calc_type == "confsearch":
+            slab_text = self.query_one("#cs-slab-input", Input).value.strip()
+            molecule_text = self.query_one("#cs-molecule-input", Input).value.strip()
+            confsearch_mode_b = bool(slab_text or molecule_text)
+
+        if not structure and not resume_mode and not confsearch_mode_b:
             self.notify("Please specify a structure file", severity="error")
             return
 
@@ -1652,6 +1749,127 @@ class ConfigScreen(Screen):
                 self.app.update_config("neb_final", str(final_path))
                 self.app.update_config("neb_atom_map", atom_map)
                 self.app.update_config("neb_image_shifts", image_shifts)
+        if calc_type == "confsearch":
+            slab_text = self.query_one("#cs-slab-input", Input).value.strip()
+            molecule_text = self.query_one("#cs-molecule-input", Input).value.strip()
+            indices_text = self.query_one(
+                "#cs-adsorbate-indices-input", Input
+            ).value.strip()
+            if slab_text or molecule_text:
+                if not (slab_text and molecule_text):
+                    self.notify(
+                        "Mode B needs both a slab file and a molecule file",
+                        severity="error",
+                    )
+                    return
+                if indices_text:
+                    self.notify(
+                        "Mode B cannot also set adsorbate indices",
+                        severity="error",
+                    )
+                    return
+                slab_path = Path(slab_text).resolve()
+                molecule_path = Path(molecule_text).resolve()
+                for label, path in (("slab", slab_path), ("molecule", molecule_path)):
+                    if not path.exists():
+                        self.notify(f"{label} file not found: {path}", severity="error")
+                        return
+                try:
+                    n_starts = int(self.query_one("#cs-n-starts-input", Input).value)
+                except ValueError:
+                    self.notify("Number of starts must be an integer", severity="error")
+                    return
+                if n_starts < 1:
+                    self.notify("Number of starts must be >= 1", severity="error")
+                    return
+                self.app.update_config("cs_slab", str(slab_path))
+                self.app.update_config("cs_molecule", str(molecule_path))
+                self.app.update_config("cs_n_starts", n_starts)
+                self.app.update_config("cs_adsorbate_indices", "")
+                # The shared command builder needs a structure for every calc
+                # type; mode B names the slab as its structural input.
+                self.app.update_config("structure_file", str(slab_path))
+            else:
+                if not structure:
+                    self.notify(
+                        "Mode A needs a start structure and adsorbate indices",
+                        severity="error",
+                    )
+                    return
+                if not indices_text:
+                    self.notify(
+                        "Mode A needs 0-based adsorbate indices (e.g. 300-341)",
+                        severity="error",
+                    )
+                    return
+                self.app.update_config("cs_adsorbate_indices", indices_text)
+                self.app.update_config("cs_slab", None)
+                self.app.update_config("cs_molecule", None)
+                self.app.update_config("cs_n_starts", None)
+
+            numeric_fields = {
+                "cs-cycles-input": ("cs_cycles", int, 0),
+                "cs-n-starts-input": ("cs_n_starts", int, 1),
+                "cs-top-k-input": ("cs_top_k", int, 1),
+            }
+            for widget_id, (key, caster, minimum) in numeric_fields.items():
+                try:
+                    widget = self.query_one(f"#{widget_id}", Input)
+                except Exception:
+                    continue
+                text = widget.value.strip()
+                if not text:
+                    continue
+                try:
+                    parsed = caster(text)
+                except ValueError:
+                    self.notify(f"{key} must be an integer", severity="error")
+                    return
+                if parsed < minimum:
+                    self.notify(f"{key} must be >= {minimum}", severity="error")
+                    return
+                self.app.update_config(key, parsed)
+            float_fields = {
+                "cs-temperature-high-input": ("cs_temperature_high", 0.0, False),
+                "cs-temperature-low-input": ("cs_temperature_low", 0.0, False),
+                "cs-hold-ps-input": ("cs_hold_ps", 0.0, True),
+                "cs-cool-ps-input": ("cs_cool_ps", 0.0, True),
+            }
+            for widget_id, (key, minimum, strict) in float_fields.items():
+                try:
+                    widget = self.query_one(f"#{widget_id}", Input)
+                except Exception:
+                    continue
+                text = widget.value.strip()
+                if not text:
+                    continue
+                try:
+                    parsed = float(text)
+                except ValueError:
+                    self.notify(f"{key} must be a number", severity="error")
+                    return
+                if not math.isfinite(parsed) or (
+                    parsed <= minimum if strict else parsed < minimum
+                ):
+                    self.notify(
+                        f"{key} must be finite and "
+                        + (f"> {minimum}" if strict else f">= {minimum}"),
+                        severity="error",
+                    )
+                    return
+                self.app.update_config(key, parsed)
+            if self.app.get_config("cs_temperature_low", 0.0) > self.app.get_config(
+                "cs_temperature_high", 0.0
+            ):
+                self.notify(
+                    "Low temperature must be <= high temperature", severity="error"
+                )
+                return
+            self.app.update_config(
+                "cs_md_mobile",
+                str(self.query_one("#cs-md-mobile-select", Select).value),
+            )
+
         # TUI calculations are launched as persistent background processes.
         self.app.update_config("detach", True)
         self.app.update_config("run_started_at", run_started_at)

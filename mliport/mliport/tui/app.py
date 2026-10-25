@@ -223,6 +223,21 @@ class MliportApp(App):
             "pre_relax_steps": 50,
             "pre_relax_fmax": 0.1,
             "seed": None,
+            # confsearch options (spec section 12.3).  Mode A uses
+            # structure_file + cs_adsorbate_indices; mode B uses cs_slab +
+            # cs_molecule + cs_n_starts.
+            "cs_adsorbate_indices": "",
+            "cs_slab": None,
+            "cs_molecule": None,
+            "cs_n_starts": 8,
+            "cs_cycles": 5,
+            "cs_md_mobile": "adsorbate",
+            "cs_temperature_high": 500.0,
+            "cs_temperature_low": 300.0,
+            "cs_hold_ps": 2.0,
+            "cs_cool_ps": 2.0,
+            "cs_top_k": 10,
+            "cs_refine": True,
             # ``velocity_policy`` has NO TUI default either: the MDRunner
             # default is "auto" and the TUI must not turn an implicit
             # default into an explicit override (interface equivalence).

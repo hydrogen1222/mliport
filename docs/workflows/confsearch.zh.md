@@ -157,7 +157,8 @@ results = run_confsearch(
 print(results["ranking"]["best_energy_eV"])
 ```
 
-`extend` 与 `merge` 已列入计划但尚未实现，能力矩阵会如实记录。`mliport confsearch place`
+交互式终端应用在配置界面里提供同样的两种起点模式；`extend`/`merge` 以命令形式提供
+（TUI 不暴露它们）。哪个界面能表达哪些功能，由能力矩阵如实记录。`mliport confsearch place`
 只做摆放（不加载模型），方便你在花 GPU 时间之前先检查起点：
 
 ```bash

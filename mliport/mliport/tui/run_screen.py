@@ -213,6 +213,21 @@ class RunScreen(Screen):
                     value = self.app.get_config(key)
                     if value is not None:
                         options[key] = value
+        elif calc_type == "confsearch":
+            for key in (
+                "cs_cycles",
+                "cs_md_mobile",
+                "cs_temperature_high",
+                "cs_temperature_low",
+                "cs_hold_ps",
+                "cs_cool_ps",
+                "cs_top_k",
+                "cs_refine",
+                "seed",
+            ):
+                value = self.app.get_config(key)
+                if value is not None:
+                    options[key] = value
         elif calc_type == "neb":
             for key in (
                 "n_intermediate_images",
@@ -240,9 +255,35 @@ class RunScreen(Screen):
                 if value is not None:
                     options[key] = value
 
+        # confsearch has two mutually exclusive start modes: mode B is selected
+        # by naming a slab/molecule, otherwise the positional start structure
+        # plus the 0-based adsorbate indices describe mode A.
+        confsearch_mode_b = bool(
+            self.app.get_config("cs_slab") or self.app.get_config("cs_molecule")
+        )
         return build_mliport_command(
             calc_type=calc_type,
             structure=None if resume_path else structure_file,
+            slab=(
+                self.app.get_config("cs_slab")
+                if calc_type == "confsearch" and confsearch_mode_b
+                else None
+            ),
+            molecule=(
+                self.app.get_config("cs_molecule")
+                if calc_type == "confsearch" and confsearch_mode_b
+                else None
+            ),
+            n_starts=(
+                self.app.get_config("cs_n_starts")
+                if calc_type == "confsearch" and confsearch_mode_b
+                else None
+            ),
+            adsorbate_indices=(
+                (self.app.get_config("cs_adsorbate_indices") or None)
+                if calc_type == "confsearch" and not confsearch_mode_b
+                else None
+            ),
             model=None if resume_path else model_file,
             model_type=model_type,
             task=None if resume_path else self.app.get_config("task", "omat"),
