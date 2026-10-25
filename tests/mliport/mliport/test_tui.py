@@ -1522,9 +1522,14 @@ async def test_confsearch_config_screen_has_both_modes() -> None:
             "#cs-top-k-input",
         ):
             assert screen.query_one(widget_id) is not None, widget_id
-        assert "never a global minimum" in str(
-            screen.query_one("#confsearch-caveat-note").render()
-        )
+        caveat = str(screen.query_one("#confsearch-caveat-note").render())
+        assert "never a global minimum" in caveat
+        assert "dipole correction" in caveat
+        # Spec revision 5 review of #67: the mode note must keep stating the
+        # 0-based ASE convention and that mode B is placement, not user starts.
+        mode_note = str(screen.query_one("#confsearch-mode-note").render())
+        assert "0-based" in mode_note
+        assert "places a molecule above a slab" in mode_note
 
 
 @pytest.mark.asyncio()
