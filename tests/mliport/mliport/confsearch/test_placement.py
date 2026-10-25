@@ -280,3 +280,68 @@ def test_self_image_distance_helper_matches_the_placement_record():
     assert result.min_vacuum_gap_A == pytest.approx(
         vacuum_gap(result.atoms, indices, np.arange(len(slab)))
     )
+
+
+def _li_terminated_slab():
+    """A slab whose topmost atom is an ionic Li (spec 5.2 revision 5 case)."""
+    slab = slab_atoms(spacing=3.0)  # 4 S at z = 1.0, cell 6 x 6 x 20
+    slab += Atoms("Li", positions=[[0.5, 0.5, 2.0]], cell=slab.cell, pbc=True)
+    return slab
+
+
+def test_anchored_placement_bonds_to_the_non_ionic_partner_not_to_lithium():
+    """The anchor height is solved against the partner set, not every slab atom.
+
+    With the pre-revision-5 behaviour the O would be placed at 1.1x the O+Li
+    radii sum from the Li (an ionic contact, classified physisorbed); the partner
+    set must exclude the ionic Li and bond to the sulfur instead.
+    """
+    slab = _li_terminated_slab()
+    molecule = oh_molecule()
+    options = _options(cs_place_anchor="0")
+    result = place_molecule(slab, [molecule], options, rng=np.random.default_rng(5))
+
+    symbols = result.atoms.get_chemical_symbols()
+    assert result.anchor_symbol == "O"
+    assert result.anchor_slab_index is not None
+    assert symbols[result.anchor_slab_index] == "S"
+    assert result.anchor_q == pytest.approx(options.cs_place_anchor_scale, abs=1e-3)
+
+    # Recompute against the non-ionic slab atoms: the same value.
+    non_ionic = np.array(
+        [index for index, symbol in enumerate(symbols[: len(slab)]) if symbol != "Li"]
+    )
+    radii = covalent_radii[np.asarray(result.atoms.numbers, dtype=int)]
+    anchor_global = len(slab) + int(result.anchor_index or 0)
+    q = mic_distance_matrix(result.atoms, np.array([anchor_global]), non_ionic)[0] / (
+        radii[anchor_global] + radii[non_ionic]
+    )
+    assert float(np.min(q)) == pytest.approx(options.cs_place_anchor_scale, abs=1e-3)
+
+
+def test_anchor_targets_can_explicitly_bond_to_an_ionic_partner():
+    """Naming the ionic element in cs_place_anchor_targets is the opt-in."""
+    slab = _li_terminated_slab()
+    molecule = oh_molecule()
+    options = _options(cs_place_anchor="0", cs_place_anchor_targets="Li")
+    result = place_molecule(slab, [molecule], options, rng=np.random.default_rng(5))
+    assert result.anchor_slab_index is not None
+    assert result.atoms.get_chemical_symbols()[result.anchor_slab_index] == "Li"
+    assert result.anchor_q == pytest.approx(options.cs_place_anchor_scale, abs=1e-3)
+
+
+def test_anchored_placement_requires_a_partner_set():
+    """A slab made only of ionic species cannot form the covalent bond."""
+    slab = Atoms(
+        "Li4",
+        positions=[[0.5, 0.5, 1.0], [3.5, 0.5, 1.0], [0.5, 3.5, 1.0], [3.5, 3.5, 1.0]],
+        cell=[6.0, 6.0, 20.0],
+        pbc=True,
+    )
+    with pytest.raises(ConfsearchPreparationError, match="no non-ionic atoms"):
+        place_molecule(
+            slab,
+            [oh_molecule()],
+            _options(cs_place_anchor="0"),
+            rng=np.random.default_rng(5),
+        )

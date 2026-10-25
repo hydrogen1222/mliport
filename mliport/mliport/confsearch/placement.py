@@ -8,6 +8,19 @@ covalent-radii ratio reaches a target.
 Distances are compared as ``q_ij = d_ij / (r_cov,i + r_cov,j)`` with minimum-image
 distances, because a single Angstrom offset does not fit every pair (C-H ~ 1.1 A,
 S-S ~ 2.05 A).
+
+Anchored placement solves the height against the anchor's **partner set**, not
+against every slab atom (spec revision 5, section 5.2): the partner set is the
+non-ionic slab atoms, because ionic species cannot form the covalent bond
+section 8.1 counts as chemisorption (an O placed at 1.1x the O+Li radii sum is an
+ionic contact, not a chemisorbed start).  Naming ``cs_place_anchor_targets``
+replaces the partner set with exactly those slab elements, which is the explicit
+way to anchor onto an ionic species.
+
+Numerical note: the objective ``min q`` is monotone in the z offset except in the
+descent branch (``f(0) >= target``), where the molecule is pushed down until the
+target is reached; atoms can then sit slightly below the slab top.  Bisection
+still finds a crossing of the target, which is what the start needs.
 """
 
 from __future__ import annotations
@@ -152,12 +165,40 @@ def _min_distance(atoms: Atoms, molecule: np.ndarray, slab: np.ndarray) -> float
     return float(np.min(distances)) if distances.size else float("inf")
 
 
-def _anchor_q(atoms: Atoms, anchor: int, slab: np.ndarray) -> tuple[float, int]:
-    distances = mic_distance_matrix(atoms, np.array([anchor]), slab)[0]
+def _anchor_q(atoms: Atoms, anchor: int, partners: np.ndarray) -> tuple[float, int]:
+    """Smallest ``q`` between the anchor and its partner set, and that partner."""
+    distances = mic_distance_matrix(atoms, np.array([anchor]), partners)[0]
     radii = _radii(atoms)
-    q = distances / (radii[anchor] + radii[slab])
+    q = distances / (radii[anchor] + radii[partners])
     index = int(np.argmin(q))
-    return float(q[index]), int(slab[index])
+    return float(q[index]), int(partners[index])
+
+
+def anchor_partner_indices(slab: Atoms, options: ConfsearchOptions) -> np.ndarray:
+    """Slab atoms the anchored height is solved against (spec 5.2 revision 5).
+
+    Non-ionic slab atoms by default; exactly the ``cs_place_anchor_targets``
+    elements when that option is set.
+    """
+    symbols = np.asarray(slab.get_chemical_symbols(), dtype=object)
+    targets = options.anchor_target_symbols
+    if targets is not None:
+        mask = np.isin(symbols, list(targets))
+    else:
+        mask = ~np.isin(symbols, list(options.ionic_symbols))
+    partners = np.arange(len(slab))[mask]
+    if partners.size == 0:
+        if targets is not None:
+            raise ConfsearchPreparationError(
+                f"cs_place_anchor_targets {sorted(targets)} select no slab atoms; "
+                "anchored placement has no partner to bond to"
+            )
+        raise ConfsearchPreparationError(
+            "The slab has no non-ionic atoms, so anchored placement has no partner "
+            "to form the section 8.1 covalent bond with; name the ionic element in "
+            "cs_place_anchor_targets to anchor onto it explicitly"
+        )
+    return partners
 
 
 def place_molecule(
@@ -220,6 +261,8 @@ def place_molecule(
     rejections = {reason: 0 for reason in REJECTION_REASONS}
     slab_indices = np.arange(n_slab)
     molecule_indices = np.arange(n_slab, n_slab + n_molecule)
+    # Spec 5.2 revision 5: the anchor height is solved against the partner set.
+    partner_indices = anchor_partner_indices(slab, options)
 
     def make_candidate(molecule_positions: np.ndarray, numbers: np.ndarray) -> Atoms:
         return Atoms(
@@ -278,7 +321,7 @@ def place_molecule(
         def objective(z_offset: float) -> float:
             candidate = make_candidate(positions_at(z_offset), numbers)
             if anchor_global is not None:
-                value, _ = _anchor_q(candidate, anchor_global, slab_indices)
+                value, _ = _anchor_q(candidate, anchor_global, partner_indices)
                 return value
             return _min_q(candidate, molecule_indices, slab_indices)
 
@@ -297,7 +340,9 @@ def place_molecule(
         candidate = make_candidate(positions_at(z_offset), numbers)
 
         if anchor_global is not None:
-            anchor_value, slab_index = _anchor_q(candidate, anchor_global, slab_indices)
+            anchor_value, slab_index = _anchor_q(
+                candidate, anchor_global, partner_indices
+            )
             others = np.setdiff1d(np.arange(n_molecule), np.array([anchor_local]))
             if others.size:
                 other_min = _min_q(candidate, n_slab + others, slab_indices)

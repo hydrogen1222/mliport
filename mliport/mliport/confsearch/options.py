@@ -83,6 +83,15 @@ CS_DEFAULTS: dict[str, object] = {
     #   (d) 4 equivalent pairs (rigid slab symmetry + CH3 permutation):
     #       D ~ 0 and all merge.
     # Zero false merges with a factor-2 margin: 0.0004 <= 0.5 * 8.5e-4.
+    #
+    # Known limitation (PR #63 review, spec rev 5): the calibration geometry is
+    # CH3OH inside the LGPS bulk cell, class (a) comes from random perturbations
+    # rather than quenches, and class (d) uses exact rigid images (D ~ 0).  The
+    # shipped tolerance is therefore proven to give zero false merges but is
+    # untested for *noisy* equivalent minima: in practice D merges little beyond
+    # exact images and the geometric rule G does most of the work.  That is the
+    # safe direction (duplicates instead of deleted candidates), and a real-slab
+    # / real-model recalibration is a P5 item in the validation campaign.
     # Changing this default later bumps CS_SCIENTIFIC_REVISION.
     "cs_dedup_fp_tol": 0.0004,
     "cs_fp_rcut": 8.0,

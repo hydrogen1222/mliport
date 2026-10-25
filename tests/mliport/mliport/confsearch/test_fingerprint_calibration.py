@@ -22,6 +22,20 @@ it with real quenches at ``cs_quench_fmax``):
 
 The measured table is asserted against the shipped defaults, so the defaults
 cannot drift without re-running this calibration.
+
+Known limitations of this P1 calibration (PR #63 review, spec rev 5), which the
+shipped defaults inherit:
+
+* the geometry is CH3OH inside the LGPS **bulk** cell, not a cleaved slab;
+* class (a) is built from random perturbations, not from quenches, in this
+  module (the real-quench variant below uses the egg-crate model);
+* class (d) uses exact rigid images and permutation-equivalent conformers, whose
+  D is ~0, so the tolerance is untested for *noisy* equivalent minima.
+
+Consequence: `D` merges little beyond exact images and the geometric rule `G`
+carries same-basin merging; the energy tolerance remains the primary
+discriminator.  This is the conservative (false-split) direction, and a
+real-slab/real-model recalibration is listed as a P5 validation-campaign item.
 """
 
 from __future__ import annotations

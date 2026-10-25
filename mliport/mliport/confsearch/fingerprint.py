@@ -1,60 +1,59 @@
-"""Focused Oganov-Valle fingerprint (spec section 9.2).
+"""Focused Oganov-Valle fingerprint (spec section 9.2 revision 5).
 
-ASE's ``OFPComparator`` is deliberately not used:
+ASE's ``OFPComparator`` is deliberately not called: with ``n_top`` it
+fingerprints the adsorbate in isolation (slab atoms are excluded, so adsorption
+sites are invisible) and it imports matplotlib at module level.  This module
+implements the descriptor in NumPy instead.
 
-* with ``n_top`` it fingerprints the adsorbate in isolation (slab atoms are
-  excluded, so adsorption sites are invisible);
-* it imports matplotlib at module level.
+Species structure: centres are the adsorbate atoms ``A``, neighbours are all
+atoms, and every **ordered** species pair ``(alpha, beta)`` with
+``alpha in species(A)`` and ``beta in species(all)`` gets its own fingerprint
 
-This module implements the descriptor in NumPy instead.  The *species
-structure* is exactly the one the specification defines: centres are the
-adsorbate atoms ``A``, neighbours are all atoms, and every **ordered** species
-pair ``(alpha, beta)`` with ``alpha in species(A)`` and ``beta in
-species(all)`` gets its own fingerprint
-
-    F_ab(r_b) = sum_{i in A, a} sum_{j in b} g(r_b - d_ij)
+    F_ab(r_b) = sum_{i in A, a} sum_{j in b} g_bin(d_ij)
                 / (4 pi r_b^2 (N_b / V) Delta n_a) - 1
 
-with ``g`` a Gaussian truncated at ``4 sigma`` and the weights
-``w_ab = n_a N_b / sum(n_a' N_b')``.
+with the weights ``w_ab = n_a N_b / sum(n_a' N_b')`` and
+``D(1,2) = 0.5 (1 - sum w F1.F2 / (|F1| |F2|))``, ``|F| = sqrt(sum w F.F)``.
+With ``A`` = all atoms the ordered matrix is symmetric (``F_ab == F_ba``), which
+is what makes the strict known-answer comparison below possible.
 
-Discretisation (decision recorded for the PR #61 review of section 9.2): the
-specification's literal bin centres ``r_k = (k + 1/2) Delta`` are *not*
-compatible with its own known-answer requirement that the implementation agree
-with ``OFPComparator`` to 1e-6 in ``D``.  ASE places the bin centres at
-``r_k = (k + 1) Delta`` and integrates the Gaussian over each bin analytically
-(erf differences) instead of point-sampling it; measured on a periodic
-single-species system with sigma=0.05, Delta=0.02, rcut=8.0 the two
-discretisations differ by ~1.5e-3 in ``D``, i.e. 1500x the required tolerance.
-The owner chose the ASE discretisation, so this module reproduces it exactly:
-``nbins = ceil(rcut / Delta)``, ``r_k = (k + 1) Delta``,
-``m = ceil(4 sigma / Delta)`` and the bin weights
-``0.5 [erf(c(2i+1)) - erf(c(2i-1))] / erf(c(2m+1))`` with
-``c = sqrt(2) Delta / (4 sigma)``.
+Discretisation: **ASE's, exactly** (spec section 9.2 revision 3).  The
+pre-revision-3 text described a point-sampled Gaussian on bins
+``r_k = (k + 1/2) Delta`` with an extra ``1/Delta`` and could not satisfy the
+known-answer requirement; that formulation is withdrawn.  This module uses
+``nbins = ceil(rcut / Delta)``, bin radius ``r_k = (k + 1) Delta``, a pair in
+bin ``k = floor(d / Delta)`` spread over ``k + i`` for ``i = -m..m`` with
+``m = ceil(4 sigma / Delta)`` and the analytic bin-integrated weights
+``0.5 [erf(c(2i+1)) - erf(c(2i-1))] / erf(c(2m+1))``, ``c = sqrt(2) Delta / (4 sigma)``,
+renormalised to sum to 1, with out-of-range bins dropped exactly as ASE does.
 
-For a single-species system with ``A`` = all atoms the ordered matrix collapses
-to ASE's key set and weights, and the known-answer test then asserts agreement
-to 1e-6 in ``D`` (it is skipped when ASE's deprecated ``OFPComparator`` is not
-importable).
+Known answer (strict, always runs in CI): for every unordered key the per-bin
+arrays equal ``OFPComparator(rcut, binwidth, sigma, nsigma=4)._take_fingerprints``
+to **1e-10 absolute**, ``F_ab == F_ba`` to 1e-10, and collapsing to unordered
+keys with ASE's weights reproduces ASE's ``_cosine_distance`` to 1e-10 on
+several structure pairs.  ASE 3.29 turned ``ase.ga.ofp_comparator`` into a
+deprecation shim, so the test falls back to a verbatim copy of the ASE 3.26
+algorithm (MIT) and therefore never skips; ``scipy`` and ``matplotlib`` are in
+the ``dev`` extra so the real class is used when it is importable.
 
 Self-image pairs (``i == j`` with a non-zero lattice offset) are enumerated
-explicitly instead of being taken from ``neighbor_list``.  ASE's primitive
-neighbour list returns an *orientation-dependent subset* of them (measured on a
-4x4x20 A slab with rcut=8: 48 self pairs before and 72 after a rigid rotation of
-the whole cell, while the 350 cross pairs are identical), which would make the
-descriptor depend on how the cell happens to be oriented in space.  The distance
-of a self-image pair is ``|n . cell|``, so the explicit enumeration is complete
-and rotation-covariant.  ASE's ``NeighborList`` (which ``OFPComparator`` uses)
-does return the complete self-image shell, so the known-answer comparison is
-unaffected.
+explicitly instead of being taken from ``neighbor_list``.  ``neighbor_list``'s
+self-image shell depends on where an image falls relative to the cutoff: on a
+4x4x20 A slab with rcut=8 (images at exactly 8.0 A) it returned 48 self pairs
+before and 72 after a rigid rotation of the whole cell, while the 350 cross pairs
+were identical.  That is a cutoff-boundary effect, not a claim about ASE's
+correctness, and it is not acceptable here because it would make the descriptor
+depend on the cell's orientation in space.  A self-image distance is
+``|n . cell|``, so the explicit enumeration is complete and rotation-covariant;
+ASE's ``NeighborList`` (which ``OFPComparator`` uses) does return the complete
+shell, so the known-answer comparison is unaffected.
 
-The 1e-9 A rounding described in :func:`_bin_weights` is what makes the
-descriptor invariant to a rigid rotation of the whole cell: without it, a
-distance at a decimal multiple of ``Delta`` (0.96 A is 47.99999999999999 bins)
-flips bin when the same structure is rotated by a floating-point matrix.  It is
-the only place where this module deviates from a verbatim port of ASE's
-discretisation, and it cannot change a per-bin value unless a distance lies
-within 5e-10 A of a bin boundary without lying exactly on it.
+The 1e-9 A rounding in :func:`_bin_weights` keeps the bin index stable when the
+same structure is rigidly rotated: without it, a distance at a decimal multiple
+of ``Delta`` (a 0.96 A O-H bond is 47.99999999999999 bins) flips its whole
+21-bin smearing window.  It is the only deviation from a verbatim port of ASE's
+discretisation and cannot change a per-bin value unless a distance lies within
+5e-10 A of a bin boundary without lying exactly on it.
 """
 
 from __future__ import annotations
