@@ -101,3 +101,39 @@ def test_campaign_cli_contract():
     with pytest.raises(SystemExit) as bad_engine:
         suite.main(["--engine", "nope", "--model", "m.pt", "--output", "out"])
     assert bad_engine.value.code == 2
+
+
+def test_dedup_recalibration_reports_the_measured_distributions(tmp_path):
+    """The campaign must re-measure the section 13.2 inputs on its own minima."""
+    from tests.mliport.mliport.confsearch.test_engine import SITE_ENERGIES, _run
+
+    run_dir, _results = _run(tmp_path, list(SITE_ENERGIES), name="recal")
+    recalibration = suite._dedup_recalibration(run_dir)
+
+    assert recalibration is not None
+    assert recalibration["n_minima"] >= 2
+    assert recalibration["n_pairs"] >= 1
+    same = recalibration["same_basin_G"]
+    distinct = recalibration["distinct"]
+    assert same["n_pairs"] + distinct["n_pairs"] == recalibration["n_pairs"]
+    for stats in (same["D"], distinct["D"]):
+        if stats:
+            assert stats["min"] <= stats["median"] <= stats["max"]
+    if distinct["D"]:
+        assert recalibration[
+            "implied_cs_dedup_fp_tol_zero_false_merge"
+        ] == pytest.approx(0.5 * distinct["D"]["min"])
+    assert recalibration["cs_dedup_fp_tol"] > 0
+
+
+def test_dedup_recalibration_handles_a_single_minimum(tmp_path):
+    from dataclasses import replace
+
+    from tests.mliport.mliport.confsearch.test_engine import _options, _run
+
+    # cycles=0 is the baseline: one start quench, one minimum, no pairs.
+    options = replace(_options(), cs_cycles=0)
+    run_dir, _results = _run(tmp_path, [(0.5, 0.5)], options=options, name="single")
+    recalibration = suite._dedup_recalibration(run_dir)
+    assert recalibration is not None
+    assert recalibration["n_pairs"] == 0

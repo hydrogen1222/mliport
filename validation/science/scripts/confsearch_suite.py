@@ -16,7 +16,15 @@ backend, and reports best energies, unique counts and the discovery curve.
 The only claim is workflow behaviour: the search must never report a worse
 "lowest found" than its own baseline, the candidate counts must be consistent
 with the registry, and the discovery curve must be monotone in the number of
-unique minima. Absolute energies from a foundation model on a sulfide surface
+unique minima.
+
+It also re-measures the section 13.2 deduplication inputs on the campaign's own
+minima (`dedup_recalibration` in the report): the shipped
+``cs_dedup_fp_tol``/``cs_dedup_geom_tol`` were calibrated on bulk-cell
+perturbations, and the PR #63 review asked for this real-slab/real-model
+recalibration.  The report gives the ``D`` and ``|dE|`` distributions split by
+the geometric rule ``G``, the implied zero-false-merge tolerance and whether the
+shipped tolerance would have merged any distinct pair. Absolute energies from a foundation model on a sulfide surface
 are not DFT-quality and must be re-ranked before any chemistry is read off
 them.
 
@@ -127,6 +135,150 @@ def _monotone_unique_counts(rows: list[dict[str, str]]) -> bool:
     return True
 
 
+def _stats(values: list[float]) -> dict[str, float] | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    median = (
+        ordered[middle]
+        if len(ordered) % 2
+        else 0.5 * (ordered[middle - 1] + ordered[middle])
+    )
+    return {
+        "n": len(ordered),
+        "min": float(ordered[0]),
+        "median": float(median),
+        "max": float(ordered[-1]),
+    }
+
+
+def _dedup_recalibration(run_dir: Path) -> dict[str, Any] | None:
+    """Re-measure the section 13.2 deduplication inputs on a finished run.
+
+    PR #63 review: the shipped tolerances come from a bulk-cell, perturbation
+    based calibration, so the real-slab/real-model campaign must report what it
+    actually observes.  Pairwise ``D`` (focused fingerprint) and ``|dE|`` are
+    split by the geometric rule ``G``; the implied tolerance is the zero
+    false-merge value ``0.5 * min D`` over the pairs ``G`` does not match.
+    """
+    import dataclasses
+
+    from mliport.confsearch import status as cs_status
+    from mliport.confsearch.options import ConfsearchOptions
+    from mliport.confsearch.regions import Regions
+    from mliport.confsearch.registry import MinimumRegistry
+
+    results_path = run_dir / "search_results.json"
+    context_path = run_dir / "run_context.json"
+    if not results_path.is_file() or not context_path.is_file():
+        return None
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    regions_payload = context.get("regions") or {}
+    if not regions_payload.get("adsorbate"):
+        return None
+    known = {field.name for field in dataclasses.fields(ConfsearchOptions)}
+    options = ConfsearchOptions(
+        **{
+            key: value
+            for key, value in (context.get("options") or {}).items()
+            if key in known
+        }
+    )
+    regions = Regions(
+        adsorbate=np.asarray(regions_payload.get("adsorbate", []), dtype=int),
+        slab=np.asarray(regions_payload.get("slab", []), dtype=int),
+        fixed=np.asarray(regions_payload.get("fixed", []), dtype=int),
+        relax=np.asarray(regions_payload.get("relax", []), dtype=int),
+        warnings=(),
+    )
+    registry = MinimumRegistry.from_dict(
+        results["diagnostics"]["registry"],
+        options=options,
+        adsorbate=regions.adsorbate,
+        fixed=regions.fixed,
+    )
+    records = [
+        unique.representative
+        for status in cs_status.rankable_statuses(options.cs_reaction_policy)
+        for unique in registry.uniques(status)
+    ]
+    if len(records) < 2:
+        return {
+            "n_minima": len(records),
+            "n_pairs": 0,
+            "note": "fewer than two rankable minima; nothing to re-measure",
+        }
+    fingerprints = {
+        index: registry.fingerprint(record.atoms)
+        for index, record in enumerate(records)
+    }
+    pairs: list[dict[str, Any]] = []
+    for first in range(len(records)):
+        for second in range(first + 1, len(records)):
+            left, right = records[first], records[second]
+            pairs.append(
+                {
+                    "same_basin_G": bool(registry.geometric_match(left, right)),
+                    "D": float(fingerprints[first].distance(fingerprints[second])),
+                    "delta_energy_eV": abs(
+                        float(left.energy_eV) - float(right.energy_eV)
+                    ),
+                    "rms_displacement_A": registry.displacement_between(left, right),
+                }
+            )
+    same_basin = [pair for pair in pairs if pair["same_basin_G"]]
+    distinct = [pair for pair in pairs if not pair["same_basin_G"]]
+    shipped = float(options.cs_dedup_fp_tol)
+    energy_tol = float(options.cs_dedup_energy_tol)
+    distinct_D = [pair["D"] for pair in distinct]
+    merged_same_basin = [
+        pair
+        for pair in same_basin
+        if pair["D"] <= shipped and pair["delta_energy_eV"] <= energy_tol
+    ]
+    return {
+        "n_minima": len(records),
+        "n_pairs": len(pairs),
+        "cs_dedup_fp_tol": shipped,
+        "cs_dedup_geom_tol": float(options.cs_dedup_geom_tol),
+        "cs_dedup_energy_tol": energy_tol,
+        "same_basin_G": {
+            "n_pairs": len(same_basin),
+            "D": _stats([pair["D"] for pair in same_basin]),
+            "delta_energy_eV": _stats([pair["delta_energy_eV"] for pair in same_basin]),
+            "rms_displacement_A": _stats(
+                [pair["rms_displacement_A"] for pair in same_basin]
+            ),
+            "merged_by_D_at_shipped_tol": len(merged_same_basin),
+            "merge_fraction": (
+                len(merged_same_basin) / len(same_basin) if same_basin else None
+            ),
+        },
+        "distinct": {
+            "n_pairs": len(distinct),
+            "D": _stats(distinct_D),
+            "delta_energy_eV": _stats([pair["delta_energy_eV"] for pair in distinct]),
+            "rms_displacement_A": _stats(
+                [pair["rms_displacement_A"] for pair in distinct]
+            ),
+        },
+        "implied_cs_dedup_fp_tol_zero_false_merge": (
+            0.5 * min(distinct_D) if distinct_D else None
+        ),
+        "shipped_tol_merges_a_distinct_pair": bool(
+            distinct_D and min(distinct_D) <= shipped
+        ),
+        "interpretation": (
+            "G carries same-basin merging (D merges little beyond exact images); "
+            "the implied tolerance is the zero-false-merge value from this data. "
+            "A false split only costs a DFT job, a false merge deletes a "
+            "candidate, so widen the tolerance only with this evidence."
+        ),
+    }
+
+
 def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     """Run the baseline and the search with the same starts and report both."""
     from ase.io import write
@@ -197,6 +349,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             "discovery_rows": len(rows),
             "discovery_unique_counts_monotone": _monotone_unique_counts(rows),
         },
+        "dedup_recalibration": _dedup_recalibration(output / "search"),
         "claims": (
             "Workflow behaviour only. No accuracy claim against DFT; the MLIP "
             "ranking is a screening result and every exported candidate must be "
@@ -239,10 +392,49 @@ def _markdown(report: dict[str, Any]) -> str:
             f"(unique counts monotone: "
             f"{comparison['discovery_unique_counts_monotone']})",
             "",
+            "",
+            "## Dedup recalibration (spec 13.2)",
+            "",
+            _dedup_markdown(report.get("dedup_recalibration")),
+            "",
             "This report checks workflow behaviour only. It is not an accuracy",
             "claim against DFT: the MLIP ranking is a screening result and every",
             "exported candidate must be re-ranked with DFT.",
             "",
+        ]
+    )
+
+
+def _dedup_markdown(recalibration: dict[str, Any] | None) -> str:
+    if not recalibration or not recalibration.get("n_pairs"):
+        return "Not enough rankable minima to re-measure the tolerances."
+    same = recalibration["same_basin_G"]
+    distinct = recalibration["distinct"]
+
+    def fmt(stats: dict[str, Any] | None) -> str:
+        if not stats:
+            return "n/a"
+        return f"{stats['min']:.3g} / {stats['median']:.3g} / {stats['max']:.3g}"
+
+    return "\n".join(
+        [
+            f"Minima compared: {recalibration['n_minima']} "
+            f"({recalibration['n_pairs']} pairs)",
+            "",
+            "| class | pairs | D min/median/max | |dE| min/median/max (eV) |",
+            "|---|---|---|---|",
+            f"| same basin (G) | {same['n_pairs']} | {fmt(same['D'])} | "
+            f"{fmt(same['delta_energy_eV'])} |",
+            f"| distinct (no G) | {distinct['n_pairs']} | {fmt(distinct['D'])} | "
+            f"{fmt(distinct['delta_energy_eV'])} |",
+            "",
+            f"Shipped `cs_dedup_fp_tol` = {recalibration['cs_dedup_fp_tol']:.3g}; "
+            f"implied zero-false-merge value from this data = "
+            f"{recalibration['implied_cs_dedup_fp_tol_zero_false_merge']}",
+            f"Merged by `D` at the shipped tolerance: "
+            f"{same['merged_by_D_at_shipped_tol']}/{same['n_pairs']} same-basin pairs; "
+            f"shipped tolerance merges a distinct pair: "
+            f"{recalibration['shipped_tol_merges_a_distinct_pair']}",
         ]
     )
 
