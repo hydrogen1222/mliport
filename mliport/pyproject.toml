@@ -55,6 +55,12 @@ dev = [
     "mypy",
     # GitHub Actions workflow hygiene tests parse .github/workflows/*.yml
     "pyyaml",
+    # ase.ga.ofp_comparator (the confsearch fingerprint known-answer test)
+    # imports scipy and matplotlib at module level; the bounds match the
+    # `analysis` extra so the confsearch known-answer test runs on every CI
+    # Python instead of skipping.
+    "scipy>=1.11",
+    "matplotlib>=3.7",
 ]
 
 [project.scripts]
