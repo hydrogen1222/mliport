@@ -108,6 +108,18 @@ false merges**: a false merge silently deletes a candidate that DFT might have
 ranked first, while a false split only costs a duplicate, so the defaults are
 deliberately conservative and prefer duplicates.
 
+**Calibration limits.** The shipped `CS_DEDUP_FP_TOL` comes from the labelled
+sweep in `tests/mliport/mliport/confsearch/test_fingerprint_calibration.py`,
+which uses CH3OH inside the LGPS **bulk** cell, builds the "same basin" class
+from random perturbations rather than quenches, and takes the
+"symmetry-equivalent" class from exact rigid images (whose `D` is ~0). The
+tolerance is therefore proven to give zero false merges, but it is untested for
+*noisy* equivalent minima: in practice `D` merges little beyond exact images and
+the `G` rule plus `CS_DEDUP_ENERGY_TOL` do most of the work. That is the safe
+direction (duplicates instead of deleted candidates). Re-measuring the `D`
+distribution on a real slab and model is part of the P5 validation campaign
+(`validation/science/scripts/confsearch_suite.py`).
+
 ## Outputs
 
 A run writes `resolved_config.json`, `run_context.json`, `run.log`,

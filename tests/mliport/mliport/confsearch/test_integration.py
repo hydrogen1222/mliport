@@ -324,33 +324,18 @@ def test_workflow_runs_the_full_pipeline_with_a_synthetic_model(tmp_path):
     assert (output / "run.log").read_text().strip()
 
 
-def test_extend_adds_cycles_archives_history_and_passes_the_fingerprint(tmp_path):
+def test_workflow_extension_validates_then_archives_and_reruns_the_budget(tmp_path):
+    """Spec 11.3 revision 5: the fingerprint is checked before anything moves."""
     from dataclasses import replace
 
-    from mliport.confsearch.options import ConfsearchOptions
-    from mliport.confsearch.workflow import (
-        archive_for_extension,
-        record_extension,
-        run_confsearch_workflow,
-    )
+    from mliport.confsearch.workflow import run_confsearch_workflow
 
     resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
     output = tmp_path / "extend-run"
     first = run_confsearch_workflow(wrapper, resolved, output_dir=output)
     assert first.status == "completed"
     first_quenches = first.results["diagnostics"]["n_quenches"]
-
-    context = json.loads((output / "run_context.json").read_text())
-    known = {item.name for item in __import__("dataclasses").fields(ConfsearchOptions)}
-    old_options = ConfsearchOptions(
-        **{key: value for key, value in context["options"].items() if key in known}
-    )
-    new_options = replace(old_options, cs_cycles=old_options.cs_cycles + 1)
-    history = archive_for_extension(output, index=1)
-    assert (history / "search_results.json").is_file()
-    record_extension(output, added_cycles=1, total_cycles=new_options.cs_cycles)
-    context = json.loads((output / "run_context.json").read_text())
-    assert context["extensions"][0]["added_cycles"] == 1
+    assert not (output / "history").exists()
 
     resolved_extended = replace(
         resolved, run_options=dict(resolved.run_options, cs_cycles=2)
@@ -363,10 +348,88 @@ def test_extend_adds_cycles_archives_history_and_passes_the_fingerprint(tmp_path
         allow_cycle_change=True,
     )
     assert second.status == "completed"
-    # The extension re-ran the budget and the checkpoint fingerprint still
-    # matched (only cs_cycles changed).
-    assert second.results["diagnostics"]["n_quenches"] >= first_quenches
-    assert (output / "top").is_dir()
+    # The workflow archived the previous results and recorded the extension.
+    history = output / "history" / "extension_1"
+    assert (history / "search_results.json").is_file()
+    context = json.loads((output / "run_context.json").read_text())
+    assert context["extensions"][0]["added_cycles"] == 1
+    assert context["options"]["cs_cycles"] == 2
+    # The extension actually re-ran the budget: more quenches and a new cycle
+    # directory in the raw layout.
+    assert second.results["diagnostics"]["n_quenches"] > first_quenches
+    cycles_after = sorted(
+        path.name for path in (output / "raw").glob("replica_*/cycle_*")
+    )
+    assert any(name.endswith("cycle_002") for name in cycles_after), cycles_after
+
+
+def test_extend_cli_refuses_before_archiving_when_another_option_changed(
+    tmp_path, capsys
+):
+    """A refused extension must leave the run directory untouched."""
+    from mliport.confsearch.workflow import run_confsearch_workflow
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "cli-extend-refused"
+    run_confsearch_workflow(wrapper, resolved, output_dir=output)
+    top_before = sorted(path.name for path in (output / "top").glob("*"))
+
+    # A *different* model file is a different model identity (a moved copy of an
+    # identical file would be accepted, spec 11.2 revision 5).
+    other_model = tmp_path / "other-model.pt"
+    other_model.write_bytes(b"a different model")
+    code = main(
+        [
+            "confsearch",
+            "extend",
+            str(output),
+            "--cycles",
+            "1",
+            "--model",
+            str(other_model),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code != 0
+    # Nothing was archived and the previous results are still in place.
+    assert not (output / "history").exists()
+    assert sorted(path.name for path in (output / "top").glob("*")) == top_before
+    context = json.loads((output / "run_context.json").read_text())
+    assert context["extensions"] == []
+    assert context["options"]["cs_cycles"] == 1
+    assert "fingerprint" in captured.out + captured.err
+
+
+def test_extend_cli_adds_cycles_archives_and_reruns(tmp_path, capsys, monkeypatch):
+    """CLI-level extend: archive after validation, strictly more quenches."""
+    from mliport.confsearch.workflow import run_confsearch_workflow
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "cli-extend"
+    first = run_confsearch_workflow(wrapper, resolved, output_dir=output)
+    first_quenches = first.results["diagnostics"]["n_quenches"]
+
+    # The CLI builds a real backend; the synthetic calculator is substituted at
+    # the engine seam so the CLI path itself is exercised.
+    monkeypatch.setattr(
+        "mliport.engine.CalculationEngine._create_calculator", lambda self: wrapper
+    )
+    code = main(["confsearch", "extend", str(output), "--cycles", "1"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "confsearch status: completed" in out
+
+    history = output / "history" / "extension_1"
+    assert (history / "search_results.json").is_file()
+    context = json.loads((output / "run_context.json").read_text())
+    assert context["extensions"][0]["added_cycles"] == 1
+    assert context["options"]["cs_cycles"] == 2
+    results = json.loads((output / "search_results.json").read_text())
+    assert results["diagnostics"]["n_quenches"] > first_quenches
+    assert any(
+        path.name.endswith("cycle_002")
+        for path in (output / "raw").glob("replica_*/cycle_*")
+    )
 
 
 def test_confsearch_merge_combines_comparable_runs(tmp_path, capsys):
@@ -396,6 +459,11 @@ def test_confsearch_merge_combines_comparable_runs(tmp_path, capsys):
     # the combined hit count.
     entries = merged["ranking"]["refined"] + merged["ranking"]["unrefined"]
     assert max(entry["hit_count"] for entry in entries) >= 2
+    # Spec 11.4: the origin carries the source run id (not a renumbered replica).
+    assert all(
+        entry["origin"]["source"] in {"merge:merge-a", "merge:merge-b"}
+        for entry in entries
+    )
     assert "Merged 2 run(s)" in capsys.readouterr().out
 
 
@@ -421,3 +489,82 @@ def test_confsearch_merge_refuses_incomparable_runs(tmp_path, capsys):
     )
     assert code != 0
     assert "comparability key differs" in capsys.readouterr().out
+
+
+def test_confsearch_resume_cli_accepts_a_recorded_run(tmp_path, capsys, monkeypatch):
+    """A resume must rebuild the config layer from run_context.json.
+
+    Regression: the recorded ``cs_starts`` is a list, and handing that list
+    straight back to the config layer made the resolver validate the
+    stringified list as a path ("cs_starts: path not found").
+    """
+    from mliport.confsearch.workflow import run_confsearch_workflow
+    from tests.mliport.mliport.confsearch.test_resume_identity import _workflow_setup
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "resume-run"
+    run_confsearch_workflow(wrapper, resolved, output_dir=output)
+
+    # The engine builds a real backend; substitute the synthetic wrapper at the
+    # engine seam so the CLI path itself is exercised.
+    monkeypatch.setattr(
+        "mliport.engine.CalculationEngine._create_calculator", lambda self: wrapper
+    )
+    code = main(["confsearch", "resume", str(output)])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "confsearch status: completed" in out
+    context = json.loads((output / "run_context.json").read_text())
+    assert len(context["resumes"]) == 1
+
+
+def test_confsearch_merge_refuses_a_different_cell_with_the_same_index_sets(
+    tmp_path, capsys
+):
+    """Spec 11.4 revision 5: index sets alone are not enough."""
+    from tests.mliport.mliport.confsearch.test_engine import _run
+
+    first_dir, _first = _run(tmp_path, [(0.5, 0.5)], name="cell-a")
+    second_dir, _second = _run(tmp_path, [(0.5, 0.5)], name="cell-b")
+    context = json.loads((second_dir / "run_context.json").read_text())
+    cell = context["system"]["cell_A"]
+    # Same index sets, same regions, same everything -- except the cell.
+    cell[2][2] = float(cell[2][2]) + 1.0
+    (second_dir / "run_context.json").write_text(json.dumps(context))
+    code = main(
+        [
+            "confsearch",
+            "merge",
+            str(first_dir),
+            str(second_dir),
+            "--output",
+            str(tmp_path / "merged-cell"),
+        ]
+    )
+    assert code != 0
+    out = capsys.readouterr().out
+    assert "comparability key differs" in out
+    assert "system" in out
+
+
+def test_confsearch_merge_refuses_a_context_without_the_system_block(tmp_path, capsys):
+    """A run recorded before revision 5 is refused, not silently compared."""
+    from tests.mliport.mliport.confsearch.test_engine import _run
+
+    first_dir, _first = _run(tmp_path, [(0.5, 0.5)], name="oldsys-a")
+    second_dir, _second = _run(tmp_path, [(0.5, 0.5)], name="oldsys-b")
+    context = json.loads((second_dir / "run_context.json").read_text())
+    context.pop("system", None)
+    (second_dir / "run_context.json").write_text(json.dumps(context))
+    code = main(
+        [
+            "confsearch",
+            "merge",
+            str(first_dir),
+            str(second_dir),
+            "--output",
+            str(tmp_path / "merged-oldsys"),
+        ]
+    )
+    assert code != 0
+    assert "does not record the atomic numbers" in capsys.readouterr().out

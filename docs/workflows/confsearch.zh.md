@@ -88,6 +88,15 @@ replica 之间彼此独立，round-robin 调度意味着每个循环结束后都
 定：误合并会悄悄删掉一个 DFT 可能排在第一的候选，而误拆分只多花一个 DFT 任务，所以默认
 值刻意保守、宁多不误删。
 
+**标定的局限。** 出厂 `CS_DEDUP_FP_TOL` 来自
+`tests/mliport/mliport/confsearch/test_fingerprint_calibration.py` 的带标签扫描：
+几何是 LGPS **体相** 晶胞里的 CH3OH，"同一盆地"类来自随机扰动而不是淬火，"对称等价"类
+来自精确刚性镜像（其 `D` 约为 0）。因此这个容差只能证明零误合并，对**带噪声的等价极小值**
+没有实测：实际上 `D` 基本只合并精确镜像，同盆地的合并主要靠 `G` 规则加上
+`CS_DEDUP_ENERGY_TOL`。这是偏安全的方向（多出重复，而不是删掉候选）。在真实 slab 与真实
+模型上重新测量 `D` 分布是 P5 验证活动的一部分
+（`validation/science/scripts/confsearch_suite.py`）。
+
 ## 输出
 
 一次运行会写出 `resolved_config.json`、`run_context.json`、`run.log`、

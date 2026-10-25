@@ -2558,46 +2558,22 @@ def _cmd_confsearch_extend(args: argparse.Namespace) -> int:
         raise ValueError("--cycles must be >= 1 for extend")
     new_options = _replace(old_options, cs_cycles=old_options.cs_cycles + added)
 
-    extensions = list(context.get("extensions") or [])
-    extension_index = len(extensions) + 1
-    history = run_dir / "history" / f"extension_{extension_index}"
-    history.mkdir(parents=True, exist_ok=True)
-    for name in (
-        "search_results.json",
-        "artifacts.json",
-        "top",
-        "diagnostics",
-        "minima",
-    ):
-        source = run_dir / name
-        if source.exists():
-            source.rename(history / name)
-    extensions.append(
-        {
-            "index": extension_index,
-            "added_cycles": added,
-            "total_cycles": int(new_options.cs_cycles),
-            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "mliport_version": _mliport_version(),
-        }
-    )
-    context["extensions"] = extensions
-    context["options"] = {
-        item.name: _jsonable_option(getattr(new_options, item.name))
-        for item in _dataclasses.fields(new_options)
-        if not item.name.startswith("_")
-    }
-    (run_dir / "run_context.json").write_text(
-        json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
     print(
         f"Extending {run_dir.name} by {added} cycle(s) "
-        f"({old_options.cs_cycles} -> {new_options.cs_cycles}); previous results "
-        f"archived under {history.relative_to(run_dir)}"
+        f"({old_options.cs_cycles} -> {new_options.cs_cycles}); the previous "
+        "results are archived once the resume fingerprint has been validated"
     )
 
-    incar_layer = dict(context.get("options") or {})
-    incar_layer.update(_model_layer_from_context(context))
+    # The new budget goes into the *resolved* configuration only.  It must not
+    # reach run_context.json here: the workflow validates the resume fingerprint
+    # against the recorded (old) budget first and archives/records afterwards
+    # (spec 11.3), so a refused extension leaves the run untouched.
+    incar_layer = _confsearch_layer_from_context(context)
+    incar_layer["cs_cycles"] = int(new_options.cs_cycles)
+    # `--cycles N` means "add N", but the CLI layer carries the *total* cycle
+    # count (it has higher precedence than the INCAR layer, so leaving the added
+    # value there would resolve back to the old budget).
+    args.cs_cycles = int(new_options.cs_cycles)
     args.output = str(run_dir)
     args.starts = None
     engine_config, resolved, _settings = _resolve_engine_config(
@@ -2620,19 +2596,29 @@ def _cmd_confsearch_extend(args: argparse.Namespace) -> int:
 
 
 def _comparability_key(context: dict) -> dict:
-    """The section 11.4 comparability key of one source run."""
+    """The section 11.4 comparability key of one source run (revision 5).
+
+    The model part is the section 11.2 identity subset; the system part adds the
+    atomic numbers in order, the cell and the PBC, because index sets alone are
+    not enough (two different slabs can share them).
+    """
+    from mliport.confsearch.checkpoint import model_identity  # noqa: PLC0415
+
     options = context.get("options") or {}
     model = context.get("model") or {}
+    system = context.get("system") or {}
+    electronic = context.get("electronic_state") or {}
     return {
-        "model_type": model.get("model_type"),
-        "model_sha256": model.get("model_sha256"),
-        "dispersion": model.get("dispersion"),
-        "task": model.get("task"),
-        "head_effective": model.get("head_effective"),
-        "dtype_effective": model.get("dtype_effective"),
-        "inference_mode": model.get("inference_mode"),
-        "backend_version": model.get("backend_version"),
-        "framework_versions": model.get("framework_versions"),
+        "model": model_identity(model),
+        "system": {
+            "numbers": system.get("numbers"),
+            "cell_A": system.get("cell_A"),
+            "pbc": system.get("pbc"),
+        },
+        "electronic_state": {
+            "charge": electronic.get("charge"),
+            "spin": electronic.get("spin"),
+        },
         "regions": context.get("regions"),
         "ionic_species": options.get("cs_ionic_species"),
         "bond_scale": options.get("cs_bond_scale"),
@@ -2667,6 +2653,19 @@ def _cmd_confsearch_merge(args: argparse.Namespace) -> int:
     for run_dir in sources:
         context, _results, _options = _load_confsearch_run(run_dir)
         contexts.append(context)
+    for run_dir, context in zip(sources, contexts, strict=True):
+        system = context.get("system") or {}
+        if (
+            not system.get("numbers")
+            or not system.get("cell_A")
+            or system.get("pbc") is None
+        ):
+            raise ValueError(
+                f"Cannot merge {run_dir.name}: run_context.json does not record the "
+                "atomic numbers, cell and PBC (spec 11.4 revision 5). Re-run that "
+                "search with this revision; merging refuses to compare index sets "
+                "alone, because two different slabs can share them."
+            )
     reference_key = _comparability_key(contexts[0])
     for run_dir, context in zip(sources[1:], contexts[1:], strict=True):
         key = _comparability_key(context)
@@ -2716,10 +2715,13 @@ def _cmd_confsearch_merge(args: argparse.Namespace) -> int:
                 unique.unique_id = next_id
                 id_map[(source_index, old_id)] = next_id
                 for member in unique.members:
+                    # Spec 11.4: the origin carries the source run id.  The
+                    # replica index is not renumbered (a >=1000 offset silently
+                    # collides), the source string is what identifies the run.
                     member.origin = MinimumOrigin(
-                        replica=member.origin.replica + source_index * 1000,
+                        replica=member.origin.replica,
                         cycle=member.origin.cycle,
-                        source=member.origin.source,
+                        source=f"merge:{run_dir.name}",
                         snapshot_index=member.origin.snapshot_index,
                     )
                 merged._classes.setdefault(status, []).append(unique)
@@ -2879,7 +2881,8 @@ def _cmd_confsearch_export(args: argparse.Namespace) -> int:
         written.append(
             _export_candidate(
                 destination / f"rank_{position:03d}",
-                unique=unique,
+                unique_id=int(entry["id"]),
+                payload=unique.to_dict(),
                 atoms=unique.representative.atoms,
                 options=options,
                 regions=regions,
@@ -2896,6 +2899,33 @@ def _cmd_confsearch_export(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
+def _confsearch_layer_from_context(context: dict) -> dict:
+    """Rebuild a config layer from a recorded ``run_context.json``.
+
+    The config layers carry ``cs_starts`` as an ``os.pathsep``-joined scalar
+    while the context records it as a list (the CLI/API join the positional
+    starts), so a resume or an extend must convert it back -- otherwise the
+    resolver validates the *stringified list* as a path and refuses.
+    """
+    layer = dict(context.get("options") or {})
+    starts = layer.get("cs_starts")
+    if isinstance(starts, (list, tuple)):
+        layer["cs_starts"] = os.pathsep.join(str(item) for item in starts)
+    model = context.get("model") or {}
+    for key, value in (
+        ("model_type", model.get("model_type")),
+        ("model_path", model.get("model_path")),
+        ("task", model.get("task")),
+        ("device", context.get("device")),
+        ("head", model.get("head_requested")),
+        ("default_dtype", model.get("dtype_requested")),
+        ("inference_mode", model.get("inference_mode")),
+    ):
+        if value is not None:
+            layer[key] = value
+    return layer
+
+
 def _cmd_confsearch_run(args: argparse.Namespace, *, resume: bool) -> int:
     """Run or resume a confsearch job."""
     incar_layer: dict = {}
@@ -2905,19 +2935,7 @@ def _cmd_confsearch_run(args: argparse.Namespace, *, resume: bool) -> int:
         if not context_path.is_file():
             raise ValueError(f"Cannot resume: {context_path} not found")
         context = json.loads(context_path.read_text(encoding="utf-8"))
-        incar_layer.update(context.get("options") or {})
-        model = context.get("model") or {}
-        for key, value in (
-            ("model_type", model.get("model_type")),
-            ("model_path", model.get("model_path")),
-            ("task", model.get("task")),
-            ("device", context.get("device")),
-            ("head", model.get("head_requested")),
-            ("default_dtype", model.get("dtype_requested")),
-            ("inference_mode", model.get("inference_mode")),
-        ):
-            if value is not None:
-                incar_layer[key] = value
+        incar_layer.update(_confsearch_layer_from_context(context))
         args.output = str(run_dir)
         args.starts = None
     else:

@@ -892,8 +892,19 @@ class SearchEngine:
         if path.is_file():
             return
         regions = self.starts[0].regions
+        system_atoms = self.starts[0].atoms
         payload = {
             "schema": "mliport.confsearch-run-context/1",
+            # Spec 11.4 revision 5: the merge comparability key needs the atomic
+            # numbers in order, the cell and the PBC (index sets alone are not
+            # enough).  The workflow records the electronic state as well; a
+            # direct engine call leaves it null.
+            "system": {
+                "numbers": [int(z) for z in system_atoms.numbers],
+                "cell_A": np.asarray(system_atoms.cell, dtype=float).tolist(),
+                "pbc": [bool(value) for value in system_atoms.pbc],
+            },
+            "electronic_state": {"charge": None, "spin": None},
             "scientific_revision": CS_SCIENTIFIC_REVISION,
             "seed": int(self.seed),
             "resume": self.resume is not None,

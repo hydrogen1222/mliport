@@ -145,6 +145,11 @@ def record_extension(
     }
     extensions.append(record)
     context["extensions"] = extensions
+    # The recorded budget must follow the extension, otherwise a second extend
+    # would compare against the original cycle count and refuse.
+    options_record = dict(context.get("options") or {})
+    options_record["cs_cycles"] = int(total_cycles)
+    context["options"] = options_record
     path.write_text(
         _json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -313,6 +318,33 @@ def run_confsearch_workflow(
                     "configuration/input:\n  - " + "\n  - ".join(differences)
                 )
             log(f"resuming from checkpoint unit {checkpoint.unit_index}")
+            if allow_cycle_change:
+                # Spec 11.3 revision 5: the fingerprint has been validated (only
+                # cs_cycles exempt), so this is the point where the previous results
+                # may be archived and the extension recorded.  Doing it here -- and
+                # not in the CLI before the call -- keeps a refused extension from
+                # moving the previous results away.
+                added = int(options.cs_cycles) - int(comparison_options.cs_cycles)
+                if added > 0:
+                    index = (
+                        len(
+                            json.loads(
+                                (output / "run_context.json").read_text(encoding="utf-8")
+                            ).get("extensions")
+                            or []
+                        )
+                        + 1
+                    )
+                    history = archive_for_extension(output, index=index)
+                    record_extension(
+                        output,
+                        added_cycles=added,
+                        total_cycles=int(options.cs_cycles),
+                    )
+                    log(
+                        f"extending by {added} cycle(s); previous results archived "
+                        f"under {history.relative_to(output)}"
+                    )
 
         run_context = {
             "schema": RUN_CONTEXT_SCHEMA,
@@ -323,6 +355,18 @@ def run_confsearch_workflow(
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "seed": options.seed,
             "device": resolved.device,
+            # Spec 11.4 revision 5: index sets alone are not enough (two different
+            # slabs can share them), so the merge key needs the atomic numbers in
+            # order, the cell, the PBC and the electronic state.
+            "system": {
+                "numbers": [int(z) for z in starts[0].atoms.numbers],
+                "cell_A": np.asarray(starts[0].atoms.cell, dtype=float).tolist(),
+                "pbc": [bool(value) for value in starts[0].atoms.pbc],
+            },
+            "electronic_state": {
+                "charge": resolved.run_options.get("charge"),
+                "spin": resolved.run_options.get("spin"),
+            },
             "resume": bool(resume),
             "model": model,
             "input_hashes": hashes,
