@@ -599,13 +599,17 @@ class SearchEngine:
                 or gate.abort
             )
             if keep:
+                # The raw trajectory keeps every requested frame, including the
+                # one that triggers an abort.
                 writer.submit(
                     MDFrameSnapshot(
                         atoms=md_atoms.copy(), summary=frame, outcar_forces=None
                     )
                 )
             if step in snapshot_steps:
-                snapshots.append(md_atoms.copy())
+                # Check the integrity *before* keeping the frame: a frame that
+                # already broke the adsorbate must not be quenched (spec 7.3
+                # step 9 quenches only snapshots taken before the stop).
                 self._check_md_integrity(replica, md_atoms, step)
             if gate.abort:
                 abort_status = cs_status.MD_FORCE_ABORT
@@ -614,6 +618,8 @@ class SearchEngine:
                     f"{gate.atom_index} exceeds fmax_abort={options.fmax_abort}"
                 )
                 raise _MDAbort(abort_status, abort_message, md_atoms.copy())
+            if step in snapshot_steps:
+                snapshots.append(md_atoms.copy())
 
         dynamics.attach(observe, interval=1)
         steps_done = 0
@@ -634,11 +640,14 @@ class SearchEngine:
                 dynamics.run(block)
                 steps_done += block
                 remaining -= block
+            # Spec 7.3 step 7: the end-of-cycle frame gets the same early
+            # integrity check as the hold-phase snapshots.
+            self._check_md_integrity(replica, md_atoms, steps_done)
         except _MDAbort as exc:
             abort_status = exc.status
             abort_message = str(exc)
-            if exc.frame is not None:
-                snapshots.append(exc.frame)
+            # The abort frame lives in the raw trajectory only; it is never
+            # quenched (spec 7.3 step 9).
         finally:
             try:
                 writer.close()

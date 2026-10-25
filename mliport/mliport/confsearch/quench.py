@@ -121,7 +121,12 @@ def quench(
         if optimizer.converged():
             status = cs_status.VALID
 
-    energy = float(work.get_potential_energy())
+    try:
+        energy = float(work.get_potential_energy())
+    except Exception:
+        # A calculator that raises on a bad geometry is a quench outcome, not a
+        # search crash.
+        energy = float("nan")
     if not np.isfinite(energy):
         status = cs_status.QUENCH_FAILED
     try:
