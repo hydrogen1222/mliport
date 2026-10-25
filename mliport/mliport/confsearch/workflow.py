@@ -14,7 +14,7 @@ from __future__ import annotations
 import contextlib
 import json
 import time
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -109,6 +109,57 @@ def _rng_streams(seed: int, n_replicas: int):
     return placement_ss, replica_sequences
 
 
+def archive_for_extension(run_dir: str | Path, *, index: int) -> Path:
+    """Archive the previous top-level results before an extension (spec 11.3)."""
+    run_dir = Path(run_dir)
+    history = run_dir / "history" / f"extension_{int(index)}"
+    history.mkdir(parents=True, exist_ok=True)
+    for name in (
+        "search_results.json",
+        "artifacts.json",
+        "top",
+        "diagnostics",
+        "minima",
+    ):
+        source = run_dir / name
+        if source.exists():
+            source.rename(history / name)
+    return history
+
+
+def record_extension(
+    run_dir: str | Path, *, added_cycles: int, total_cycles: int
+) -> dict:
+    """Append an extension record to ``run_context.json`` (spec 11.3)."""
+    import json as _json  # noqa: PLC0415
+
+    path = Path(run_dir) / "run_context.json"
+    context = _json.loads(path.read_text(encoding="utf-8"))
+    extensions = list(context.get("extensions") or [])
+    record = {
+        "index": len(extensions) + 1,
+        "added_cycles": int(added_cycles),
+        "total_cycles": int(total_cycles),
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "mliport_version": _mliport_version(),
+    }
+    extensions.append(record)
+    context["extensions"] = extensions
+    path.write_text(
+        _json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return record
+
+
+def _mliport_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
+
+    try:
+        return version("mliport")
+    except PackageNotFoundError:  # pragma: no cover - always installed
+        return "unknown"
+
+
 def run_confsearch_workflow(
     calculator,
     resolved: ResolvedConfig,
@@ -116,6 +167,7 @@ def run_confsearch_workflow(
     output_dir: str | Path | None = None,
     resume: bool = False,
     dry_run: bool = False,
+    allow_cycle_change: bool = False,
     log_fn: Callable[[str], None] | None = None,
 ) -> ConfsearchWorkflowResult:
     """Run (or resume) one confsearch job from a resolved configuration."""
@@ -173,6 +225,7 @@ def run_confsearch_workflow(
     def log(message: str) -> None:
         run_logger(str(message))
 
+
     try:
         from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
 
@@ -218,6 +271,17 @@ def run_confsearch_workflow(
                 f"{preflight['max_abs_error_eV_A']:.2e} eV/A"
             )
 
+        comparison_options = options
+        if allow_cycle_change:
+            # `extend` is the one supported budget change (spec 11.3): everything
+            # else in the fingerprint must still match, so compare with the
+            # checkpointed cycle count substituted back in.
+            recorded_context = output / "run_context.json"
+            if recorded_context.is_file():
+                recorded = json.loads(recorded_context.read_text(encoding="utf-8"))
+                recorded_cycles = (recorded.get("options") or {}).get("cs_cycles")
+                if recorded_cycles is not None:
+                    comparison_options = replace(options, cs_cycles=int(recorded_cycles))
         fingerprint, fingerprint_sha = build_resume_fingerprint(
             options=options,
             model=model,
@@ -230,7 +294,19 @@ def run_confsearch_workflow(
         checkpoint: CheckpointData | None = None
         if resume:
             checkpoint, recorded = store.load()
-            differences = compare_fingerprints(recorded, fingerprint)
+            comparison_fingerprint = (
+                build_resume_fingerprint(
+                    options=comparison_options,
+                    model=model,
+                    input_hashes=hashes,
+                    regions=regions_identity,
+                    seed=options.seed,
+                    mliport_version=mliport_version,
+                )[0]
+                if allow_cycle_change
+                else fingerprint
+            )
+            differences = compare_fingerprints(recorded, comparison_fingerprint)
             if differences:
                 raise ConfsearchPreparationError(
                     "Cannot resume: the checkpoint fingerprint does not match this "
@@ -258,9 +334,7 @@ def run_confsearch_workflow(
                 "md_steps_total": int(
                     len(starts) * options.total_md_steps_per_cycle * options.cs_cycles
                 ),
-                "quench_upper_bound": int(
-                    len(starts) * options.total_quench_upper_bound
-                ),
+                "quench_upper_bound": int(len(starts) * options.total_quench_upper_bound),
             },
             "gradient_preflight": preflight,
             "resume_fingerprint_sha256": fingerprint_sha,
@@ -276,9 +350,7 @@ def run_confsearch_workflow(
         resume_entry = (
             {
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "unit_index": None
-                if checkpoint is None
-                else int(checkpoint.unit_index),
+                "unit_index": None if checkpoint is None else int(checkpoint.unit_index),
                 "seed": options.seed,
                 "mliport_version": mliport_version,
             }

@@ -9,6 +9,7 @@ mliport 能算的东西，归根结底就是下面这几种工作流。它们共
 | [弛豫](optimization.md) | `mliport opt` | 把力降到最小，可选地连同晶胞一起 |
 | [分子动力学](md.md) | `mliport md` | 为分析准备的 NVE 或 NVT 轨迹 |
 | [NEB / CI-NEB](neb.md) | `mliport neb` | 反应路径及其势垒 |
+| [构型搜索](confsearch.md) | `mliport confsearch` | slab 上的低能吸附构型 |
 | [批量](batch.md) | `mliport batch` | 对许多结构做同一种计算 |
 | [队列](queue.md) | `mliport queue` | 多个作业，一次只占一块 GPU |
 

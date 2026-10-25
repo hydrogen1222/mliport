@@ -877,8 +877,60 @@ class SearchEngine:
 
     # -- completion -------------------------------------------------------
 
+    def _write_run_context(self) -> None:
+        """Write run_context.json when the caller (workflow) has not already.
+
+        Spec 11.1 lists it in every run directory; a direct engine call must be
+        self-contained enough for `mliport confsearch export RUN` to work.
+        """
+        import dataclasses  # noqa: PLC0415
+
+        from mliport.confsearch.revisions import CS_SCIENTIFIC_REVISION  # noqa: PLC0415
+        from mliport.neb.io import atomic_write_json  # noqa: PLC0415
+
+        path = self.output_dir / "run_context.json"
+        if path.is_file():
+            return
+        regions = self.starts[0].regions
+        payload = {
+            "schema": "mliport.confsearch-run-context/1",
+            "scientific_revision": CS_SCIENTIFIC_REVISION,
+            "seed": int(self.seed),
+            "resume": self.resume is not None,
+            "model": self.model_record,
+            "gradient_preflight": self.gradient_preflight,
+            "regions": {
+                "adsorbate": regions.adsorbate.tolist(),
+                "slab": regions.slab.tolist(),
+                "fixed": regions.fixed.tolist(),
+                "relax": regions.relax.tolist(),
+            },
+            "budget": {
+                "replicas": len(self.replicas),
+                "cycles": int(self.options.cs_cycles),
+                "md_steps_per_cycle": int(self.options.total_md_steps_per_cycle),
+                "md_steps_total": int(
+                    len(self.replicas)
+                    * self.options.total_md_steps_per_cycle
+                    * self.options.cs_cycles
+                ),
+                "quench_upper_bound": int(
+                    len(self.replicas) * self.options.total_quench_upper_bound
+                ),
+            },
+            "options": {
+                item.name: _jsonable(getattr(self.options, item.name))
+                for item in dataclasses.fields(self.options)
+                if not item.name.startswith("_")
+            },
+            "starts": [start.to_dict() for start in self.starts],
+            "warnings": list(self.warnings),
+        }
+        atomic_write_json(path, payload)
+
     def _finish(self) -> dict:
         self.registry.consolidate()
+        self._write_run_context()
         references = [replica.reference for replica in self.replicas]
         return build_results(
             regions=self.starts[0].regions,
@@ -926,6 +978,16 @@ def run_confsearch(
         log=log,
     )
     return engine.run()
+
+
+def _jsonable(value):
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.floating, np.integer)):
+        return value.item()
+    if isinstance(value, Path):
+        return str(value)
+    return value
 
 
 __all__ = ["PreparedStart", "ReplicaState", "SearchEngine", "run_confsearch"]

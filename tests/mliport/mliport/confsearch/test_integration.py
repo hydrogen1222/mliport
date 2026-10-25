@@ -223,28 +223,201 @@ def test_workflow_rejects_direct_force_models_unless_allowed(tmp_path, monkeypat
         run_confsearch_workflow(Wrapper(), resolved, output_dir=tmp_path / "direct")
 
 
-def test_confsearch_resume_cli_accepts_a_recorded_run(tmp_path, capsys, monkeypatch):
-    """A resume must rebuild the config layer from run_context.json.
+def test_confsearch_export_reexports_a_finished_run(tmp_path, capsys):
+    from tests.mliport.mliport.confsearch.test_engine import _run
 
-    Regression: the recorded ``cs_starts`` is a list, and handing that list
-    straight back to the config layer made the resolver validate the
-    stringified list as a path ("cs_starts: path not found").
-    """
+    output, results = _run(tmp_path, [(0.5, 0.5)], name="export-source")
+    assert results["exports"]
+    destination = tmp_path / "reexport"
+    code = main(
+        [
+            "confsearch",
+            "export",
+            str(output),
+            "--top-k",
+            "1",
+            "--output",
+            str(destination),
+        ]
+    )
+    assert code == 0
+    rank = destination / "rank_001"
+    for name in ("POSCAR", "structure.extxyz", "minimum.json", "cp2k_cell.inc"):
+        assert (rank / name).is_file(), name
+    assert "Re-exported 1 candidate(s)" in capsys.readouterr().out
+
+
+class _SyntheticWrapper:
+    """Backend-shaped wrapper around a synthetic calculator (no MLIP needed)."""
+
+    task = "bulk"
+
+    def __init__(self, calculator, model_path: Path) -> None:
+        self._calculator = calculator
+        self._model_path = model_path
+
+    def info(self) -> dict:
+        return {
+            "model_type": "mace",
+            "task": "bulk",
+            "backend_version": "test",
+            "framework_versions": {"torch": "test"},
+            "default_dtype": "float64",
+            "model_path": str(self._model_path),
+        }
+
+    def get_calculator(self):
+        return self._calculator
+
+
+def _workflow_setup(tmp_path: Path, *, cycles: int):
+    from mliport.config import resolve_config
+    from tests.mliport.mliport.confsearch.test_engine import _start
+
+    model_file = tmp_path / "model.pt"
+    model_file.write_bytes(b"identity model")
+    start_file = tmp_path / "start.extxyz"
+    write(start_file, _start((0.5, 0.5)), format="extxyz")
+    resolved = resolve_config(
+        calc_type="confsearch",
+        cli={
+            "model_type": "mace",
+            "model_path": str(model_file),
+            "task": "bulk",
+            "cs_starts": str(start_file),
+            "cs_adsorbate_indices": "16-18",
+            "cs_cycles": cycles,
+            "cs_hold_ps": 0.05,
+            "cs_cool_ps": 0.05,
+            "cs_snapshot_interval_ps": 0.02,
+            "timestep": 0.5,
+            "cs_temperature_high": 800.0,
+            "cs_temperature_low": 300.0,
+            "cs_quench_fmax": 0.01,
+            "cs_quench_steps": 2000,
+            "cs_refine": False,
+            "cs_refine_fmax": 0.005,
+            "seed": 7,
+        },
+    )
+    return resolved, _SyntheticWrapper(EggCrateCalculator(), model_file)
+
+
+def test_workflow_runs_the_full_pipeline_with_a_synthetic_model(tmp_path):
     from mliport.confsearch.workflow import run_confsearch_workflow
-    from tests.mliport.mliport.confsearch.test_resume_identity import _workflow_setup
 
     resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
-    output = tmp_path / "resume-run"
-    run_confsearch_workflow(wrapper, resolved, output_dir=output)
-
-    # The engine builds a real backend; substitute the synthetic wrapper at the
-    # engine seam so the CLI path itself is exercised.
-    monkeypatch.setattr(
-        "mliport.engine.CalculationEngine._create_calculator", lambda self: wrapper
-    )
-    code = main(["confsearch", "resume", str(output)])
-    out = capsys.readouterr().out
-    assert code == 0, out
-    assert "confsearch status: completed" in out
+    output = tmp_path / "workflow-run"
+    result = run_confsearch_workflow(wrapper, resolved, output_dir=output)
+    assert result.status == "completed"
+    for name in (
+        "run_context.json",
+        "search_results.json",
+        "run.log",
+        "artifacts.json",
+    ):
+        assert (output / name).is_file(), name
     context = json.loads((output / "run_context.json").read_text())
-    assert len(context["resumes"]) == 1
+    assert context["gradient_preflight"]["status"] == "passed"
+    assert context["model"]["model_type"] == "mace"
+    assert context["regions"]["adsorbate"] == [16, 17, 18]
+    assert (output / "run.log").read_text().strip()
+
+
+def test_extend_adds_cycles_archives_history_and_passes_the_fingerprint(tmp_path):
+    from dataclasses import replace
+
+    from mliport.confsearch.options import ConfsearchOptions
+    from mliport.confsearch.workflow import (
+        archive_for_extension,
+        record_extension,
+        run_confsearch_workflow,
+    )
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "extend-run"
+    first = run_confsearch_workflow(wrapper, resolved, output_dir=output)
+    assert first.status == "completed"
+    first_quenches = first.results["diagnostics"]["n_quenches"]
+
+    context = json.loads((output / "run_context.json").read_text())
+    known = {item.name for item in __import__("dataclasses").fields(ConfsearchOptions)}
+    old_options = ConfsearchOptions(
+        **{key: value for key, value in context["options"].items() if key in known}
+    )
+    new_options = replace(old_options, cs_cycles=old_options.cs_cycles + 1)
+    history = archive_for_extension(output, index=1)
+    assert (history / "search_results.json").is_file()
+    record_extension(output, added_cycles=1, total_cycles=new_options.cs_cycles)
+    context = json.loads((output / "run_context.json").read_text())
+    assert context["extensions"][0]["added_cycles"] == 1
+
+    resolved_extended = replace(
+        resolved, run_options=dict(resolved.run_options, cs_cycles=2)
+    )
+    second = run_confsearch_workflow(
+        wrapper,
+        resolved_extended,
+        output_dir=output,
+        resume=True,
+        allow_cycle_change=True,
+    )
+    assert second.status == "completed"
+    # The extension re-ran the budget and the checkpoint fingerprint still
+    # matched (only cs_cycles changed).
+    assert second.results["diagnostics"]["n_quenches"] >= first_quenches
+    assert (output / "top").is_dir()
+
+
+def test_confsearch_merge_combines_comparable_runs(tmp_path, capsys):
+    from tests.mliport.mliport.confsearch.test_engine import _run
+
+    first_dir, first = _run(tmp_path, [(0.5, 0.5)], name="merge-a")
+    second_dir, second = _run(tmp_path, [(0.5, 0.5)], name="merge-b")
+    assert first["ranking"]["n_rankable"] >= 1
+    destination = tmp_path / "merged"
+    code = main(
+        [
+            "confsearch",
+            "merge",
+            str(first_dir),
+            str(second_dir),
+            "--output",
+            str(destination),
+        ]
+    )
+    assert code == 0
+    merged = json.loads((destination / "search_results.json").read_text())
+    assert merged["status"] == "completed"
+    assert merged["ranking"]["n_rankable"] >= 1
+    assert merged["merge"]["sources"] == ["merge-a", "merge-b"]
+    assert merged["merge"]["refinement_reused"] is False
+    # The same basin from two sources must merge into one unique minimum with
+    # the combined hit count.
+    entries = merged["ranking"]["refined"] + merged["ranking"]["unrefined"]
+    assert max(entry["hit_count"] for entry in entries) >= 2
+    assert "Merged 2 run(s)" in capsys.readouterr().out
+
+
+def test_confsearch_merge_refuses_incomparable_runs(tmp_path, capsys):
+    from tests.mliport.mliport.confsearch.test_engine import _run
+
+    first_dir, _first = _run(tmp_path, [(0.5, 0.5)], name="cmp-a")
+    second_dir, _second = _run(
+        tmp_path, [(0.5, 0.5)], options=None, name="cmp-b", seed=99
+    )
+    context = json.loads((second_dir / "run_context.json").read_text())
+    context["options"]["cs_dedup_energy_tol"] = 0.5
+    (second_dir / "run_context.json").write_text(json.dumps(context))
+    code = main(
+        [
+            "confsearch",
+            "merge",
+            str(first_dir),
+            str(second_dir),
+            "--output",
+            str(tmp_path / "merged-bad"),
+        ]
+    )
+    assert code != 0
+    assert "comparability key differs" in capsys.readouterr().out

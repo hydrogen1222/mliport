@@ -10,6 +10,7 @@ writing a `resolved_config.json` next to their results.
 | [Relaxation](optimization.md) | `mliport opt` | minimize forces, optionally with the cell |
 | [Molecular dynamics](md.md) | `mliport md` | NVE or NVT trajectories for analysis |
 | [NEB / CI-NEB](neb.md) | `mliport neb` | a reaction path and its barrier |
+| [Configuration search](confsearch.md) | `mliport confsearch` | low-energy adsorbate configurations on a slab |
 | [Batch](batch.md) | `mliport batch` | one calculation over many structures |
 | [Queue](queue.md) | `mliport queue` | several jobs, one GPU at a time |
 
