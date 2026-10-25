@@ -25,6 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import math
+
 import numpy as np
 
 from mliport.confsearch.fingerprint import (
@@ -36,6 +38,9 @@ from mliport.confsearch.fingerprint import (
 from mliport.confsearch.geometry import mic_vectors
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from typing import Any
+
     from ase import Atoms
 
     from mliport.confsearch.graphs import MinimumClassification
@@ -145,7 +150,7 @@ class UniqueMinimum:
         return {
             "id": self.unique_id,
             "status": self.status,
-            "energy_eV": float(representative.energy_eV),
+            "energy_eV": _json_float(representative.energy_eV),
             "flags": list(self.flags),
             "hit_count": self.hit_count,
             "replicas": sorted(self.replicas),
@@ -153,8 +158,8 @@ class UniqueMinimum:
             "first_found_quench_index": int(self.first_found_quench_index),
             "representative": {
                 "record_id": representative.record_id,
-                "energy_eV": float(representative.energy_eV),
-                "fmax_eV_A": float(representative.fmax_eV_A),
+                "energy_eV": _json_float(representative.energy_eV),
+                "fmax_eV_A": _json_float(representative.fmax_eV_A),
                 "steps": int(representative.steps),
                 "origin": representative.origin.to_dict(),
                 "numbers": [int(z) for z in representative.atoms.numbers],
@@ -167,17 +172,69 @@ class UniqueMinimum:
             "members": [
                 {
                     "record_id": member.record_id,
-                    "energy_eV": float(member.energy_eV),
-                    "fmax_eV_A": float(member.fmax_eV_A),
+                    "energy_eV": _json_float(member.energy_eV),
+                    "fmax_eV_A": _json_float(member.fmax_eV_A),
                     "steps": int(member.steps),
                     "status": member.status,
                     "flags": list(member.flags),
                     "origin": member.origin.to_dict(),
-                    "cumulative_md_ps": float(member.cumulative_md_ps),
+                    "cumulative_md_ps": _json_float(member.cumulative_md_ps),
+                    "quench_index": int(member.quench_index),
                 }
                 for member in self.members
             ],
         }
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def _json_float(value: Any) -> float | None:
+    """JSON has no NaN/Inf: a non-finite measurement is recorded as null."""
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def rebuild_classification(payload: Mapping[str, Any]) -> MinimumClassification:
+    """Rebuild a :class:`MinimumClassification` from its serialized form."""
+    from mliport.confsearch.graphs import MinimumClassification  # noqa: PLC0415
+
+    bonds = tuple(
+        (
+            int(item["adsorbate_index"]),
+            int(item["slab_index"]),
+            str(item["adsorbate_element"]),
+            str(item["slab_element"]),
+            float(item["distance_A"]),
+            float(item["q"]),
+        )
+        for item in payload.get("adsorbate_slab_bonds", [])
+    )
+    coordination = tuple(
+        (int(item["adsorbate_index"]), int(item["neighbours"]))
+        for item in payload.get("ionic_adsorbate_coordination", [])
+    )
+    return MinimumClassification(
+        status=str(payload["status"]),
+        flags=tuple(payload.get("flags", [])),
+        adsorbate_slab_bonds=bonds,
+        reacted_bonds=dict(payload.get("reacted_bonds") or {}),
+        min_adsorbate_slab_distance=float(
+            payload.get("min_adsorbate_slab_distance_A", 0.0)
+        ),
+        min_self_image_distance=float(payload.get("min_self_image_distance_A", 0.0)),
+        min_vacuum_gap=float(payload.get("min_vacuum_gap_A", 0.0)),
+        max_slab_displacement_ionic=float(
+            payload.get("max_slab_displacement_ionic_A", 0.0)
+        ),
+        max_slab_displacement_nonionic=float(
+            payload.get("max_slab_displacement_nonionic_A", 0.0)
+        ),
+        ionic_coordination=coordination,
+    )
 
 
 class MinimumRegistry:
@@ -355,6 +412,10 @@ class MinimumRegistry:
         return {
             "schema": "mliport.confsearch-registry/1",
             "n_records": self.total_records(),
+            "counters": {
+                "next_unique_id": self._next_unique_id,
+                "next_record_id": self._next_record_id,
+            },
             "classes": {
                 status: [
                     unique.to_dict()
@@ -366,6 +427,79 @@ class MinimumRegistry:
             },
             "merges": list(self.merges),
         }
+
+    @classmethod
+    def from_dict(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        options: ConfsearchOptions,
+        adsorbate: np.ndarray,
+        fixed: np.ndarray | None = None,
+    ) -> MinimumRegistry:
+        """Rebuild a registry from a checkpoint payload (fingerprints recomputed)."""
+        from ase import Atoms  # noqa: PLC0415
+
+        registry = cls(
+            options=options, adsorbate=np.asarray(adsorbate, dtype=int), fixed=fixed
+        )
+        for status, entries in (payload.get("classes") or {}).items():
+            for entry in entries:
+                representative = entry["representative"]
+                geometry = Atoms(
+                    numbers=np.asarray(representative["numbers"], dtype=int),
+                    positions=np.asarray(representative["positions_A"], dtype=float),
+                    cell=np.asarray(representative["cell_A"], dtype=float),
+                    pbc=np.asarray(representative["pbc"], dtype=bool),
+                )
+                classification = rebuild_classification(
+                    representative["classification"]
+                )
+                unique = UniqueMinimum(
+                    unique_id=int(entry["id"]),
+                    status=str(entry.get("status", status)),
+                    replicas={int(value) for value in entry.get("replicas", [])},
+                    first_found_md_ps=float(entry.get("first_found_md_ps", 0.0)),
+                    first_found_quench_index=int(
+                        entry.get("first_found_quench_index", 0)
+                    ),
+                )
+                for member in entry.get("members", []):
+                    origin = member["origin"]
+                    record = MinimumRecord(
+                        record_id=int(member["record_id"]),
+                        energy_eV=float(member["energy_eV"]),
+                        atoms=geometry.copy(),
+                        classification=classification,
+                        origin=MinimumOrigin(
+                            replica=int(origin["replica"]),
+                            cycle=int(origin["cycle"]),
+                            source=str(origin["source"]),
+                            snapshot_index=origin.get("snapshot_index"),
+                        ),
+                        quench_index=int(member.get("quench_index", 0)),
+                        cumulative_md_ps=float(member.get("cumulative_md_ps", 0.0)),
+                        fmax_eV_A=float(member.get("fmax_eV_A", 0.0) or 0.0),
+                        steps=int(member.get("steps", 0)),
+                    )
+                    unique.add(record)
+                # Fingerprints are recomputed from the representative geometry
+                # so a resumed registry can keep matching (section 9.4).
+                representative_record = unique.representative
+                representative_record.fingerprint = registry.fingerprint(
+                    representative_record.atoms
+                )
+                registry._classes.setdefault(status, []).append(unique)
+                registry._unique_by_id[unique.unique_id] = unique
+        counters = payload.get("counters") or {}
+        registry._next_unique_id = int(
+            counters.get("next_unique_id", registry._next_unique_id)
+        )
+        registry._next_record_id = int(
+            counters.get("next_record_id", registry._next_record_id)
+        )
+        registry.merges = list(payload.get("merges") or [])
+        return registry
 
     def displacement_between(
         self, first: MinimumRecord, second: MinimumRecord

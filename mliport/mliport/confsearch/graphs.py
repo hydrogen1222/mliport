@@ -85,11 +85,13 @@ class MinimumClassification:
     flags: tuple[str, ...]
     adsorbate_slab_bonds: tuple[tuple[int, int, str, str, float, float], ...]
     reacted_bonds: dict[str, dict[str, list[list[int]]]]
-    min_adsorbate_slab_distance: float
-    min_self_image_distance: float
-    min_vacuum_gap: float
-    max_slab_displacement_ionic: float
-    max_slab_displacement_nonionic: float
+    #: ``None`` for a quench that never produced a converged geometry
+    #: (quench_failed / quench_not_converged): nothing was measured.
+    min_adsorbate_slab_distance: float | None
+    min_self_image_distance: float | None
+    min_vacuum_gap: float | None
+    max_slab_displacement_ionic: float | None
+    max_slab_displacement_nonionic: float | None
     ionic_coordination: tuple[tuple[int, int], ...]
 
     @property
