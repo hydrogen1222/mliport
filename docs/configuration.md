@@ -23,12 +23,13 @@ run behaved as it did, that file has the answer.
 
 | What | Where it comes from |
 |---|---|
-| calculation type | the subcommand (`sp`, `opt`, `md`, `neb`, `batch`), or `CALC_TYPE` / `CALCULATION` |
+| calculation type | the subcommand (`sp`, `opt`, `md`, `neb`, `batch`, `confsearch`), or `CALC_TYPE` / `CALCULATION` |
 | backend | `--model-type` / `MODEL_TYPE`, or a model alias that declares `engine` |
 | model path | `--model` / `MODEL_PATH`, or the alias's `path` |
 | structure | the positional argument, or `--structure` / the INCAR structure keys with `run` |
 | DPA branch | `--head` / `HEAD`, when the checkpoint is multi-task |
 | NEB endpoints | `--initial` / `--final`, or `NEB_INITIAL` / `NEB_FINAL` |
+| confsearch starts | `CS_STARTS` + `CS_ADSORBATE_INDICES`, or `--slab` / `--molecule` / `--n-starts` |
 
 There is no implicit UMA default, or any other. If no layer names a backend,
 the resolver stops:

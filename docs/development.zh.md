@@ -37,6 +37,7 @@ mliport/mliport/           包的源码
   calculators/             后端适配器与工厂
   config/                  解析器、schema、默认值、设置
   runners/                 SP、优化、MD、NEB 与批量执行
+  confsearch/             基于 MD 的构型搜索（adsorbate 模式）
   analysis/                轨迹分析
   tui/                     Textual 界面
   install/                 安装计划、兼容性注册表、启动器

@@ -1248,3 +1248,132 @@ def test_build_command_requires_model_type(tmp_path: Path) -> None:
     """QUEUE-01/QN-01: the command builder has no backend default."""
     with pytest.raises(TypeError):
         build_mliport_command("sp", "s.cif", "m.pt")  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------------------------------
+# confsearch tasks (spec section 12.1 / phase P4)
+# ---------------------------------------------------------------------------
+
+
+def _confsearch_paths(tmp_path: Path) -> None:
+    for name in ("start.extxyz", "slab.vasp", "molecule.xyz", "model.pt"):
+        (tmp_path / name).write_text("dummy", encoding="utf-8")
+
+
+def test_build_confsearch_command_mode_a() -> None:
+    cmd = build_mliport_command(
+        "confsearch",
+        "/s/start.extxyz",
+        "/m/m.pt",
+        model_type="mace",
+        task="bulk",
+        device="cpu",
+        output_dir="/o",
+        adsorbate_indices="300-341",
+        options={"cs_cycles": 3, "cs_dedup_fp_tol": 0.001},
+    )
+    assert cmd[3] == "confsearch"
+    assert cmd[4] == "run"
+    assert "/s/start.extxyz" in cmd
+    assert "--adsorbate-indices" in cmd and "300-341" in cmd
+    assert "--cycles" in cmd and "3" in cmd
+    assert "--dedup-fp-tol" in cmd and "0.001" in cmd
+
+
+def test_build_confsearch_command_mode_b() -> None:
+    cmd = build_mliport_command(
+        "confsearch",
+        None,
+        "/m/m.pt",
+        model_type="mace",
+        task="bulk",
+        device="cpu",
+        output_dir="/o",
+        slab="/s/slab.vasp",
+        molecule="/s/molecule.xyz",
+        n_starts=5,
+        options={"cs_place_anchor": "0,2"},
+    )
+    assert "--slab" in cmd and "/s/slab.vasp" in cmd
+    assert "--molecule" in cmd and "/s/molecule.xyz" in cmd
+    assert "--n-starts" in cmd and "5" in cmd
+    assert "--anchor" in cmd and "0,2" in cmd
+
+
+def test_parse_confsearch_task_file(tmp_path: Path) -> None:
+    _confsearch_paths(tmp_path)
+    path = _write_tasks(
+        tmp_path,
+        [
+            {
+                "calc_type": "confsearch",
+                "slab": "slab.vasp",
+                "molecule": "molecule.xyz",
+                "n_starts": 4,
+                "model": "model.pt",
+                "model_type": "mace",
+                "task": "bulk",
+                "device": "cpu",
+                "output_dir": "out",
+                "options": {"CS_CYCLES": "2", "CS_MD_MOBILE": "adsorbate_and_top"},
+            }
+        ],
+    )
+    parsed = parse_task_file(path)
+    task = parsed["tasks"][0]
+    assert task["calc_type"] == "confsearch"
+    assert task["n_starts"] == 4
+    assert task["options"]["cs_cycles"] == 2
+    assert task["options"]["cs_md_mobile"] == "adsorbate_and_top"
+
+
+@pytest.mark.parametrize(
+    "task_overrides",
+    [
+        {"slab": "slab.vasp", "molecule": "molecule.xyz"},  # missing n_starts
+        {"adsorbate_indices": "16-18"},  # no structure
+        {
+            "slab": "slab.vasp",
+            "molecule": "molecule.xyz",
+            "n_starts": 2,
+            "adsorbate_indices": "16-18",
+        },  # mode A and B mixed
+    ],
+)
+def test_parse_confsearch_task_file_fails_closed(
+    tmp_path: Path, task_overrides
+) -> None:
+    _confsearch_paths(tmp_path)
+    task = {
+        "calc_type": "confsearch",
+        "model": "model.pt",
+        "model_type": "mace",
+        "task": "bulk",
+        "device": "cpu",
+        "output_dir": "out",
+    }
+    task.update(task_overrides)
+    path = _write_tasks(tmp_path, [task])
+    with pytest.raises(ValueError):
+        parse_task_file(path)
+
+
+def test_parse_confsearch_task_rejects_resume(tmp_path: Path) -> None:
+    _confsearch_paths(tmp_path)
+    path = _write_tasks(
+        tmp_path,
+        [
+            {
+                "calc_type": "confsearch",
+                "structure": "start.extxyz",
+                "adsorbate_indices": "16-18",
+                "resume": "run/checkpoints/confsearch.json",
+                "model": "model.pt",
+                "model_type": "mace",
+                "device": "cpu",
+                "output_dir": "out",
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="not valid for confsearch"):
+        parse_task_file(path)

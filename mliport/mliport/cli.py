@@ -898,6 +898,9 @@ Examples:
     conf_run.add_argument("--top-k", dest="cs_top_k", type=int, default=None)
     conf_run.add_argument("--export-window", type=float, default=None)
     conf_run.add_argument(
+        "--refine", dest="cs_refine", action="store_true", default=None
+    )
+    conf_run.add_argument(
         "--no-refine", dest="cs_refine", action="store_false", default=None
     )
     conf_run.add_argument(
@@ -906,12 +909,86 @@ Examples:
         action="store_true",
         default=None,
     )
+    conf_run.add_argument(
+        "--no-allow-direct-forces",
+        dest="cs_allow_direct_forces",
+        action="store_false",
+        default=None,
+    )
     conf_run.add_argument("--seed", type=int, default=None)
     conf_run.add_argument("--timestep", type=float, default=None)
     conf_run.add_argument("--friction", type=float, default=None)
     conf_run.add_argument("--fmax-abort", dest="fmax_abort", type=float, default=None)
     conf_run.add_argument("--quench-fmax", type=float, default=None)
     conf_run.add_argument("--quench-steps", type=int, default=None)
+    conf_run.add_argument("--fix-below", dest="cs_fix_below", type=float, default=None)
+    conf_run.add_argument("--top-depth", dest="cs_top_depth", type=float, default=None)
+    conf_run.add_argument(
+        "--ramp-interval", dest="cs_ramp_interval", type=int, default=None
+    )
+    conf_run.add_argument(
+        "--save-interval", dest="cs_save_interval", type=int, default=None
+    )
+    conf_run.add_argument(
+        "--accept-temperature", dest="cs_accept_temperature", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--bond-scale", dest="cs_bond_scale", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--bond-break-scale", dest="cs_bond_break_scale", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--ionic-species", dest="cs_ionic_species", type=str, default=None
+    )
+    conf_run.add_argument(
+        "--desorption-distance", dest="cs_desorption_distance", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--min-image-distance", dest="cs_min_image_distance", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--min-vacuum-gap", dest="cs_min_vacuum_gap", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--place-contact-scale", dest="cs_place_contact_scale", type=float, default=None
+    )
+    conf_run.add_argument("--anchor", dest="cs_place_anchor", type=str, default=None)
+    conf_run.add_argument(
+        "--anchor-scale", dest="cs_place_anchor_scale", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--place-other-min-scale",
+        dest="cs_place_other_min_scale",
+        type=float,
+        default=None,
+    )
+    conf_run.add_argument(
+        "--anchor-targets", dest="cs_place_anchor_targets", type=str, default=None
+    )
+    conf_run.add_argument(
+        "--place-max-attempts", dest="cs_place_max_attempts", type=int, default=None
+    )
+    conf_run.add_argument(
+        "--dedup-energy-tol", dest="cs_dedup_energy_tol", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--dedup-geom-tol", dest="cs_dedup_geom_tol", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--dedup-fp-tol", dest="cs_dedup_fp_tol", type=float, default=None
+    )
+    conf_run.add_argument("--fp-rcut", dest="cs_fp_rcut", type=float, default=None)
+    conf_run.add_argument(
+        "--fp-binwidth", dest="cs_fp_binwidth", type=float, default=None
+    )
+    conf_run.add_argument("--fp-sigma", dest="cs_fp_sigma", type=float, default=None)
+    conf_run.add_argument(
+        "--refine-fmax", dest="cs_refine_fmax", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--refine-steps", dest="cs_refine_steps", type=int, default=None
+    )
     conf_run.add_argument("--reaction-policy", type=str, default=None)
     _add_resolver_args(conf_run, trajectory_output_flags=False)
 
