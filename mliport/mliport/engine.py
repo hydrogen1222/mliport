@@ -607,14 +607,20 @@ class CalculationEngine:
                 raise ValueError(
                     f"Cannot resume: {output} is not an existing run directory"
                 )
-            calculator = self._create_calculator()
-            return run_confsearch_workflow(
-                calculator,
-                resolved,
-                output_dir=output,
-                resume=True,
-                log_fn=log_fn,
-            ).results
+            # Spec 11.1 revision 5: resume takes the same run-directory lock as
+            # a new run, so two frontends can never append to one run.log or
+            # checkpoint at the same time.
+            from mliport.run_directory import run_directory_lock  # noqa: PLC0415
+
+            with run_directory_lock(output):
+                calculator = self._create_calculator()
+                return run_confsearch_workflow(
+                    calculator,
+                    resolved,
+                    output_dir=output,
+                    resume=True,
+                    log_fn=log_fn,
+                ).results
         with self.output_directory_claim() as claimed:
             if claimed != output:
                 raise ValueError(

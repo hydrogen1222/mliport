@@ -11,6 +11,7 @@ that needs a loaded backend:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import dataclass, fields
@@ -37,6 +38,7 @@ from mliport.confsearch.revisions import (
     CS_SCIENTIFIC_REVISION,
     CS_SPEC_REVISION,
 )
+from mliport.logger import LiveRunLogger
 from mliport.model_record import build_model_record
 from mliport.neb.preflight import (
     PREFLIGHT_SCHEMA,
@@ -119,12 +121,14 @@ def run_confsearch_workflow(
     """Run (or resume) one confsearch job from a resolved configuration."""
     options = _options_from_resolved(resolved)
     output = Path(output_dir or resolved.output_dir)
-    lines: list[str] = []
+    output.mkdir(parents=True, exist_ok=True)
+    # Spec 11.1 revision 5: run.log is the live, append-only LiveRunLogger, so
+    # it exists from the first line, survives a crash and grows on resume or
+    # extend instead of being rewritten at the end of the run.
+    run_logger = LiveRunLogger(output / "run.log", callback=log_fn, append=True)
 
     def log(message: str) -> None:
-        lines.append(message)
-        if log_fn is not None:
-            log_fn(message)
+        run_logger(str(message))
 
     placement_ss, _replica_sequences = _rng_streams(
         int(options.seed or 0), int(options.cs_n_starts or len(options.cs_starts or ()))
@@ -261,8 +265,21 @@ def run_confsearch_workflow(
             if not item.name.startswith("_")
         },
     }
-    output.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(output / "run_context.json", run_context)
+    if not resume:
+        _write_resolved_config(resolved, output)
+    resume_entry = (
+        {
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "unit_index": None if checkpoint is None else int(checkpoint.unit_index),
+            "seed": options.seed,
+            "mliport_version": mliport_version,
+        }
+        if resume
+        else None
+    )
+    run_context = _update_run_context(
+        output / "run_context.json", base=run_context, resume_entry=resume_entry
+    )
 
     results = run_confsearch(
         calculator.get_calculator(),
@@ -283,12 +300,63 @@ def run_confsearch_workflow(
         json.dumps(results, indent=2, sort_keys=True, default=_jsonable) + "\n",
         encoding="utf-8",
     )
-    (output / "run.log").write_text(
-        "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
-    )
-    run_context["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    atomic_write_json(output / "run_context.json", run_context)
+    log(f"confsearch finished with status {results.get('status')}")
+    run_context = _update_run_context(output / "run_context.json")
+    run_logger.close()
     return ConfsearchWorkflowResult(results=results, run_context=run_context)
+
+
+def _write_resolved_config(resolved: ResolvedConfig, output_dir: Path) -> None:
+    """Write ``resolved_config.json`` for a new run (spec 11.1 revision 5).
+
+    Mirrors the CLI's emitter (atomic replace, honours ``write_resolved_config``)
+    so both entry points produce the same file.
+    """
+    import os  # noqa: PLC0415
+
+    if not resolved.settings.get("write_resolved_config", True):
+        return
+    target = Path(output_dir) / "resolved_config.json"
+    payload = json.dumps(resolved.as_dict(), indent=2, default=str) + "\n"
+    tmp = target.parent / f".resolved_config.json.tmp-{os.getpid()}"
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+
+
+def _update_run_context(
+    path: Path,
+    *,
+    base: dict[str, Any] | None = None,
+    resume_entry: dict[str, Any] | None = None,
+    extension: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create run_context.json once, then update it in place (spec 11.1 rev 5).
+
+    A resume appends to ``resumes[]``; an extension (recorded by the CLI) appends
+    to ``extensions[]``.  The recorded identity, regions, budget, starts and
+    options are never rebuilt from scratch, so the file stays the run's history.
+    """
+    if path.is_file():
+        context = json.loads(path.read_text(encoding="utf-8"))
+    elif base is not None:
+        context = dict(base)
+    else:
+        raise ConfsearchPreparationError(
+            f"Cannot update {path}: it does not exist and no base record was given"
+        )
+    context.setdefault("resumes", [])
+    context.setdefault("extensions", [])
+    if resume_entry is not None:
+        context["resumes"].append(resume_entry)
+    if extension is not None:
+        context["extensions"].append(extension)
+    context["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    atomic_write_json(path, context)
+    return context
 
 
 def _jsonable(value: Any) -> Any:

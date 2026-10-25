@@ -32,6 +32,39 @@ if TYPE_CHECKING:
 CHECKPOINT_SCHEMA = "mliport.confsearch-checkpoint/1"
 RESUME_FINGERPRINT_SCHEMA = "mliport.confsearch-resume-fingerprint/1"
 
+#: Model-identity keys (spec section 11.2 revision 5).  Where the model ran or
+#: was stored is *not* identity: resuming on another GPU, or with a moved copy
+#: of an identical checkpoint, is the same calculation.  Devices are still
+#: recorded in run_context.json.
+MODEL_IDENTITY_KEYS = (
+    "model_type",
+    "model_sha256",
+    "backend_version",
+    "framework_versions",
+    "task",
+    "head_effective",
+    "dtype_effective",
+    "inference_mode",
+    "compile_enabled",
+    "direct_forces",
+)
+#: Dispersion sub-keys that are part of the identity (``dispersion.device`` is not).
+DISPERSION_IDENTITY_KEYS = ("method", "xc", "damping", "implementation", "version")
+
+
+def model_identity(model: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The identity subset of a model record (spec 11.2 revision 5)."""
+    record = dict(model or {})
+    identity: dict[str, Any] = {key: record.get(key) for key in MODEL_IDENTITY_KEYS}
+    dispersion = record.get("dispersion")
+    if isinstance(dispersion, Mapping):
+        identity["dispersion"] = {
+            key: dispersion.get(key) for key in DISPERSION_IDENTITY_KEYS
+        }
+    else:
+        identity["dispersion"] = None
+    return identity
+
 
 @dataclass
 class CheckpointData:
@@ -107,7 +140,7 @@ def build_resume_fingerprint(
             "cs_scientific_revision": CS_SCIENTIFIC_REVISION,
             "cs_checkpoint_schema_revision": CS_CHECKPOINT_SCHEMA_REVISION,
         },
-        "model": dict(model or {}),
+        "model": model_identity(model),
         "input_hashes": dict(input_hashes),
         "regions": dict(regions),
         "seed": seed,
@@ -193,6 +226,9 @@ class ConfsearchCheckpointStore:
 
 __all__ = [
     "CHECKPOINT_SCHEMA",
+    "DISPERSION_IDENTITY_KEYS",
+    "MODEL_IDENTITY_KEYS",
+    "model_identity",
     "RESUME_FINGERPRINT_SCHEMA",
     "CheckpointData",
     "ConfsearchCheckpointStore",
