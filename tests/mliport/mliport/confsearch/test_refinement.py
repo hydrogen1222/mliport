@@ -169,6 +169,73 @@ def test_unconverged_refinement_keeps_the_quench_result_and_flags_it(tmp_path):
     assert notes[0]["kept"] == "quench_result"
 
 
+def test_unconverged_refinement_candidate_is_still_exported(tmp_path):
+    """Spec 10.3 revision 6: a failed refinement must not delete a candidate.
+
+    The candidate keeps its quench geometry/energy, is exported as
+    `top/unrefined_NNN/` next to the refined ranks, and a warning names it.
+    """
+    options, regions, registry, atoms = _setup()
+    failing = _register(registry, atoms, energy=-0.60, replica=0)
+    good = _register(registry, atoms, energy=-0.50, replica=1, quench=2)
+    refinements = {
+        failing.unique_id: _outcome(
+            failing.unique_id,
+            energy=float("nan"),
+            status="quench_failed",
+            converged=False,
+        ),
+        good.unique_id: _outcome(good.unique_id, energy=-0.70, atoms=atoms.copy()),
+    }
+    results = _build(options, regions, registry, refinements, atoms, tmp_path=tmp_path)
+
+    assert [entry["id"] for entry in results["ranking"]["refined"]] == [good.unique_id]
+    exported = {item["path"]: item for item in results["exports"]}
+    assert "rank_001" in exported and exported["rank_001"]["refined"] is True
+    assert "unrefined_001" in exported
+    assert exported["unrefined_001"]["refined"] is False
+    assert exported["unrefined_001"]["refinement_failed"] is True
+    # The unrefined export keeps the *quench* geometry and energy.
+    assert exported["unrefined_001"]["energy_eV"] == pytest.approx(-0.60)
+    unrefined = (tmp_path / "top" / "unrefined_001").resolve()
+    payload = json.loads((unrefined / "minimum.json").read_text())
+    assert payload["export"]["ranking"]["energy_eV"] == pytest.approx(-0.60)
+    assert (unrefined / "POSCAR").is_file()
+    assert any("did not converge" in warning for warning in results["warnings"])
+
+
+def test_refined_entry_flags_come_from_the_refined_classification(tmp_path):
+    """Spec 10.3 revision 6: flags follow the refined classification."""
+    options, regions, registry, atoms = _setup()
+    unique = _register(registry, atoms, energy=-0.50, replica=0)
+    outcome = _outcome(unique.unique_id, energy=-0.60, atoms=atoms.copy())
+    # The refined classification says physisorbed + far-field slab change.
+    outcome = results_module.RefinementOutcome(
+        unique_id=outcome.unique_id,
+        status=outcome.status,
+        energy_eV=outcome.energy_eV,
+        fmax_eV_A=outcome.fmax_eV_A,
+        steps=outcome.steps,
+        atoms=outcome.atoms,
+        classification=fake_classification(
+            status="valid", flags=("far_field_slab_changed",)
+        ),
+        converged=True,
+    )
+    results = _build(
+        options,
+        regions,
+        registry,
+        {unique.unique_id: outcome},
+        atoms,
+        tmp_path=tmp_path,
+    )
+    entry = results["ranking"]["refined"][0]
+    # The quench representative was flagged "physisorbed"; the refined entry
+    # must carry the refined classification's flags instead.
+    assert entry["flags"] == ["far_field_slab_changed"]
+
+
 def test_refinement_status_change_removes_the_entry_with_a_reason(tmp_path):
     options, regions, registry, atoms = _setup()
     unique = _register(registry, atoms, energy=-0.50, replica=0)

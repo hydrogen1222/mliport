@@ -281,7 +281,10 @@ def _dedup_refined(
                 "first_found_md_ps": float(source.first_found_md_ps),
                 "first_found_quench_index": int(source.first_found_quench_index),
                 "status": str(outcome.status),
-                "flags": tuple(source.flags),
+                # Spec 10.3 revision 6: a refined entry's flags come from the
+                # refined classification (chemisorbed/physisorbed and the
+                # far-field slab flag can all change during refinement).
+                "flags": tuple(outcome.classification.flags),
                 "origin": source.representative.origin,
             }
             continue
@@ -405,6 +408,8 @@ def _export_candidate(
         "rank": int(unique_id),
         "path": directory.name,
         "energy_eV": float(energy),
+        "refined": bool(entry.get("refined")),
+        "refinement_failed": bool(entry.get("refinement_failed")),
         "files": files,
     }
 
@@ -709,6 +714,40 @@ def build_results(
                 )
             )
 
+    # Spec 10.3 revision 6: a candidate in the refinement window whose
+    # refinement did not converge must still reach the DFT deliverable.  It is
+    # exported with its quench geometry and energy as top/unrefined_NNN/ and a
+    # warning names it -- a failed refinement must never silently remove a top
+    # candidate.
+    unrefined_by_id = {int(entry["id"]): entry for entry in unrefined_entries}
+    unconverged_ids = sorted(
+        (
+            int(unique_id)
+            for unique_id, outcome in refinements.items()
+            if not outcome.converged and int(unique_id) in unrefined_by_id
+        ),
+        key=lambda unique_id: (
+            float(unrefined_by_id[unique_id]["energy_eV"]),
+            unique_id,
+        ),
+    )
+    if regions is not None:
+        for position, unique_id in enumerate(unconverged_ids, start=1):
+            unique = uniques_by_id[unique_id]
+            entry = unrefined_by_id[unique_id]
+            exports.append(
+                _export_candidate(
+                    output_dir / "top" / f"unrefined_{position:03d}",
+                    unique_id=unique_id,
+                    payload=unique.to_dict(),
+                    atoms=unique.representative.atoms,
+                    options=options,
+                    regions=regions,
+                    entry=entry,
+                    energy=float(entry["energy_eV"]),
+                )
+            )
+
     ranked_for_diagnostics = refined_entries or unrefined_entries
     saturation = _saturation(ranked_for_diagnostics, total_quenches=total_quenches)
     baseline_report = _baseline_report(
@@ -717,9 +756,15 @@ def build_results(
         uniques_by_id=uniques_by_id,
         options=options,
     )
-    warnings = list(warnings) + _status_warnings(
-        registry, options, ranked_for_diagnostics
-    )
+    warnings = list(warnings)
+    if unconverged_ids:
+        warnings.append(
+            "refinement did not converge for candidate(s) "
+            + ", ".join(str(unique_id) for unique_id in unconverged_ids)
+            + "; they are exported as top/unrefined_NNN/ with their quench "
+            "geometry and energy (spec 10.3)"
+        )
+    warnings += _status_warnings(registry, options, ranked_for_diagnostics)
     warnings = list(dict.fromkeys(warnings))
 
     status = "completed"
