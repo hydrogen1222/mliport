@@ -16,6 +16,25 @@ Internal (no user-visible behaviour change):
 
 New features:
 
+- **Configuration search (`confsearch`, new `CALC_TYPE = CONFSEARCH`).** MD-based
+  configuration search for one adsorbate on a periodic slab (spec revision 4,
+  tracking PR #61): multiple starts (user-prepared mode A, or automatic
+  placement mode B with `cs_place_anchor` chemisorption-first starts),
+  Langevin NVT heat/hold/cool cycles with per-step finite/force gates and an
+  early adsorbate-integrity check, FIRE quenches at fixed cell, Metropolis
+  restarts, deduplication by energy plus a direct geometric identity rule `G`
+  (fixed slab) or the focused Oganov-Valle fingerprint `D`, top-K refinement,
+  saturation diagnostics ("lowest found", never a global minimum), and exports
+  for DFT (`POSCAR` with selective dynamics, `structure.extxyz`,
+  `cp2k_coord.xyz`, `cp2k_cell.inc`, `cp2k_fixed_atoms.inc`, `minimum.json`).
+  Checkpoint/resume is bitwise-identical on CPU; the model identity includes
+  `dispersion`, so a D3 search can never be merged with a plain one. Interfaces:
+  `mliport confsearch run|place|resume`, `mliport.api.run_confsearch`,
+  `CS_*` INCAR keys, and a capability-matrix entry. `scipy` and `matplotlib`
+  were added to the `dev` extra so the ASE OFP known-answer test runs in CI.
+  `extend`/`merge`, the TUI entry and the real-model validation campaign are
+  later phases and are marked `no`/`partial` in the capability matrix.
+
 - **DFT-D3 dispersion.** `--d3` / `D3 = .TRUE.` / API `d3=True` adds Grimme
   DFT-D3 (via `torch-dftd`, float64) on top of any backend as
   `SumCalculator([model, D3])`; `--d3-xc` (default `pbe`) names the model's

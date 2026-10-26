@@ -31,6 +31,7 @@ Example:
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -505,6 +506,141 @@ def run_md(
     )
 
 
+def run_confsearch(
+    starts: Any = None,
+    *,
+    slab: str | Path | None = None,
+    molecule: str | Path | None = None,
+    n_starts: int | None = None,
+    adsorbate_indices: str | None = None,
+    model_path: str | None = None,
+    model_type: str | None = None,
+    task: str | None = None,
+    device: str | None = None,
+    inference_mode: str | None = None,
+    output_dir: str | Path | None = None,
+    job_name: str | None = None,
+    seed: int | None = None,
+    cycles: int | None = None,
+    mode: str | None = None,
+    md_mobile: str | None = None,
+    temperature_high: float | None = None,
+    temperature_low: float | None = None,
+    hold_ps: float | None = None,
+    cool_ps: float | None = None,
+    snapshot_interval_ps: float | None = None,
+    top_k: int | None = None,
+    export_window: float | None = None,
+    refine: bool | None = None,
+    allow_direct_forces: bool | None = None,
+    dry_run: bool = False,
+    resume: bool = False,
+    verbose: bool = True,
+    settings_path: str | None = None,
+    model_alias: str | None = None,
+    default_dtype: str | None = None,
+    head: str | None = None,
+    profile: str | None = None,
+    strict_config: bool | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Run (or resume) an MD-based configuration search (spec section 12.2).
+
+    Mirrors the ``mliport confsearch run`` CLI.  Returns the
+    ``search_results.json`` content as a dictionary.  The ranking is a screening
+    product: it reports the *lowest found* minimum with saturation evidence,
+    never a global minimum, and the exported candidates are meant for DFT
+    re-ranking.
+    """
+    import json as _json  # noqa: PLC0415
+
+    extra: dict[str, Any] = dict(kwargs)
+    for key, value in (
+        ("cs_slab", slab),
+        ("cs_molecule", molecule),
+        ("cs_n_starts", n_starts),
+        ("cs_adsorbate_indices", adsorbate_indices),
+        ("cs_mode", mode),
+        ("cs_md_mobile", md_mobile),
+        ("cs_temperature_high", temperature_high),
+        ("cs_temperature_low", temperature_low),
+        ("cs_hold_ps", hold_ps),
+        ("cs_cool_ps", cool_ps),
+        ("cs_snapshot_interval_ps", snapshot_interval_ps),
+        ("cs_cycles", cycles),
+        ("cs_top_k", top_k),
+        ("cs_export_window", export_window),
+        ("cs_refine", refine),
+        ("cs_allow_direct_forces", allow_direct_forces),
+        ("seed", seed),
+    ):
+        if value is not None:
+            extra[key] = value
+    if starts is not None:
+        if isinstance(starts, (str, Path)):
+            extra["cs_starts"] = str(starts)
+        else:
+            extra["cs_starts"] = os.pathsep.join(str(item) for item in starts)
+
+    incar_layer: dict[str, Any] | None = None
+    if resume:
+        if output_dir is None:
+            raise ValueError("resume requires the original output_dir")
+        run_dir = Path(output_dir).expanduser().resolve()
+        context = _json.loads(
+            (run_dir / "run_context.json").read_text(encoding="utf-8")
+        )
+        incar_layer = dict(context.get("options") or {})
+        model = context.get("model") or {}
+        for key, value in (
+            ("model_type", model.get("model_type")),
+            ("model_path", model.get("model_path")),
+            ("task", model.get("task")),
+            ("device", context.get("device")),
+            ("head", model.get("head_requested")),
+            ("default_dtype", model.get("dtype_requested")),
+            ("inference_mode", model.get("inference_mode")),
+        ):
+            if value is not None:
+                incar_layer[key] = value
+        output_dir = run_dir
+    elif output_dir is None:
+        raise ValueError("A new confsearch run requires an explicit output_dir")
+
+    cli = _build_api_cli(
+        "confsearch",
+        model_type,
+        task,
+        device,
+        inference_mode,
+        default_dtype,
+        head,
+        extra,
+    )
+    config, resolved = _api_resolve_full(
+        "confsearch",
+        model_path,
+        cli,
+        output_dir,
+        job_name,
+        settings_path,
+        model_alias,
+        profile,
+        strict_config,
+        incar_layer=incar_layer,
+    )
+    if verbose:
+        print(f"confsearch output: {config.output_dir}")
+    engine = CalculationEngine.from_config(config)
+    return engine.run_confsearch(
+        resolved,
+        output_dir=config.output_dir,
+        resume=resume,
+        dry_run=dry_run,
+        log_fn=_console_log if verbose else None,
+    )
+
+
 def run_neb(
     initial: Atoms | str | Path | None = None,
     final: Atoms | str | Path | None = None,
@@ -784,6 +920,7 @@ def calculate_energy(
 __all__ = [
     "calculate_energy",
     "run_md",
+    "run_confsearch",
     "run_neb",
     "run_optimization",
     "run_single_point",

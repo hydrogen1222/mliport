@@ -149,14 +149,19 @@ class LiveRunLogger:
         self,
         log_path: Path | str,
         callback: Any | None = None,
+        *,
+        append: bool = False,
     ) -> None:
         self.path = Path(log_path).resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.callback = callback
         self._lock = threading.Lock()
+        # ``append=True`` keeps an existing log (a resume or an extension must
+        # add to the run's history, never truncate it) and still creates the
+        # file on the first write, so it exists from the first line.
         self._handle = open(
             self.path,
-            "w",
+            "a" if append else "w",
             encoding="utf-8",
             buffering=1024 * 1024,
         )

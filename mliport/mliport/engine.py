@@ -164,7 +164,14 @@ class CalculationEngine:
     call run(), run_async(), run_neb(), or run_batch().
     """
 
-    VALID_CALC_TYPES: ClassVar[set[str]] = {"sp", "opt", "md", "neb", "batch"}
+    VALID_CALC_TYPES: ClassVar[set[str]] = {
+        "sp",
+        "opt",
+        "md",
+        "neb",
+        "batch",
+        "confsearch",
+    }
 
     def __init__(self, config: EngineConfig):
         self.config = config
@@ -569,6 +576,60 @@ class CalculationEngine:
                         )
                     )
                 return result
+
+    def run_confsearch(
+        self,
+        resolved: Any,
+        *,
+        output_dir: str | Path | None = None,
+        resume: bool = False,
+        dry_run: bool = False,
+        log_fn: Any | None = None,
+    ) -> dict[str, Any]:
+        """Run (or resume) the public confsearch workflow with one model."""
+        if self.config.calc_type != "confsearch" or resolved.calc_type != "confsearch":
+            raise ValueError("run_confsearch requires calc_type='confsearch'")
+        from mliport.confsearch.workflow import (  # noqa: PLC0415
+            run_confsearch_workflow,
+        )
+
+        output = (
+            Path(output_dir).expanduser().resolve()
+            if output_dir is not None
+            else self.output_dir
+        )
+        if dry_run:
+            return run_confsearch_workflow(
+                None, resolved, output_dir=output, dry_run=True, log_fn=log_fn
+            ).results
+        if resume:
+            if not output.is_dir():
+                raise ValueError(
+                    f"Cannot resume: {output} is not an existing run directory"
+                )
+            # Spec 11.1 revision 5: resume takes the same run-directory lock as
+            # a new run, so two frontends can never append to one run.log or
+            # checkpoint at the same time.
+            from mliport.run_directory import run_directory_lock  # noqa: PLC0415
+
+            with run_directory_lock(output):
+                calculator = self._create_calculator()
+                return run_confsearch_workflow(
+                    calculator,
+                    resolved,
+                    output_dir=output,
+                    resume=True,
+                    log_fn=log_fn,
+                ).results
+        with self.output_directory_claim() as claimed:
+            if claimed != output:
+                raise ValueError(
+                    "confsearch output must be the engine's claimed output directory"
+                )
+            calculator = self._create_calculator()
+            return run_confsearch_workflow(
+                calculator, resolved, output_dir=output, log_fn=log_fn
+            ).results
 
     async def run_async(
         self,
