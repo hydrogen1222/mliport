@@ -280,3 +280,45 @@ def test_run_log_is_append_only_and_run_context_is_updated(tmp_path):
     # The recorded identity, starts and options are kept, not rebuilt.
     for key in ("model", "starts", "regions", "options", "seed"):
         assert context_second[key] == context_first[key]
+
+
+def test_dry_run_creates_no_output_directory_or_log(tmp_path):
+    """A dry run must not block the real run with the same --output.
+
+    Regression from the rev 6 review: the LiveRunLogger was opened before the
+    dry-run branch, so `confsearch run --dry-run` left a run.log behind and the
+    real run was then refused by the output-directory check.
+    """
+    from mliport.confsearch.workflow import run_confsearch_workflow
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "dry-run-output"
+    dry = run_confsearch_workflow(wrapper, resolved, output_dir=output, dry_run=True)
+    assert dry.dry_run is True
+    assert not output.exists(), sorted(path.name for path in output.glob("*"))
+
+    real = run_confsearch_workflow(wrapper, resolved, output_dir=output)
+    assert real.status == "completed"
+    assert (output / "run.log").is_file()
+
+
+def test_failed_run_logs_the_reason_and_closes_the_logger(tmp_path):
+    """The logger must be closed on the failure path and name the reason."""
+    from mliport.confsearch.workflow import run_confsearch_workflow
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "failing-run"
+
+    class Exploding(wrapper.__class__):  # type: ignore[misc, valid-type]
+        def get_calculator(self):
+            raise RuntimeError("backend exploded")
+
+    with pytest.raises(RuntimeError, match="backend exploded"):
+        run_confsearch_workflow(
+            Exploding(wrapper._calculator, wrapper._model_path),
+            resolved,
+            output_dir=output,
+        )
+
+    log = (output / "run.log").read_text()
+    assert "confsearch failed: RuntimeError: backend exploded" in log

@@ -121,15 +121,6 @@ def run_confsearch_workflow(
     """Run (or resume) one confsearch job from a resolved configuration."""
     options = _options_from_resolved(resolved)
     output = Path(output_dir or resolved.output_dir)
-    output.mkdir(parents=True, exist_ok=True)
-    # Spec 11.1 revision 5: run.log is the live, append-only LiveRunLogger, so
-    # it exists from the first line, survives a crash and grows on resume or
-    # extend instead of being rewritten at the end of the run.
-    run_logger = LiveRunLogger(output / "run.log", callback=log_fn, append=True)
-
-    def log(message: str) -> None:
-        run_logger(str(message))
-
     placement_ss, _replica_sequences = _rng_streams(
         int(options.seed or 0), int(options.cs_n_starts or len(options.cs_starts or ()))
     )
@@ -170,140 +161,162 @@ def run_confsearch_workflow(
             dry_run=True,
         )
 
-    from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
+    # A dry run validates the inputs and returns; it must not create the output
+    # directory or a run.log, otherwise the real run with the same --output
+    # would be refused by the "output directory already contains results" check.
+    output.mkdir(parents=True, exist_ok=True)
+    # Spec 11.1 revision 5: run.log is the live, append-only LiveRunLogger, so
+    # it exists from the first line, survives a crash and grows on resume or
+    # extend instead of being rewritten at the end of the run.
+    run_logger = LiveRunLogger(output / "run.log", callback=log_fn, append=True)
+
+    def log(message: str) -> None:
+        run_logger(str(message))
 
     try:
-        mliport_version = version("mliport")
-    except PackageNotFoundError:  # pragma: no cover - always installed
-        mliport_version = "unknown"
+        from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
 
-    model = build_model_record(
-        calculator, resolved, error_class=ConfsearchPreparationError
-    )
-    warnings: list[str] = []
-    preflight: dict[str, Any] = {"status": "not_run"}
-    info = dict(calculator.info())
-    if info.get("direct_forces") is True:
-        if not options.cs_allow_direct_forces:
-            raise ConfsearchGradientConsistencyError(
-                "confsearch: the model reports direct_forces=True, so its forces "
-                "are not verifiably the gradient of its energy and the energy "
-                "ranking would be meaningless. Set cs_allow_direct_forces=true "
-                "(--allow-direct-forces) to accept this explicitly."
+        try:
+            mliport_version = version("mliport")
+        except PackageNotFoundError:  # pragma: no cover - always installed
+            mliport_version = "unknown"
+
+        model = build_model_record(
+            calculator, resolved, error_class=ConfsearchPreparationError
+        )
+        warnings: list[str] = []
+        preflight: dict[str, Any] = {"status": "not_run"}
+        info = dict(calculator.info())
+        if info.get("direct_forces") is True:
+            if not options.cs_allow_direct_forces:
+                raise ConfsearchGradientConsistencyError(
+                    "confsearch: the model reports direct_forces=True, so its forces "
+                    "are not verifiably the gradient of its energy and the energy "
+                    "ranking would be meaningless. Set cs_allow_direct_forces=true "
+                    "(--allow-direct-forces) to accept this explicitly."
+                )
+            model["energy_gradient_consistency"] = "not_guaranteed"
+            warnings.append(
+                "cs_allow_direct_forces is set and the model reports "
+                "direct_forces=True: the forces are not guaranteed to be -grad(E), "
+                "so the ranking is not meaningful."
             )
-        model["energy_gradient_consistency"] = "not_guaranteed"
-        warnings.append(
-            "cs_allow_direct_forces is set and the model reports "
-            "direct_forces=True: the forces are not guaranteed to be -grad(E), "
-            "so the ranking is not meaningful."
-        )
-        preflight = {"status": "skipped", "reason": "direct_forces allowed"}
-    else:
-        ase_calculator = calculator.get_calculator()
-        preflight = run_gradient_preflight(
-            ase_calculator,
-            [starts[0].atoms],
-            dtype=model.get("dtype_effective"),
-            minimum_structures=1,
-            naming=CONFSEARCH_PREFLIGHT_NAMING,
-        )
-        model["energy_gradient_consistency"] = "measured"
-        log(
-            "gradient pre-flight passed: "
-            f"{preflight['n_checks']} checks, max |FD - (-F.u)| = "
-            f"{preflight['max_abs_error_eV_A']:.2e} eV/A"
-        )
-
-    fingerprint, fingerprint_sha = build_resume_fingerprint(
-        options=options,
-        model=model,
-        input_hashes=hashes,
-        regions=regions_identity,
-        seed=options.seed,
-        mliport_version=mliport_version,
-    )
-    store = ConfsearchCheckpointStore(output)
-    checkpoint: CheckpointData | None = None
-    if resume:
-        checkpoint, recorded = store.load()
-        differences = compare_fingerprints(recorded, fingerprint)
-        if differences:
-            raise ConfsearchPreparationError(
-                "Cannot resume: the checkpoint fingerprint does not match this "
-                "configuration/input:\n  - " + "\n  - ".join(differences)
+            preflight = {"status": "skipped", "reason": "direct_forces allowed"}
+        else:
+            ase_calculator = calculator.get_calculator()
+            preflight = run_gradient_preflight(
+                ase_calculator,
+                [starts[0].atoms],
+                dtype=model.get("dtype_effective"),
+                minimum_structures=1,
+                naming=CONFSEARCH_PREFLIGHT_NAMING,
             )
-        log(f"resuming from checkpoint unit {checkpoint.unit_index}")
+            model["energy_gradient_consistency"] = "measured"
+            log(
+                "gradient pre-flight passed: "
+                f"{preflight['n_checks']} checks, max |FD - (-F.u)| = "
+                f"{preflight['max_abs_error_eV_A']:.2e} eV/A"
+            )
 
-    run_context = {
-        "schema": RUN_CONTEXT_SCHEMA,
-        "spec_revision": CS_SPEC_REVISION,
-        "scientific_revision": CS_SCIENTIFIC_REVISION,
-        "checkpoint_schema_revision": CS_CHECKPOINT_SCHEMA_REVISION,
-        "mliport_version": mliport_version,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "seed": options.seed,
-        "device": resolved.device,
-        "resume": bool(resume),
-        "model": model,
-        "input_hashes": hashes,
-        "regions": regions_identity,
-        "budget": {
-            "replicas": len(starts),
-            "cycles": int(options.cs_cycles),
-            "md_steps_per_cycle": int(options.total_md_steps_per_cycle),
-            "md_steps_total": int(
-                len(starts) * options.total_md_steps_per_cycle * options.cs_cycles
-            ),
-            "quench_upper_bound": int(len(starts) * options.total_quench_upper_bound),
-        },
-        "gradient_preflight": preflight,
-        "resume_fingerprint_sha256": fingerprint_sha,
-        "starts": [start.to_dict() for start in starts],
-        "options": {
-            item.name: _jsonable(getattr(options, item.name))
-            for item in fields(ConfsearchOptions)
-            if not item.name.startswith("_")
-        },
-    }
-    if not resume:
-        _write_resolved_config(resolved, output)
-    resume_entry = (
-        {
-            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "unit_index": None if checkpoint is None else int(checkpoint.unit_index),
-            "seed": options.seed,
+        fingerprint, fingerprint_sha = build_resume_fingerprint(
+            options=options,
+            model=model,
+            input_hashes=hashes,
+            regions=regions_identity,
+            seed=options.seed,
+            mliport_version=mliport_version,
+        )
+        store = ConfsearchCheckpointStore(output)
+        checkpoint: CheckpointData | None = None
+        if resume:
+            checkpoint, recorded = store.load()
+            differences = compare_fingerprints(recorded, fingerprint)
+            if differences:
+                raise ConfsearchPreparationError(
+                    "Cannot resume: the checkpoint fingerprint does not match this "
+                    "configuration/input:\n  - " + "\n  - ".join(differences)
+                )
+            log(f"resuming from checkpoint unit {checkpoint.unit_index}")
+
+        run_context = {
+            "schema": RUN_CONTEXT_SCHEMA,
+            "spec_revision": CS_SPEC_REVISION,
+            "scientific_revision": CS_SCIENTIFIC_REVISION,
+            "checkpoint_schema_revision": CS_CHECKPOINT_SCHEMA_REVISION,
             "mliport_version": mliport_version,
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "seed": options.seed,
+            "device": resolved.device,
+            "resume": bool(resume),
+            "model": model,
+            "input_hashes": hashes,
+            "regions": regions_identity,
+            "budget": {
+                "replicas": len(starts),
+                "cycles": int(options.cs_cycles),
+                "md_steps_per_cycle": int(options.total_md_steps_per_cycle),
+                "md_steps_total": int(
+                    len(starts) * options.total_md_steps_per_cycle * options.cs_cycles
+                ),
+                "quench_upper_bound": int(
+                    len(starts) * options.total_quench_upper_bound
+                ),
+            },
+            "gradient_preflight": preflight,
+            "resume_fingerprint_sha256": fingerprint_sha,
+            "starts": [start.to_dict() for start in starts],
+            "options": {
+                item.name: _jsonable(getattr(options, item.name))
+                for item in fields(ConfsearchOptions)
+                if not item.name.startswith("_")
+            },
         }
-        if resume
-        else None
-    )
-    run_context = _update_run_context(
-        output / "run_context.json", base=run_context, resume_entry=resume_entry
-    )
+        if not resume:
+            _write_resolved_config(resolved, output)
+        resume_entry = (
+            {
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "unit_index": None
+                if checkpoint is None
+                else int(checkpoint.unit_index),
+                "seed": options.seed,
+                "mliport_version": mliport_version,
+            }
+            if resume
+            else None
+        )
+        run_context = _update_run_context(
+            output / "run_context.json", base=run_context, resume_entry=resume_entry
+        )
 
-    results = run_confsearch(
-        calculator.get_calculator(),
-        options,
-        starts=starts,
-        output_dir=output,
-        seed=int(options.seed or 0),
-        model_record=model,
-        gradient_preflight=preflight,
-        resume=checkpoint,
-        resume_fingerprint=fingerprint,
-        log=log,
-    )
-    results["warnings"] = list(
-        dict.fromkeys(list(results.get("warnings", [])) + warnings)
-    )
-    (output / "search_results.json").write_text(
-        json.dumps(results, indent=2, sort_keys=True, default=_jsonable) + "\n",
-        encoding="utf-8",
-    )
-    log(f"confsearch finished with status {results.get('status')}")
-    run_context = _update_run_context(output / "run_context.json")
-    run_logger.close()
-    return ConfsearchWorkflowResult(results=results, run_context=run_context)
+        results = run_confsearch(
+            calculator.get_calculator(),
+            options,
+            starts=starts,
+            output_dir=output,
+            seed=int(options.seed or 0),
+            model_record=model,
+            gradient_preflight=preflight,
+            resume=checkpoint,
+            resume_fingerprint=fingerprint,
+            log=log,
+        )
+        results["warnings"] = list(
+            dict.fromkeys(list(results.get("warnings", [])) + warnings)
+        )
+        (output / "search_results.json").write_text(
+            json.dumps(results, indent=2, sort_keys=True, default=_jsonable) + "\n",
+            encoding="utf-8",
+        )
+        log(f"confsearch finished with status {results.get('status')}")
+        run_context = _update_run_context(output / "run_context.json")
+        return ConfsearchWorkflowResult(results=results, run_context=run_context)
+    except Exception as exc:
+        # A failed run's log must end with the reason (spec 11.1).
+        log(f"confsearch failed: {type(exc).__name__}: {exc}")
+        raise
+    finally:
+        run_logger.close()
 
 
 def _write_resolved_config(resolved: ResolvedConfig, output_dir: Path) -> None:
