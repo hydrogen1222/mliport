@@ -345,3 +345,39 @@ def test_anchored_placement_requires_a_partner_set():
             _options(cs_place_anchor="0"),
             rng=np.random.default_rng(5),
         )
+
+
+def test_contact_placement_works_on_an_all_ionic_slab():
+    """Contact placement must not need the anchored-placement partner set.
+
+    Regression from the rev 5 review: `anchor_partner_indices()` was computed
+    unconditionally, so placing a molecule in *contact* mode on a slab without
+    non-ionic atoms (a Li-metal surface) was refused with an anchored-placement
+    error even though no anchor was requested.
+    """
+    slab = Atoms(
+        "Li4",
+        positions=[[0.5, 0.5, 1.0], [3.5, 0.5, 1.0], [0.5, 3.5, 1.0], [3.5, 3.5, 1.0]],
+        cell=[6.0, 6.0, 20.0],
+        pbc=True,
+    )
+    result = place_molecule(
+        slab,
+        [oh_molecule()],
+        _options(),  # no cs_place_anchor: contact placement
+        rng=np.random.default_rng(11),
+    )
+    assert result.anchor_slab_index is None
+    assert result.anchor_q is None
+    assert len(result.atoms) == len(slab) + 2
+    # The contact rule is satisfied: the smallest q is at the contact scale.
+    radii = covalent_radii[np.asarray(result.atoms.numbers, dtype=int)]
+    q = mic_distance_matrix(
+        result.atoms,
+        np.arange(len(slab), len(result.atoms)),
+        np.arange(len(slab)),
+    )
+    q = q / (radii[len(slab) :, None] + radii[None, : len(slab)])
+    assert float(np.min(q)) == pytest.approx(
+        _options().cs_place_contact_scale, abs=1e-3
+    )
