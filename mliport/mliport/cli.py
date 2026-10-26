@@ -2614,6 +2614,10 @@ def _comparability_key(context: dict) -> dict:
             "numbers": system.get("numbers"),
             "cell_A": system.get("cell_A"),
             "pbc": system.get("pbc"),
+            # Spec 11.4 revision 6: the exact fixed-atom positions identify the
+            # slab geometry even when composition, order, cell and index sets
+            # agree (two terminations cut from one supercell).
+            "fixed_positions_A": system.get("fixed_positions_A"),
         },
         "electronic_state": {
             "charge": electronic.get("charge"),
@@ -2659,6 +2663,7 @@ def _cmd_confsearch_merge(args: argparse.Namespace) -> int:
             not system.get("numbers")
             or not system.get("cell_A")
             or system.get("pbc") is None
+            or system.get("fixed_positions_A") is None
         ):
             raise ValueError(
                 f"Cannot merge {run_dir.name}: run_context.json does not record the "

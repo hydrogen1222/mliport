@@ -903,6 +903,12 @@ class SearchEngine:
                 "numbers": [int(z) for z in system_atoms.numbers],
                 "cell_A": np.asarray(system_atoms.cell, dtype=float).tolist(),
                 "pbc": [bool(value) for value in system_atoms.pbc],
+                "fixed_positions_A": [
+                    [float(value) for value in position]
+                    for position in np.asarray(
+                        system_atoms.get_positions(), dtype=float
+                    )[regions.fixed]
+                ],
             },
             "electronic_state": {"charge": None, "spin": None},
             "scientific_revision": CS_SCIENTIFIC_REVISION,

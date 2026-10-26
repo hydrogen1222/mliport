@@ -230,7 +230,6 @@ def run_confsearch_workflow(
     def log(message: str) -> None:
         run_logger(str(message))
 
-
     try:
         from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
 
@@ -276,17 +275,6 @@ def run_confsearch_workflow(
                 f"{preflight['max_abs_error_eV_A']:.2e} eV/A"
             )
 
-        comparison_options = options
-        if allow_cycle_change:
-            # `extend` is the one supported budget change (spec 11.3): everything
-            # else in the fingerprint must still match, so compare with the
-            # checkpointed cycle count substituted back in.
-            recorded_context = output / "run_context.json"
-            if recorded_context.is_file():
-                recorded = json.loads(recorded_context.read_text(encoding="utf-8"))
-                recorded_cycles = (recorded.get("options") or {}).get("cs_cycles")
-                if recorded_cycles is not None:
-                    comparison_options = replace(options, cs_cycles=int(recorded_cycles))
         fingerprint, fingerprint_sha = build_resume_fingerprint(
             options=options,
             model=model,
@@ -299,6 +287,22 @@ def run_confsearch_workflow(
         checkpoint: CheckpointData | None = None
         if resume:
             checkpoint, recorded = store.load()
+            # `extend` is the one supported budget change (spec 11.3): compare with
+            # the **checkpoint's** cycle count substituted back in, so everything
+            # else must still match.  The exemption also applies to a plain resume
+            # when the context records an extension covering its own budget -- an
+            # extend that crashed after recording, before the first new unit, must
+            # be resumable (spec 11.3 revision 6) instead of refused.
+            exempt_cycles = (
+                allow_cycle_change or _recorded_extension_allows_cycle_change(output)
+            )
+            comparison_options = options
+            if exempt_cycles:
+                checkpoint_cycles = (recorded.get("options") or {}).get("cs_cycles")
+                if checkpoint_cycles is not None:
+                    comparison_options = replace(
+                        options, cs_cycles=int(checkpoint_cycles)
+                    )
             comparison_fingerprint = (
                 build_resume_fingerprint(
                     options=comparison_options,
@@ -308,7 +312,7 @@ def run_confsearch_workflow(
                     seed=options.seed,
                     mliport_version=mliport_version,
                 )[0]
-                if allow_cycle_change
+                if exempt_cycles
                 else fingerprint
             )
             differences = compare_fingerprints(recorded, comparison_fingerprint)
@@ -329,7 +333,9 @@ def run_confsearch_workflow(
                     index = (
                         len(
                             json.loads(
-                                (output / "run_context.json").read_text(encoding="utf-8")
+                                (output / "run_context.json").read_text(
+                                    encoding="utf-8"
+                                )
                             ).get("extensions")
                             or []
                         )
@@ -362,6 +368,15 @@ def run_confsearch_workflow(
                 "numbers": [int(z) for z in starts[0].atoms.numbers],
                 "cell_A": np.asarray(starts[0].atoms.cell, dtype=float).tolist(),
                 "pbc": [bool(value) for value in starts[0].atoms.pbc],
+                # Spec 11.4 revision 6: the fixed atoms never move, so their exact
+                # positions identify the slab geometry (two terminations cut from one
+                # supercell share composition, order, cell and index sets).
+                "fixed_positions_A": [
+                    [float(value) for value in position]
+                    for position in np.asarray(
+                        starts[0].atoms.get_positions(), dtype=float
+                    )[starts[0].regions.fixed]
+                ],
             },
             "electronic_state": {
                 "charge": resolved.run_options.get("charge"),
@@ -378,7 +393,9 @@ def run_confsearch_workflow(
                 "md_steps_total": int(
                     len(starts) * options.total_md_steps_per_cycle * options.cs_cycles
                 ),
-                "quench_upper_bound": int(len(starts) * options.total_quench_upper_bound),
+                "quench_upper_bound": int(
+                    len(starts) * options.total_quench_upper_bound
+                ),
             },
             "gradient_preflight": preflight,
             "resume_fingerprint_sha256": fingerprint_sha,
@@ -394,7 +411,9 @@ def run_confsearch_workflow(
         resume_entry = (
             {
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "unit_index": None if checkpoint is None else int(checkpoint.unit_index),
+                "unit_index": None
+                if checkpoint is None
+                else int(checkpoint.unit_index),
                 "seed": options.seed,
                 "mliport_version": mliport_version,
             }
@@ -433,6 +452,31 @@ def run_confsearch_workflow(
         raise
     finally:
         run_logger.close()
+
+
+def _recorded_extension_allows_cycle_change(run_dir: Path) -> bool:
+    """True when run_context.json records an extension covering its own budget.
+
+    An ``extend`` archives and records *before* it runs the new units, so a
+    crash in that window leaves the context at the new ``cs_cycles`` while the
+    checkpoint still holds the old fingerprint.  Such a run must still be
+    resumable (spec 11.3), and re-running ``extend`` must not add cycles again.
+    """
+    path = Path(run_dir) / "run_context.json"
+    if not path.is_file():
+        return False
+    try:
+        context = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    extensions = context.get("extensions") or []
+    if not extensions:
+        return False
+    recorded_cycles = (context.get("options") or {}).get("cs_cycles")
+    total = (extensions[-1] or {}).get("total_cycles")
+    if recorded_cycles is None or total is None:
+        return False
+    return int(total) == int(recorded_cycles)
 
 
 def _write_resolved_config(resolved: ResolvedConfig, output_dir: Path) -> None:

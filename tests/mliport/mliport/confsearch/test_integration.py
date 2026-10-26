@@ -491,6 +491,48 @@ def test_confsearch_merge_refuses_incomparable_runs(tmp_path, capsys):
     assert "comparability key differs" in capsys.readouterr().out
 
 
+def test_resume_after_a_crashed_extend_is_accepted(tmp_path):
+    """Spec 11.3: an extend that crashed after recording must still resume.
+
+    `extend` archives and records before it runs the new units, so a crash in
+    that window leaves run_context.json at the new `cs_cycles` while the
+    checkpoint fingerprint still holds the old one.  A plain `resume` must apply
+    the `cs_cycles` exemption then (and re-running extend must not add cycles
+    again).
+    """
+    from dataclasses import replace
+
+    from mliport.confsearch.workflow import (
+        archive_for_extension,
+        record_extension,
+        run_confsearch_workflow,
+    )
+
+    resolved, wrapper = _workflow_setup(tmp_path, cycles=1)
+    output = tmp_path / "crash-window"
+    run_confsearch_workflow(wrapper, resolved, output_dir=output)
+
+    # Simulate the crash window: archived + recorded, then nothing ran.
+    archive_for_extension(output, index=1)
+    record_extension(output, added_cycles=1, total_cycles=2)
+    context = json.loads((output / "run_context.json").read_text())
+    assert context["options"]["cs_cycles"] == 2
+    assert context["extensions"][0]["total_cycles"] == 2
+
+    resolved_extended = replace(
+        resolved, run_options=dict(resolved.run_options, cs_cycles=2)
+    )
+    # A plain resume (no allow_cycle_change) must be accepted.
+    resumed = run_confsearch_workflow(
+        wrapper, resolved_extended, output_dir=output, resume=True
+    )
+    assert resumed.status == "completed"
+    assert resumed.results["diagnostics"]["n_quenches"] > 0
+    # No second extension was recorded by the resume.
+    context = json.loads((output / "run_context.json").read_text())
+    assert len(context["extensions"]) == 1
+
+
 def test_confsearch_resume_cli_accepts_a_recorded_run(tmp_path, capsys, monkeypatch):
     """A resume must rebuild the config layer from run_context.json.
 
@@ -539,6 +581,37 @@ def test_confsearch_merge_refuses_a_different_cell_with_the_same_index_sets(
             str(second_dir),
             "--output",
             str(tmp_path / "merged-cell"),
+        ]
+    )
+    assert code != 0
+    out = capsys.readouterr().out
+    assert "comparability key differs" in out
+    assert "system" in out
+
+
+def test_confsearch_merge_refuses_a_moved_fixed_atom(tmp_path, capsys):
+    """Spec 11.4 revision 6: the fixed-atom positions identify the slab.
+
+    Two terminations cut from one supercell can share composition, atom order,
+    cell and index sets, so the key must compare the fixed atoms themselves.
+    """
+    from tests.mliport.mliport.confsearch.test_engine import _run
+
+    first_dir, _first = _run(tmp_path, [(0.5, 0.5)], name="fixpos-a")
+    second_dir, _second = _run(tmp_path, [(0.5, 0.5)], name="fixpos-b")
+    context = json.loads((second_dir / "run_context.json").read_text())
+    positions = context["system"]["fixed_positions_A"]
+    assert positions, "the synthetic slab must have fixed atoms"
+    positions[0][0] = float(positions[0][0]) + 0.25
+    (second_dir / "run_context.json").write_text(json.dumps(context))
+    code = main(
+        [
+            "confsearch",
+            "merge",
+            str(first_dir),
+            str(second_dir),
+            "--output",
+            str(tmp_path / "merged-fixpos"),
         ]
     )
     assert code != 0
