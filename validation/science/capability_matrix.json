@@ -159,26 +159,26 @@
     {
       "feature": "confsearch_extend",
       "api": "no",
-      "direct_cli": "no",
+      "direct_cli": "yes",
       "incar": "no",
       "tui": "no",
-      "note": "Phase P4: `mliport confsearch extend RUN --cycles N` is not implemented yet."
+      "note": "`mliport confsearch extend RUN --cycles N` (spec 11.3): the fingerprint ignores only cs_cycles, previous results move to history/extension_N/ and the extension is recorded in run_context.json. No API wrapper yet."
     },
     {
       "feature": "confsearch_merge",
       "api": "no",
-      "direct_cli": "no",
+      "direct_cli": "yes",
       "incar": "no",
       "tui": "no",
-      "note": "Phase P4: `mliport confsearch merge RUN1 RUN2 --output DIR` is not implemented yet."
+      "note": "`mliport confsearch merge RUN1 RUN2 --output DIR` (spec 11.4): refuses runs whose comparability key differs, re-registers the unique minima in source order and re-ranks by quench energy (no recomputation). No API wrapper yet."
     },
     {
       "feature": "confsearch_export",
-      "api": "partial",
-      "direct_cli": "partial",
+      "api": "yes",
+      "direct_cli": "yes",
       "incar": "no",
       "tui": "no",
-      "note": "Exports are written by every run (top/rank_NNN). The standalone `mliport confsearch export RUN` re-export command is phase P3 work that is not implemented yet; re-run or read search_results.json."
+      "note": "Exports are written by every run (top/rank_NNN); `mliport confsearch export RUN [--top-k K] [--window E]` re-exports from the run's registry representatives (quench geometries; the original top/ dirs hold refined geometries)."
     }
   ]
 }

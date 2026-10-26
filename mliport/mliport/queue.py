@@ -57,11 +57,16 @@ _STRUCTURAL_KEYS = {
     "task",
     "device",
     "output_dir",
+    # confsearch mode B / mode A structural fields (spec section 12.1)
+    "slab",
+    "molecule",
+    "n_starts",
+    "adsorbate_indices",
     "options",
 }
-_VALID_CALC_TYPES = {"sp", "opt", "md", "neb"}
+_VALID_CALC_TYPES = {"sp", "opt", "md", "neb", "confsearch"}
 _VALID_ENGINES = {"uma", "fairchem", "mace", "dpa", "grace"}
-_CALC_SCOPES = {"sp", "opt", "md", "neb", "batch"}
+_CALC_SCOPES = {"sp", "opt", "md", "neb", "batch", "confsearch"}
 
 #: option key -> CLI flag mapping for the shared command builder.
 _OPT_FLAGS: dict[str, tuple[str, ...]] = {
@@ -85,6 +90,51 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "write_outcar": ("--write-outcar", "--no-write-outcar"),
     "write_xdatcar": ("--write-xdatcar", "--no-write-xdatcar"),
     "write_trajectory": ("--write-trajectory", "--no-write-trajectory"),
+    # confsearch (spec section 12.1 / 12.3)
+    "cs_mode": ("--mode",),
+    "cs_md_mobile": ("--md-mobile",),
+    "cs_cycles": ("--cycles",),
+    "cs_temperature_high": ("--temperature-high",),
+    "cs_temperature_low": ("--temperature-low",),
+    "cs_hold_ps": ("--hold-ps",),
+    "cs_cool_ps": ("--cool-ps",),
+    "cs_snapshot_interval_ps": ("--snapshot-interval-ps",),
+    "cs_ramp_interval": ("--ramp-interval",),
+    "cs_save_interval": ("--save-interval",),
+    "cs_accept_temperature": ("--accept-temperature",),
+    "cs_top_depth": ("--top-depth",),
+    "cs_fix_below": ("--fix-below",),
+    "cs_quench_fmax": ("--quench-fmax",),
+    "cs_quench_steps": ("--quench-steps",),
+    "cs_bond_scale": ("--bond-scale",),
+    "cs_bond_break_scale": ("--bond-break-scale",),
+    "cs_ionic_species": ("--ionic-species",),
+    "cs_reaction_policy": ("--reaction-policy",),
+    "cs_desorption_distance": ("--desorption-distance",),
+    "cs_min_image_distance": ("--min-image-distance",),
+    "cs_min_vacuum_gap": ("--min-vacuum-gap",),
+    "cs_place_contact_scale": ("--place-contact-scale",),
+    "cs_place_anchor": ("--anchor",),
+    "cs_place_anchor_scale": ("--anchor-scale",),
+    "cs_place_other_min_scale": ("--place-other-min-scale",),
+    "cs_place_anchor_targets": ("--anchor-targets",),
+    "cs_place_max_attempts": ("--place-max-attempts",),
+    "cs_dedup_energy_tol": ("--dedup-energy-tol",),
+    "cs_dedup_geom_tol": ("--dedup-geom-tol",),
+    "cs_dedup_fp_tol": ("--dedup-fp-tol",),
+    "cs_fp_rcut": ("--fp-rcut",),
+    "cs_fp_binwidth": ("--fp-binwidth",),
+    "cs_fp_sigma": ("--fp-sigma",),
+    "cs_top_k": ("--top-k",),
+    "cs_export_window": ("--export-window",),
+    "cs_refine": ("--refine", "--no-refine"),
+    "cs_refine_fmax": ("--refine-fmax",),
+    "cs_refine_steps": ("--refine-steps",),
+    "cs_allow_direct_forces": (
+        "--allow-direct-forces",
+        "--no-allow-direct-forces",
+    ),
+    # (timestep/friction/seed/fmax_abort already map below)
     # opt
     "fmax": ("--fmax",),
     "max_steps": ("--max-steps",),
@@ -219,7 +269,7 @@ def _coerce_task_options(
             raise ValueError(
                 f"{label}: option {key!r} is not valid for engine={model_type!r}"
             )
-        if canonical == "fmax_abort" and calc_type not in {"md", "neb"}:
+        if canonical == "fmax_abort" and calc_type not in {"md", "neb", "confsearch"}:
             raise ValueError(f"{label}: option {key!r} is only valid for MD/NEB")
         try:
             value = spec.coerce(raw_value)
@@ -251,6 +301,10 @@ def build_mliport_command(
     resume: str | None = None,
     atom_map: list[int] | None = None,
     image_shifts: list[list[int]] | None = None,
+    slab: str | None = None,
+    molecule: str | None = None,
+    n_starts: int | None = None,
+    adsorbate_indices: str | None = None,
 ) -> list[str]:
     """Build the argv for a ``mliport <calc_type> ...`` calculation run.
 
@@ -263,7 +317,29 @@ def build_mliport_command(
     UMA-only flags and vice versa.
     """
     cmd = [python or sys.executable, "-m", "mliport.cli", calc_type]
-    if calc_type == "neb":
+    if calc_type == "confsearch":
+        cmd.append("run")
+        if resume is not None:
+            raise ValueError(
+                "confsearch resume is not a queue task; run it interactively"
+            )
+        if slab is not None or molecule is not None or n_starts is not None:
+            if not all(value is not None for value in (slab, molecule, n_starts)):
+                raise ValueError(
+                    "A queued confsearch mode B run requires slab, molecule and "
+                    "n_starts"
+                )
+            cmd.extend(
+                ["--slab", slab, "--molecule", molecule, "--n-starts", str(n_starts)]
+            )
+        else:
+            if structure is None or adsorbate_indices is None:
+                raise ValueError(
+                    "A queued confsearch run needs structure + adsorbate_indices "
+                    "(mode A) or slab + molecule + n_starts (mode B)"
+                )
+            cmd.extend([str(structure), "--adsorbate-indices", str(adsorbate_indices)])
+    elif calc_type == "neb":
         if resume is not None:
             if initial is not None or final is not None:
                 raise ValueError("NEB resume cannot also specify endpoints")
@@ -280,6 +356,8 @@ def build_mliport_command(
                     for row in image_shifts
                 )
                 cmd.extend(["--image-shifts", encoded_shifts])
+    elif calc_type == "confsearch":
+        pass
     else:
         if structure is None:
             raise ValueError(f"A queued {calc_type} run requires a structure")
@@ -375,6 +453,8 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
             )
         initial = final = resume = None
         atom_map = image_shifts = None
+        slab_path = molecule_path = None
+        n_starts = None
         checkpoint_layer: dict[str, Any] = {}
         if calc_type == "neb":
             if task.get("resume") is not None:
@@ -469,6 +549,72 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
                     label=f"{label}: output_dir",
                     must_exist=False,
                 )
+        elif calc_type == "confsearch":
+            if any(
+                task.get(key) is not None
+                for key in (
+                    "initial",
+                    "final",
+                    "resume",
+                    "atom_map",
+                    "image_shifts",
+                )
+            ):
+                raise ValueError(
+                    f"{label}: initial/final/resume/atom_map/image_shifts are not "
+                    "valid for confsearch (use `mliport confsearch resume` for an "
+                    "interrupted run)"
+                )
+            slab = task.get("slab")
+            molecule = task.get("molecule")
+            n_starts = task.get("n_starts")
+            indices = task.get("adsorbate_indices")
+            mode_b = any(value is not None for value in (slab, molecule, n_starts))
+            if mode_b:
+                if not all(value is not None for value in (slab, molecule, n_starts)):
+                    raise ValueError(
+                        f"{label}: confsearch mode B requires slab, molecule and "
+                        "n_starts together"
+                    )
+                if task.get("structure") is not None or indices is not None:
+                    raise ValueError(
+                        f"{label}: confsearch mode B cannot also set "
+                        "structure/adsorbate_indices"
+                    )
+                slab_path = _freeze_declared_path(
+                    slab, base_dir=base_dir, label=f"{label}: slab", must_exist=True
+                )
+                molecule_path = _freeze_declared_path(
+                    molecule,
+                    base_dir=base_dir,
+                    label=f"{label}: molecule",
+                    must_exist=True,
+                )
+                n_starts = _strict_integer(n_starts, label=f"{label}: n_starts")
+                if n_starts < 1:
+                    raise ValueError(f"{label}: n_starts must be >= 1")
+                structure = slab_path
+            else:
+                if task.get("structure") is None or indices is None:
+                    raise ValueError(
+                        f"{label}: confsearch needs either structure + "
+                        "adsorbate_indices (mode A) or slab + molecule + n_starts "
+                        "(mode B)"
+                    )
+                slab_path = molecule_path = None
+                n_starts = None
+                structure = _freeze_declared_path(
+                    task.get("structure"),
+                    base_dir=base_dir,
+                    label=f"{label}: structure",
+                    must_exist=True,
+                )
+            output_dir = _freeze_declared_path(
+                task.get("output_dir", "./results"),
+                base_dir=base_dir,
+                label=f"{label}: output_dir",
+                must_exist=False,
+            )
         else:
             if any(
                 task.get(key) is not None
@@ -575,6 +721,14 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
                     task.get("device", checkpoint_layer.get("device", "cpu"))
                 ),
                 "output_dir": output_dir,
+                "slab": slab_path,
+                "molecule": molecule_path,
+                "n_starts": n_starts,
+                "adsorbate_indices": (
+                    str(task.get("adsorbate_indices"))
+                    if task.get("adsorbate_indices") is not None
+                    else None
+                ),
                 "options": cleaned,
             }
         )
@@ -607,6 +761,10 @@ def submit_task_file(mgr: JobManager, path: str | Path) -> tuple[list[str], int]
             resume=task["resume"],
             atom_map=task["atom_map"],
             image_shifts=task["image_shifts"],
+            slab=task.get("slab"),
+            molecule=task.get("molecule"),
+            n_starts=task.get("n_starts"),
+            adsorbate_indices=task.get("adsorbate_indices"),
         )
         formula, natoms = _probe_structure(task["structure"])
         mgr.enqueue(

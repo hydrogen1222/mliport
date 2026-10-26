@@ -21,12 +21,13 @@ built-in defaults
 
 | 需要什么 | 从哪里来 |
 |---|---|
-| 计算类型 | 子命令（`sp`、`opt`、`md`、`neb`、`batch`），或 `CALC_TYPE` / `CALCULATION` |
+| 计算类型 | 子命令（`sp`、`opt`、`md`、`neb`、`batch`、`confsearch`），或 `CALC_TYPE` / `CALCULATION` |
 | 后端 | `--model-type` / `MODEL_TYPE`，或声明了 `engine` 的模型别名 |
 | 模型路径 | `--model` / `MODEL_PATH`，或别名里的 `path` |
 | 结构 | 位置参数；`run` 命令下用 `--structure` 或 INCAR 的结构键 |
 | DPA 分支 | 多任务模型用 `--head` / `HEAD` |
 | NEB 端点 | `--initial` / `--final`，或 `NEB_INITIAL` / `NEB_FINAL` |
+| confsearch 起点 | `CS_STARTS` + `CS_ADSORBATE_INDICES`，或 `--slab` / `--molecule` / `--n-starts` |
 
 不存在隐含的 UMA 默认值，也不存在别的默认值。如果任何一层都没有指明后端，解析器
 会停下来：

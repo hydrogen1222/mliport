@@ -109,6 +109,7 @@ nav:
       - workflows/optimization.md
       - workflows/md.md
       - workflows/neb.md
+      - workflows/confsearch.md
       - workflows/batch.md
       - workflows/queue.md
   - Analysis:

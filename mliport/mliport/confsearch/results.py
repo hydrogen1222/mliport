@@ -767,6 +767,8 @@ def build_results(
     warnings += _status_warnings(registry, options, ranked_for_diagnostics)
     warnings = list(dict.fromkeys(warnings))
 
+    # A merge has no replicas of its own; only a search whose every replica
+    # died (no surviving start) is a failure (spec 7.1).
     status = "completed"
     if replicas and not any(
         getattr(replica, "status", None) == "active" for replica in replicas

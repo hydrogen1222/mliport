@@ -898,6 +898,9 @@ Examples:
     conf_run.add_argument("--top-k", dest="cs_top_k", type=int, default=None)
     conf_run.add_argument("--export-window", type=float, default=None)
     conf_run.add_argument(
+        "--refine", dest="cs_refine", action="store_true", default=None
+    )
+    conf_run.add_argument(
         "--no-refine", dest="cs_refine", action="store_false", default=None
     )
     conf_run.add_argument(
@@ -906,12 +909,86 @@ Examples:
         action="store_true",
         default=None,
     )
+    conf_run.add_argument(
+        "--no-allow-direct-forces",
+        dest="cs_allow_direct_forces",
+        action="store_false",
+        default=None,
+    )
     conf_run.add_argument("--seed", type=int, default=None)
     conf_run.add_argument("--timestep", type=float, default=None)
     conf_run.add_argument("--friction", type=float, default=None)
     conf_run.add_argument("--fmax-abort", dest="fmax_abort", type=float, default=None)
     conf_run.add_argument("--quench-fmax", type=float, default=None)
     conf_run.add_argument("--quench-steps", type=int, default=None)
+    conf_run.add_argument("--fix-below", dest="cs_fix_below", type=float, default=None)
+    conf_run.add_argument("--top-depth", dest="cs_top_depth", type=float, default=None)
+    conf_run.add_argument(
+        "--ramp-interval", dest="cs_ramp_interval", type=int, default=None
+    )
+    conf_run.add_argument(
+        "--save-interval", dest="cs_save_interval", type=int, default=None
+    )
+    conf_run.add_argument(
+        "--accept-temperature", dest="cs_accept_temperature", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--bond-scale", dest="cs_bond_scale", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--bond-break-scale", dest="cs_bond_break_scale", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--ionic-species", dest="cs_ionic_species", type=str, default=None
+    )
+    conf_run.add_argument(
+        "--desorption-distance", dest="cs_desorption_distance", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--min-image-distance", dest="cs_min_image_distance", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--min-vacuum-gap", dest="cs_min_vacuum_gap", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--place-contact-scale", dest="cs_place_contact_scale", type=float, default=None
+    )
+    conf_run.add_argument("--anchor", dest="cs_place_anchor", type=str, default=None)
+    conf_run.add_argument(
+        "--anchor-scale", dest="cs_place_anchor_scale", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--place-other-min-scale",
+        dest="cs_place_other_min_scale",
+        type=float,
+        default=None,
+    )
+    conf_run.add_argument(
+        "--anchor-targets", dest="cs_place_anchor_targets", type=str, default=None
+    )
+    conf_run.add_argument(
+        "--place-max-attempts", dest="cs_place_max_attempts", type=int, default=None
+    )
+    conf_run.add_argument(
+        "--dedup-energy-tol", dest="cs_dedup_energy_tol", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--dedup-geom-tol", dest="cs_dedup_geom_tol", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--dedup-fp-tol", dest="cs_dedup_fp_tol", type=float, default=None
+    )
+    conf_run.add_argument("--fp-rcut", dest="cs_fp_rcut", type=float, default=None)
+    conf_run.add_argument(
+        "--fp-binwidth", dest="cs_fp_binwidth", type=float, default=None
+    )
+    conf_run.add_argument("--fp-sigma", dest="cs_fp_sigma", type=float, default=None)
+    conf_run.add_argument(
+        "--refine-fmax", dest="cs_refine_fmax", type=float, default=None
+    )
+    conf_run.add_argument(
+        "--refine-steps", dest="cs_refine_steps", type=int, default=None
+    )
     conf_run.add_argument("--reaction-policy", type=str, default=None)
     _add_resolver_args(conf_run, trajectory_output_flags=False)
 
@@ -936,6 +1013,46 @@ Examples:
     )
     conf_resume.add_argument("--task", type=str, default=None)
     _add_resolver_args(conf_resume, trajectory_output_flags=False)
+
+    conf_extend = confsearch_sub.add_parser(
+        "extend", help="Add more cycles to a finished search"
+    )
+    conf_extend.add_argument("run", help="Run directory to extend")
+    conf_extend.add_argument(
+        "--cycles", dest="cs_cycles", type=int, required=True, help="extra cycles"
+    )
+    conf_extend.add_argument("--model", type=str, default=None)
+    conf_extend.add_argument(
+        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+    )
+    conf_extend.add_argument("--task", type=str, default=None)
+    _add_resolver_args(conf_extend, trajectory_output_flags=False)
+
+    conf_merge = confsearch_sub.add_parser(
+        "merge", help="Merge comparable finished searches without new calculations"
+    )
+    conf_merge.add_argument("runs", nargs="+", help="run directories")
+    conf_merge.add_argument("--output", required=True, help="merged run directory")
+
+    conf_export = confsearch_sub.add_parser(
+        "export", help="Re-export the ranked candidates from a finished run"
+    )
+    conf_export.add_argument("run", help="Run directory to re-export")
+    conf_export.add_argument(
+        "--top-k", dest="cs_top_k", type=int, default=None, help="number of ranks"
+    )
+    conf_export.add_argument(
+        "--window",
+        dest="cs_export_window",
+        type=float,
+        default=None,
+        help="energy window in eV above the best",
+    )
+    conf_export.add_argument(
+        "--output",
+        default=None,
+        help="destination directory (default: RUN/top_reexport)",
+    )
 
     # batch command
     batch_parser = subparsers.add_parser(
@@ -2396,6 +2513,12 @@ def cmd_confsearch(args: argparse.Namespace) -> int:
             return _cmd_confsearch_place(args)
         if sub in {"run", "resume"}:
             return _cmd_confsearch_run(args, resume=(sub == "resume"))
+        if sub == "export":
+            return _cmd_confsearch_export(args)
+        if sub == "extend":
+            return _cmd_confsearch_extend(args)
+        if sub == "merge":
+            return _cmd_confsearch_merge(args)
         print(f"Error: unknown confsearch subcommand {sub!r}", file=sys.stderr)
         return EXIT_ERROR
     except (KeyboardInterrupt, CancellationRequested) as exc:
@@ -2441,6 +2564,420 @@ def _cmd_confsearch_place(args: argparse.Namespace) -> int:
         {warning for start in starts for warning in start.regions.warnings}
     ):
         print(f"Warning: {warning}")
+    return EXIT_SUCCESS
+
+
+def _mliport_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
+
+    try:
+        return version("mliport")
+    except PackageNotFoundError:  # pragma: no cover - always installed
+        return "unknown"
+
+
+def _jsonable_option(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_jsonable_option(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _jsonable_option(item) for key, item in value.items()}
+    return str(value)
+
+
+def _load_confsearch_run(run_dir: Path) -> tuple[dict, dict, dict]:
+    """Load (context, results, options-dict) of a finished confsearch run."""
+    context_path = run_dir / "run_context.json"
+    results_path = run_dir / "search_results.json"
+    for path in (context_path, results_path):
+        if not path.is_file():
+            raise ValueError(f"Cannot read run: {path} not found")
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    return context, results, dict(context.get("options") or {})
+
+
+def _model_layer_from_context(context: dict) -> dict:
+    model = context.get("model") or {}
+    layer: dict = {}
+    for key, value in (
+        ("model_type", model.get("model_type")),
+        ("model_path", model.get("model_path")),
+        ("task", model.get("task")),
+        ("device", context.get("device")),
+        ("head", model.get("head_requested")),
+        ("default_dtype", model.get("dtype_requested")),
+        ("inference_mode", model.get("inference_mode")),
+    ):
+        if value is not None:
+            layer[key] = value
+    return layer
+
+
+def _cmd_confsearch_extend(args: argparse.Namespace) -> int:
+    """`extend RUN --cycles N`: add N cycles to every surviving replica."""
+    from dataclasses import replace as _replace
+
+    from mliport.confsearch.options import ConfsearchOptions
+    from mliport.confsearch.prepare import input_hashes
+
+    run_dir = Path(args.run).expanduser().resolve()
+    context, _results, options_payload = _load_confsearch_run(run_dir)
+    import dataclasses as _dataclasses
+
+    known = {item.name for item in _dataclasses.fields(ConfsearchOptions)}
+    old_options = ConfsearchOptions(
+        **{key: value for key, value in options_payload.items() if key in known}
+    )
+    added = int(args.cs_cycles)
+    if added < 1:
+        raise ValueError("--cycles must be >= 1 for extend")
+    new_options = _replace(old_options, cs_cycles=old_options.cs_cycles + added)
+
+    print(
+        f"Extending {run_dir.name} by {added} cycle(s) "
+        f"({old_options.cs_cycles} -> {new_options.cs_cycles}); the previous "
+        "results are archived once the resume fingerprint has been validated"
+    )
+
+    # The new budget goes into the *resolved* configuration only.  It must not
+    # reach run_context.json here: the workflow validates the resume fingerprint
+    # against the recorded (old) budget first and archives/records afterwards
+    # (spec 11.3), so a refused extension leaves the run untouched.
+    incar_layer = _confsearch_layer_from_context(context)
+    incar_layer["cs_cycles"] = int(new_options.cs_cycles)
+    # `--cycles N` means "add N", but the CLI layer carries the *total* cycle
+    # count (it has higher precedence than the INCAR layer, so leaving the added
+    # value there would resolve back to the old budget).
+    args.cs_cycles = int(new_options.cs_cycles)
+    args.output = str(run_dir)
+    args.starts = None
+    engine_config, resolved, _settings = _resolve_engine_config(
+        args, "confsearch", incar_layer=incar_layer
+    )
+    engine = CalculationEngine.from_config(engine_config)
+    result = engine.run_confsearch(
+        resolved,
+        output_dir=engine_config.output_dir,
+        resume=True,
+        allow_cycle_change=True,
+        log_fn=_console_log,
+    )
+    print(f"confsearch status: {result.get('status')}")
+    print(f"Quenches: {result.get('diagnostics', {}).get('n_quenches')}")
+    for warning in result.get("warnings", []):
+        print(f"Warning: {warning}")
+    del input_hashes
+    return exit_code_for(classify_result(result, calc_type="confsearch"))
+
+
+def _comparability_key(context: dict) -> dict:
+    """The section 11.4 comparability key of one source run (revision 5).
+
+    The model part is the section 11.2 identity subset; the system part adds the
+    atomic numbers in order, the cell and the PBC, because index sets alone are
+    not enough (two different slabs can share them).
+    """
+    from mliport.confsearch.checkpoint import model_identity  # noqa: PLC0415
+
+    options = context.get("options") or {}
+    model = context.get("model") or {}
+    system = context.get("system") or {}
+    electronic = context.get("electronic_state") or {}
+    return {
+        "model": model_identity(model),
+        "system": {
+            "numbers": system.get("numbers"),
+            "cell_A": system.get("cell_A"),
+            "pbc": system.get("pbc"),
+            # Spec 11.4 revision 6: the exact fixed-atom positions identify the
+            # slab geometry even when composition, order, cell and index sets
+            # agree (two terminations cut from one supercell).
+            "fixed_positions_A": system.get("fixed_positions_A"),
+        },
+        "electronic_state": {
+            "charge": electronic.get("charge"),
+            "spin": electronic.get("spin"),
+        },
+        "regions": context.get("regions"),
+        "ionic_species": options.get("cs_ionic_species"),
+        "bond_scale": options.get("cs_bond_scale"),
+        "bond_break_scale": options.get("cs_bond_break_scale"),
+        "dedup": [
+            options.get("cs_dedup_energy_tol"),
+            options.get("cs_dedup_geom_tol"),
+            options.get("cs_dedup_fp_tol"),
+            options.get("cs_fp_rcut"),
+            options.get("cs_fp_binwidth"),
+            options.get("cs_fp_sigma"),
+        ],
+        "quench": [options.get("cs_quench_fmax"), options.get("cs_quench_steps")],
+        "refine": [
+            options.get("cs_refine"),
+            options.get("cs_refine_fmax"),
+            options.get("cs_refine_steps"),
+        ],
+    }
+
+
+def _cmd_confsearch_merge(args: argparse.Namespace) -> int:
+    """`merge RUN1 RUN2 ... --output DIR`: combine comparable searches."""
+    from mliport.confsearch.options import ConfsearchOptions
+    from mliport.confsearch.regions import Regions
+    from mliport.confsearch import status as cs_status
+    from mliport.confsearch.registry import MinimumOrigin, MinimumRegistry
+    from mliport.confsearch.results import build_results
+
+    sources = [Path(item).expanduser().resolve() for item in args.runs]
+    contexts = []
+    for run_dir in sources:
+        context, _results, _options = _load_confsearch_run(run_dir)
+        contexts.append(context)
+    for run_dir, context in zip(sources, contexts, strict=True):
+        system = context.get("system") or {}
+        if (
+            not system.get("numbers")
+            or not system.get("cell_A")
+            or system.get("pbc") is None
+            or system.get("fixed_positions_A") is None
+        ):
+            raise ValueError(
+                f"Cannot merge {run_dir.name}: run_context.json does not record the "
+                "atomic numbers, cell and PBC (spec 11.4 revision 5). Re-run that "
+                "search with this revision; merging refuses to compare index sets "
+                "alone, because two different slabs can share them."
+            )
+    reference_key = _comparability_key(contexts[0])
+    for run_dir, context in zip(sources[1:], contexts[1:], strict=True):
+        key = _comparability_key(context)
+        differences = [
+            name for name in reference_key if key.get(name) != reference_key.get(name)
+        ]
+        if differences:
+            raise ValueError(
+                f"Cannot merge {run_dir.name}: its comparability key differs from "
+                f"{sources[0].name} in {', '.join(sorted(differences))}"
+            )
+
+    import dataclasses as _dataclasses
+
+    known = {item.name for item in _dataclasses.fields(ConfsearchOptions)}
+    options = ConfsearchOptions(
+        **{
+            key: value
+            for key, value in (contexts[0].get("options") or {}).items()
+            if key in known
+        }
+    )
+    regions_payload = contexts[0].get("regions") or {}
+    regions = Regions(
+        adsorbate=np.asarray(regions_payload.get("adsorbate", []), dtype=int),
+        slab=np.asarray(regions_payload.get("slab", []), dtype=int),
+        fixed=np.asarray(regions_payload.get("fixed", []), dtype=int),
+        relax=np.asarray(regions_payload.get("relax", []), dtype=int),
+        warnings=(),
+    )
+    merged = MinimumRegistry(
+        options=options, adsorbate=regions.adsorbate, fixed=regions.fixed
+    )
+    next_id = 1
+    id_map: dict[tuple[int, int], int] = {}
+    for source_index, run_dir in enumerate(sources):
+        _context, results, _payload = _load_confsearch_run(run_dir)
+        source = MinimumRegistry.from_dict(
+            results["diagnostics"]["registry"],
+            options=options,
+            adsorbate=regions.adsorbate,
+            fixed=regions.fixed,
+        )
+        for status, uniques in source.status_classes().items():
+            for unique in uniques:
+                old_id = unique.unique_id
+                unique.unique_id = next_id
+                id_map[(source_index, old_id)] = next_id
+                for member in unique.members:
+                    # Spec 11.4: the origin carries the source run id.  The
+                    # replica index is not renumbered (a >=1000 offset silently
+                    # collides), the source string is what identifies the run.
+                    member.origin = MinimumOrigin(
+                        replica=member.origin.replica,
+                        cycle=member.origin.cycle,
+                        source=f"merge:{run_dir.name}",
+                        snapshot_index=member.origin.snapshot_index,
+                    )
+                merged._classes.setdefault(status, []).append(unique)
+                merged._unique_by_id[unique.unique_id] = unique
+                next_id += 1
+    merged._next_unique_id = next_id
+    merged._next_record_id = (
+        sum(
+            source_registry.total_records()
+            for source_registry in (
+                MinimumRegistry.from_dict(
+                    _load_confsearch_run(run_dir)[1]["diagnostics"]["registry"],
+                    options=options,
+                    adsorbate=regions.adsorbate,
+                    fixed=regions.fixed,
+                )
+                for run_dir in sources
+            )
+        )
+        + 1
+    )
+    merges = merged.consolidate()
+
+    output = Path(args.output).expanduser().resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    discovery = [
+        row
+        for run_dir in sources
+        for row in _load_confsearch_run(run_dir)[1]["diagnostics"].get(
+            "discovery_curve"
+        )
+        if isinstance(row, dict)
+    ]
+    del discovery, id_map, merges
+    results = build_results(
+        registry=merged,
+        options=options,
+        replicas=[],
+        discovery=[],
+        baseline={
+            "stage": "merge",
+            "sources": [run_dir.name for run_dir in sources],
+            "best_energy_eV": min(
+                (
+                    unique.energy_eV
+                    for status in cs_status.rankable_statuses(
+                        options.cs_reaction_policy
+                    )
+                    for unique in merged.uniques(status)
+                ),
+                default=None,
+            ),
+        },
+        warnings=[],
+        output_dir=output,
+        model_record=contexts[0].get("model") or {},
+        gradient_preflight=contexts[0].get("gradient_preflight") or {},
+        cumulative_md_ps=sum(
+            float(
+                _load_confsearch_run(run_dir)[1]["diagnostics"].get(
+                    "cumulative_md_ps", 0.0
+                )
+            )
+            for run_dir in sources
+        ),
+        seed=int(contexts[0].get("seed") or 0),
+        starts=[{"source": run_dir.name} for run_dir in sources],
+        regions=regions,
+        references=None,
+        calculator=None,
+    )
+    results["merge"] = {
+        "sources": [run_dir.name for run_dir in sources],
+        "refinement_reused": False,
+        "note": (
+            "Merged rankings use the quench energies of the source registry "
+            "representatives; refinement was not recomputed (spec 11.4)."
+        ),
+    }
+    (output / "search_results.json").write_text(
+        json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(f"Merged {len(sources)} run(s) into {output}")
+    print(f"Rankable minima: {results['ranking']['n_rankable']}")
+    return EXIT_SUCCESS
+
+
+def _cmd_confsearch_export(args: argparse.Namespace) -> int:
+    """Re-export the ranked candidates of a finished run (spec section 12.1)."""
+    from dataclasses import fields as _fields
+
+    from mliport.confsearch.options import ConfsearchOptions
+    from mliport.confsearch.regions import Regions
+    from mliport.confsearch.registry import MinimumRegistry
+    from mliport.confsearch.results import _export_candidate
+
+    run_dir = Path(args.run).expanduser().resolve()
+    context_path = run_dir / "run_context.json"
+    results_path = run_dir / "search_results.json"
+    for path in (context_path, results_path):
+        if not path.is_file():
+            raise ValueError(f"Cannot re-export: {path} not found")
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    known = {item.name for item in _fields(ConfsearchOptions)}
+    options = ConfsearchOptions(
+        **{
+            key: value
+            for key, value in (context.get("options") or {}).items()
+            if key in known
+        }
+    )
+    top_k = args.cs_top_k if args.cs_top_k is not None else int(options.cs_top_k)
+    window = (
+        args.cs_export_window
+        if args.cs_export_window is not None
+        else float(options.cs_export_window)
+    )
+    regions_payload = context.get("regions") or {}
+    regions = Regions(
+        adsorbate=np.asarray(regions_payload.get("adsorbate", []), dtype=int),
+        slab=np.asarray(regions_payload.get("slab", []), dtype=int),
+        fixed=np.asarray(regions_payload.get("fixed", []), dtype=int),
+        relax=np.asarray(regions_payload.get("relax", []), dtype=int),
+        warnings=(),
+    )
+    if regions.adsorbate.size == 0:
+        raise ValueError("Cannot re-export: run_context.json has no regions")
+    registry = MinimumRegistry.from_dict(
+        results["diagnostics"]["registry"],
+        options=options,
+        adsorbate=regions.adsorbate,
+        fixed=regions.fixed,
+    )
+    uniques = {unique.unique_id: unique for unique in registry.uniques()}
+    entries = sorted(
+        (results["ranking"].get("refined") or [])
+        + (results["ranking"].get("unrefined") or []),
+        key=lambda entry: (entry["energy_eV"], entry["id"]),
+    )
+    if not entries:
+        raise ValueError("Cannot re-export: the run has no rankable minima")
+    best = entries[0]["energy_eV"]
+    selected = [entry for entry in entries if entry["energy_eV"] - best <= window][
+        :top_k
+    ]
+    destination = (
+        Path(args.output).expanduser().resolve()
+        if args.output is not None
+        else run_dir / "top_reexport"
+    )
+    written = []
+    for position, entry in enumerate(selected, start=1):
+        unique = uniques.get(int(entry["id"]))
+        if unique is None:
+            continue
+        written.append(
+            _export_candidate(
+                destination / f"rank_{position:03d}",
+                unique_id=int(entry["id"]),
+                payload=unique.to_dict(),
+                atoms=unique.representative.atoms,
+                options=options,
+                regions=regions,
+                entry=entry,
+                energy=float(entry["energy_eV"]),
+            )
+        )
+    print(f"Re-exported {len(written)} candidate(s) to {destination}")
+    print(
+        "Note: re-exports use the registry representatives (quench geometries); "
+        "the original top/ directories hold the refined geometries when "
+        "refinement was enabled."
+    )
     return EXIT_SUCCESS
 
 

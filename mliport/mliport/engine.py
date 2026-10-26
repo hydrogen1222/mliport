@@ -584,6 +584,7 @@ class CalculationEngine:
         output_dir: str | Path | None = None,
         resume: bool = False,
         dry_run: bool = False,
+        allow_cycle_change: bool = False,
         log_fn: Any | None = None,
     ) -> dict[str, Any]:
         """Run (or resume) the public confsearch workflow with one model."""
@@ -619,6 +620,7 @@ class CalculationEngine:
                     resolved,
                     output_dir=output,
                     resume=True,
+                    allow_cycle_change=allow_cycle_change,
                     log_fn=log_fn,
                 ).results
         with self.output_directory_claim() as claimed:

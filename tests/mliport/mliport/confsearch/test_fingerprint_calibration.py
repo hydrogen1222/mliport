@@ -407,3 +407,67 @@ def test_equivalent_pairs_merge_at_the_shipped_default():
 def test_shipped_sigma_satisfies_the_binwidth_bound():
     options = ConfsearchOptions(cs_slab="s", cs_molecule="m", cs_n_starts=1)
     assert options.cs_fp_binwidth <= 0.5 * options.cs_fp_sigma
+
+
+def test_requench_residuals_are_caught_by_the_geometry_rule():
+    """Spec 13.2 revision 4: class (a) is defined by a *real* quench.
+
+    Perturb the start by 0.02-0.1 A and quench at the production
+    cs_quench_fmax with the egg-crate model.  The section 9.3 revision 4 rule is
+    tuned for zero false merges and accepts false splits, so this test measures
+    the split rate instead of demanding a perfect merge:
+
+    * a re-quench within ``cs_dedup_geom_tol`` merges through G;
+    * one between the geometric tolerance and 0.5 A is a documented duplicate
+      (conservative: it costs a DFT job, it never deletes a candidate);
+    * one beyond 0.5 A is a different basin and must not be treated as the same
+      minimum at all.
+    """
+    from mliport.confsearch.geometry import mic_vectors
+    from mliport.confsearch.quench import quench
+    from tests.mliport.mliport.confsearch.calculators import EggCrateCalculator
+    from tests.mliport.mliport.confsearch.test_engine import SLAB_ATOMS, _start
+    from tests.mliport.mliport.confsearch.test_engine import _options as engine_options
+
+    options = engine_options()
+    calculator = EggCrateCalculator()
+    reference_start = _start((0.5, 0.5))
+    fixed = np.arange(SLAB_ATOMS)
+    reference = quench(reference_start, calculator, options, fixed_indices=fixed)
+    assert reference.status == "valid"
+
+    rng = np.random.default_rng(20261024)
+    adsorbate = np.arange(SLAB_ATOMS, len(reference_start))
+    merged_by_geometry = 0
+    documented_splits = 0
+    different_basin = 0
+    displacements: list[float] = []
+    for perturbation in (0.02, 0.05, 0.10):
+        for _ in range(5):
+            candidate = reference_start.copy()
+            noise = np.zeros_like(candidate.positions)
+            noise[adsorbate] = rng.normal(0.0, perturbation, (len(adsorbate), 3))
+            candidate.positions = candidate.positions + noise
+            result = quench(candidate, calculator, options, fixed_indices=fixed)
+            assert result.status in {"valid", "reacted"}
+            deltas = (
+                np.asarray(result.atoms.get_positions())[adsorbate]
+                - np.asarray(reference.atoms.get_positions())[adsorbate]
+            )
+            folded = mic_vectors(np.asarray(result.atoms.cell, dtype=float), deltas)
+            displacement = float(np.max(np.linalg.norm(folded, axis=1)))
+            displacements.append(displacement)
+            if displacement <= float(CS_DEFAULTS["cs_dedup_geom_tol"]):
+                merged_by_geometry += 1
+            elif displacement <= DIFFERENT_BASIN_A:
+                documented_splits += 1
+            else:
+                different_basin += 1
+
+    assert merged_by_geometry >= 10, (merged_by_geometry, displacements)
+    assert different_basin == 0, (different_basin, displacements)
+    # Documented limitation (spec 13.2 step 5): a real quench can land slightly
+    # beyond the geometric tolerance, which produces a duplicate rather than a
+    # false merge.  Measured on this model: max residual ~0.21 A.
+    assert documented_splits <= 5, (documented_splits, displacements)
+    assert max(displacements) < DIFFERENT_BASIN_A

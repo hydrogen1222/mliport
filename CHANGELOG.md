@@ -32,8 +32,23 @@ New features:
   `mliport confsearch run|place|resume`, `mliport.api.run_confsearch`,
   `CS_*` INCAR keys, and a capability-matrix entry. `scipy` and `matplotlib`
   were added to the `dev` extra so the ASE OFP known-answer test runs in CI.
-  `extend`/`merge`, the TUI entry and the real-model validation campaign are
-  later phases and are marked `no`/`partial` in the capability matrix.
+  `mliport confsearch extend RUN --cycles N` adds cycles to a finished search
+  (previous results move to `history/extension_N/`; only `cs_cycles` is exempt
+  from the resume fingerprint), and `mliport confsearch merge RUN1 RUN2
+  --output DIR` combines comparable finished searches without new calculations
+  (refusing runs whose comparability key differs). The bilingual workflow page
+  `docs/workflows/confsearch.md` (+ `.zh.md`) documents the scope, the outputs,
+  the dedup rules and the caveats. Queue task files now accept
+  `"calc_type": "confsearch"` in both modes (mode A: `structure` +
+  `adsorbate_indices`; mode B: `slab` + `molecule` + `n_starts`), forward every
+  `CS_*` option that has a CLI flag, and refuse a `resume` field because
+  resuming is an interactive command. The TUI entry and the real-model
+  validation campaign script now exists
+  (`validation/science/scripts/confsearch_suite.py`, owner-run on GPU: baseline
+  of N placements without MD vs confsearch with the same N starts on CH3OH over
+  an LGPS-derived slab, reporting best energies, unique counts and the discovery
+  curve). The TUI entry is still missing and is marked `no` in the capability
+  matrix.
 
 - **DFT-D3 dispersion.** `--d3` / `D3 = .TRUE.` / API `d3=True` adds Grimme
   DFT-D3 (via `torch-dftd`, float64) on top of any backend as

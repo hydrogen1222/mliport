@@ -42,6 +42,7 @@ mliport/mliport/           package source
   calculators/             backend adapters and the factory
   config/                  resolver, schema, defaults, settings
   runners/                 SP, optimization, MD, NEB and batch execution
+  confsearch/              MD-based configuration search (adsorbate mode)
   analysis/                trajectory analysis
   tui/                     Textual UI
   install/                 installer plan, compatibility registry, launchers
