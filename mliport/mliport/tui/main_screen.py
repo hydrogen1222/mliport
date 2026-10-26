@@ -58,6 +58,13 @@ class MainScreen(Screen):
                 ),
                 ListItem(
                     Static(
+                        "🔍 Configuration Search (CONFSEARCH)\n   "
+                        "Low-energy adsorbate configurations on a slab"
+                    ),
+                    id="confsearch",
+                ),
+                ListItem(
+                    Static(
                         "📈 Analyze Existing Run\n   Validated structure and ion transport"
                     ),
                     id="analysis",
@@ -118,6 +125,7 @@ class TemplateScreen(Screen):
                 ListItem(Static("Nudged Elastic Band (NEB)"), id="neb"),
                 ListItem(Static("Geometry Optimization (OPT)"), id="opt"),
                 ListItem(Static("Molecular Dynamics (MD)"), id="md"),
+                ListItem(Static("Configuration Search (CONFSEARCH)"), id="confsearch"),
                 id="template-list",
             ),
             Horizontal(

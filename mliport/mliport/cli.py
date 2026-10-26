@@ -1214,7 +1214,7 @@ Examples:
     )
     template_parser.add_argument(
         "type",
-        choices=["sp", "opt", "md", "neb"],
+        choices=["sp", "opt", "md", "neb", "confsearch"],
         help="Type of template to generate",
     )
     template_parser.add_argument(

@@ -137,16 +137,16 @@
       "api": "yes",
       "direct_cli": "yes",
       "incar": "partial",
-      "tui": "no",
-      "note": "Mode A: API starts/adsorbate_indices, CLI positional STARTS with --adsorbate-indices, INCAR CS_STARTS/CS_ADSORBATE_INDICES (paths only, no per-frame mapping). TUI entry is P5."
+      "tui": "yes",
+      "note": "Mode A: API starts/adsorbate_indices, CLI positional STARTS with --adsorbate-indices, INCAR CS_STARTS/CS_ADSORBATE_INDICES, and the TUI configuration screen (Structure File + Adsorbate Indices)."
     },
     {
       "feature": "confsearch_placement",
       "api": "yes",
       "direct_cli": "yes",
       "incar": "yes",
-      "tui": "no",
-      "note": "Mode B: API slab/molecule/n_starts, `mliport confsearch place` (placement only, no model), CS_SLAB/CS_MOLECULE/CS_N_STARTS."
+      "tui": "yes",
+      "note": "Mode B: API slab/molecule/n_starts, `mliport confsearch place` (placement only, no model), CS_SLAB/CS_MOLECULE/CS_N_STARTS, and the TUI configuration screen (Slab File + Molecule File + Number of Placed Starts)."
     },
     {
       "feature": "confsearch_resume",
@@ -154,7 +154,7 @@
       "direct_cli": "yes",
       "incar": "no",
       "tui": "no",
-      "note": "Resume is a command (API resume=True, `mliport confsearch resume RUN`); INCAR keys cannot express a resume."
+      "note": "Resume is a command (API resume=True, `mliport confsearch resume RUN`); INCAR keys and the TUI cannot express a resume."
     },
     {
       "feature": "confsearch_extend",

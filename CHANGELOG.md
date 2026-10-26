@@ -47,8 +47,13 @@ New features:
   (`validation/science/scripts/confsearch_suite.py`, owner-run on GPU: baseline
   of N placements without MD vs confsearch with the same N starts on CH3OH over
   an LGPS-derived slab, reporting best energies, unique counts and the discovery
-  curve). The TUI entry is still missing and is marked `no` in the capability
-  matrix.
+  curve). The TUI now offers the confsearch entry: a configuration screen with
+  both start modes (Structure File + 0-based Adsorbate Indices, or Slab File +
+  Molecule File + Number of Placed Starts) plus cycles, MD-mobile set,
+  temperatures, hold/cool durations and top-K, validated and forwarded to the
+  same background command builder the queue uses. Resuming stays a command, and
+  extend/merge/export are not exposed in the TUI; the capability matrix records
+  that.
 
 - **DFT-D3 dispersion.** `--d3` / `D3 = .TRUE.` / API `d3=True` adds Grimme
   DFT-D3 (via `torch-dftd`, float64) on top of any backend as

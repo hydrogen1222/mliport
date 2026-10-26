@@ -15,6 +15,8 @@ import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
+from textual.widgets import Input
+
 from mliport.jobs import JobManager, JobStatus
 from mliport.tui.analysis_screen import AnalysisScreen
 from mliport.tui.app import MliportApp
@@ -1484,3 +1486,153 @@ async def test_tui_jobs_screen_is_empty_in_new_state(
         await pilot.pause()
         table = app.screen.query_one("#jobs-table")
         assert len(table.rows) == 0
+
+
+# ---------------------------------------------------------------------------
+# confsearch entry (spec section 12.3, phase P5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio()
+async def test_main_screen_offers_confsearch() -> None:
+    app = MliportApp()
+    async with app.run_test(size=(100, 100)) as pilot:
+        await pilot.pause()
+        items = {item.id for item in app.screen.query("ListItem")}
+        assert "confsearch" in items
+
+
+@pytest.mark.asyncio()
+async def test_confsearch_config_screen_has_both_modes() -> None:
+    app = MliportApp()
+    app.config["calc_type"] = "confsearch"
+    async with app.run_test(size=(120, 60)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        for widget_id in (
+            "#cs-adsorbate-indices-input",
+            "#cs-slab-input",
+            "#cs-molecule-input",
+            "#cs-n-starts-input",
+            "#cs-cycles-input",
+            "#cs-md-mobile-select",
+            "#cs-temperature-high-input",
+            "#cs-temperature-low-input",
+            "#cs-top-k-input",
+        ):
+            assert screen.query_one(widget_id) is not None, widget_id
+        caveat = str(screen.query_one("#confsearch-caveat-note").render())
+        assert "never a global minimum" in caveat
+        assert "dipole correction" in caveat
+        # Spec revision 5 review of #67: the mode note must keep stating the
+        # 0-based ASE convention and that mode B is placement, not user starts.
+        mode_note = str(screen.query_one("#confsearch-mode-note").render())
+        assert "0-based" in mode_note
+        assert "places a molecule above a slab" in mode_note
+
+
+@pytest.mark.asyncio()
+async def test_confsearch_run_command_mode_a_and_b(tmp_path: Path) -> None:
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"m")
+    start = tmp_path / "start.extxyz"
+    start.write_text("1\n\nH 0 0 0\n")
+    slab = tmp_path / "slab.vasp"
+    slab.write_text("dummy")
+    molecule = tmp_path / "molecule.xyz"
+    molecule.write_text("dummy")
+
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "confsearch",
+            "structure_file": str(start),
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+            "cs_adsorbate_indices": "300-341",
+            "cs_cycles": 3,
+            "cs_md_mobile": "adsorbate_and_top",
+            "cs_temperature_high": 600.0,
+            "cs_temperature_low": 300.0,
+            "cs_top_k": 4,
+            "cs_refine": False,
+            "seed": 11,
+        }
+    )
+    async with app.run_test(size=(80, 40)):
+        screen = RunScreen()
+        screen._job_id = "test-job"
+        mode_a = screen._build_command()
+    assert mode_a[3] == "confsearch" and mode_a[4] == "run"
+    assert str(start) in mode_a
+    for flag, value in (
+        ("--adsorbate-indices", "300-341"),
+        ("--cycles", "3"),
+        ("--md-mobile", "adsorbate_and_top"),
+        ("--temperature-high", "600.0"),
+        ("--top-k", "4"),
+        ("--no-refine", None),
+        ("--seed", "11"),
+    ):
+        assert flag in mode_a
+        if value is not None:
+            assert value in mode_a
+
+    # Mode B needs a fresh app instance: Textual cannot re-enter run_test on an
+    # app that has already been mounted.
+    mode_b_app = MliportApp()
+    mode_b_app.config.update(
+        {
+            "calc_type": "confsearch",
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+            "cs_adsorbate_indices": "",
+            "cs_slab": str(slab),
+            "cs_molecule": str(molecule),
+            "cs_n_starts": 5,
+            "structure_file": str(slab),
+        }
+    )
+    async with mode_b_app.run_test(size=(80, 40)):
+        screen = RunScreen()
+        screen._job_id = "test-job"
+        mode_b = screen._build_command()
+    assert "--slab" in mode_b and str(slab) in mode_b
+    assert "--molecule" in mode_b and str(molecule) in mode_b
+    assert "--n-starts" in mode_b and "5" in mode_b
+
+
+@pytest.mark.asyncio()
+async def test_confsearch_config_rejects_partial_mode_b(tmp_path: Path) -> None:
+    app = MliportApp()
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"m")
+    slab = tmp_path / "slab.vasp"
+    slab.write_text("dummy")
+    app.config.update(
+        {
+            "calc_type": "confsearch",
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+        }
+    )
+    notifications: list[str] = []
+    async with app.run_test(size=(120, 60)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.notify = lambda message, **kwargs: notifications.append(str(message))
+        screen.query_one("#cs-slab-input", Input).value = str(slab)
+        screen._save_and_run()
+    assert notifications
+    assert "both a slab file and a molecule file" in notifications[-1]
