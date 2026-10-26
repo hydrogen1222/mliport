@@ -261,8 +261,6 @@ def place_molecule(
     rejections = {reason: 0 for reason in REJECTION_REASONS}
     slab_indices = np.arange(n_slab)
     molecule_indices = np.arange(n_slab, n_slab + n_molecule)
-    # Spec 5.2 revision 5: the anchor height is solved against the partner set.
-    partner_indices = anchor_partner_indices(slab, options)
 
     def make_candidate(molecule_positions: np.ndarray, numbers: np.ndarray) -> Atoms:
         return Atoms(
@@ -306,6 +304,13 @@ def place_molecule(
             if anchor_local is None
             else conformer.get_chemical_symbols()[anchor_local]
         )
+        # Spec 5.2 revision 5: the anchor height is solved against the partner
+        # set, computed only when an anchor exists -- contact placement on an
+        # all-ionic slab (a Li-metal surface) is a valid contact target and must
+        # not be refused with an anchored-placement error.
+        partner_indices = (
+            anchor_partner_indices(slab, options) if anchor_local is not None else None
+        )
 
         u = float(rng.random())
         v = float(rng.random())
@@ -321,6 +326,7 @@ def place_molecule(
         def objective(z_offset: float) -> float:
             candidate = make_candidate(positions_at(z_offset), numbers)
             if anchor_global is not None:
+                assert partner_indices is not None  # set whenever an anchor exists
                 value, _ = _anchor_q(candidate, anchor_global, partner_indices)
                 return value
             return _min_q(candidate, molecule_indices, slab_indices)
@@ -340,6 +346,7 @@ def place_molecule(
         candidate = make_candidate(positions_at(z_offset), numbers)
 
         if anchor_global is not None:
+            assert partner_indices is not None
             anchor_value, slab_index = _anchor_q(
                 candidate, anchor_global, partner_indices
             )
