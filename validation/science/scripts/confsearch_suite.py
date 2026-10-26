@@ -156,24 +156,32 @@ def _stats(values: list[float]) -> dict[str, float] | None:
 def _dedup_recalibration(run_dir: Path) -> dict[str, Any] | None:
     """Re-measure the section 13.2 deduplication inputs on a finished run.
 
-    PR #63 review: the shipped tolerances come from a bulk-cell, perturbation
+    PR #63/#66 review: the shipped tolerances come from a bulk-cell, perturbation
     based calibration, so the real-slab/real-model campaign must report what it
-    actually observes.  Pairwise ``D`` (focused fingerprint) and ``|dE|`` are
-    split by the geometric rule ``G``; the implied tolerance is the zero
-    false-merge value ``0.5 * min D`` over the pairs ``G`` does not match.
+    actually observes -- and it must look at **every quench record**
+    (`minima/all_minima.extxyz`), not at the registry representatives, which are
+    already deduplicated and therefore cannot reveal a false merge.
+
+    Pairwise ``D`` (focused fingerprint) and ``|dE|`` are split by the geometric
+    rule ``G``; the implied tolerance is the zero-false-merge value
+    ``0.5 * min D`` over the pairs ``G`` does not match.
     """
     import dataclasses
 
-    from mliport.confsearch import status as cs_status
+    from ase.io import read
+
     from mliport.confsearch.options import ConfsearchOptions
     from mliport.confsearch.regions import Regions
-    from mliport.confsearch.registry import MinimumRegistry
+    from mliport.confsearch.registry import (
+        MinimumOrigin,
+        MinimumRecord,
+        MinimumRegistry,
+    )
 
-    results_path = run_dir / "search_results.json"
     context_path = run_dir / "run_context.json"
-    if not results_path.is_file() or not context_path.is_file():
+    minima_path = run_dir / "minima" / "all_minima.extxyz"
+    if not context_path.is_file() or not minima_path.is_file():
         return None
-    results = json.loads(results_path.read_text(encoding="utf-8"))
     context = json.loads(context_path.read_text(encoding="utf-8"))
     regions_payload = context.get("regions") or {}
     if not regions_payload.get("adsorbate"):
@@ -193,37 +201,54 @@ def _dedup_recalibration(run_dir: Path) -> dict[str, Any] | None:
         relax=np.asarray(regions_payload.get("relax", []), dtype=int),
         warnings=(),
     )
-    registry = MinimumRegistry.from_dict(
-        results["diagnostics"]["registry"],
-        options=options,
-        adsorbate=regions.adsorbate,
-        fixed=regions.fixed,
-    )
-    records = [
-        unique.representative
-        for status in cs_status.rankable_statuses(options.cs_reaction_policy)
-        for unique in registry.uniques(status)
-    ]
-    if len(records) < 2:
+    frames = read(minima_path, index=":")
+    if len(frames) < 2:
         return {
-            "n_minima": len(records),
+            "n_minima": len(frames),
             "n_pairs": 0,
-            "note": "fewer than two rankable minima; nothing to re-measure",
+            "note": "fewer than two quench records; nothing to re-measure",
+            "measured_over": "minima/all_minima.extxyz (all quench records)",
         }
-    fingerprints = {
-        index: registry.fingerprint(record.atoms)
-        for index, record in enumerate(records)
-    }
+    registry = MinimumRegistry(
+        options=options, adsorbate=regions.adsorbate, fixed=regions.fixed
+    )
+    records: list[MinimumRecord] = []
+    for index, frame in enumerate(frames):
+        info = dict(frame.info)
+        energy = info.get("energy_eV")
+        records.append(
+            MinimumRecord(
+                record_id=int(info.get("confsearch_record_id", index)),
+                energy_eV=float(energy) if energy is not None else float("nan"),
+                atoms=frame,
+                classification=None,
+                origin=MinimumOrigin(
+                    replica=int(info.get("origin_replica", 0)),
+                    cycle=int(info.get("origin_cycle", 0)),
+                    source=str(info.get("origin_source", "unknown")),
+                ),
+                quench_index=int(info.get("quench_index", index)),
+                cumulative_md_ps=float(info.get("cumulative_md_ps", 0.0)),
+                fmax_eV_A=float(info.get("fmax_eV_A", float("nan"))),
+                steps=int(info.get("quench_steps", 0)),
+            )
+        )
+    fingerprints = [registry.fingerprint(record.atoms) for record in records]
     pairs: list[dict[str, Any]] = []
     for first in range(len(records)):
         for second in range(first + 1, len(records)):
             left, right = records[first], records[second]
+            both_finite = bool(
+                np.isfinite(left.energy_eV) and np.isfinite(right.energy_eV)
+            )
             pairs.append(
                 {
                     "same_basin_G": bool(registry.geometric_match(left, right)),
                     "D": float(fingerprints[first].distance(fingerprints[second])),
-                    "delta_energy_eV": abs(
-                        float(left.energy_eV) - float(right.energy_eV)
+                    "delta_energy_eV": (
+                        abs(float(left.energy_eV) - float(right.energy_eV))
+                        if both_finite
+                        else None
                     ),
                     "rms_displacement_A": registry.displacement_between(left, right),
                 }
@@ -233,21 +258,37 @@ def _dedup_recalibration(run_dir: Path) -> dict[str, Any] | None:
     shipped = float(options.cs_dedup_fp_tol)
     energy_tol = float(options.cs_dedup_energy_tol)
     distinct_D = [pair["D"] for pair in distinct]
+
+    def energy_values(items: list[dict[str, Any]]) -> list[float]:
+        return [
+            float(pair["delta_energy_eV"])
+            for pair in items
+            if pair["delta_energy_eV"] is not None
+        ]
+
     merged_same_basin = [
         pair
         for pair in same_basin
-        if pair["D"] <= shipped and pair["delta_energy_eV"] <= energy_tol
+        if pair["D"] <= shipped
+        and pair["delta_energy_eV"] is not None
+        and float(pair["delta_energy_eV"]) <= energy_tol
     ]
+    statuses: dict[str, int] = {}
+    for frame in frames:
+        status = str(frame.info.get("confsearch_status", "unknown"))
+        statuses[status] = statuses.get(status, 0) + 1
     return {
+        "measured_over": "minima/all_minima.extxyz (all quench records)",
         "n_minima": len(records),
         "n_pairs": len(pairs),
+        "statuses": statuses,
         "cs_dedup_fp_tol": shipped,
         "cs_dedup_geom_tol": float(options.cs_dedup_geom_tol),
         "cs_dedup_energy_tol": energy_tol,
         "same_basin_G": {
             "n_pairs": len(same_basin),
             "D": _stats([pair["D"] for pair in same_basin]),
-            "delta_energy_eV": _stats([pair["delta_energy_eV"] for pair in same_basin]),
+            "delta_energy_eV": _stats(energy_values(same_basin)),
             "rms_displacement_A": _stats(
                 [pair["rms_displacement_A"] for pair in same_basin]
             ),
@@ -259,7 +300,7 @@ def _dedup_recalibration(run_dir: Path) -> dict[str, Any] | None:
         "distinct": {
             "n_pairs": len(distinct),
             "D": _stats(distinct_D),
-            "delta_energy_eV": _stats([pair["delta_energy_eV"] for pair in distinct]),
+            "delta_energy_eV": _stats(energy_values(distinct)),
             "rms_displacement_A": _stats(
                 [pair["rms_displacement_A"] for pair in distinct]
             ),
@@ -418,8 +459,9 @@ def _dedup_markdown(recalibration: dict[str, Any] | None) -> str:
 
     return "\n".join(
         [
-            f"Minima compared: {recalibration['n_minima']} "
-            f"({recalibration['n_pairs']} pairs)",
+            f"Quench records compared: {recalibration['n_minima']} "
+            f"({recalibration['n_pairs']} pairs) -- "
+            f"{recalibration.get('measured_over', 'all quench records')}",
             "",
             "| class | pairs | D min/median/max | |dE| min/median/max (eV) |",
             "|---|---|---|---|",

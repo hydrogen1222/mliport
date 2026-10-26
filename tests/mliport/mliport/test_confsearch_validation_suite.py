@@ -103,16 +103,29 @@ def test_campaign_cli_contract():
     assert bad_engine.value.code == 2
 
 
-def test_dedup_recalibration_reports_the_measured_distributions(tmp_path):
-    """The campaign must re-measure the section 13.2 inputs on its own minima."""
+def test_dedup_recalibration_measures_every_quench_record(tmp_path):
+    """The campaign must re-measure section 13.2 over *all* quench records.
+
+    Review of PR #66: measuring only the registry representatives (already
+    deduplicated) can never reveal a false merge, so the recalibration reads
+    `minima/all_minima.extxyz`.
+    """
+    from ase.io import read
+
     from tests.mliport.mliport.confsearch.test_engine import SITE_ENERGIES, _run
 
     run_dir, _results = _run(tmp_path, list(SITE_ENERGIES), name="recal")
     recalibration = suite._dedup_recalibration(run_dir)
 
     assert recalibration is not None
-    assert recalibration["n_minima"] >= 2
-    assert recalibration["n_pairs"] >= 1
+    frames = read(run_dir / "minima" / "all_minima.extxyz", index=":")
+    assert recalibration["measured_over"].startswith("minima/all_minima.extxyz")
+    assert recalibration["n_minima"] == len(frames) >= 2
+    assert recalibration["n_pairs"] == len(frames) * (len(frames) - 1) // 2
+    assert sum(recalibration["statuses"].values()) == len(frames)
+    # The same basin appears as several records, so the G class is non-empty and
+    # the distinct class is a real distribution over quench results.
+    assert recalibration["same_basin_G"]["n_pairs"] >= 1
     same = recalibration["same_basin_G"]
     distinct = recalibration["distinct"]
     assert same["n_pairs"] + distinct["n_pairs"] == recalibration["n_pairs"]
@@ -137,3 +150,4 @@ def test_dedup_recalibration_handles_a_single_minimum(tmp_path):
     recalibration = suite._dedup_recalibration(run_dir)
     assert recalibration is not None
     assert recalibration["n_pairs"] == 0
+    assert recalibration["n_minima"] == 1
