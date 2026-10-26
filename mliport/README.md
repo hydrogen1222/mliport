@@ -2,10 +2,12 @@
 
 # mliport
 
+**English** | [简体中文](https://github.com/hydrogen1222/mliport/blob/main/README_CN.md)
+
 Run machine-learned interatomic potentials — MACE, DPA, GRACE and UMA — from one
 command line, one terminal UI and one Python API. Give it a structure and a
-checkpoint; it relaxes, runs molecular dynamics, finds NEB barriers or analyzes a
-trajectory, and writes the files a VASP user expects: `OUTCAR`, `OSZICAR`,
+checkpoint; it relaxes, runs molecular dynamics, finds NEB barriers, searches adsorbate
+configurations on a slab or analyzes a trajectory, and writes the files a VASP user expects: `OUTCAR`, `OSZICAR`,
 `CONTCAR`, `XDATCAR`.
 
 **Documentation: <https://hydrogen1222.github.io/mliport/>** (English by default,
@@ -18,8 +20,9 @@ your chemistry depends on the checkpoint you choose.
 What you get:
 
 - **The same workflow on four backends.** Single point, fixed- and variable-cell
-  relaxation, NVE/NVT MD (Langevin, Bussi, Nosé–Hoover chain), NEB and CI-NEB, batch
-  sweeps and a job queue, from the CLI, an INCAR-style file, the TUI or Python.
+  relaxation, NVE/NVT MD (Langevin, Bussi, Nosé–Hoover chain), NEB and CI-NEB,
+  MD-based configuration search for an adsorbate on a slab, batch sweeps and a job
+  queue, from the CLI, an INCAR-style file, the TUI or Python.
 - **No silent guessing.** There is no default backend, and a misspelled option, or
   one that belongs to another backend, stops the run. Configuration errors fail
   closed.
@@ -174,6 +177,25 @@ part of the run's identity, so changing `--max-steps` while resuming is rejected
 Advanced explicit atom mapping/image-shift control is available through API/direct
 CLI/TUI only.
 
+**Configuration search.** `confsearch` looks for low-energy configurations of one
+adsorbate on one side of a periodic slab: many independent starts (your structures,
+or random placements with `--slab`/`--molecule`), each run through heat–hold–cool
+Langevin cycles at fixed cell, with every snapshot quenched, classified (molecules
+whose covalent skeleton broke are set aside) and deduplicated. The result is a ranked
+list of the lowest minima found, with saturation evidence and POSCAR/CP2K files for
+DFT re-ranking — never a claim of a global minimum. `--dry-run` checks the inputs
+and the budget without loading a model.
+
+```bash
+.venv-mace/bin/mliport confsearch run --slab slab.vasp --molecule conformers.xyz \
+  --n-starts 20 --cycles 5 \
+  --model model.model --model-type mace --task bulk --device cuda --output runs/ads
+```
+
+Interrupted runs continue with `confsearch resume`, finished ones grow with
+`confsearch extend --cycles N`, and comparable runs combine with `confsearch merge`.
+Details, defaults and limits: [docs/workflows/confsearch.md](https://github.com/hydrogen1222/mliport/blob/main/docs/workflows/confsearch.md).
+
 **Batch, INCAR-style runs, queue, TUI, Python.**
 
 ```bash
@@ -242,6 +264,11 @@ Model accuracy belongs to the upstream checkpoint. Short MD runs check the workf
 not equilibration. NEB's pre-flight shows the forces match the energy, which says
 nothing about how accurate the barrier is. Transport analyses fail closed with an
 insufficient-sampling status instead of returning a number.
+
+The configuration search (`confsearch`) is new: it is covered by synthetic-model
+tests in CI but has not yet been through a real-model GPU validation campaign, and
+its deduplication tolerances are calibrated on synthetic geometries only. Treat its
+ranking as a screening for DFT, not as a result.
 
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
 Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).

@@ -224,7 +224,7 @@ def render_package_readme(root_readme: str) -> str:
     rendered PyPI page keeps working outside a checkout.
     """
     body = re.sub(
-        r"\]\((docs/[^)]+|CITATION\.cff|LICENSE\.md|validation/[^)]+)\)",
+        r"\]\((docs/[^)]+|CITATION\.cff|LICENSE\.md|README_CN\.md|validation/[^)]+)\)",
         lambda match: f"]({GITHUB_URL}/blob/main/{match.group(1)})",
         root_readme,
     )
