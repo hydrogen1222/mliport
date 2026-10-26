@@ -1,7 +1,9 @@
 # mliport
 
+[English](README.md) | **简体中文**
+
 用同一套命令行、同一个终端界面和同一个 Python API 来运行机器学习势：MACE、DPA、GRACE 和 UMA。你给它
-一个结构和一个检查点，它就能做弛豫、跑分子动力学、找 NEB 势垒或分析轨迹，并写出 VASP 用户熟悉的文
+一个结构和一个检查点，它就能做弛豫、跑分子动力学、找 NEB 势垒、搜索 slab 上吸附物的构型或分析轨迹，并写出 VASP 用户熟悉的文
 件：`OUTCAR`、`OSZICAR`、`CONTCAR`、`XDATCAR`。
 
 **文档：<https://hydrogen1222.github.io/mliport/>**（默认英文，用顶栏的语言切换按钮可切到中文）。同样
@@ -13,8 +15,8 @@ mliport 是工作流层，不是模型，也不是 DFT 程序。文件是 VASP �
 它能给你：
 
 - **四个后端，同一套工作流。** 单点、固定与可变晶胞弛豫、NVE/NVT 分子动力学（Langevin、Bussi、
-  Nosé–Hoover 链）、NEB 与 CI-NEB、批量扫描和作业队列；入口可以是 CLI、INCAR 风格文件、TUI 或
-  Python。
+  Nosé–Hoover 链）、NEB 与 CI-NEB、基于 MD 的 slab 吸附构型搜索、批量扫描和作业队列；入口可以是
+  CLI、INCAR 风格文件、TUI 或 Python。
 - **不会悄悄猜测。** 没有默认后端；拼错的选项，或者属于另一个后端的选项，都会让运行停下。配置错误
   默认直接失败。
 - **一份可追溯的记录。** 每次运行都记录模型文件及其 SHA-256、请求的与实际的设备、解析后的配置和
@@ -150,6 +152,22 @@ GPU 的新进程里重启命令。从 Python 调用时，请在导入它们之�
 `--max-steps` 会被拒绝。显式的原子映射与镜像平移这类高级控制，仅在 API、直接 CLI 和 TUI 中可用
 。
 
+**构型搜索。** `confsearch` 搜索周期性 slab 单侧一个吸附物的低能构型：多个独立起点（你准备的结构，或用
+`--slab`/`--molecule` 随机摆放），每个起点在固定晶胞下跑若干轮"升温—保温—降温"的 Langevin 循环，所有快
+照都做局部优化、分类（共价骨架断裂的分子单独存档）并去重。结果是一份按能量排序的"目前找到的最低"候选
+清单，附带搜索是否饱和的证据，以及供 DFT 复核的 POSCAR/CP2K 文件，从不声称找到全局最小。`--dry-run`
+只检查输入和计算量，不加载模型。
+
+```bash
+.venv-mace/bin/mliport confsearch run --slab slab.vasp --molecule conformers.xyz \
+  --n-starts 20 --cycles 5 \
+  --model model.model --model-type mace --task bulk --device cuda --output runs/ads
+```
+
+中断的运行用 `confsearch resume` 续算，已完成的用 `confsearch extend --cycles N` 追加循环，可比的多次运
+行用 `confsearch merge` 合并。细节、默认值和限制见
+[docs/workflows/confsearch.md](docs/workflows/confsearch.md)。
+
 **批量、INCAR 风格运行、队列、TUI、Python。**
 
 ```bash
@@ -210,6 +228,9 @@ INCAR 风格输入覆盖常用控制项，不是全部接口。每个入口（AP
 
 模型精度属于上游检查点。短 MD 检查的是工作流，不是平衡。NEB 的预检说明力与能量一致，这并不意味着势
 垒本身准确。输运分析在采样不足时以明确的 insufficient-sampling 状态失败，而不是返回一个数。
+
+构型搜索（`confsearch`）是新功能：CI 中有合成模型的测试覆盖，但还没有经过真实模型的 GPU 验证，去重容差
+也只在合成几何上标定过。请把它的排序当作交给 DFT 复核的筛选，而不是结论。
 
 <!-- BEGIN GENERATED: validation/science/reports/README_VALIDATION.md -->
 Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).
