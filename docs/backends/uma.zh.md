@@ -1,7 +1,7 @@
 # UMA（FAIRChem）
 
-Meta FAIR 的 UMA 模型通过上游的 `fairchem-core` 加载。`uma` 和 `fairchem`（上游包
-名）是同一个运行时，作为 `--model-type` 用哪个都行。
+Meta FAIR 的 UMA 模型通过上游的 `fairchem-core` 加载。`--model-type` 写 `uma` 或 `fairchem`（上游
+包名）都可以。
 
 ## 模型是什么
 
@@ -46,21 +46,18 @@ Meta FAIR 的 UMA 模型通过上游的 `fairchem-core` 加载。`uma` 和 `fair
   --model /path/to/uma.pt --model-type uma --task omat
 ```
 
-模型请从上游 fairchem/UMA 的发布渠道获取，使用前核对 SHA-256。mliport 从不再分发
-模型权重，UMA 的许可证是仅限非商业研究的许可，见[引用](../citations.md)。
+模型从上游 fairchem/UMA 的发布页下载，使用前核对 SHA-256。mliport 不分发模型文件。UMA 的许可证
+只允许非商业研究使用，见[引用](../citations.md)。
 
 ## 需要知道的事
 
-- **`--task` 选择任务族**（周期性块体用 `omat`，分子用 `omol`，催化用 `oc20`）。UMA
-  没有单独的 head 字段。这些任务族不能互换：分子要用 `omol` 任务，周期性晶体要用
-  `omat` 任务。
-- **推理模式。** `--inference-mode` 接受 `default` 或 `turbo`。Turbo（TF32 加
-  `torch.compile`）是可选加入的，MD 默认不使用它，对精度敏感的运行因此保持在默认
-  模式。`--activation-checkpointing` 用速度换 GPU 显存。
-- **精度**由模型决定；mliport 只报告框架版本，不假装能控制权重。
-- **NEB 和构型搜索**要求力是能量的梯度。mliport 在运行时判断，而不是依据本页：预测器
-  报告 `direct_forces = true` 就拒绝，否则用有限差分预检在你的结构上实测一致性（见
-  [NEB](../workflows/neb.md)）。
-- **应力**只有在模型提供时才会报告。
+- **`--task` 选择任务类型**（周期性体相用 `omat`，分子用 `omol`，催化表面用 `oc20`）。UMA 没有
+  单独的 head。不同 task 不能混用：分子用 `omol`，周期性晶体用 `omat`。
+- **推理模式。** `--inference-mode` 可选 `default` 或 `turbo`。`turbo`（TF32 加 `torch.compile`）
+  需要手动开启，MD 默认不用，以保证精度。`--activation-checkpointing` 可以用速度换显存。
+- **精度**由模型决定，mliport 只记录框架版本。
+- **NEB 和构型搜索**要求力等于能量的负梯度。这在运行时检查：模型声明 `direct_forces = true` 就
+  拒绝，否则用有限差分在你的结构上实测（见 [NEB](../workflows/neb.md)）。
+- **应力**只有模型支持时才会输出。
 
-mliport 采用 MIT 许可。上游软件和模型需要另行引用。
+mliport 采用 MIT 许可证。上游软件和模型需要另外引用。

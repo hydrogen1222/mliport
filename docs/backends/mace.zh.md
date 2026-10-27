@@ -1,8 +1,7 @@
 # MACE
 
-MACE 模型通过 `mace-torch` 加载。一个 MACE profile 是"模型文件加精度"，mliport 把
-两种精度当作不同的模型：`float64` 是首选的、以精度为先的 profile，`float32` 是单
-独的身份，它的结果绝不会和 float64 的混在一起。
+MACE 模型通过 `mace-torch` 加载。mliport 里一个 MACE profile 由"模型文件 + 精度"确定，两种精度
+算作两个不同的模型：默认用 `float64`，精度优先；`float32` 单独记录，结果不和 float64 混用。
 
 ## 模型是什么
 
@@ -41,9 +40,8 @@ MACE 模型通过 `mace-torch` 加载。一个 MACE profile 是"模型文件加�
 | `mace_omat_float32` | MACE-OMAT-0 medium, float32 inference | float32 | bulk | None | `d4b14be9afa2...` |
 <!-- END GENERATED -->
 
-`mace_omat` 系列 profile 使用上游 MACE 发布的 `mace-omat-0-medium.model`，通过
-`validation/science/model_manifest.json` 里的 SHA-256 引用。下载链接见
-[模型](../models.md)。
+`mace_omat` 两个 profile 用的都是上游发布的 `mace-omat-0-medium.model`，以
+`validation/science/model_manifest.json` 里的 SHA-256 为准。下载链接见[模型](../models.md)。
 
 ## 运行
 
@@ -52,19 +50,17 @@ MACE 模型通过 `mace-torch` 加载。一个 MACE profile 是"模型文件加�
   --model /path/to/mace-omat-0-medium.model --model-type mace
 ```
 
-`--task` 是明确的周期性边界语义（`bulk` 或 `molecule`）。`--dtype float32` 更快但
-精度更低；请有意识地使用，并在比较数字时说明。
+`--task` 指定体系是周期性的（`bulk`）还是分子（`molecule`）。`--dtype float32` 更快但精度更低，
+比较数据时要注明用的是哪种精度。
 
 ## 需要知道的事
 
-- **Head。** 如果模型提供了多个 head，必须用 `--head` 指明一个，mliport 不会替你
-  挑。只有单个 head 的模型什么都不用写。
-- **精度是身份的一部分。** 记录下来的 dtype 永远来自后端，而不是某种假设。不要在
-  没有说明的情况下拿 `float32` 的能量去和 `float64` 的比。
-- **应力**只有在加载的模型提供它时才会报告（`implemented_properties`），而不同模
-  型之间情况不同，所以请查看验证记录里的 `stress_supported` 字段，或者运行
-  `mliport doctor`，不要想当然。
-- **NEB** 能和 MACE 配合使用，因为它的力来自能量的导数；运行时的一致性检查见
+- **Head。** 模型有多个 head 时，必须用 `--head` 指定一个。只有一个 head 的模型不用写。
+- **精度属于模型信息的一部分。** 记录的精度来自后端实际报告的值。`float32` 和 `float64` 的能量
+  不要在不注明的情况下直接比较。
+- **应力**只有模型支持时才会输出（见 `implemented_properties`），不同模型情况不同。可以查验证
+  记录里的 `stress_supported` 字段，或运行 `mliport doctor` 确认。
+- **NEB** 可以用 MACE，因为它的力是能量求导得到的；运行时的一致性检查见
   [NEB](../workflows/neb.md)。
 
-mliport 采用 MIT 许可。上游软件和模型需要另行引用，见[引用](../citations.md)。
+mliport 采用 MIT 许可证。上游软件和模型需要另外引用，见[引用](../citations.md)。

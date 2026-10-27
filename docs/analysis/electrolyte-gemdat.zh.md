@@ -1,47 +1,44 @@
 # GEMDAT 电解质分析
 
-`electrolyte` 借助 GEMDAT 把可移动离子的位置归到位点上，统计位点之间的跳跃，并寻找渗流
-通道。它关心的是*机理*：离子待在哪里、怎么跳，而不是整体扩散得多快。
+`electrolyte` 用 GEMDAT 把可移动离子的位置归到各个位点上，统计位点之间的跳跃，并寻找渗流通道。它
+回答的是*机理*问题：离子停在哪些位点、怎样跳跃。扩散快慢请用 `transport` 分析。
 
-GEMDAT 需要位点的定义，且只能二选一：你自己的位点文件，或者从可移动物种的密度中发现的
-位点。
+位点有两种给法，二选一：用你自己的位点文件，或者从可移动离子的密度分布中自动识别。
 
 ```bash
 mliport analyze runs/md electrolyte --mobile Li --sites sites.yaml --temperature-K 800
 mliport analyze runs/md electrolyte --mobile Li --discover-sites-from-density
 ```
 
-位点定义必须与结构及其原子顺序一致；不一致是配置错误，不能忽略。
+位点定义必须和结构及原子顺序一致，不一致会报错。
 
 ## 常用选项
 
 | 选项 | 含义 |
 |---|---|
-| `--mobile SPECIES` | 可移动物种（必需） |
-| `--sites PATH` 或 `--discover-sites-from-density` | 显式位点文件，或基于密度的发现（二者必须恰好给一个） |
-| `--resolution-A`、`--background-level` | 密度与位点发现的参数（默认 0.5 Å、0.1） |
-| `--site-radius-A` | 位点周围的捕获半径 |
-| `--minimal-residence` | 记作一次位点访问所需的最短停留帧数（默认 0） |
+| `--mobile SPECIES` | 可移动离子（必需） |
+| `--sites PATH` 或 `--discover-sites-from-density` | 位点文件，或从密度自动识别（必须二选一） |
+| `--resolution-A`、`--background-level` | 密度网格和位点识别的参数（默认 0.5 Å、0.1） |
+| `--site-radius-A` | 位点的半径，离子进入这个范围算作占据 |
+| `--minimal-residence` | 至少停留多少帧才算一次占据（默认 0） |
 | `--jump-dimensions` | 跳跃分析的维度：1、2 或 3（默认 3） |
-| `--percolation-axes` | 检验渗流的轴（默认 `xyz`） |
-| `--temperature-K` | 派生量所用的温度 |
+| `--percolation-axes` | 检查哪些方向上的渗流（默认 `xyz`） |
+| `--temperature-K` | 计算衍生量用的温度 |
 | `--drift-reference`、`--drift-mode`、`--drift-indices` | 骨架漂移校正（mode 默认 `arithmetic_mean`） |
 
-## 输出什么
+## 输出
 
-`results.json` 里有位点列表、访问与跳跃次数、跳跃向量与停留统计、渗流诊断，以及每个分析
-都会带的来源信息。
+`results.json` 里有位点列表、占据和跳跃次数、跳跃方向和停留时间统计、渗流诊断，以及软件和模型信息。
 
-如果 GEMDAT 本身出错，会报告为**后端失败**（`backend_error`），绝不会写成"零次跳跃"。
-只有分析确实运行了、并且没发现跳跃时，才会报告零次跳跃。位点定义为空或无效、可移动物种
-的选择没有匹配到任何原子，这些情形都会失败。
+GEMDAT 本身出错时，结果标为**后端失败**（`backend_error`），和"零次跳跃"区分开。只有分析正常完成且确实
+没有跳跃时，才会报告零次跳跃。位点定义为空或无效、指定的可移动离子在结构里不存在，都会报错。
 
-## 怎么读结果
+## 结果怎么看
 
-- 位点映射是对输运机理的一种建模。不同的位点定义会改变跳跃次数，所以请写明位点的来源。
-- `backend_error` 不等于"没有扩散"。解读任何机理之前，先读错误信息。
-- 跳跃次数取决于 `--minimal-residence`、漂移策略和帧间隔，请一并报告。
-- 沿所选轴的渗流不自动等于三维的长程输运。请写明检验了哪些维度和轴。
+- 划分位点本身是一种建模选择，位点定义不同，跳跃次数就不同，要写明位点是怎么来的。
+- 出现 `backend_error` 时不能得出"没有扩散"的结论，先看报错信息。
+- 跳跃次数受 `--minimal-residence`、漂移处理和帧间隔影响，这些都要一起报告。
+- 沿某几个方向能渗流，不等于三维长程导通，要写明检查了哪些维度和方向。
 
 ```bash
 mliport analyze runs/md-800K electrolyte --mobile Li \
@@ -49,9 +46,9 @@ mliport analyze runs/md-800K electrolyte --mobile Li \
   --jump-dimensions 3 --percolation-axes xyz
 ```
 
-## 计算开销
+## 计算量
 
-在完整的 1 ns、400 原子轨迹上发现位点很贵。验收套件只取 30 ps 的一段，并加上
+在 1 ns、400 个原子的完整轨迹上识别位点很耗时。验收测试只取其中 30 ps，并加上
 `--frame-interval-fs 100`：
 
 ```bash
@@ -59,4 +56,4 @@ mliport analyze runs/md-800K electrolyte --mobile Li \
   --mobile Li --discover-sites-from-density
 ```
 
-GEMDAT 的部分占据警告来自上游库，不会改变你所要求的位点集合。
+运行中关于部分占据的警告来自 GEMDAT 本身，不影响你指定的位点。
