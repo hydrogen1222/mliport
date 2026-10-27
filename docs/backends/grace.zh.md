@@ -3,6 +3,19 @@
 GRACE 模型是导出的 TensorFlow SavedModel，通过 `tensorpotential` 加载。模型路径是
 SavedModel 的**目录**，而不是单个文件。
 
+## 模型是什么
+
+- **结构。** GRACE（图原子团簇展开）把原子团簇展开从局部"星形图"推广到树形图：`1L`
+  模型是局部的、速度快；`2L` 模型多一层等变消息传递，用来描述半局域相互作用
+  （[Bochkarev、Lysogorskiy 与 Drautz，PRX 2024](https://arxiv.org/abs/2311.16326)）。
+- **示例检查点的训练数据。** `-OMAT-base` 模型用 OMat24 训练（PBE / PBE+U，体相无机，
+  见 [MACE 页面](mace.md)），能量、力和应力的权重相同；`-OMAT` 版本在此基础上用更大的
+  能量权重微调，`-OAM` 版本再用 MPtrj 和 Alexandria 的子集微调
+  （[Lysogorskiy 等，2025](https://arxiv.org/abs/2508.17936)）。
+- **力**是能量的梯度（保守力）；模型按下面列出的导出版本的精度计算。
+- **对你意味着什么。** 参考水平和盲区与其他 OMat24 模型相同（不含色散，只用体相数据训
+  练）。最看重速度时选 `1L`，最看重精度时选 `2L`。许可证请查模型发布页面。
+
 ## 安装
 
 <!-- BEGIN GENERATED: environment -->

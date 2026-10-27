@@ -4,6 +4,22 @@ MACE 模型通过 `mace-torch` 加载。一个 MACE profile 是"模型文件加�
 两种精度当作不同的模型：`float64` 是首选的、以精度为先的 profile，`float32` 是单
 独的身份，它的结果绝不会和 float64 的混在一起。
 
+## 模型是什么
+
+- **结构。** MACE 是等变消息传递网络，每一层都构造高阶多体特征（把原子团簇展开放进
+  消息传递里），所以两层就足以得到精确的势
+  （[Batatia 等，NeurIPS 2022](https://arxiv.org/abs/2206.07697)）。
+- **示例检查点的训练数据。** `mace-omat-0` 用 [OMat24](https://arxiv.org/abs/2410.12771)
+  训练：Meta 发布的约 1.1 亿个 VASP 计算，对象是体相无机结构，其中很多结构刻意偏离
+  平衡（随机扰动和高温帧）。参考水平是 PBE / PBE+U（VASP 5.4），与 Materials Project
+  一致：只对氧化物和氟化物中的部分过渡金属加 +U。较早的 `MACE-MP-0` 系列用 MPtrj
+  训练，也是 PBE / PBE+U（[Batatia 等，2024](https://arxiv.org/abs/2401.00096)）；全部检查点
+  及其许可证列在 [mace-foundations](https://github.com/ACEsuit/mace-foundations)。
+- **力**是能量的梯度（保守力），所以 MACE 能通过 NEB 和构型搜索的梯度预检。
+- **对你意味着什么。** 能量和力逼近的是体相无机材料上的 PBE(+U)。模型不含色散（见
+  `--d3`）；表面、分子和界面不在训练分布里，在这些体系上使用前，先拿几个结构和你自己
+  的 DFT 对比。商用前请先确认检查点的许可证。
+
 ## 安装
 
 <!-- BEGIN GENERATED: environment -->

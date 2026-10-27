@@ -83,7 +83,7 @@ transition state; confirming one with a Hessian is a separate step.
 **NEB is refused: "not verifiably the gradient of its energy".** Before the first
 step, NEB compares the model's forces with finite differences of its energy on
 your band. The refusal means the forces do not match the energy (a model that
-predicts forces directly, such as UMA), a value was not finite, or the energy
+predicts forces directly), a value was not finite, or the energy
 resolution is too coarse to tell (a large float32 cell: use float64 or a smaller
 cell). The message gives the image, the direction and the error, and the whole
 record is in `NEBGradientConsistencyError.summary`.

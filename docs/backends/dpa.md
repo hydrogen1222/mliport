@@ -4,6 +4,24 @@ DPA checkpoints are loaded through `deepmd-kit`. Many of them are multi-task
 models with several named branches, and mliport will not guess which branch you
 mean: you pass it explicitly as the head, or the run fails closed.
 
+## What the model is
+
+- **Architecture.** DPA-3 is a message-passing network on a *line graph series*:
+  the first graph holds atoms and pairs, the next holds bond angles, and so on,
+  so angular information is built in explicitly
+  ([Zhang et al., 2025](https://arxiv.org/abs/2506.01686)).
+- **Training data of the example checkpoint.** `DPA-3.1-3M` (about 3.3 million
+  parameters) is pretrained on OpenLAM-v1, a collection of 31 datasets
+  from different domains, computed with *different* DFT settings. The model keeps them apart with a dataset encoding,
+  which is what you select as the **head**: `Omat24` reproduces the OMat24
+  reference level (PBE / PBE+U, bulk inorganic, see the [MACE page](mace.md)).
+- **Forces** are the gradient of the summed atomic energies (conservative).
+- **What this means for you.** Pick the head whose DFT settings match the
+  calculations you will compare with, and never compare absolute energies from
+  two different heads: each dataset has its own energy reference and possibly its
+  own functional. List the heads of a checkpoint with `dp --pt show ...
+  model-branch` (below).
+
 ## Install
 
 <!-- BEGIN GENERATED: environment -->
