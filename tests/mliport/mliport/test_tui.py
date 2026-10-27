@@ -1636,3 +1636,266 @@ async def test_confsearch_config_rejects_partial_mode_b(tmp_path: Path) -> None:
         screen._save_and_run()
     assert notifications
     assert "both a slab file and a molecule file" in notifications[-1]
+
+
+# ---------------------------------------------------------------------------
+# DFT-D3, confsearch anchor placement, and the rmsd/arrhenius analyses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio()
+async def test_d3_controls_follow_switch_and_reach_config(tmp_path: Path) -> None:
+    structure = tmp_path / "structure.cif"
+    model = tmp_path / "model.model"
+    structure.write_text("")
+    model.write_text("")
+    app = MliportApp()
+    app.update_config("calc_type", "sp")
+    app.update_config("model_type", "mace")
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        assert screen.query_one("#d3-switch").value is False
+        assert screen.query_one("#d3-xc-input").display is False
+        assert screen.query_one("#d3-damping-select").display is False
+
+        screen.query_one("#d3-switch").value = True
+        await pilot.pause()
+        assert screen.query_one("#d3-xc-input").display is True
+        assert screen.query_one("#d3-damping-select").display is True
+
+        screen.query_one("#structure-input").value = str(structure)
+        screen.query_one("#model-input").value = str(model)
+        screen.query_one("#d3-damping-select").value = "zero"
+        screen.notify = Mock()
+        app.push_screen = Mock()
+        screen._save_and_run()
+        app.push_screen.assert_called_once()
+        assert app.get_config("d3") is True
+        assert app.get_config("d3_xc") is None  # blank keeps the pbe default
+        assert app.get_config("d3_damping") == "zero"
+
+        # Switching D3 off clears every D3 key, so nothing is forwarded.
+        screen.query_one("#d3-switch").value = False
+        await pilot.pause()
+        app.push_screen.reset_mock()
+        screen._save_and_run()
+        app.push_screen.assert_called_once()
+        assert app.get_config("d3") is None
+        assert app.get_config("d3_xc") is None
+        assert app.get_config("d3_damping") is None
+
+
+@pytest.mark.asyncio()
+async def test_d3_uma_task_reference_is_enforced_in_tui(tmp_path: Path) -> None:
+    structure = tmp_path / "structure.cif"
+    model = tmp_path / "uma.pt"
+    structure.write_text("")
+    model.write_text("")
+    app = MliportApp()
+    app.update_config("calc_type", "sp")
+    app.update_config("model_type", "uma")
+    app.update_config("task", "oc20")
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#structure-input").value = str(structure)
+        screen.query_one("#model-input").value = str(model)
+        screen.query_one("#d3-switch").value = True
+        await pilot.pause()
+        screen.notify = Mock()
+        app.push_screen = Mock()
+
+        # oc20 is RPBE data: the pbe default must be refused, not swapped.
+        screen._save_and_run()
+        app.push_screen.assert_not_called()
+        assert "rpbe" in str(screen.notify.call_args)
+
+        screen.query_one("#d3-xc-input").value = "rpbe"
+        screen._save_and_run()
+        app.push_screen.assert_called_once()
+        assert app.get_config("d3_xc") == "rpbe"
+
+
+@pytest.mark.asyncio()
+async def test_neb_form_does_not_offer_d3(tmp_path: Path) -> None:
+    app = MliportApp()
+    app.update_config("calc_type", "neb")
+    app.update_config("model_type", "mace")
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        assert len(screen.query("#d3-switch")) == 0
+
+
+@pytest.mark.asyncio()
+async def test_d3_options_reach_background_command() -> None:
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "sp",
+            "structure_file": "/tmp/structure.vasp",
+            "model_file": "/tmp/model.model",
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": "/tmp/out",
+            "d3": True,
+            "d3_xc": "pbe",
+            "d3_damping": "bj",
+        }
+    )
+    async with app.run_test(size=(80, 40)):
+        screen = RunScreen()
+        screen._job_id = "test-d3"
+        command = screen._build_command()
+    assert "--d3" in command
+    assert command[command.index("--d3-xc") + 1] == "pbe"
+    assert command[command.index("--d3-damping") + 1] == "bj"
+
+
+@pytest.mark.asyncio()
+async def test_confsearch_anchor_and_seed_reach_command(tmp_path: Path) -> None:
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"m")
+    slab = tmp_path / "slab.vasp"
+    slab.write_text("dummy")
+    molecule = tmp_path / "molecule.xyz"
+    molecule.write_text("dummy")
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "confsearch",
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+            "cs_slab": str(slab),
+            "cs_molecule": str(molecule),
+            "cs_n_starts": 4,
+            "cs_place_anchor": "0",
+            "cs_place_anchor_targets": "S",
+            "seed": 7,
+            "structure_file": str(slab),
+        }
+    )
+    async with app.run_test(size=(80, 40)):
+        screen = RunScreen()
+        screen._job_id = "test-anchor"
+        command = screen._build_command()
+    assert command[command.index("--anchor") + 1] == "0"
+    assert command[command.index("--anchor-targets") + 1] == "S"
+    assert command[command.index("--seed") + 1] == "7"
+
+
+@pytest.mark.asyncio()
+async def test_confsearch_anchor_validation(tmp_path: Path) -> None:
+    model = tmp_path / "model.pt"
+    model.write_bytes(b"m")
+    start = tmp_path / "start.extxyz"
+    start.write_text("1\n\nH 0 0 0\n")
+    slab = tmp_path / "slab.vasp"
+    slab.write_text("dummy")
+    molecule = tmp_path / "molecule.xyz"
+    molecule.write_text("dummy")
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "confsearch",
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+        }
+    )
+    async with app.run_test(size=(120, 80)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#model-input", Input).value = str(model)
+        screen.notify = Mock()
+        app.push_screen = Mock()
+
+        # Mode A: anchor placement does not apply to the user's own starts.
+        screen.query_one("#structure-input", Input).value = str(start)
+        screen.query_one("#cs-adsorbate-indices-input", Input).value = "0"
+        screen.query_one("#cs-anchor-input", Input).value = "0"
+        screen._save_and_run()
+        app.push_screen.assert_not_called()
+        assert "mode B only" in str(screen.notify.call_args)
+
+        # Mode B: targets without an anchor, and a bad element, are refused.
+        screen.query_one("#structure-input", Input).value = ""
+        screen.query_one("#cs-adsorbate-indices-input", Input).value = ""
+        screen.query_one("#cs-slab-input", Input).value = str(slab)
+        screen.query_one("#cs-molecule-input", Input).value = str(molecule)
+        screen.query_one("#cs-anchor-input", Input).value = ""
+        screen.query_one("#cs-anchor-targets-input", Input).value = "S"
+        screen.notify.reset_mock()
+        screen._save_and_run()
+        app.push_screen.assert_not_called()
+        assert "need an anchor atom" in str(screen.notify.call_args)
+
+        screen.query_one("#cs-anchor-input", Input).value = "0"
+        screen.query_one("#cs-anchor-targets-input", Input).value = "Xx"
+        screen.notify.reset_mock()
+        screen._save_and_run()
+        app.push_screen.assert_not_called()
+        assert screen.notify.called
+
+        screen.query_one("#cs-anchor-targets-input", Input).value = "S"
+        screen.query_one("#cs-seed-input", Input).value = "5"
+        screen._save_and_run()
+        app.push_screen.assert_called_once()
+        assert app.get_config("cs_place_anchor") == "0"
+        assert app.get_config("cs_place_anchor_targets") == "S"
+        assert app.get_config("seed") == 5
+
+
+@pytest.mark.asyncio()
+async def test_analysis_screen_offers_rmsd_and_arrhenius() -> None:
+    app = MliportApp()
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = AnalysisScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        screen.query_one("#analysis-task-select").value = "rmsd"
+        await pilot.pause()
+        assert screen.query_one("#analysis-mobile-input").display is True
+        assert screen.query_one("#analysis-drift-select").display is True
+        assert screen.query_one("#analysis-arr-temperatures-input").display is False
+        screen.query_one("#analysis-mobile-input").value = ""
+        parameters = screen._parameters("rmsd")
+        assert parameters["species"] is None
+        assert parameters["drift_reference"] == "none"
+
+        screen.query_one("#analysis-task-select").value = "arrhenius"
+        await pilot.pause()
+        assert screen.query_one("#analysis-arr-temperatures-input").display is True
+        assert screen.query_one("#analysis-mobile-input").display is False
+        assert screen.query_one("#analysis-equilibration-row").display is False
+        screen.query_one("#analysis-arr-temperatures-input").value = "600, 700 800"
+        screen.query_one(
+            "#analysis-arr-diffusivities-input"
+        ).value = "1e-10,2e-10,4e-10"
+        screen.query_one("#analysis-arr-extrapolate-input").value = "300"
+        parameters = screen._parameters("arrhenius")
+        assert parameters == {
+            "temperatures_K": [600.0, 700.0, 800.0],
+            "diffusivities_m2_s": [1e-10, 2e-10, 4e-10],
+            "extrapolate_temperatures_K": [300.0],
+        }
+
+        screen.query_one("#analysis-arr-diffusivities-input").value = "1e-10,2e-10"
+        with pytest.raises(ValueError, match="one diffusivity per temperature"):
+            screen._parameters("arrhenius")
+        screen.query_one("#analysis-arr-diffusivities-input").value = "1e-10,x,3"
+        with pytest.raises(ValueError, match="not a number"):
+            screen._parameters("arrhenius")

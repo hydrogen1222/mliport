@@ -153,7 +153,8 @@ mliport opt slab.vasp --model model.model --model-type mace --task bulk --d3
 没法从 MACE、DPA、GRACE 的模型文件里读出这个信息。UMA 各 task 的参考泛函是已知的：只有
 `omat`（PBE）和 `oc20`（RPBE）可以加 D3；`omol`、`omc`、`odac`、`oc25` 的参考已经含色散或
 无法确认不含，加 D3 会报错。只写了 `D3_XC` 或 `D3_DAMPING` 却没开 `D3`，也会报错，避免记录
-一个实际没生效的设置。NEB 暂不支持 D3，TUI 也还没有这个选项。
+一个实际没生效的设置。NEB 暂不支持 D3。TUI 配置页里的 DFT-D3 开关对应同样的三个选项（NEB
+的配置页不显示这个开关）。
 
 是否加了 D3 会记录下来：JSON 结果的模型信息里有 `dispersion` 字段，OUTCAR 文件头里有一行
 `Dispersion:`。`torch-dftd` 依赖 PyTorch，MACE、DPA 和 UMA 的环境里都已经有了。
@@ -192,4 +193,5 @@ NEB 的必需输出不能关闭，关闭会报错。
 ## TUI
 
 `mliport tui` 提供同样的配置项，同样要求先选定后端和模型才能运行。TUI 和命令行通过同一套
-代码提交作业，两边的行为一致。
+代码提交作业，两边的行为一致。分析页包含所有 `analyze` 任务和常用参数；不常用的参数（例如
+GEMDAT 自动识别位点）只能在命令行里设置。

@@ -129,8 +129,8 @@
       "api": "yes",
       "direct_cli": "yes",
       "incar": "yes",
-      "tui": "no",
-      "note": "d3/d3_xc/d3_damping calculator options (--d3, D3 = .TRUE., API d3=True); the TUI has no D3 field yet; NEB refuses D3"
+      "tui": "yes",
+      "note": "d3/d3_xc/d3_damping calculator options (--d3, D3 = .TRUE., API d3=True, the TUI DFT-D3 switch); NEB refuses D3, so the TUI NEB form does not offer it"
     },
     {
       "feature": "confsearch_user_starts",
@@ -146,7 +146,7 @@
       "direct_cli": "yes",
       "incar": "yes",
       "tui": "yes",
-      "note": "Mode B: API slab/molecule/n_starts, `mliport confsearch place` (placement only, no model), CS_SLAB/CS_MOLECULE/CS_N_STARTS, and the TUI configuration screen (Slab File + Molecule File + Number of Placed Starts)."
+      "note": "Mode B: API slab/molecule/n_starts, `mliport confsearch place` (placement only, no model), CS_SLAB/CS_MOLECULE/CS_N_STARTS, and the TUI configuration screen (Slab File + Molecule File + Number of Placed Starts, with anchor atom and anchor target elements)."
     },
     {
       "feature": "confsearch_resume",

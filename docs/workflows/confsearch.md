@@ -194,8 +194,8 @@ print(results["ranking"]["best_energy_eV"])
 ```
 
 The interactive terminal app offers the same two start modes on its
-configuration screen, and `extend`/`merge` are available as commands (the TUI
-does not expose them); the capability matrix records exactly which interface
+configuration screen, including the anchor atom, anchor target elements and the
+random seed; `resume`, `extend` and `merge` are available as commands only; the capability matrix records exactly which interface
 can express what. `mliport confsearch place` runs the placement alone (no
 model) so you can inspect the starts before spending GPU time:
 
