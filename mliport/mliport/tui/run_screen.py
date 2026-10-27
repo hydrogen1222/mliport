@@ -158,6 +158,9 @@ class RunScreen(Screen):
             "torch_num_threads",
             "default_dtype",
             "head",
+            "d3",
+            "d3_xc",
+            "d3_damping",
         ):
             value = self.app.get_config(key)
             if value is not None:
@@ -223,6 +226,8 @@ class RunScreen(Screen):
                 "cs_cool_ps",
                 "cs_top_k",
                 "cs_refine",
+                "cs_place_anchor",
+                "cs_place_anchor_targets",
                 "seed",
             ):
                 value = self.app.get_config(key)

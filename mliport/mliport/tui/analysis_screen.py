@@ -66,12 +66,14 @@ class AnalysisScreen(Screen):
                         ("Validate trajectory", "validate"),
                         ("Thermodynamics", "thermo"),
                         ("RDF + coordination", "rdf"),
+                        ("RMSD / RMSF (crystal stability)", "rmsd"),
                         ("MSD diagnostic", "msd"),
                         ("Transport estimate (kinisi)", "transport"),
                         ("Mobile-ion density", "density"),
                         ("GEMDAT advanced", "electrolyte"),
                         ("VACF", "vacf"),
                         ("Velocity spectrum advanced", "spectrum"),
+                        ("Arrhenius fit of diffusivities", "arrhenius"),
                     ],
                     value="validate",
                     id="analysis-task-select",
@@ -174,6 +176,45 @@ class AnalysisScreen(Screen):
                 yield Label("Percolation Axes:", id="analysis-percolation-label")
                 yield Input(value="xyz", id="analysis-percolation-input")
 
+                yield Static(
+                    "Arrhenius fits the diffusivities you enter, one per temperature, "
+                    "from independent runs with the same model and MD protocol. The "
+                    "run directory above only decides where the result is written.",
+                    id="analysis-arrhenius-note",
+                )
+                yield Label(
+                    "Temperatures (K, comma-separated):",
+                    id="analysis-arr-temperatures-label",
+                )
+                yield Input(
+                    value="",
+                    placeholder="e.g. 600, 700, 800",
+                    id="analysis-arr-temperatures-input",
+                )
+                yield Label(
+                    "Diffusivities (m^2/s, same order):",
+                    id="analysis-arr-diffusivities-label",
+                )
+                yield Input(
+                    value="",
+                    placeholder="e.g. 1.2e-10, 2.5e-10, 4.1e-10",
+                    id="analysis-arr-diffusivities-input",
+                )
+                yield Label(
+                    "Diffusivity Std Devs (m^2/s, optional, same order):",
+                    id="analysis-arr-std-label",
+                )
+                yield Input(value="", id="analysis-arr-std-input")
+                yield Label(
+                    "Extrapolate to Temperatures (K, optional):",
+                    id="analysis-arr-extrapolate-label",
+                )
+                yield Input(
+                    value="",
+                    placeholder="e.g. 300",
+                    id="analysis-arr-extrapolate-input",
+                )
+
                 yield Static("", id="analysis-status")
             with Horizontal(id="button-bar"):
                 yield Button("◀ Back", id="analysis-back-btn")
@@ -191,7 +232,7 @@ class AnalysisScreen(Screen):
             self.query_one(selector).display = visible
 
     def _update_task_fields(self, task: str) -> None:
-        ranged = task not in {"validate", "transport", "electrolyte"}
+        ranged = task not in {"validate", "transport", "electrolyte", "arrhenius"}
         self.query_one("#analysis-equilibration-row").display = ranged
         source_overrides = task in {"validate", "msd", "transport"}
         self._set_display(
@@ -211,11 +252,14 @@ class AnalysisScreen(Screen):
             "vacf",
             "spectrum",
         }
+        mobile = mobile or task == "rmsd"
         self.query_one("#analysis-mobile-label", Label).update(
-            "Species:" if task in {"vacf", "spectrum"} else "Mobile Species:"
+            "Species (blank = all atoms):"
+            if task in {"vacf", "spectrum", "rmsd"}
+            else "Mobile Species:"
         )
         self._set_display(("#analysis-mobile-label", "#analysis-mobile-input"), mobile)
-        drift = task in {"msd", "transport"}
+        drift = task in {"msd", "transport", "rmsd"}
         self._set_display(
             (
                 "#analysis-drift-label",
@@ -287,6 +331,20 @@ class AnalysisScreen(Screen):
             ),
             electrolyte,
         )
+        self._set_display(
+            (
+                "#analysis-arrhenius-note",
+                "#analysis-arr-temperatures-label",
+                "#analysis-arr-temperatures-input",
+                "#analysis-arr-diffusivities-label",
+                "#analysis-arr-diffusivities-input",
+                "#analysis-arr-std-label",
+                "#analysis-arr-std-input",
+                "#analysis-arr-extrapolate-label",
+                "#analysis-arr-extrapolate-input",
+            ),
+            task == "arrhenius",
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "analysis-back-btn":
@@ -310,7 +368,7 @@ class AnalysisScreen(Screen):
                 if not math.isfinite(value) or value <= 0:
                     raise ValueError("Frame interval must be positive")
                 parameters["frame_interval_fs"] = value
-        if task not in {"validate", "transport", "electrolyte"}:
+        if task not in {"validate", "transport", "electrolyte", "arrhenius"}:
             parameters["include_equilibration"] = self.query_one(
                 "#analysis-include-equilibration", Switch
             ).value
@@ -319,8 +377,12 @@ class AnalysisScreen(Screen):
             if not mobile:
                 raise ValueError("Mobile species is required")
             parameters["mobile_species"] = mobile
-        elif task in {"vacf", "spectrum"}:
+        elif task in {"vacf", "spectrum", "rmsd"}:
             parameters["species"] = mobile or None
+        if task == "rmsd":
+            parameters["drift_reference"] = str(
+                self.query_one("#analysis-drift-select", Select).value
+            )
         if task in {"msd", "transport"}:
             parameters["drift_reference"] = str(
                 self.query_one("#analysis-drift-select", Select).value
@@ -413,6 +475,29 @@ class AnalysisScreen(Screen):
             if not math.isfinite(parser_limit) or parser_limit <= 0:
                 raise ValueError("kinisi parser memory limit must be positive")
             parameters["parser_memory_limit_gib"] = parser_limit
+        elif task == "arrhenius":
+            temperatures = self._float_list("#analysis-arr-temperatures-input")
+            diffusivities = self._float_list("#analysis-arr-diffusivities-input")
+            if not temperatures or not diffusivities:
+                raise ValueError("Arrhenius needs temperatures and diffusivities")
+            if len(temperatures) != len(diffusivities):
+                raise ValueError(
+                    "Arrhenius needs one diffusivity per temperature "
+                    f"({len(temperatures)} temperatures, {len(diffusivities)} "
+                    "diffusivities)"
+                )
+            parameters["temperatures_K"] = temperatures
+            parameters["diffusivities_m2_s"] = diffusivities
+            stds = self._float_list("#analysis-arr-std-input")
+            if stds:
+                if len(stds) != len(temperatures):
+                    raise ValueError(
+                        "Give one diffusivity std per temperature, or none"
+                    )
+                parameters["diffusivity_std_m2_s"] = stds
+            parameters["extrapolate_temperatures_K"] = self._float_list(
+                "#analysis-arr-extrapolate-input"
+            )
         elif task == "density":
             parameters["spacing_A"] = float(
                 self.query_one("#analysis-spacing-input", Input).value
@@ -429,6 +514,20 @@ class AnalysisScreen(Screen):
                 "#analysis-percolation-input", Input
             ).value.strip()
         return parameters
+
+    def _float_list(self, selector: str) -> list[float]:
+        """Comma- or space-separated finite numbers; blank gives an empty list."""
+        text = self.query_one(selector, Input).value.replace(",", " ").split()
+        values: list[float] = []
+        for token in text:
+            try:
+                value = float(token)
+            except ValueError as exc:
+                raise ValueError(f"{token!r} is not a number") from exc
+            if not math.isfinite(value):
+                raise ValueError(f"{token!r} is not a finite number")
+            values.append(value)
+        return values
 
     def _start_analysis(self) -> None:
         source = self.query_one("#analysis-run-input", Input).value.strip()

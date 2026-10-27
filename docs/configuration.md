@@ -168,8 +168,9 @@ checkpoint. For UMA the reference of each task is known: D3 is accepted for
 `omat` (PBE) and `oc20` (RPBE) only, and refused for `omol`, `omc`, `odac` and
 `oc25`, whose references already contain dispersion or are not verified to be
 dispersion-free. `D3_XC` or `D3_DAMPING` without `D3` is an error rather than a
-setting that silently does nothing. NEB does not accept D3 yet, and the TUI
-does not expose it.
+setting that silently does nothing. NEB does not accept D3 yet. In the TUI, the
+DFT-D3 switch on the configuration screen sets the same three options (the NEB
+form does not show it).
 
 The correction is recorded with the run: `dispersion` in the model metadata of
 the JSON output and a `Dispersion:` line in the OUTCAR-style header. The
@@ -215,3 +216,5 @@ that quietly lacks them.
 `mliport tui` exposes the same configuration, including an explicit backend
 choice, and will not start a run until a backend and a model are chosen. It
 submits through the same queue helper as the CLI, so the two cannot drift apart.
+Its analysis screen offers every `analyze` task with the common options; the less
+common ones (for example GEMDAT site discovery) are command-line only.

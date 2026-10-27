@@ -162,7 +162,8 @@ results = run_confsearch(
 print(results["ranking"]["best_energy_eV"])
 ```
 
-终端界面（TUI）的配置页也支持这两种起点方式；`extend` 和 `merge` 只能在命令行里用。各个入口
+终端界面（TUI）的配置页也支持这两种起点方式，可以设置锚点原子、锚点目标元素和随机种子；
+`resume`、`extend` 和 `merge` 只能在命令行里用。各个入口
 分别支持哪些功能，记录在能力矩阵里。`mliport confsearch place` 只做摆放、不加载模型，可以在
 花 GPU 时间之前先看看起点是否合理：
 

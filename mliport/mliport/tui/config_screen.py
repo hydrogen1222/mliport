@@ -253,6 +253,47 @@ class ConfigScreen(Screen):
                     id="activation-checkpointing-select",
                 )
 
+                # NEB refuses D3 (its model identity does not record the
+                # dispersion term), so the NEB form does not offer it.
+                if calc_type != "neb":
+                    yield Static("🌫️  DFT-D3", classes="section-title")
+                    yield Horizontal(
+                        Label("Add DFT-D3 Dispersion:"),
+                        Switch(
+                            value=bool(self.app.get_config("d3", False)),
+                            id="d3-switch",
+                        ),
+                        id="d3-row",
+                        classes="switch-row",
+                    )
+                    yield Label(
+                        "D3 Reference Functional of the Training Data:",
+                        id="d3-xc-label",
+                    )
+                    yield Input(
+                        value=str(self.app.get_config("d3_xc", "") or ""),
+                        placeholder="blank = pbe (UMA: omat -> pbe, oc20 -> rpbe)",
+                        id="d3-xc-input",
+                    )
+                    yield Label("D3 Damping:", id="d3-damping-label")
+                    yield Select(
+                        options=[
+                            ("Becke-Johnson, D3(BJ) (default)", "bj"),
+                            ("Zero damping", "zero"),
+                            ("Modified BJ", "bjm"),
+                            ("Modified zero", "zerom"),
+                        ],
+                        value=str(self.app.get_config("d3_damping") or "bj"),
+                        allow_blank=False,
+                        id="d3-damping-select",
+                    )
+                    yield Static(
+                        "Only for models trained on dispersion-free data (e.g. "
+                        "PBE). It needs torch-dftd in the backend environment, "
+                        "and D3 is recorded in the model identity.",
+                        id="d3-note",
+                    )
+
                 # Calculation-specific options
                 yield Static("🔧 Calculation Options", classes="section-title")
                 yield from self._calc_options(calc_type)
@@ -692,6 +733,23 @@ class ConfigScreen(Screen):
                 id="cs-n-starts-input",
             )
 
+            yield Label(
+                "Anchor Atom(s) in the Molecule File (mode B, 0-based; "
+                "blank = non-bonded contact placement):"
+            )
+            yield Input(
+                value=str(self.app.get_config("cs_place_anchor", "") or ""),
+                placeholder="e.g. 0 (the atom that should bond to the surface)",
+                id="cs-anchor-input",
+            )
+
+            yield Label("Anchor Target Elements (mode B, optional):")
+            yield Input(
+                value=str(self.app.get_config("cs_place_anchor_targets", "") or ""),
+                placeholder="e.g. S or Pt,O (blank = any non-ionic slab atom)",
+                id="cs-anchor-targets-input",
+            )
+
             yield Label("Cycles per Replica (0 = start-quench baseline only):")
             yield Input(
                 value=str(self.app.get_config("cs_cycles", 5)),
@@ -738,6 +796,14 @@ class ConfigScreen(Screen):
             yield Input(
                 value=str(self.app.get_config("cs_top_k", 10)),
                 id="cs-top-k-input",
+            )
+
+            seed = self.app.get_config("seed")
+            yield Label("Random Seed (blank = auto-generate and record):")
+            yield Input(
+                value="" if seed is None else str(seed),
+                placeholder="e.g., 42",
+                id="cs-seed-input",
             )
 
             yield Static(
@@ -804,6 +870,21 @@ class ConfigScreen(Screen):
         elif event.select.id == "neb-interpolation-select":
             self._update_neb_option_states()
 
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        """Show the D3 settings only while D3 is enabled."""
+        if event.switch.id == "d3-switch":
+            self._update_d3_option_states()
+
+    def _update_d3_option_states(self) -> None:
+        enabled = self.query_one("#d3-switch", Switch).value
+        for selector in (
+            "#d3-xc-label",
+            "#d3-xc-input",
+            "#d3-damping-label",
+            "#d3-damping-select",
+        ):
+            self.query_one(selector).display = enabled
+
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         """Refresh thermostat controls when NVT/NVE changes."""
         if event.radio_set.id == "ensemble-radio":
@@ -835,6 +916,8 @@ class ConfigScreen(Screen):
         self._validate_path("model-input", model_input.value)
         self._update_engine_option_states()
         calc_type = self.app.get_config("calc_type")
+        if calc_type != "neb":
+            self._update_d3_option_states()
         if calc_type == "md":
             self._update_thermostat_option_states()
         elif calc_type == "neb":
@@ -1295,6 +1378,33 @@ class ConfigScreen(Screen):
             self.app.update_config("torch_num_threads", threads)
         else:
             self.app.update_config("torch_num_threads", None)
+        if calc_type != "neb" and self.query_one("#d3-switch", Switch).value:
+            from mliport.calculators.dispersion import (  # noqa: PLC0415
+                normalize_d3_options,
+            )
+
+            d3_xc = self.query_one("#d3-xc-input", Input).value.strip().lower() or None
+            d3_damping = str(self.query_one("#d3-damping-select", Select).value)
+            try:
+                normalize_d3_options(
+                    "uma" if model_type == "fairchem" else model_type,
+                    task,
+                    d3=True,
+                    d3_xc=d3_xc,
+                    d3_damping=d3_damping,
+                )
+            except ValueError as exc:
+                self.notify(str(exc), severity="error")
+                return
+            self.app.update_config("d3", True)
+            self.app.update_config("d3_xc", d3_xc)
+            self.app.update_config("d3_damping", d3_damping)
+        else:
+            # Unset, not False: nothing is forwarded and d3_xc/d3_damping
+            # never outlive the switch (they would be rejected without D3).
+            self.app.update_config("d3", None)
+            self.app.update_config("d3_xc", None)
+            self.app.update_config("d3_damping", None)
         if model_type == "grace":
             limit_text = self.query_one(
                 "#grace-memory-limit-input", Input
@@ -1782,6 +1892,35 @@ class ConfigScreen(Screen):
                 if n_starts < 1:
                     self.notify("Number of starts must be >= 1", severity="error")
                     return
+                anchor_text = self.query_one("#cs-anchor-input", Input).value.strip()
+                targets_text = self.query_one(
+                    "#cs-anchor-targets-input", Input
+                ).value.strip()
+                if targets_text and not anchor_text:
+                    self.notify(
+                        "Anchor target elements need an anchor atom",
+                        severity="error",
+                    )
+                    return
+                if anchor_text or targets_text:
+                    from mliport.confsearch.index_spec import (  # noqa: PLC0415
+                        parse_index_spec,
+                    )
+                    from mliport.confsearch.options import (  # noqa: PLC0415
+                        _parse_elements,
+                    )
+
+                    try:
+                        parse_index_spec(anchor_text, label="cs_place_anchor")
+                        if targets_text:
+                            _parse_elements(
+                                targets_text, label="cs_place_anchor_targets"
+                            )
+                    except ValueError as exc:  # ConfsearchError is a ValueError
+                        self.notify(str(exc), severity="error")
+                        return
+                self.app.update_config("cs_place_anchor", anchor_text or None)
+                self.app.update_config("cs_place_anchor_targets", targets_text or None)
                 self.app.update_config("cs_slab", str(slab_path))
                 self.app.update_config("cs_molecule", str(molecule_path))
                 self.app.update_config("cs_n_starts", n_starts)
@@ -1802,6 +1941,18 @@ class ConfigScreen(Screen):
                         severity="error",
                     )
                     return
+                if (
+                    self.query_one("#cs-anchor-input", Input).value.strip()
+                    or self.query_one("#cs-anchor-targets-input", Input).value.strip()
+                ):
+                    self.notify(
+                        "Anchor placement is mode B only; mode A uses your own "
+                        "start structures",
+                        severity="error",
+                    )
+                    return
+                self.app.update_config("cs_place_anchor", None)
+                self.app.update_config("cs_place_anchor_targets", None)
                 self.app.update_config("cs_adsorbate_indices", indices_text)
                 self.app.update_config("cs_slab", None)
                 self.app.update_config("cs_molecule", None)
@@ -1869,6 +2020,19 @@ class ConfigScreen(Screen):
                 "cs_md_mobile",
                 str(self.query_one("#cs-md-mobile-select", Select).value),
             )
+            seed_text = self.query_one("#cs-seed-input", Input).value.strip()
+            if seed_text:
+                try:
+                    seed_value = int(seed_text)
+                except ValueError:
+                    self.notify("Random seed must be an integer", severity="error")
+                    return
+                if seed_value < 0:
+                    self.notify("Random seed must be >= 0", severity="error")
+                    return
+                self.app.update_config("seed", seed_value)
+            else:
+                self.app.update_config("seed", None)
 
         # TUI calculations are launched as persistent background processes.
         self.app.update_config("detach", True)
