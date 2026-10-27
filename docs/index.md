@@ -3,7 +3,8 @@
 mliport runs machine-learned interatomic potentials — MACE, DPA, GRACE and
 UMA — from one command line, one terminal UI and one Python API. You hand it a
 structure and a checkpoint; it relaxes the structure, runs molecular dynamics,
-finds a reaction barrier with NEB, or analyzes a trajectory. Results come back
+finds a reaction barrier with NEB, searches low-energy configurations of an
+adsorbate on a slab, or analyzes a trajectory. Results come back
 in files anyone who has used VASP can open: `OUTCAR`, `OSZICAR`, `CONTCAR` and
 `XDATCAR`, next to JSON records of exactly what was run.
 
@@ -16,8 +17,8 @@ checkpoint you pick and the checks you run on it.
 ## What it does for you
 
 - **One workflow, four backends.** Single point, relaxation (fixed or variable
-  cell), NVE/NVT molecular dynamics, NEB and CI-NEB, batch sweeps and a job
-  queue behave the same whichever model sits underneath.
+  cell), NVE/NVT molecular dynamics, NEB and CI-NEB, configuration search,
+  batch sweeps and a job queue behave the same whichever model sits underneath.
 - **No silent guessing.** There is no default backend. A misspelled option, or
   one that belongs to another backend, stops the run instead of being ignored.
   A DPA checkpoint with several heads asks which one you mean.
@@ -50,7 +51,7 @@ where to get the checkpoint.
 | understand environments, Python versions and GPUs | [Installation](installation.md) |
 | pick a model, or see which ones were validated | [Models](models.md), [Backends](backends/index.md) |
 | set options through the CLI, an INCAR file or `settings.ini` | [Configuration](configuration.md) |
-| run a relaxation, MD, NEB or a batch | [Workflows](workflows/index.md) |
+| run a relaxation, MD, NEB, a configuration search or a batch | [Workflows](workflows/index.md) |
 | analyze a trajectory | [Analysis](analysis/index.md) |
 | know what each output file contains | [Output files](outputs.md) |
 | see what has actually been tested | [Validation](validation.md) |

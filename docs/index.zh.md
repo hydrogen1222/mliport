@@ -2,7 +2,7 @@
 
 mliport 让你用同一套命令行、终端界面和 Python API 运行机器学习原子间势——
 MACE、DPA、GRACE 和 UMA。你给它一个结构和一个模型文件，它就能做结构弛豫、
-分子动力学、用 NEB 求反应势垒，或者分析一条轨迹。结果写成用过 VASP 的人一眼
+分子动力学、用 NEB 求反应势垒、搜索 slab 上吸附物的低能构型，或者分析一条轨迹。结果写成用过 VASP 的人一眼
 就认得的文件：`OUTCAR`、`OSZICAR`、`CONTCAR`、`XDATCAR`，旁边还有记录"这次到底
 跑了什么"的 JSON。
 
@@ -14,7 +14,7 @@ VASP，但这里没有 SCF，没有 k 点网格，也没有 POTCAR，而且绝�
 ## 它替你做了什么
 
 - **一套流程，四个后端。** 单点、弛豫（固定或可变晶胞）、NVE/NVT 分子动力学、
-  NEB 与 CI-NEB、批量扫描和任务队列，不管底层是哪个模型，用法都一样。
+  NEB 与 CI-NEB、构型搜索、批量扫描和任务队列，不管底层是哪个模型，用法都一样。
 - **不偷偷猜。** 没有默认后端。拼错的选项、或者属于别的后端的选项会直接让运行
   停下，而不是被悄悄忽略。多 head 的 DPA 模型会要求你说明用哪一个。
 - **留下可追溯的记录。** 每次运行都会记下模型文件及其哈希、最终生效的配置
@@ -43,7 +43,7 @@ cd mliport
 | 弄清环境、Python 版本和 GPU | [安装](installation.md) |
 | 选模型，或看哪些模型被验证过 | [模型](models.md)、[后端](backends/index.md) |
 | 用命令行、INCAR 或 `settings.ini` 设置选项 | [配置](configuration.md) |
-| 做弛豫、MD、NEB 或批量计算 | [工作流](workflows/index.md) |
+| 做弛豫、MD、NEB、构型搜索或批量计算 | [工作流](workflows/index.md) |
 | 分析轨迹 | [轨迹分析](analysis/index.md) |
 | 了解每个输出文件的内容 | [输出文件](outputs.md) |
 | 看实际测过什么 | [验证](validation.md) |
