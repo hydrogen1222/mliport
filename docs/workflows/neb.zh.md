@@ -1,7 +1,7 @@
 # NEB 与 CI-NEB
 
-`mliport neb` 用固定晶胞的弹性带（NEB）在两个端点结构之间寻找最小能量路径，可选地
-再用爬升像（climbing image）精修，并报告它找到的势垒。
+`mliport neb` 在固定晶胞下用 NEB 方法找两个端点结构之间的最小能量路径，可以再用 climbing image
+精修鞍点，并给出势垒。
 
 ```bash
 .venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
@@ -9,92 +9,86 @@
   --climb --output runs/neb
 ```
 
-你需要提供两个原子顺序一致的结构（顺序不同时用明确的 `--atom-map`），一个在明确后
-端上的模型，以及能容纳 `images + 2` 份计算器的内存。
+需要两个原子顺序一致的端点结构（顺序不同时用 `--atom-map` 指定对应关系）、一个指定了后端的模型，
+以及足够放下 `images + 2` 个结构计算的内存。
 
-## 能带动起来之前发生了什么
+## 优化开始前的检查
 
-NEB 只有在模型的力恰好是能量的梯度时才有意义。否则，能带优化的依据就是一些并不描
-述这个势能面的力，算出来的势垒毫无意义，却看不出任何异常。所以 mliport 会先检查。
+NEB 要求模型的力等于能量的负梯度。如果不满足，能带会按照和势能面不一致的力去优化，得到的势垒
+没有意义，而且从结果上看不出异常。所以 mliport 会先做检查。
 
-在即将优化的能带上（两个端点和插值出来的像），它把沿几个方向（力的方向和随机方向）
-的力投影 `-F·u`，与模型能量的中心有限差分作比较。两种步长用 Richardson 外推合
-并，容差里还包含了模型 dtype 的舍入噪声。以下情况会拒绝运行：
+检查在要优化的能带上进行（两个端点和插值得到的 image）：沿几个方向（力的方向和随机方向），比较
+力的投影 `-F·u` 和能量的中心差分。用两种步长做 Richardson 外推，容差考虑了模型精度带来的舍入
+误差。以下情况会拒绝运行：
 
 - 力不是能量的梯度，
 - 出现了非有限的值，
 - 能量分辨率不足以下结论（比如较大的 float32 晶胞），
 - 模型是直接预测力而不是对能量求导（预测器报告 `direct_forces = true`，这类模型一律被拒绝）。
 
-测量结果保存为 `run_context.json` 和 `neb_results.json` 中的 `gradient_preflight`。
-它是在被采样的结构和方向上做的一致性抽查，不是对整个能量面的证明，也不说明模型有
-多准。
+检查结果保存在 `run_context.json` 和 `neb_results.json` 的 `gradient_preflight` 里。这只是在几个结构
+和方向上的抽查，不能证明整个势能面都满足，也不说明模型的精度。
 
 ## 常用选项
 
 | 选项 | 含义 |
 |---|---|
 | `--initial`、`--final` | 两个端点结构（除非是续算，否则必需） |
-| `--images` | 中间像的个数，不含端点（默认 7） |
-| `--climb` | 用爬升像精修鞍点（默认关闭） |
+| `--images` | 中间 image 的个数，不含端点（默认 7） |
+| `--climb` | 用 climbing image 精修鞍点（默认关闭） |
 | `--fmax`、`--max-steps` | 收敛阈值 eV/Å（默认 0.03）和步数上限（默认 1000） |
-| `--pre-fmax`、`--pre-max-steps` | 配合 `--climb`，爬升像启用前较宽松的第一阶段（默认 0.1 eV/Å，300 步） |
+| `--pre-fmax`、`--pre-max-steps` | 配合 `--climb`：启用 climbing image 之前先用较宽松的阈值优化（默认 0.1 eV/Å，300 步） |
 | `--spring`、`--maxstep` | 弹簧常数（默认 0.1 eV/Å²）和优化器最大步长（默认 0.1 Å） |
 | `--interpolation` | 初始路径用 `linear`（默认）或 `idpp`；用 `--idpp-fmax`、`--idpp-steps`、`--idpp-mic` 调节 IDPP |
 | `--path-convention` | `mic`（默认）或 `unwrapped` |
 | `--endpoint-policy` | `validate`（默认）或 `relax`，见下文 |
 | `--endpoint-fmax`、`--endpoint-steps` | 端点力阈值（默认 0.02 eV/Å）和弛豫步数预算（默认 500） |
-| `--min-distance` | 原子间距小于该值的像会被拒绝（默认 0.5 Å） |
-| `--atom-map` | 以初始原子顺序给出的 0 起始末态索引，逗号分隔 |
+| `--min-distance` | 有原子间距小于该值的 image 会被拒绝（默认 0.5 Å） |
+| `--atom-map` | 按初态原子顺序列出对应的末态原子编号（从 0 开始），逗号分隔 |
 | `--image-shifts` | 每个原子的整数晶格平移，例如 `0,0,0;1,0,0` |
 | `--checkpoint-interval` | 每 N 步保存一次整条能带（默认 10） |
 | `--resume` | 从检查点或 NEB 运行目录继续 |
 
-原子映射和晶格平移必须使用整数数组，在 Python 中直接构造 `BandInput` 时也一样。
-浮点和布尔数组会被拒绝，避免静默转换后改变原子身份或路径的绕行方式。
+原子对应关系和晶格平移必须是整数数组，在 Python 里直接构造 `BandInput` 也一样。浮点或布尔数组会被
+拒绝，以免自动转换后改变了原子对应关系或路径。
 
-### 端点：校验还是弛豫
+### 端点：检查还是优化
 
-默认的 `--endpoint-policy validate` 要求端点本身已经弛豫好：任何一端的力超过
-`--endpoint-fmax`，mliport 就会停下，并告诉你是哪一端。`relax` 则先弛豫两个端点，
-再构建能带。无论哪种，端点的处理方式都会改变你的参考，请记录下来。`relax` 不能改写
-一条显式提供的能带。
+默认的 `--endpoint-policy validate` 要求端点已经优化好：任何一端的受力超过 `--endpoint-fmax`，程序会
+停下并指出是哪一端。`relax` 会先优化两个端点再建能带。两种方式得到的参考能量不同，请记录用的是
+哪种。如果直接提供了整条能带，`relax` 不会改动它。
 
-使用 `--interpolation idpp` 时，以包含弹簧项的完整 IDPP NEB 带力检查是否达到
-`--idpp-fmax`。单独的原始成对作用力很小，不代表已经收敛；未完成的 IDPP 优化会被拒绝。
+用 `--interpolation idpp` 时，判断是否达到 `--idpp-fmax` 用的是包含弹簧项的完整 IDPP 能带力。只看原始
+的成对作用力很小，并不代表已经收敛；IDPP 没有完成的话会报错。
 
-## 会得到什么
+## 输出
 
-`neb_results.json` 里有能量、力、收敛状态和势垒数据（`barrier_forward_sampled_eV`、
-`barrier_reverse_sampled_eV`、`reaction_energy_eV`，以及说明是否找到内部峰值的
-`barrier_status`）。旁边是 `run_context.json`、`resolved_config.json`、
-`artifacts.json`，装着完整能带检查点的 `checkpoints/` 目录，以及每个像一个 `POSCAR`
-的 `vasp_path/` 目录，供期待 VASP NEB 目录布局的工具使用。
+`neb_results.json` 里有能量、力、收敛状态和势垒（`barrier_forward_sampled_eV`、
+`barrier_reverse_sampled_eV`、`reaction_energy_eV`，以及说明有没有找到中间峰值的 `barrier_status`）。
+另外还有 `run_context.json`、`resolved_config.json`、`artifacts.json`，保存完整能带检查点的
+`checkpoints/` 目录，以及每个 image 一个 `POSCAR` 的 `vasp_path/` 目录，可以直接用 VASP 的 NEB 工具
+处理。
 
-这个势垒是*采样*得到的：能带上最高的像减去端点。mliport 不拟合鞍点，拟合字段留空。
+势垒是直接从能带上读的：能量最高的 image 减去端点。mliport 不做鞍点拟合，拟合相关的字段留空。
 
-检查点会把 ASE 自定义数组中的 `atom_id` / `atom_ids` 保存在每个像的 `info` 中，
-因为 ASE 轨迹文件不保存自定义数组；调用者的原始数组不变。修正后的 IDPP 收敛判据
-使用 NEB 科学版本 2，版本 1 的检查点不能在此版本下直接续算。
+ASE 的轨迹文件不保存自定义数组，所以检查点会把 `atom_id` / `atom_ids` 存到每个 image 的 `info` 里，
+调用者的原始数组不受影响。修正后的 IDPP 收敛判据对应 NEB 科学版本 2，版本 1 的检查点不能直接续算。
 
-## 失败或没收敛时
+## 失败或没收敛
 
-没有收敛的能带会如实报告，附带目前最好的能带和原因，它不是一个收敛的势垒。原子映
-射不对或端点不一致，会在构建能带之前就失败。续算会锁定原来的运行目录，所以不会不
-小心用不同的设置重新开始。
+没收敛的能带会标为未收敛，同时给出目前最好的能带和原因，这时的势垒不能当作结果。原子对应关系错误
+或两个端点不匹配，会在建能带之前就报错。续算会锁定原来的运行目录，避免误用不同的设置重新开始。
 
-## 势垒的价值
+## 怎么看待势垒
 
-- 收敛的 NEB 鞍点候选并不是被验证过的过渡态。用 Hessian（频率）计算去核实它是一项
-  独立的分析，能带收敛并不意味着已经做了这一步。
-- 势垒只在同一模型与 head 身份、同一 NEB 协议（像数、插值、端点策略、弹簧）之内
-  才可比。
-- 只有当端点确实是你想要的状态、原子映射在化学上正确时，它才有意义。
+- NEB 收敛后找到的鞍点只是候选。要确认是过渡态，还需要另外做 Hessian（频率）分析。
+- 只有用同一个模型和 head、同样的 NEB 设置（image 数、插值方法、端点处理、弹簧常数）算出的势垒
+  才能相互比较。
+- 端点必须是你真正想研究的状态，原子对应关系在化学上也要合理，势垒才有意义。
 
-## 哪个入口能表达什么
+## 各入口支持的功能
 
-不是每个 NEB 选项都能从每个界面设置。下表由
-`validation/science/capability_matrix.json` 生成。
+并非每个 NEB 选项都能在每个入口设置。下表由 `validation/science/capability_matrix.json` 生成。
 
 <!-- BEGIN GENERATED: neb-capability -->
 | 功能 | API | 直接 CLI | INCAR | TUI |
@@ -110,9 +104,8 @@ NEB 只有在模型的力恰好是能量的梯度时才有意义。否则，能�
 | min distance guard | yes | yes | yes | yes |
 <!-- END GENERATED -->
 
-`yes` 表示该入口能表达这个功能，它不代表等价性或验证声明。`no` 或 `partial` 在那个
-文件里带有说明，而且不会有任何静默转换：例如原子映射和像平移，只能通过 API、直接
-命令行和 TUI 使用，不能通过 INCAR 文件。
+`yes` 只表示这个入口能设置该功能，不代表各入口结果等价或已经验证。`no` 和 `partial` 在那个文件里有
+说明。例如原子对应关系和晶格平移只能通过 API、命令行和 TUI 设置，INCAR 文件不支持。
 
 ## 续算
 
@@ -120,7 +113,6 @@ NEB 只有在模型的力恰好是能量的梯度时才有意义。否则，能�
 .venv-mace/bin/mliport neb --resume runs/neb --output runs/neb
 ```
 
-续算在原来的运行目录里继续，并检查记录下来的身份：模型、task、head 与 dtype，晶胞与
-PBC，约束，能带设置和各选项。在这个 beta 版本中，步数预算是身份的一部分，所以改
-了 `--max-steps` 的续算会被以 `Resume fingerprint is incompatible` 拒绝。发生这种情
-况时，检查点保持原样。
+续算在原来的目录里继续，并核对记录下来的信息：模型、task、head、精度，晶胞和 PBC，约束，能带
+设置和各项参数。当前 beta 版本里步数上限也在核对范围内，续算时改 `--max-steps` 会报
+`Resume fingerprint is incompatible` 并拒绝运行，检查点保持不变。

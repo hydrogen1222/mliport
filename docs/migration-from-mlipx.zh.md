@@ -1,9 +1,9 @@
 # 从 mlipx 迁移
 
-项目已经从 **mlipx** 更名为 **mliport**。科学代码是同一脉络；变的是名字、安装方式，以及几处以前会
-替你猜测的默认行为。
+项目已经从 **mlipx** 改名为 **mliport**。计算代码一脉相承，变化的是名字、安装方式，以及几处以前会
+自动替你选择的默认行为。
 
-## 改了什么名字
+## 名称变化
 
 | 以前 | 现在 |
 |---|---|
@@ -12,27 +12,27 @@
 | `pyproject.toml` 里的 `mlipx` 入口 | `mliport` |
 | 证据 schema 前缀 `mlipx.beta-validation-result/*` | `mliport.beta-validation-result/*` |
 
-旧证据没有被丢弃。验证加载器仍然会读取遗留的 `mlipx.*` 记录，并在验证活动的元数据里把它们列为
-`legacy_namespace_records`，所以早期结果依然可审计，而新记录使用 `mliport.*` 的 schema。
+旧的验证记录都保留着。验证程序仍能读取 `mlipx.*` 格式的旧记录，并在元数据里标为
+`legacy_namespace_records`，早期结果仍然可以查证；新记录统一用 `mliport.*` 格式。
 
 ## 安装
 
-以前，一个工作环境就能装好 CLI，再去调用各后端环境。现在 mliport 要装在**每个后端自己的环境里**，
-然后调用该环境里的命令：`.venv-mace/bin/mliport`、`.venv-dpa/bin/mliport`、
-`.venv-grace/bin/mliport`，UMA 则是 `.venv/bin/mliport`，或者用生成的 `./bin/mliport-<engine>` 启动
-器。见[安装](installation.md)。
+以前在一个环境里装好命令行，再由它去调用各后端的环境。现在 mliport 要装在**每个后端自己的环境里**，
+使用时调用对应环境里的命令：`.venv-mace/bin/mliport`、`.venv-dpa/bin/mliport`、
+`.venv-grace/bin/mliport`，UMA 是 `.venv/bin/mliport`；也可以用安装时生成的
+`./bin/mliport-<engine>`。见[安装](installation.md)。
 
 ## 配置
 
-1. **后端必须显式。** 不再有隐含的 UMA 默认值。每次运行都要加 `--model-type`（或在
-   `[model:...]` 别名里写 `engine = ...`）；省略它是致命的配置错误。
-2. **配置是严格的。** 拼错的键和属于另一个后端的选项现在会失败，而不是警告。如果你需要旧行为，用
-   `--lenient-config` 或在 `settings.ini` 里写 `[general] strict_config = false` 明确要求。
-3. **模型别名必须声明 `engine`。** 旧的隐含 UMA 别名没有了。
-4. **task 默认值跟随后端。** UMA 使用它自己的 task 族（`omat`、`omol` 等）；MACE、DPA 和 GRACE
-   使用显式的 `bulk` 和 `molecule` 含义。
-5. **环境变量。** `MLIPORT_SETTINGS` 和 `MLIPORT_JOBS_DIR` 取代了以 `mlipx` 命名的那些。
-   `mliport config paths` 会打印设置文件的搜索位置。
+1. **必须指定后端。** 以前默认用 UMA，现在没有默认值了。每次运行都要加 `--model-type`（或在
+   `[model:...]` 别名里写 `engine = ...`），不写会报错。
+2. **配置检查变严格了。** 拼错的参数名和属于别的后端的参数，以前只是警告，现在会报错。想恢复旧
+   行为，加 `--lenient-config`，或在 `settings.ini` 里写 `[general] strict_config = false`。
+3. **模型别名必须写 `engine`。** 以前默认是 UMA 的别名写法不再支持。
+4. **task 按后端区分。** UMA 用自己的 task（`omat`、`omol` 等）；MACE、DPA 和 GRACE 用 `bulk` 和
+   `molecule` 表示周期性体系和分子。
+5. **环境变量改名。** 用 `MLIPORT_SETTINGS` 和 `MLIPORT_JOBS_DIR` 代替原来以 `mlipx` 开头的变量。
+   `mliport config paths` 会列出设置文件的查找位置。
 
 ## Python API
 
@@ -41,19 +41,19 @@
 from mliport import CalculatorFactory
 ```
 
-UMA 类现在位于 `mliport.calculators.uma.UMACalculator`，与 MACE、DPA、GRACE 的封装并列。旧的
-`mliport.calculator` 兼容层已在 2.0.0b4 移除：请从 `mliport.calculators` 导入，或者使用
-`CalculatorFactory` 并显式选择后端。`mliport.__all__` 从来没有特别抬高 UMA。
+UMA 的类现在是 `mliport.calculators.uma.UMACalculator`，和 MACE、DPA、GRACE 的类放在一起。旧的
+`mliport.calculator` 兼容模块已在 2.0.0b4 删除，请从 `mliport.calculators` 导入，或者用
+`CalculatorFactory` 并指定后端。
 
 ## 验证记录
 
-旧记录依然可读。新的验证活动使用 `mliport.beta-validation-result/2`、`mliport.beta-campaign/1` 和
-`mliport.beta-archive-manifest/1`，报告放在 `validation/science/reports/` 下；见[验证](validation.md)。
+旧记录仍然可以读取。新的验证使用 `mliport.beta-validation-result/2`、`mliport.beta-campaign/1` 和
+`mliport.beta-archive-manifest/1` 格式，报告在 `validation/science/reports/` 下；见[验证](validation.md)。
 
 ## 检查清单
 
 - [ ] 把脚本和 notebook 里的 `mlipx` 换成 `mliport`。
-- [ ] 按后端重新安装（安装器是受支持的方式）。
-- [ ] 给每次运行一个显式的后端或别名。
-- [ ] 修正现在通不过严格校验的配置键。
+- [ ] 按后端重新安装（推荐用安装脚本）。
+- [ ] 每次运行都指定后端或模型别名。
+- [ ] 修改通不过严格检查的配置参数。
 - [ ] 在每个后端环境里重新运行 `mliport doctor`。

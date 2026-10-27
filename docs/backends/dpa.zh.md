@@ -1,8 +1,7 @@
 # DPA（DeepMD-kit）
 
-DPA 模型通过 `deepmd-kit` 加载。其中很多是带有多个命名分支的多任务模型，mliport
-不会猜你想用哪个分支：你要显式地把它作为 head 传进来，否则运行会直接失败（fail
-closed）。
+DPA 模型通过 `deepmd-kit` 加载。很多 DPA 模型是多任务模型，带有多个分支（head）。用哪个分支
+必须由你指定，不指定会直接报错。
 
 ## 模型是什么
 
@@ -14,8 +13,8 @@ closed）。
   数据集编码把它们区分开，这个编码就是你选的 **head**：`Omat24` 复现 OMat24 的参考水平
   （PBE / PBE+U，体相无机，见 [MACE 页面](mace.md)）。
 - **力**是原子能量之和的梯度（保守力）。
-- **对你意味着什么。** 选 DFT 设置与你要对比的计算一致的 head，并且绝不要比较两个不同
-  head 给出的绝对能量：每个数据集都有自己的能量参考，泛函也可能不同。用下面的
+- **使用时要注意。** 选和你要对比的 DFT 计算设置一致的 head。不同 head 给出的绝对能量不能
+  互相比较，因为每个数据集的能量零点不同，泛函也可能不同。用下面的
   `dp --pt show ... model-branch` 列出检查点的 head。
 
 ## 安装
@@ -30,7 +29,7 @@ closed）。
 ```
 <!-- END GENERATED -->
 
-模型加载器需要 `deepmd-kit[torch]` 的元数据，安装脚本会一并装上匹配的 `mpich`。
+加载模型需要 `deepmd-kit[torch]` 的元数据，安装脚本会同时装上对应版本的 `mpich`。
 
 ## 固定的 profile
 
@@ -47,8 +46,7 @@ closed）。
   --model /path/to/DPA-3.1-3M.pt --model-type dpa --head Omat24
 ```
 
-想知道一个模型有哪些分支，先问 DeePMD-kit，再把想用的那个作为 `--head`（INCAR 文
-件里是 `HEAD`）传入：
+查看模型有哪些分支，用 DeePMD-kit 的命令，再把要用的分支传给 `--head`（INCAR 里写 `HEAD`）：
 
 ```bash
 dp --pt show DPA-3.1-3M.pt model-branch
@@ -56,13 +54,12 @@ dp --pt show DPA-3.1-3M.pt model-branch
 
 ## 需要知道的事
 
-- **多任务模型不写 head 是致命的配置错误。** 没有悄悄使用的默认分支。
-- 模型元数据检查失败后不会缓存计算器。对同一个包装器重试时，必须重新加载并通过
-  检查后才能使用模型。
-- **精度**由模型决定。mliport 记录后端实际报告的 dtype，从不拿自己的想法去替代。
-- **应力**只有在你加载的模型和分支提供它时才会报告。
-- **DPA 需要按进程隔离 GPU。** `CUDA_VISIBLE_DEVICES` 未设置时，命令行会重启命令；
-  从 Python API 调用时，请在导入框架之前于调用进程里设置这个变量。
-- DPA 没有 `inference_mode`。UMA 专用的选项在严格配置下会被拒绝，而不是被忽略。
+- **多任务模型必须写 head，否则报错。** 没有默认分支。
+- 模型信息检查失败时不会缓存计算器，再次尝试会重新加载并重新检查。
+- **精度**由模型决定，mliport 记录后端实际报告的精度。
+- **应力**只有所选模型和分支支持时才会输出。
+- **DPA 需要每个进程单独指定 GPU。** 没有设置 `CUDA_VISIBLE_DEVICES` 时，命令行会自动新开进程；
+  用 Python API 时，请在导入框架之前设置这个变量。
+- DPA 没有 `inference_mode`。严格模式下使用 UMA 专用的参数会报错。
 
-mliport 采用 MIT 许可。上游软件和模型需要另行引用，见[引用](../citations.md)。
+mliport 采用 MIT 许可证。上游软件和模型需要另外引用，见[引用](../citations.md)。

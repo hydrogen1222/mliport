@@ -1,7 +1,7 @@
 # GRACE
 
-GRACE 模型是导出的 TensorFlow SavedModel，通过 `tensorpotential` 加载。模型路径是
-SavedModel 的**目录**，而不是单个文件。
+GRACE 模型是导出的 TensorFlow SavedModel，通过 `tensorpotential` 加载。模型路径要写 SavedModel
+所在的**目录**。
 
 ## 模型是什么
 
@@ -44,20 +44,18 @@ SavedModel 的**目录**，而不是单个文件。
   --model /path/to/saved_model --model-type grace
 ```
 
-官方导出的 SavedModel 来自上游 AMS-ICAMS-RUB 的发布渠道；把 `--model`
-（`MODEL_PATH`）指向你解压出来的那个目录。
+官方模型从上游 AMS-ICAMS-RUB 的发布页下载，解压后把 `--model`（`MODEL_PATH`）指向解压出的目录。
 
 ## 需要知道的事
 
-- **没有 head。** GRACE 模型不暴露 mliport 层面的 head；`--task` 是明确的周期性边
-  界语义（`bulk` 或 `molecule`）。
-- **GPU 隔离。** TensorFlow 的 GPU 可见性必须按进程固定。`CUDA_VISIBLE_DEVICES`
-  未设置时，命令行会重启命令；Python API 和队列 worker 也需要同样的隔离。
-- **GPU 显存与近邻列表**可以调节。TensorFlow 通常会占满几乎所有可见显存，所以显存
-  按需增长默认是开启的（`--gpu-memory-growth`、`--gpu-memory-limit-mb`）。Verlet
-  风格的近邻缓存（`--neighbor-cache`、`--neighbor-skin`，默认 skin 为 1.5 Å）默认也
-  是开启的，当某个原子移动超过 skin 的一半时才重建近邻表。
-- **精度**跟随模型：固定的 profile 里包含上游默认构建和 fp64 构建，见上表。
-- **应力**取决于模型。
+- **没有 head。** GRACE 模型不需要选 head；`--task` 用来指定周期性体系（`bulk`）还是分子
+  （`molecule`）。
+- **每个进程单独指定 GPU。** TensorFlow 的 GPU 可见性要在进程启动时确定。没有设置
+  `CUDA_VISIBLE_DEVICES` 时，命令行会自动新开进程；Python API 和队列 worker 也需要同样处理。
+- **显存和近邻列表可以调。** TensorFlow 默认会占满几乎所有显存，所以 mliport 默认开启按需分配
+  （`--gpu-memory-growth`、`--gpu-memory-limit-mb`）。近邻列表缓存（`--neighbor-cache`、
+  `--neighbor-skin`，默认 skin 为 1.5 Å）也默认开启，有原子移动超过 skin 的一半时才重建近邻表。
+- **精度**由模型决定：固定的 profile 包括上游默认版本和 fp64 版本，见上表。
+- **应力**是否支持取决于模型。
 
-mliport 采用 MIT 许可。上游软件和模型需要另行引用，见[引用](../citations.md)。
+mliport 采用 MIT 许可证。上游软件和模型需要另外引用，见[引用](../citations.md)。

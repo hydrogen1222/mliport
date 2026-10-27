@@ -1,7 +1,7 @@
 # 模型
 
-mliport 不是模型。它通过适配器加载别人训练好的势函数，用它们跑你的工作流，并把
-"到底是哪个模型干的活"如实记下来。读结果时，请记住这样的分工。
+mliport 本身不包含模型。它通过适配器加载别人训练好的势函数，用来跑你的计算，并记录每个
+结果是哪个模型算出来的。看结果时要分清哪些归 mliport 管、哪些归模型管：
 
 | mliport 负责 | 模型文件和你自己负责 |
 |---|---|
@@ -10,11 +10,10 @@ mliport 不是模型。它通过适配器加载别人训练好的势函数，用
 | 拒绝后端表达不了的选项 | 势函数本身有多准 |
 | 确认后端运行环境真的能跑 | 绝对能量标度与各种约定 |
 
-## 四个后端，没有偏爱
+## 四个后端地位相同
 
-`mace`、`dpa`、`grace`、`uma` 是地位平等的四个运行适配器；`fairchem` 被接受为
-`uma` 的另一个名字。没有隐含的默认值。一次运行如果没有指明后端（既没有直接指
-定，也没有通过模型别名或 profile 指定），就会报错停下。
+`mace`、`dpa`、`grace`、`uma` 四个后端地位相同，`fairchem` 是 `uma` 的别名。没有默认后端：
+如果命令行、模型别名和 profile 都没有指定后端，程序会报错停下。
 
 | 后端 | 适配器 | 框架 | 常见模型文件 |
 |---|---|---|---|
@@ -23,35 +22,35 @@ mliport 不是模型。它通过适配器加载别人训练好的势函数，用
 | GRACE | `tensorpotential` | TensorFlow | SavedModel 目录 |
 | UMA | `fairchem-core` | PyTorch | `.pt` |
 
-固定的 profile、精度、head 语义和已知限制见各后端页面：
+各后端的模型介绍、固定 profile、精度、head 的含义和已知限制见各自页面：
 [MACE](backends/mace.md)、[DPA](backends/dpa.md)、[GRACE](backends/grace.md)、
 [UMA](backends/uma.md)。
 
-## 老老实实地比较结果
+## 如何公平地比较结果
 
-有些习惯能让计算在科学上站得住脚，mliport 会记录你遵守它们所需的信息：
+下面几条是比较计算结果时的基本要求，mliport 会把检查这些要求所需的信息都记录下来：
 
-- **不同模型的能量不可比。** 形成能或势垒必须来自同一个模型、同一个 head、同一
-  套参考态。悄悄混用模型是科学上的错误，不是一个功能。
-- **工作流跑通不说明准确。** 适配器把你的 NEB 跑完，只说明管线没问题，不说明势
-  函数能描述你的化学体系。
-- **基准数字不会自动外推。** OMat24 的结果刻画的是固定下来的那个模型在那个基准
-  上的表现，并不适用于所有材料。
-- **任务和 head 也是模型的一部分。** UMA 的任务族（`omat`、`omol` 等）以及 DPA、
-  MACE 的 head 会改变模型计算的东西。mliport 记录实际用的 task 和 head，并且拒
-  绝去猜多任务模型的分支。
-- **精度同样是模型的一部分。** MACE 的 `float32` 与 `float64` 是不同的 profile；
-  比较它们的能量时务必说明。
+- **不同模型的能量不能直接比。** 形成能、势垒这类能量差，必须用同一个模型、同一个 head、
+  同一套参考态算出来。
+- **算完不代表算对。** NEB 顺利跑完，只说明流程没问题；势函数能不能描述你的体系，要另外
+  检验。
+- **基准测试的成绩不能随便推广。** 在 OMat24 等基准上的表现，只说明这个模型在那套测试集上
+  的水平，换一类材料可能完全不同。
+- **task 和 head 属于模型的一部分。** UMA 的 task（`omat`、`omol` 等）以及 DPA、MACE 的
+  head 会改变模型算出来的结果。mliport 会记录实际用的 task 和 head，多任务模型必须由你指定
+  用哪个分支。
+- **精度也属于模型的一部分。** MACE 的 `float32` 和 `float64` 是两个不同的 profile，比较它
+  们的能量时要注明。
 
-## 为一次运行选后端
+## 指定后端
 
-最快的方式是加参数：
+最直接的办法是加命令行参数：
 
 ```bash
 mliport sp structure.cif --model model.model --model-type mace
 ```
 
-常用的模型可以在 `settings.ini` 里定义别名（别名必须声明它对应哪个引擎）：
+常用的模型可以在 `settings.ini` 里定义别名（别名里必须写明对应的后端）：
 
 ```ini
 [model:mace_omat]
@@ -64,15 +63,15 @@ task = bulk
 mliport sp structure.cif --model-alias mace_omat
 ```
 
-`--model` 也接受别名。别名、profile 和命令行参数如何叠加，见[配置](configuration.md)。
+`--model` 也可以直接写别名。别名、profile 和命令行参数同时存在时谁优先，见[配置](configuration.md)。
 
-## 关于模型，记录了什么
+## 记录了哪些模型信息
 
-每次运行都会保存生效的 `model_type`、`model_path`、task、head 和 dtype，后端和
-框架版本，请求的设备和实际的设备，以及 mliport 的 commit。只有这些都一致，两个
-结果才可比。各字段的含义见[输出文件](outputs.md)。
+每次运行都会保存实际使用的 `model_type`、`model_path`、task、head 和精度，后端和框架的版本，
+请求的设备和实际使用的设备，以及 mliport 的 commit。这些都一致时，两个结果才能比较。各字段
+的含义见[输出文件](outputs.md)。
 
-## 模型文件去哪里拿
+## 模型下载
 
 | 引擎 | 模型文件 | 来源 |
 |---|---|---|
@@ -81,8 +80,7 @@ mliport sp structure.cif --model-alias mace_omat
 | GRACE | `GRACE-2L-OMAT-medium-base` | [AMS-ICAMS-RUB/grace-foundation-models](https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models) |
 | UMA | `uma-s-1p2.pt` | [facebook/UMA](https://huggingface.co/facebook/UMA) |
 
-验证套件固定在这些文件上。它们的 SHA-256 对应的是发布出来的文件（本地路径从不写
-进清单）：
+验证用的就是这些文件。下面的 SHA-256 是对上游发布文件计算的（清单里不记录本地路径）：
 
 | Profile | 文件 | SHA-256（前缀） |
 |---|---|---|
@@ -94,30 +92,29 @@ mliport sp structure.cif --model-alias mace_omat
 完整哈希在
 [`validation/science/model_manifest.json`](https://github.com/hydrogen1222/mliport/blob/main/validation/science/model_manifest.json)。
 
-!!! note "验收时哪些下载了、哪些没有"
-    LGPS 验收时，MACE 的发布文件是在隔离的缓存里下载的，哈希与固定值一致。
-    Hugging Face 的冷下载路径在验收机器上**没有**通过网络验证：那台机器的
-    SOCKS/httpx 配置不接受 Hugging Face 客户端的默认代理设置，所以验收改用了四个
-    模型文件的本地副本，并校验了哈希。如果你的网络需要代理，请参考下面的做法。
+!!! note "验收时的下载情况"
+    LGPS 验收时，MACE 的模型文件是在单独的缓存目录里重新下载的，哈希和记录一致。从 Hugging
+    Face 下载这一步**没有**在验收机器上测通：那台机器的 SOCKS/httpx 代理设置和 Hugging Face
+    客户端的默认设置不兼容，所以验收时用的是四个模型文件的本地副本，并核对了哈希。如果你的
+    网络也要走代理，可以参考下面的做法。
 
-模型文件的许可证归上游项目所有。特别是 UMA 的许可证是非商业的研究许可。
+模型文件的许可证由上游项目决定，其中 UMA 只允许非商业的研究用途。
 
 ## 代理与离线使用
 
-Hugging Face 的下载经由 `huggingface_hub` 里的 `httpx`。在 SOCKS 代理
-（`ALL_PROXY=socks5...`）之后，请在你用来下载的环境里安装 socks 扩展：
+从 Hugging Face 下载用的是 `huggingface_hub` 里的 `httpx`。如果走 SOCKS 代理
+（`ALL_PROXY=socks5...`），请在用来下载的环境里装上 socks 扩展：
 
 ```bash
 uv pip install 'httpx[socks]' --python .venv/bin/python
 ```
 
-有些代理配置还会往 `NO_PROXY` 里写 `[::1]` 这样带方括号的条目，httpx 会以
-`Invalid port` 拒绝。请把列表限制为普通主机名：
+有些代理配置会在 `NO_PROXY` 里写入 `[::1]` 这种带方括号的地址，httpx 会报 `Invalid port`。
+把它改成只含普通主机名即可：
 
 ```bash
 NO_PROXY=localhost,127.0.0.1 HF_ENDPOINT=https://hf-mirror.com \
   .venv/bin/python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download('deepmodelingcommunity/DPA-3.1-3M', 'DPA-3.1-3M.pt'))"
 ```
 
-本地磁盘上的模型完全不需要网络：把路径传给 `--model`，涉及安装脚本时再加
-`--source offline`。
+本地的模型文件不需要联网，把路径传给 `--model` 就行；离线运行安装脚本时加 `--source offline`。
