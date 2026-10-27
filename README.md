@@ -8,9 +8,6 @@ checkpoint; it relaxes, runs molecular dynamics, finds NEB barriers, searches ad
 configurations on a slab or analyzes a trajectory, and writes the files a VASP user expects: `OUTCAR`, `OSZICAR`,
 `CONTCAR`, `XDATCAR`.
 
-**Documentation: <https://hydrogen1222.github.io/mliport/>** (English by default,
-中文 from the language switch in the top bar). The same pages are in [`docs/`](docs/).
-
 mliport is a workflow layer, not a model and not a DFT code. The files are
 VASP-shaped, but there is no SCF and no POTCAR, and whether a potential is right for
 your chemistry depends on the checkpoint you choose.
@@ -29,6 +26,24 @@ What you get:
 - **Analysis that says when the data is too short.** Trajectory validation,
   thermodynamics, RDF, RMSD/RMSF, MSD, VACF, spectra, mobile-ion density, kinisi
   transport, GEMDAT electrolyte analysis and Arrhenius fits.
+
+## Documentation
+
+The full documentation is at <https://hydrogen1222.github.io/mliport/> (English and
+中文); the same pages are in [`docs/`](docs/) and read fine on GitHub.
+
+| I want to … | Read |
+|---|---|
+| run my first calculation | [Quickstart](docs/quickstart.md) |
+| check a model on a system with a known answer | [Test systems](docs/test-systems.md) |
+| install one or more backends, on GPU or CPU | [Installation](docs/installation.md) |
+| understand what MACE, DPA, GRACE and UMA are and pick one | [Backends](docs/backends/index.md), [Models](docs/models.md) |
+| set options through the CLI, an INCAR-style file or `settings.ini` | [Configuration](docs/configuration.md) |
+| single point, relaxation, MD, NEB, configuration search, batch, queue | [Workflows](docs/workflows/index.md) |
+| MSD, diffusion, conductivity, RDF, spectra, Arrhenius | [Analysis](docs/analysis/index.md) |
+| know what each output file contains | [Output files](docs/outputs.md) |
+| fix an error | [Troubleshooting](docs/troubleshooting.md) |
+| cite mliport and the models | [Citations](docs/citations.md) |
 
 ## Install
 
@@ -159,8 +174,8 @@ MSD-based transport.
 **NEB and CI-NEB.** The two endpoint files define the band, `--images` sets how many
 intermediates, `--climb` turns on the climbing image. Before the first step mliport
 checks, on your own band, whether the model's forces are the gradient of its energy
-(noise-aware finite differences) and refuses to go on if they are not; models that
-predict forces directly, such as UMA, are always refused. The measurement is saved as
+(noise-aware finite differences) and refuses to go on if they are not; a model whose
+predictor reports direct (non-gradient) forces is always refused. The measurement is saved as
 `gradient_preflight`. It is a spot check of consistency, not a statement about
 accuracy.
 

@@ -6,9 +6,6 @@
 一个结构和一个检查点，它就能做弛豫、跑分子动力学、找 NEB 势垒、搜索 slab 上吸附物的构型或分析轨迹，并写出 VASP 用户熟悉的文
 件：`OUTCAR`、`OSZICAR`、`CONTCAR`、`XDATCAR`。
 
-**文档：<https://hydrogen1222.github.io/mliport/>**（默认英文，用顶栏的语言切换按钮可切到中文）。同样
-的页面也在 [`docs/`](docs/) 里。
-
 mliport 是工作流层，不是模型，也不是 DFT 程序。文件是 VASP 风格的，但没有 SCF，也没有 POTCAR；一个势
 对你的化学体系对不对，取决于你选的检查点。
 
@@ -23,6 +20,25 @@ mliport 是工作流层，不是模型，也不是 DFT 程序。文件是 VASP �
   mliport 版本。
 - **数据太短时会明说的分析。** 轨迹校验、热力学量、RDF、RMSD/RMSF、MSD、VACF、振动谱、可移动离子
   密度、kinisi 输运、GEMDAT 电解质分析和 Arrhenius 拟合。
+
+
+## 文档
+
+完整文档在 <https://hydrogen1222.github.io/mliport/>（English 和中文）；同样的页面也在
+[`docs/`](docs/) 里，在 GitHub 上直接可读。
+
+| 我想…… | 去看 |
+|---|---|
+| 跑第一个计算 | [快速上手](docs/quickstart.zh.md) |
+| 在答案已知的体系上检验一个模型 | [测试体系](docs/test-systems.zh.md) |
+| 安装一个或多个后端（GPU 或 CPU） | [安装](docs/installation.zh.md) |
+| 了解 MACE、DPA、GRACE、UMA 是什么并选一个 | [后端](docs/backends/index.zh.md)、[模型](docs/models.zh.md) |
+| 通过 CLI、INCAR 风格文件或 `settings.ini` 设置选项 | [配置](docs/configuration.zh.md) |
+| 单点、弛豫、MD、NEB、构型搜索、批量、队列 | [工作流](docs/workflows/index.zh.md) |
+| MSD、扩散、电导率、RDF、谱、Arrhenius | [分析](docs/analysis/index.zh.md) |
+| 了解每个输出文件的内容 | [输出文件](docs/outputs.zh.md) |
+| 解决报错 | [排错](docs/troubleshooting.zh.md) |
+| 引用 mliport 和模型 | [引用](docs/citations.zh.md) |
 
 ## 安装
 
@@ -139,7 +155,7 @@ GPU 的新进程里重启命令。从 Python 调用时，请在导入它们之�
 
 **NEB 与 CI-NEB。** 两个端点文件确定能带，`--images` 设定中间镜像数，`--climb` 打开爬升镜像。第一步之
 前，mliport 会在你自己的能带上检查模型的力是否为其能量的梯度（考虑噪声的有限差分），不是就拒绝继续；
-像 UMA 这样直接预测力的模型一律被拒绝。测量结果保存为 `gradient_preflight`。它只是一致性的抽查，不是
+预测器报告直接预测力（不是能量梯度）的模型一律被拒绝。测量结果保存为 `gradient_preflight`。它只是一致性的抽查，不是
 对精度的陈述。
 
 ```bash

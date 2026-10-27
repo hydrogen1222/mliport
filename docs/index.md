@@ -49,6 +49,7 @@ where to get the checkpoint.
 |---|---|
 | install it and run a first calculation | [Quickstart](quickstart.md) |
 | understand environments, Python versions and GPUs | [Installation](installation.md) |
+| check a model on a system with a known answer | [Test systems](test-systems.md) |
 | pick a model, or see which ones were validated | [Models](models.md), [Backends](backends/index.md) |
 | set options through the CLI, an INCAR file or `settings.ini` | [Configuration](configuration.md) |
 | run a relaxation, MD, NEB, a configuration search or a batch | [Workflows](workflows/index.md) |

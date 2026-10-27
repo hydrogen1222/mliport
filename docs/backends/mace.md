@@ -5,6 +5,30 @@ checkpoint plus a precision, and mliport treats the two precisions as different
 models: `float64` is the primary, accuracy-first profile, while `float32` is a
 separate identity and its results are never mixed with float64 ones.
 
+## What the model is
+
+- **Architecture.** MACE is an equivariant message-passing network that builds
+  higher-order many-body features in each layer (atomic cluster expansion inside
+  message passing), so two layers are enough for accurate potentials
+  ([Batatia et al., NeurIPS 2022](https://arxiv.org/abs/2206.07697)).
+- **Training data of the example checkpoint.** `mace-omat-0` is trained on
+  [OMat24](https://arxiv.org/abs/2410.12771), Meta's set of about 110 million
+  VASP calculations on bulk inorganic structures, many deliberately far from
+  equilibrium (rattled and high-temperature frames). Its reference level is
+  PBE / PBE+U (VASP 5.4), Materials-Project-style: +U is applied to some
+  transition metals in oxides and fluorides only. The older `MACE-MP-0` family is
+  trained on MPtrj, also PBE / PBE+U
+  ([Batatia et al., 2024](https://arxiv.org/abs/2401.00096)); the list of
+  checkpoints and their licenses is in
+  [mace-foundations](https://github.com/ACEsuit/mace-foundations).
+- **Forces** are the gradient of the energy (conservative), so MACE is accepted by
+  the NEB and configuration-search gradient pre-flight.
+- **What this means for you.** Energies and forces approximate PBE(+U) on bulk
+  inorganic matter. The model has no dispersion term (see `--d3`), and surfaces,
+  molecules and interfaces are outside its training distribution: check a few
+  structures against your own DFT before trusting it there. Check the
+  checkpoint's license before commercial use.
+
 ## Install
 
 <!-- BEGIN GENERATED: environment -->

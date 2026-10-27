@@ -61,7 +61,7 @@ model-branch` 会列出它们，用 `--head` 传入你要的那个。mliport 在
 过验证的过渡态；用 Hessian 确认是单独的一步。
 
 **NEB 被拒绝："not verifiably the gradient of its energy"。** 第一步之前，NEB 会在你的能带上把模型
-的力与其能量的有限差分相比较。被拒绝说明力与能量不一致（直接预测力的模型，比如 UMA）、某个值
+的力与其能量的有限差分相比较。被拒绝说明力与能量不一致（直接预测力的模型）、某个值
 不是有限数，或者能量分辨率太粗而无法判断（大的 float32 晶胞：请用 float64 或更小的晶胞）。报错信
 息给出镜像、方向和误差，完整记录在 `NEBGradientConsistencyError.summary` 里。
 

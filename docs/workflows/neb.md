@@ -32,7 +32,8 @@ includes the rounding noise of the model's dtype. The run is refused when:
 - the energy resolution cannot settle the question (a large float32 cell, for
   instance), or
 - the model predicts forces directly rather than differentiating its energy
-  (UMA does; such models are always refused).
+  (the predictor reports `direct_forces = true`; such models are always
+  refused).
 
 The measurement is stored as `gradient_preflight` in `run_context.json` and
 `neb_results.json`. It is a spot check of consistency on the sampled structures

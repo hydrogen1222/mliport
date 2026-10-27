@@ -4,6 +4,25 @@ GRACE models are exported TensorFlow SavedModels, loaded through
 `tensorpotential`. The model path is the SavedModel **directory**, not a single
 file.
 
+## What the model is
+
+- **Architecture.** GRACE (graph atomic cluster expansion) extends the atomic
+  cluster expansion from local stars to tree graphs: `1L` models are local and
+  fast, `2L` models add one level of equivariant message passing for semilocal
+  interactions ([Bochkarev, Lysogorskiy & Drautz, PRX 2024](https://arxiv.org/abs/2311.16326)).
+- **Training data of the example checkpoint.** The `-OMAT-base` models are trained
+  on OMat24 (PBE / PBE+U, bulk inorganic, see the [MACE page](mace.md)) with
+  energies, forces and stresses weighted equally; `-OMAT` variants are then
+  fine-tuned with a larger energy weight, and `-OAM` variants are further
+  fine-tuned on MPtrj and a subset of Alexandria
+  ([Lysogorskiy et al., 2025](https://arxiv.org/abs/2508.17936)).
+- **Forces** are the gradient of the energy (conservative); the models are
+  evaluated in the precision of the exported build listed below.
+- **What this means for you.** Same reference level and the same blind spots as
+  the other OMat24 models (no dispersion, bulk-only training). `1L` is the
+  choice when speed matters most, `2L` when accuracy does. Check the model
+  distribution page for its license.
+
 ## Install
 
 <!-- BEGIN GENERATED: environment -->

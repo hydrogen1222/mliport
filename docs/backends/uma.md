@@ -4,6 +4,29 @@ UMA checkpoints from Meta FAIR are loaded through the upstream `fairchem-core`
 stack. `uma` and `fairchem` (the upstream package name) are the same runtime, so
 either works as `--model-type`.
 
+## What the model is
+
+- **Architecture.** UMA is an eSEN-type equivariant network with a 6 Å cutoff whose
+  linear layers are a *mixture of linear experts*: the expert weights are chosen
+  once per system from its composition, charge, spin and task, so a large total
+  parameter count costs only a small active one at inference
+  ([Wood et al., 2025](https://arxiv.org/abs/2506.23971)).
+- **Training data.** About 500 million structures from OMat24 (bulk inorganic,
+  PBE / PBE+U), OMol25 (molecules, ωB97M-V), OC20 (catalysis surfaces), ODAC25
+  (metal-organic frameworks) and OMC25 (molecular crystals). The datasets use
+  different DFT settings, which is why you choose a **task**: each task reproduces
+  its own dataset's reference level, and energies from different tasks must not be
+  compared.
+- **Forces.** The UMA paper reports UMA-S and UMA-M as conservative (forces and
+  stress by differentiation, after a direct-force pretraining stage). mliport does
+  not rely on that statement: NEB and the configuration search read the
+  predictor's `direct_forces` flag and measure energy–force consistency at run
+  time (see below).
+- **What this means for you.** UMA is the one example backend trained on surfaces,
+  molecules and porous materials as well as bulk, so for an adsorbate on a slab,
+  compare the `omat` and `oc20` tasks against your own DFT before choosing. Its
+  license is non-commercial research only.
+
 ## Install
 
 <!-- BEGIN GENERATED: environment -->
@@ -47,9 +70,10 @@ license is non-commercial research only; see [Citations](../citations.md).
   trades speed for GPU memory.
 - **Precision** is defined by the model; mliport reports the framework version
   rather than pretending to control the weights.
-- **NEB is not available.** The UMA predictor reports `direct_forces`: its forces
-  are predicted directly, not obtained as the gradient of its energy. NEB needs
-  the latter, so the consistency pre-flight always refuses such models (see
+- **NEB and configuration search** need forces that are the gradient of the
+  energy. mliport decides this at run time, not from this page: a predictor that
+  reports `direct_forces = true` is refused, otherwise a finite-difference
+  pre-flight measures the consistency on your structures (see
   [NEB](../workflows/neb.md)).
 - **Stress** is reported only if the checkpoint exposes it.
 

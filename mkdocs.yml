@@ -94,6 +94,7 @@ nav:
   - Getting started:
       - index.md
       - quickstart.md
+      - test-systems.md
       - installation.md
       - models.md
       - configuration.md

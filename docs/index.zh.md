@@ -41,6 +41,7 @@ cd mliport
 |---|---|
 | 安装并跑第一个计算 | [快速上手](quickstart.md) |
 | 弄清环境、Python 版本和 GPU | [安装](installation.md) |
+| 在答案已知的体系上检验一个模型 | [测试体系](test-systems.md) |
 | 选模型，或看哪些模型被验证过 | [模型](models.md)、[后端](backends/index.md) |
 | 用命令行、INCAR 或 `settings.ini` 设置选项 | [配置](configuration.md) |
 | 做弛豫、MD、NEB、构型搜索或批量计算 | [工作流](workflows/index.md) |
