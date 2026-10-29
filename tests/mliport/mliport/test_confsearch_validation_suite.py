@@ -103,6 +103,52 @@ def test_campaign_cli_contract():
     assert bad_engine.value.code == 2
 
 
+def test_campaign_kwargs_are_accepted_by_strict_config(tmp_path):
+    """Regression: the suite passed ``quench_fmax``/``quench_steps``, which
+    strict config rejects; every non-parameter key must be a canonical
+    schema name."""
+    import inspect
+
+    from mliport.api import run_confsearch
+    from mliport.config.schema import get_schema
+
+    parser_args = [
+        "--engine",
+        "mace",
+        "--model",
+        "m.model",
+        "--output",
+        str(tmp_path),
+        "--head",
+        "omat_pbe",
+        "--dtype",
+        "float32",
+        "--d3",
+    ]
+    import argparse
+
+    captured = {}
+
+    def fake_campaign(args: argparse.Namespace):
+        captured["kwargs"] = suite.campaign_kwargs(args, tmp_path)
+        return {"comparison": {}}
+
+    original = suite.run_campaign
+    suite.run_campaign = fake_campaign
+    try:
+        suite.main(parser_args)
+    finally:
+        suite.run_campaign = original
+    kwargs = captured["kwargs"]
+    assert kwargs["head"] == "omat_pbe"
+    assert kwargs["default_dtype"] == "float32"
+    assert kwargs["d3"] is True
+    named = set(inspect.signature(run_confsearch).parameters)
+    schema = get_schema()
+    for key in set(kwargs) - named:
+        assert schema.canonical_name(key) == key, key
+
+
 def test_dedup_recalibration_measures_every_quench_record(tmp_path):
     """The campaign must re-measure section 13.2 over *all* quench records.
 
