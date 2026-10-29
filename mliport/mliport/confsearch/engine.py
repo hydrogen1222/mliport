@@ -83,7 +83,6 @@ if TYPE_CHECKING:
 DISCOVERY_WINDOW_EV = 0.2
 
 
-@dataclass(frozen=True, slots=True)
 def _format_duration(seconds: float) -> str:
     """``h:mm:ss`` for log lines."""
     total = max(0, round(seconds))
@@ -92,6 +91,7 @@ def _format_duration(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}"
 
 
+@dataclass(frozen=True, slots=True)
 class PreparedStart:
     """One validated start structure plus its regions and surface facts."""
 
