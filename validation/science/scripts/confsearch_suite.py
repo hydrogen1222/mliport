@@ -320,6 +320,36 @@ def _dedup_recalibration(run_dir: Path) -> dict[str, Any] | None:
     }
 
 
+def campaign_kwargs(args: argparse.Namespace, output: Path) -> dict[str, Any]:
+    """Keyword arguments shared by the baseline and the search runs.
+
+    Options without a named ``run_confsearch`` parameter go through its
+    ``**kwargs`` as schema keys, so they must use the canonical ``cs_*`` names
+    (strict config rejects anything else).
+    """
+    kwargs: dict[str, Any] = {
+        "slab": str(output / "slab.vasp"),
+        "molecule": str(output / "molecule.xyz"),
+        "n_starts": int(args.n_starts),
+        "model_path": args.model,
+        "model_type": args.engine,
+        "task": "bulk",
+        "device": args.device,
+        "seed": int(args.seed),
+        "verbose": True,
+        "refine": False,
+        "cs_quench_fmax": args.quench_fmax,
+        "cs_quench_steps": args.quench_steps,
+    }
+    if args.head is not None:
+        kwargs["head"] = args.head
+    if args.dtype is not None:
+        kwargs["default_dtype"] = args.dtype
+    if args.d3:
+        kwargs["d3"] = True
+    return kwargs
+
+
 def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     """Run the baseline and the search with the same starts and report both."""
     from ase.io import write
@@ -333,20 +363,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     write(output / "slab.vasp", slab, format="vasp")
     write(output / "molecule.xyz", molecule, format="xyz")
 
-    common_kwargs: dict[str, Any] = {
-        "slab": str(output / "slab.vasp"),
-        "molecule": str(output / "molecule.xyz"),
-        "n_starts": int(args.n_starts),
-        "model_path": args.model,
-        "model_type": args.engine,
-        "task": "bulk",
-        "device": args.device,
-        "seed": int(args.seed),
-        "verbose": True,
-        "refine": False,
-        "quench_fmax": args.quench_fmax,
-        "quench_steps": args.quench_steps,
-    }
+    common_kwargs = campaign_kwargs(args, output)
     print("baseline: N placements relaxed without MD (cycles=0)")
     baseline = run_confsearch(cycles=0, output_dir=output / "baseline", **common_kwargs)
     print("search: the same N starts with MD cycles")
@@ -368,6 +385,9 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
         "system": "CH3OH on an LGPS-derived slab (examples/structures)",
         "engine": args.engine,
         "model": str(args.model),
+        "head": args.head,
+        "dtype": args.dtype,
+        "d3": bool(args.d3),
         "device": args.device,
         "n_starts": int(args.n_starts),
         "cycles": int(args.cycles),
@@ -494,6 +514,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--temperature-low", type=float, default=300.0)
     parser.add_argument("--quench-fmax", type=float, default=0.05)
     parser.add_argument("--quench-steps", type=int, default=2000)
+    parser.add_argument(
+        "--head", default=None, help="MACE head / DPA branch (multi-head models)"
+    )
+    parser.add_argument(
+        "--dtype", default=None, choices=["float32", "float64"], help="MACE dtype"
+    )
+    parser.add_argument(
+        "--d3",
+        action="store_true",
+        help="add DFT-D3 (PBE, BJ) for models trained on dispersion-free data",
+    )
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     if args.n_starts < 1:
