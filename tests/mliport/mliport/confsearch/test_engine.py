@@ -443,3 +443,35 @@ def test_interrupted_raw_directories_are_archived_not_deleted(tmp_path):
     assert archived.name == "incomplete_attempt_1"
     assert (archived / "md.csv").read_text() == "partial\n"
     assert not source.exists()
+
+
+def test_log_reports_cycle_outcomes_md_heartbeat_and_progress(tmp_path):
+    """A long search must not be silent between cycles (V100 T6 feedback)."""
+    options = _options()
+    starts = _prepared([(0.5, 0.5), (0.25, 0.25)], options=options)
+    lines: list[str] = []
+    run_confsearch(
+        EggCrateCalculator(),
+        options,
+        starts=starts,
+        output_dir=tmp_path / "log",
+        seed=7,
+        model_record={"model_type": "synthetic", "task": "bulk"},
+        gradient_preflight={"status": "passed"},
+        log=lines.append,
+    )
+    text = "\n".join(lines)
+    # Every cycle unit announces its MD, reports its quenches and decision.
+    for replica in (0, 1):
+        for cycle in (1, 2):
+            prefix = f"replica {replica} cycle {cycle}:"
+            assert f"{prefix} MD " in text
+            assert any(
+                line.startswith(prefix) and "quenched" in line for line in lines
+            ), prefix
+    assert "steps/s" in text
+    progress = [line for line in lines if line.startswith("progress:")]
+    assert len(progress) == 4
+    assert progress[-1].startswith("progress: 4/4 cycles done")
+    assert "ETA 0:00:00" in progress[-1]
+    assert all("best" in line and "elapsed" in line for line in progress)
