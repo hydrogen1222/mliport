@@ -84,6 +84,14 @@ DISCOVERY_WINDOW_EV = 0.2
 
 
 @dataclass(frozen=True, slots=True)
+def _format_duration(seconds: float) -> str:
+    """``h:mm:ss`` for log lines."""
+    total = max(0, round(seconds))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
+
+
 class PreparedStart:
     """One validated start structure plus its regions and surface facts."""
 
@@ -398,6 +406,9 @@ class SearchEngine:
         self._reference_identity()
         self._log_budget()
         plan = self._plan()
+        n_cycle_units = sum(1 for kind, _, _ in plan if kind == "cycle")
+        session_start = time.time()
+        session_cycle_units = 0
         for index, (kind, replica_index, cycle) in enumerate(plan):
             if index < self.completed_units:
                 continue
@@ -407,9 +418,42 @@ class SearchEngine:
             else:
                 self._run_cycle_unit(replica_index, cycle)
                 self.stage = "cycles"
+                session_cycle_units += 1
             self.completed_units = index + 1
             self._write_checkpoint()
+            if kind == "cycle":
+                self._log_progress(
+                    done=sum(1 for k, _, _ in plan[: index + 1] if k == "cycle"),
+                    total=n_cycle_units,
+                    session_units=session_cycle_units,
+                    session_seconds=time.time() - session_start,
+                )
         return self._finish()
+
+    def _log_progress(
+        self, *, done: int, total: int, session_units: int, session_seconds: float
+    ) -> None:
+        """One progress line per cycle unit: count, best so far, elapsed, ETA.
+
+        The ETA extrapolates the mean wall time of the cycle units run in this
+        process (a resumed run does not count the units of the earlier one).
+        """
+        valid = [
+            unique.energy_eV
+            for unique in self.registry.uniques(cs_status.VALID)
+            if math.isfinite(unique.energy_eV)
+        ]
+        best = f"{min(valid):.6f} eV" if valid else "none"
+        eta = (
+            _format_duration(session_seconds / session_units * (total - done))
+            if session_units
+            else "unknown"
+        )
+        self.log(
+            f"progress: {done}/{total} cycles done, {len(valid)} unique valid "
+            f"minima, best {best}, elapsed {_format_duration(session_seconds)}, "
+            f"ETA {eta}"
+        )
 
     # -- budget / diagnostics ---------------------------------------------
 
@@ -622,6 +666,28 @@ class SearchEngine:
                 snapshots.append(md_atoms.copy())
 
         dynamics.attach(observe, interval=1)
+        total_steps = int(options.total_md_steps_per_cycle)
+        heartbeat = max(1, total_steps // 4)
+        md_started = time.time()
+
+        def heartbeat_log() -> None:
+            step = int(dynamics.nsteps)
+            if step == 0 or step % heartbeat != 0 or step >= total_steps:
+                return
+            rate = step / max(time.time() - md_started, 1e-9)
+            self.log(
+                f"replica {replica.index} cycle {cycle}: MD step {step}/"
+                f"{total_steps} ({'hold' if step <= options.n_hold else 'cool'}, "
+                f"T={float(md_atoms.get_temperature()):.0f} K, "
+                f"{rate:.1f} steps/s)"
+            )
+
+        dynamics.attach(heartbeat_log, interval=1)
+        self.log(
+            f"replica {replica.index} cycle {cycle}: MD {total_steps} steps "
+            f"({options.cs_temperature_high:g} K hold, cool to "
+            f"{options.cs_temperature_low:g} K), {len(mobile)} mobile atoms"
+        )
         steps_done = 0
         try:
             dynamics.run(int(options.n_hold))
@@ -667,6 +733,8 @@ class SearchEngine:
             quench_targets.append(("end", None, end_frame))
 
         end_record: MinimumRecord | None = None
+        uniques_before = len(self.registry.uniques(cs_status.VALID))
+        quench_statuses: dict[str, int] = {}
         for source, snapshot_index, frame in quench_targets:
             result = quench(
                 frame,
@@ -686,6 +754,7 @@ class SearchEngine:
                 ),
                 md_ps=self.cumulative_md_ps,
             )
+            quench_statuses[record.status] = quench_statuses.get(record.status, 0) + 1
             if source == "end":
                 end_record = record
 
@@ -708,14 +777,48 @@ class SearchEngine:
             encoding="utf-8",
         )
 
+        new_uniques = len(self.registry.uniques(cs_status.VALID)) - uniques_before
+        quench_summary = (
+            ", ".join(
+                f"{count} {name}" for name, count in sorted(quench_statuses.items())
+            )
+            or "none"
+        )
         if abort_status is not None:
             self.log(
                 f"replica {replica.index} cycle {cycle}: {abort_status} "
-                f"({abort_message}); current minimum unchanged"
+                f"({abort_message}); quenched {len(quench_targets)} earlier "
+                f"snapshot(s) [{quench_summary}], {new_uniques} new unique; "
+                "current minimum unchanged"
             )
             return
 
-        self._metropolis(replica, end_record)
+        previous = replica.current_energy
+        accepted = self._metropolis(replica, end_record)
+        end_text = (
+            f"end minimum {end_record.energy_eV:.6f} eV ({end_record.status})"
+            if end_record is not None and math.isfinite(end_record.energy_eV)
+            else "no usable end minimum"
+        )
+        if accepted is None:
+            decision = "not eligible, current minimum unchanged"
+        elif accepted:
+            decision = (
+                f"accepted (dE = {end_record.energy_eV - previous:+.4f} eV)"
+                if previous is not None
+                else "accepted"
+            )
+        else:
+            decision = (
+                f"rejected (dE = {end_record.energy_eV - previous:+.4f} eV)"
+                if previous is not None
+                else "rejected"
+            )
+        self.log(
+            f"replica {replica.index} cycle {cycle}: quenched "
+            f"{len(quench_targets)} [{quench_summary}], {new_uniques} new unique; "
+            f"{end_text}, {decision}"
+        )
 
     def _cool_temperature(self, steps_done: int, options: ConfsearchOptions) -> float:
         """Linear T(t) from cs_temperature_high to cs_temperature_low."""
@@ -853,16 +956,20 @@ class SearchEngine:
 
     def _metropolis(
         self, replica: ReplicaState, end_record: MinimumRecord | None
-    ) -> None:
-        """Metropolis update on the end-of-cycle minimum (spec 7.3 step 11)."""
+    ) -> bool | None:
+        """Metropolis update on the end-of-cycle minimum (spec 7.3 step 11).
+
+        Returns whether the proposal was accepted, or ``None`` when there was no
+        eligible proposal (no RNG draw happens then).
+        """
         if end_record is None or replica.current_energy is None:
-            return
+            return None
         eligible = end_record.status == cs_status.VALID or (
             end_record.status == cs_status.REACTED
             and self.options.cs_reaction_policy == "include"
         )
         if not eligible:
-            return
+            return None
         delta = float(end_record.energy_eV) - float(replica.current_energy)
         # The uniform draw happens every time an eligible proposal exists, so
         # the stream stays aligned (section 7.3 step 11).
@@ -874,6 +981,7 @@ class SearchEngine:
         if accept:
             replica.current = end_record.atoms.copy()
             replica.current_energy = float(end_record.energy_eV)
+        return accept
 
     # -- completion -------------------------------------------------------
 
