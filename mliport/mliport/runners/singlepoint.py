@@ -106,8 +106,8 @@ class SinglePointRunner(BaseRunner):
         # Prepare atoms (check PBC, cell, etc.)
         atoms = self._prepare_atoms(atoms)
 
-        # Log structure info for debugging
-        self.log(f"Cell: {' x '.join([f'{x:.4f}' for x in atoms.cell.lengths()])} Å")
+        # Log structure info for debugging (_prepare_atoms already logged the
+        # cell of a periodic task; a molecular task's cell is only a box).
         self.log(f"PBC: {atoms.pbc}")
         self.log(f"Volume: {atoms.cell.volume:.2f} Å³")
 
