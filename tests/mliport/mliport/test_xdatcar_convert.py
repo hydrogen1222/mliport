@@ -10,6 +10,7 @@ from ase import Atoms
 from ase.io import read
 from ase.io.trajectory import Trajectory
 
+from mliport.analysis import TrajectoryDataset, validate_trajectory
 from mliport.writers.xdatcar import XdatcarWriter, convert_to_vasp_xdatcar
 
 if TYPE_CHECKING:
@@ -221,3 +222,43 @@ def test_convert_rejects_variable_cell_trajectory(tmp_path: Path) -> None:
         convert_to_vasp_xdatcar(source, output)
 
     assert not output.exists()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "AUD-002 (tracker #75): standard XDATCAR has no PBC mask field and the "
+        "loss is currently silent; the fix direction is an open owner decision"
+    ),
+)
+def test_xdatcar_roundtrip_does_not_silently_change_pbc(tmp_path: Path) -> None:
+    """AUD-002: a partial-PBC structure must not come back fully periodic.
+
+    ``XdatcarWriter`` accepts a slab with ``pbc=(True, True, False)`` (the
+    mask is constant across frames), but standard XDATCAR has no field for
+    it.  ASE's reader hard-codes ``pbc=True``, so the round trip silently
+    promotes the vacuum axis to a periodic one, which flips the analysis
+    gates (``three_dimensional_pbc`` / ``eligible_for_rdf``).
+
+    This is the red reproduction for AUD-002.  The fix -- fail closed in the
+    writer, or record an explicit loss warning/metadata -- is an open owner
+    decision on tracker #75, so the expectation is recorded as an expected
+    failure rather than worked around.
+    """
+
+    slab = Atoms(
+        "LiS",
+        positions=[[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]],
+        cell=[10.0, 10.0, 10.0],
+        pbc=(True, True, False),
+    )
+    original = TrajectoryDataset.from_frames(
+        [slab], times_fs=[0.0], positions_convention="unwrapped"
+    )
+    assert validate_trajectory(original).three_dimensional_pbc is False
+
+    path = tmp_path / "XDATCAR"
+    XdatcarWriter().write(path, [slab])
+
+    loaded = TrajectoryDataset.load(path)
+    assert loaded.pbc.tolist() == [True, True, False]
