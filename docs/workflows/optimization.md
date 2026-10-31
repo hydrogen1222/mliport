@@ -37,8 +37,8 @@ converged, how many steps it took, and the final energy and forces, alongside
 If the step limit is reached before `--fmax`, the run exits with status `2`,
 keeps the partial trajectory and records the reason. That is a relaxation that
 did not converge, not a successful one, and the structure it leaves should be
-inspected before you use it. A backend or runtime error exits with `1`, and
-partial results are kept.
+inspected before you use it. A backend or runtime error exits with `1`, keeps
+the partial results and records the error in `mliport_results.json`.
 
 ## What a relaxed structure means
 

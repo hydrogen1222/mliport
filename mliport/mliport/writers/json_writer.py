@@ -236,11 +236,19 @@ class JsonWriter:
 
         # Add mode-specific data
         if mode == "optimization":
-            data["calculation"]["optimization"] = {
+            optimization = {
                 "nsteps": results.get("nsteps"),
                 "converged": results.get("converged"),
                 "fmax_threshold": results.get("fmax"),
             }
+            # A crashed optimization keeps its partial structure, but the
+            # failure reason must survive in the machine-readable record
+            # instead of living only in the log (AUD-003).
+            if results.get("status") is not None:
+                optimization["status"] = results["status"]
+            if results.get("error") is not None:
+                optimization["error"] = results["error"]
+            data["calculation"]["optimization"] = optimization
         elif mode == "md":
             provenance = results.get("md_provenance") or {}
             md_data = {
