@@ -243,6 +243,40 @@ def _uniform_integer_step(steps: np.ndarray | None) -> int | None:
     return int(differences[0])
 
 
+#: ``float(2**63)`` is exactly representable and sits one past the largest
+#: ``int64`` step index, so it is the exclusive upper bound of the valid range.
+_INT64_STEP_LIMIT = float(2**63)
+
+
+def _validated_steps(values: Any, *, source: str) -> np.ndarray:
+    """Return ``values`` as ``int64`` step indices, refusing invalid input.
+
+    Step indices are integers by contract: mliport writes ``int`` steps and
+    :func:`_uniform_integer_step` only accepts integral values.  Casting a
+    fractional column with ``astype(int)`` truncates it (``0.5 -> 0``) and a
+    value beyond ``int64`` wraps; either way the cast fabricates a step axis
+    that is not in the file, so invalid input is rejected instead of silently
+    reinterpreted (AGENTS.md: never silently change dtype or semantics).
+    """
+
+    array = np.asarray(values, dtype=float)
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{source} must contain finite integer step indices")
+    fractional = array != np.floor(array)
+    if np.any(fractional):
+        raise ValueError(
+            f"{source} must contain integer step indices; refusing to "
+            f"truncate fractional values {array[fractional][:5].tolist()}"
+        )
+    overflowing = np.abs(array) >= _INT64_STEP_LIMIT
+    if np.any(overflowing):
+        raise ValueError(
+            f"{source} contains a step index outside the int64 range; "
+            f"refusing to wrap {array[overflowing][:5].tolist()}"
+        )
+    return array.astype(np.int64)
+
+
 @dataclass(slots=True)
 class TrajectoryDataset:
     """Normalized, backend-independent trajectory arrays and metadata.
@@ -343,7 +377,11 @@ class TrajectoryDataset:
             run_dir=source_path.parent,
             source_path=source_path,
             times_fs=None if times_fs is None else np.asarray(list(times_fs), float),
-            steps=None if steps is None else np.asarray(list(steps), int),
+            steps=(
+                None
+                if steps is None
+                else _validated_steps(list(steps), source="steps argument")
+            ),
             phases=None if phases is None else np.asarray(list(phases), dtype="U16"),
             positions_convention=positions_convention,
             md_timestep_fs=md_timestep_fs,
@@ -457,7 +495,7 @@ class TrajectoryDataset:
         if "step" in thermo and len(thermo["step"]) == nframes:
             values = np.asarray(thermo["step"], dtype=float)
             if np.all(np.isfinite(values)):
-                steps = values.astype(int)
+                steps = _validated_steps(values, source="raw/md.csv step column")
         if steps is None:
             info_steps = frames.info_values("mliport_step")
             if info_steps is not None:

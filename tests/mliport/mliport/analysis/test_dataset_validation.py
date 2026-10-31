@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 
 import numpy as np
@@ -144,6 +145,90 @@ def test_default_analysis_view_excludes_equilibration() -> None:
     assert production.nframes == 4
     assert production.times_fs.tolist() == [20, 30, 40, 50]
     assert all_frames.nframes == 6
+
+
+def _write_run_with_md_csv_steps(run, steps) -> None:
+    """Build a minimal valid mliport run whose ``raw/md.csv`` lists ``steps``."""
+
+    raw = run / "raw"
+    raw.mkdir(parents=True)
+    with Trajectory(raw / "trajectory.traj", "w") as writer:
+        for index in range(len(steps)):
+            writer.write(
+                Atoms(
+                    "LiS",
+                    positions=[[0.1 * index, 0, 0], [2, 2, 2]],
+                    cell=[5, 5, 5],
+                    pbc=True,
+                )
+            )
+    with (raw / "md.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["step", "time_fs", "phase"])
+        for index, step in enumerate(steps):
+            writer.writerow([step, index * 10.0, "production"])
+    (run / "artifacts.json").write_text(
+        json.dumps(
+            {
+                "trajectory": {
+                    "frame_interval_fs": 10.0,
+                    "positions_convention": "unwrapped",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_fractional_md_csv_steps_are_rejected_not_truncated(tmp_path) -> None:
+    """AUD-001: a fractional ``step`` column must fail closed, not be truncated.
+
+    ``TrajectoryDataset.load`` cast the finite ``md.csv`` step column with
+    ``astype(int)``, so steps ``0.5, 1.5, 2.5, 3.5`` silently loaded as
+    ``0, 1, 2, 3`` and the fabricated indices were re-exported as the step
+    axis.  Step indices are integers by contract, so the loader must refuse
+    the input instead of inventing a step axis that is not in the file.
+    """
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0.5, 1.5, 2.5, 3.5])
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.load(run)
+
+
+def test_integral_float_md_csv_steps_still_load(tmp_path) -> None:
+    """An integral float column (``0.0, 10.0, ...``) is a valid step axis."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0.0, 10.0, 20.0, 30.0])
+
+    dataset = TrajectoryDataset.load(run)
+
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == [0, 10, 20, 30]
+
+
+def test_out_of_range_md_csv_steps_are_rejected(tmp_path) -> None:
+    """A step value that overflows ``int64`` must not wrap silently."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0.0, 1.0, 2.0, 1.0e300])
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.load(run)
+
+
+def test_from_frames_rejects_fractional_steps() -> None:
+    """The in-memory constructor must not truncate fractional steps either."""
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.from_frames(
+            _frames(),
+            times_fs=[0, 10, 20, 30],
+            steps=[0.5, 1.5, 2.5, 3.5],
+            positions_convention="unwrapped",
+        )
 
 
 def test_frame_slice_recomputes_time_and_step_spacing() -> None:
