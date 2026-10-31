@@ -254,6 +254,7 @@ class OptimizationRunner(BaseRunner):
         self.log("\nStarting optimization...")
         start_time = time.time()
 
+        optimizer_error: str | None = None
         try:
             opt.run(fmax=self.fmax, steps=self.max_steps)
             converged = opt.converged()
@@ -268,9 +269,12 @@ class OptimizationRunner(BaseRunner):
             # immediately: by then the structure may hold NaN positions that
             # crash the model on re-evaluation, and we must never write NaN
             # results. Other optimizer failures fall through to the graceful
-            # "return partial results" path below.
+            # "return partial results" path below, but they must not be
+            # reported as an honest non-convergence: keep the reason and mark
+            # the run failed so the exit code and queue status agree.
             if isinstance(e, RuntimeError) and "Non-finite" in str(e):
                 raise
+            optimizer_error = f"{type(e).__name__}: {e}"
 
         opt_time = time.time() - start_time
 
@@ -301,6 +305,12 @@ class OptimizationRunner(BaseRunner):
             "time": opt_time,
             "trajectory": trajectory,
         }
+        if optimizer_error is not None:
+            # A crash is a failure, not a missed convergence criterion. The
+            # partial structure is still written, but the machine-readable
+            # outcome and the reason travel with it.
+            results["status"] = "failed"
+            results["error"] = optimizer_error
 
         # Write outputs
         self._emit_progress("writing_output", "Writing output files...")
