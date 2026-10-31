@@ -117,6 +117,11 @@ environment. Keep the `backend_error` record rather than reporting a mechanism.
 400-atom LGPS run is expensive. Analyze a segment with an explicit
 `--frame-interval-fs`, or allow it more time.
 
+**`analyze` rejects the `step` column of `raw/md.csv`.** Step indices are
+integers, so a fractional or out-of-range `step` value is refused instead of
+being truncated into a step axis that is not in the file. Repair the
+trajectory's `md.csv`, or analyze the ASE trajectory or XDATCAR directly.
+
 ## Fresh-install notes (2.0.0b3)
 
 These were seen on a clean V100 machine and fixed before 2.0.0b3. They are here so
