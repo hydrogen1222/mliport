@@ -87,7 +87,7 @@ class BaseRunner(ABC):
             cancel_event  # threading.Event for cooperative cancellation
         )
         self._timing: RunTiming | None = None
-        self._pending_done_event: ProgressEvent | None = None
+        self._pending_terminal_event: ProgressEvent | None = None
         self.charge = charge
         self.spin = spin
 
@@ -110,7 +110,7 @@ class BaseRunner(ABC):
         self._timing = RunTiming(
             started_at=time.perf_counter() if started_at is None else started_at
         )
-        self._pending_done_event = None
+        self._pending_terminal_event = None
 
         try:
             results = self.run(atoms)
@@ -144,20 +144,22 @@ class BaseRunner(ABC):
         for line in timing_log_lines(timing):
             self.log(line)
 
-        done_event = self._pending_done_event or ProgressEvent(
+        # The terminal phase reflects the outcome: a failed run publishes an
+        # ``error`` event, never a success-looking ``done`` (AUD-003).
+        terminal_event = self._pending_terminal_event or ProgressEvent(
             phase="done",
             message="Calculation complete",
         )
-        done_extra = dict(done_event.extra or {})
-        done_extra["timing"] = timing
+        terminal_extra = dict(terminal_event.extra or {})
+        terminal_extra["timing"] = timing
         if self.progress_callback is not None:
             self.progress_callback(
                 ProgressEvent(
-                    phase=done_event.phase,
-                    message=done_event.message,
-                    step=done_event.step,
-                    total_steps=done_event.total_steps,
-                    extra=done_extra,
+                    phase=terminal_event.phase,
+                    message=terminal_event.message,
+                    step=terminal_event.step,
+                    total_steps=terminal_event.total_steps,
+                    extra=terminal_extra,
                 )
             )
 
@@ -252,8 +254,11 @@ class BaseRunner(ABC):
             total_steps=total_steps,
             extra=extra,
         )
-        if phase == "done" and self._timing is not None:
-            self._pending_done_event = event
+        # Terminal phases are deferred so ``execute`` can attach the timing to
+        # the final event; ``error`` is terminal too, so a failed run never
+        # ends on a success-looking ``done`` event.
+        if phase in {"done", "error"} and self._timing is not None:
+            self._pending_terminal_event = event
             return
         if self.progress_callback is not None:
             self.progress_callback(event)

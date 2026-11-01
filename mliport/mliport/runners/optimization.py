@@ -278,18 +278,31 @@ class OptimizationRunner(BaseRunner):
 
         opt_time = time.time() - start_time
 
-        # Get final results
-        energy = atoms.get_potential_energy()
-        forces = atoms.get_forces()
-        self._check_finite(atoms, energy, forces, context="optimization final")
-        stress = None
-        if self.calculator.has_stress and atoms.pbc.any():
-            stress = atoms.get_stress()
-            if not np.all(np.isfinite(stress)):
-                raise RuntimeError(
-                    "Non-finite stress during optimization final; aborting "
-                    "before NaN is written to outputs."
-                )
+        # Get final results. If the optimizer already crashed and this second
+        # evaluation also fails, keep the original reason in the message rather
+        # than letting an unrelated exception replace it.
+        try:
+            energy = atoms.get_potential_energy()
+            forces = atoms.get_forces()
+            self._check_finite(atoms, energy, forces, context="optimization final")
+            stress = None
+            if self.calculator.has_stress and atoms.pbc.any():
+                stress = atoms.get_stress()
+                if not np.all(np.isfinite(stress)):
+                    raise RuntimeError(
+                        "Non-finite stress during optimization final; aborting "
+                        "before NaN is written to outputs."
+                    )
+        except CancellationRequested:
+            # Cancellation is control flow, not a re-evaluation failure.
+            raise
+        except Exception as final_error:
+            if optimizer_error is None:
+                raise
+            raise RuntimeError(
+                f"Optimization failed ({optimizer_error}) and the final "
+                f"energy/force evaluation also failed: {final_error}"
+            ) from final_error
 
         self.log(f"\nOptimization finished in {opt.nsteps} steps")
         self.log(f"Converged: {'Yes' if converged else 'No'}")
@@ -318,15 +331,26 @@ class OptimizationRunner(BaseRunner):
 
         # Print summary
         self._write_summary(results, atoms)
-        self._emit_progress(
-            "done",
-            f"Optimization {'converged' if converged else 'not converged'} in {opt.nsteps} steps",
-            extra={
-                "energy": float(energy),
-                "converged": converged,
-                "nsteps": opt.nsteps,
-            },
-        )
+        if optimizer_error is not None:
+            # The terminal phase must not look like success: a crashed run
+            # publishes ``error`` instead of ``done`` (AUD-003).
+            self._emit_progress(
+                "error",
+                f"Optimization failed: {optimizer_error}",
+                step=opt.nsteps,
+                total_steps=self.max_steps,
+                extra={"error": optimizer_error},
+            )
+        else:
+            self._emit_progress(
+                "done",
+                f"Optimization {'converged' if converged else 'not converged'} in {opt.nsteps} steps",
+                extra={
+                    "energy": float(energy),
+                    "converged": converged,
+                    "nsteps": opt.nsteps,
+                },
+            )
 
         return results
 
