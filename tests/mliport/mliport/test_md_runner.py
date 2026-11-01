@@ -383,6 +383,84 @@ def test_bulk_total_stress_includes_kinetic_contribution(tmp_path):
     )
 
 
+#: Independent conversion of the eV/Å³ stress unit to GPa, from the exact SI
+#: constants: 1 eV / Å³ = e / 1e-30 Pa = 160.2176634 GPa (e = 1.602176634e-19 C).
+#: The product code rounds this to 160.21766208 (a 8e-9 relative difference),
+#: so the known-answer comparisons below use ``rel=1e-6`` -- tight enough to
+#: catch a wrong factor, unit or sign, far looser than the rounding.
+EV_A3_TO_GPA = 160.2176634
+
+
+class _KnownStressCalc(Calculator):
+    """Calculator returning a caller-chosen Voigt stress in eV/Å³."""
+
+    implemented_properties = ["energy", "forces", "stress"]  # noqa: RUF012
+
+    def __init__(self, stress):
+        super().__init__()
+        self._stress = np.asarray(stress, dtype=float)
+
+    def calculate(self, atoms, properties, system_changes):
+        super().calculate(atoms, properties, system_changes)
+        self.results = {
+            "energy": -1.0,
+            "forces": np.zeros((len(atoms), 3)),
+            "stress": self._stress,
+        }
+
+
+def _pressure_observables(tmp_path, stress, momenta=None):
+    atoms = _bulk_atoms(n=4)
+    atoms.calc = _KnownStressCalc(stress)
+    runner = MDRunner(
+        _RunWrapper(atoms.calc), output_dir=tmp_path, pre_relax=False, verbose=False
+    )
+    atoms.set_momenta(
+        np.zeros((len(atoms), 3)) if momenta is None else np.asarray(momenta, float)
+    )
+    return runner._stress_observables(atoms)
+
+
+def test_md_pressure_known_answer_isotropic_compression(tmp_path):
+    """S-02: pressure = -trace(stress)/3, in GPa, with the right sign.
+
+    Independent hand calculation: an isotropic *compressive* stress of
+    -0.03 eV/Å³ on every diagonal must report a *positive* pressure of
+    0.03 eV/Å³ = 4.807 GPa, and with zero momenta the total pressure equals
+    the configurational one because the ideal-gas term vanishes.
+    """
+
+    obs = _pressure_observables(tmp_path, [-0.03, -0.03, -0.03, 0.0, 0.0, 0.0])
+
+    expected_gpa = 0.03 * EV_A3_TO_GPA
+    assert obs["configurational_pressure_gpa"] == pytest.approx(expected_gpa, rel=1e-6)
+    assert obs["total_pressure_gpa"] == pytest.approx(expected_gpa, rel=1e-6)
+
+
+def test_md_pressure_known_answer_is_tensile_negative(tmp_path):
+    """The sign convention must not be inverted: tension gives negative GPa."""
+
+    obs = _pressure_observables(tmp_path, [0.03, 0.03, 0.03, 0.0, 0.0, 0.0])
+
+    assert obs["configurational_pressure_gpa"] == pytest.approx(
+        -0.03 * EV_A3_TO_GPA, rel=1e-6
+    )
+
+
+def test_md_pressure_uses_the_trace_not_all_six_components(tmp_path):
+    """Only xx+yy+zz may enter; shear components must not leak in."""
+
+    # trace = -0.02 - 0.01 + 0.00 = -0.03 eV/Å³
+    anisotropic = _pressure_observables(tmp_path, [-0.02, -0.01, 0.0, 0.0, 0.0, 0.0])
+    assert anisotropic["configurational_pressure_gpa"] == pytest.approx(
+        0.01 * EV_A3_TO_GPA, rel=1e-6
+    )
+
+    # A pure shear stress has zero trace, hence zero scalar pressure.
+    shear = _pressure_observables(tmp_path, [0.0, 0.0, 0.0, 0.05, 0.05, 0.05])
+    assert shear["configurational_pressure_gpa"] == pytest.approx(0.0, abs=1e-12)
+
+
 @pytest.mark.parametrize("pbc", [False, [True, True, False]])
 def test_non_3d_periodic_md_never_queries_or_reports_bulk_stress(tmp_path, pbc):
     atoms = _bulk_atoms(n=4)
