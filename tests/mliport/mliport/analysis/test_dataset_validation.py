@@ -224,6 +224,16 @@ def test_out_of_range_md_csv_steps_are_rejected(tmp_path) -> None:
         TrajectoryDataset.load(run)
 
 
+def test_md_csv_astronomical_step_exponent_is_rejected(tmp_path) -> None:
+    """The bound check happens on the Decimal, before any huge int is built."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0, 1], step_text=["0", "1e999999999"])
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.load(run)
+
+
 def test_from_frames_rejects_fractional_steps() -> None:
     """The in-memory constructor must not truncate fractional steps either."""
 
@@ -273,6 +283,46 @@ def test_from_frames_accepts_int64_min_and_rejects_overflow() -> None:
             _frames(2),
             times_fs=[0.0, 10.0],
             steps=[0, 2**63],
+            positions_convention="unwrapped",
+        )
+
+
+def test_from_frames_preserves_mixed_integer_and_float_steps_exactly() -> None:
+    """AUD-001 round 2: a mixed sequence must not round the integer.
+
+    ``np.asarray([2**53 + 1, 2.0])`` promotes to ``float64`` and turns the
+    integer into ``2**53`` *before* any dtype check could see it, so a
+    heterogeneous sequence has to be validated element by element.
+    """
+
+    dataset = TrajectoryDataset.from_frames(
+        _frames(2),
+        times_fs=[0.0, 10.0],
+        steps=[2**53 + 1, 2.0],
+        positions_convention="unwrapped",
+    )
+
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == [2**53 + 1, 2]
+
+
+@pytest.mark.parametrize(
+    "bad_steps",
+    [
+        [2**53 + 1, 0.5],  # fractional element next to an exact integer
+        [2**63, 2.0],  # int64 overflow next to a legitimate float
+        [0, float("nan")],  # non-finite element
+        [0, "1"],  # non-numeric element
+    ],
+)
+def test_from_frames_rejects_invalid_mixed_sequences(bad_steps) -> None:
+    """Mixed input is validated element-wise; the bad element is never hidden."""
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.from_frames(
+            _frames(2),
+            times_fs=[0.0, 10.0],
+            steps=bad_steps,
             positions_convention="unwrapped",
         )
 

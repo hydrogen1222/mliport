@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -221,12 +222,14 @@ def _parse_step_column(rows, key: str, *, source: str) -> np.ndarray | None:
                 f"{source} must contain integer step indices; refusing to "
                 f"truncate fractional value {text!r}"
             )
-        integer = int(integral)
-        if integer < _INT64_MIN or integer > _INT64_MAX:
+        # Compare against the bounds as a Decimal: this rejects an
+        # astronomically large exponent (``1e999999999``) without first
+        # building a huge Python int.
+        if integral < _INT64_MIN or integral > _INT64_MAX:
             raise ValueError(
                 f"{source} contains a step index outside the int64 range: {text!r}"
             )
-        values.append(integer)
+        values.append(int(integral))
     if unknown:
         return None
     return np.asarray(values, dtype=np.int64)
@@ -303,21 +306,45 @@ _INT64_MIN = int(np.iinfo(np.int64).min)
 _INT64_MAX = int(np.iinfo(np.int64).max)
 
 
-def _validated_steps(values: Any, *, source: str) -> np.ndarray:
-    """Return ``values`` as ``int64`` step indices, refusing invalid input.
+def _step_index(value: Any, *, source: str) -> int:
+    """Return one exact integer step index, or refuse the element.
 
-    Step indices are integers by contract: mliport writes ``int`` steps and
-    :func:`_uniform_integer_step` only accepts integral values.  Integer input
-    is never routed through ``float`` (``2**53 + 1`` would silently become
-    ``2**53``); float input is accepted only when it is finite, integral and
-    within the exactly representable range; text columns are parsed exactly by
-    :func:`_parse_step_column`.  Anything else is rejected rather than
-    reinterpreted, because a truncated or wrapped value fabricates a step axis
-    that is not in the file (AGENTS.md: never silently change dtype or
-    semantics).
+    Python's exact ``int`` is checked first: an integer is never routed through
+    ``float``, where ``2**53 + 1`` would silently become ``2**53``.  A float is
+    accepted only when it is finite, integral and within the exactly
+    representable range.
     """
 
-    array = np.asarray(values)
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{source} must contain integer step indices")
+    if isinstance(value, (int, np.integer)):
+        integer = int(value)
+        if integer < _INT64_MIN or integer > _INT64_MAX:
+            raise ValueError(
+                f"{source} contains a step index outside the int64 range: {integer}"
+            )
+        return integer
+    if isinstance(value, (float, np.floating)):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(f"{source} must contain finite integer step indices")
+        if number != math.floor(number):
+            raise ValueError(
+                f"{source} must contain integer step indices; refusing to "
+                f"truncate fractional value {number!r}"
+            )
+        if abs(number) > _MAX_EXACT_FLOAT_INTEGER:
+            raise ValueError(
+                f"{source} contains a step index beyond the exactly "
+                f"representable float range: {number!r}"
+            )
+        return int(number)
+    raise ValueError(f"{source} must contain integer step indices")
+
+
+def _validated_step_array(array: np.ndarray, *, source: str) -> np.ndarray:
+    """Vectorised form of :func:`_step_index` for an already-built array."""
+
     if np.issubdtype(array.dtype, np.integer):
         if array.size:
             low = int(array.min())
@@ -346,6 +373,27 @@ def _validated_steps(values: Any, *, source: str) -> np.ndarray:
             f"float range; refusing to trust {array[inexact][:5].tolist()}"
         )
     return array.astype(np.int64)
+
+
+def _validated_steps(values: Any, *, source: str) -> np.ndarray:
+    """Return ``values`` as ``int64`` step indices, refusing invalid input.
+
+    Step indices are integers by contract: mliport writes ``int`` steps and
+    :func:`_uniform_integer_step` only accepts integral values.  A non-array
+    sequence is validated element by element *before* it is turned into an
+    array, because ``np.asarray([2**53 + 1, 2.0])`` promotes to ``float64`` and
+    silently rounds the integer.  Text columns are parsed exactly by
+    :func:`_parse_step_column`.  Anything invalid is rejected rather than
+    reinterpreted, because a truncated or wrapped value fabricates a step axis
+    that is not in the file (AGENTS.md: never silently change dtype or
+    semantics).
+    """
+
+    if isinstance(values, np.ndarray):
+        return _validated_step_array(values, source=source)
+    return np.asarray(
+        [_step_index(value, source=source) for value in values], dtype=np.int64
+    )
 
 
 @dataclass(slots=True)
