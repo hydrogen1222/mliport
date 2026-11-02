@@ -63,10 +63,18 @@ def test_mliport_xdatcar_is_a_direct_msd_source(tmp_path) -> None:
     (run / "artifacts.json").write_text(
         json.dumps(
             {
+                "schema": "mliport.md-artifacts/3",
                 "trajectory": {
                     "frame_interval_fs": 10.0,
                     "positions_convention": "unwrapped",
-                }
+                    "pbc": [True, True, True],
+                },
+                "artifacts": {
+                    "xdatcar": {
+                        "path": "vasp/XDATCAR",
+                        "format": "vasp-xdatcar",
+                    }
+                },
             }
         ),
         encoding="utf-8",
@@ -77,6 +85,7 @@ def test_mliport_xdatcar_is_a_direct_msd_source(tmp_path) -> None:
     assert dataset.frame_interval_fs == 10.0
     assert dataset.positions_convention == "unwrapped"
     assert dataset.positions[-1, 0, 0] == pytest.approx(5.2)
+    assert dataset.metadata["pbc_verified"] is True
     assert validate_trajectory(dataset).eligible_for_msd is True
 
 

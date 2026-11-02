@@ -534,6 +534,28 @@ class TrajectoryDataset:
         artifacts = _read_json(run_dir / "artifacts.json")
         resolved = _read_json(run_dir / "resolved_config.json")
         trajectory_meta = artifacts.get("trajectory", {})
+        # ASE's standard XDATCAR reader unconditionally sets pbc=True even
+        # for slab/molecule input. Treat that value as an unverified parser
+        # assumption unless the matching mliport MD manifest records a mask.
+        is_xdatcar = source_path.name.upper().endswith("XDATCAR")
+        pbc_verified = not is_xdatcar
+        pbc_source = "ase-frame" if not is_xdatcar else "xdatcar-unknown"
+        if is_xdatcar:
+            xdatcar_artifact = (artifacts.get("artifacts") or {}).get("xdatcar")
+            declared_pbc = trajectory_meta.get("pbc")
+            if (
+                artifacts.get("schema") == "mliport.md-artifacts/3"
+                and isinstance(xdatcar_artifact, dict)
+                and xdatcar_artifact.get("format") == "vasp-xdatcar"
+                and xdatcar_artifact.get("path")
+                == source_path.relative_to(run_dir).as_posix()
+                and isinstance(declared_pbc, list)
+                and len(declared_pbc) == 3
+                and all(type(flag) is bool for flag in declared_pbc)
+            ):
+                frames.pbc = np.asarray(declared_pbc, dtype=bool)
+                pbc_verified = True
+                pbc_source = "mliport-md-artifacts"
         run_options = resolved.get("run_options", {})
         thermo = _read_thermodynamics(run_dir)
         nframes = frames.nframes
@@ -674,6 +696,8 @@ class TrajectoryDataset:
             "source_format": "ase-traj"
             if source_path.suffix.lower() == ".traj"
             else "xdatcar",
+            "pbc_verified": pbc_verified,
+            "pbc_source": pbc_source,
         }
         return cls._from_collected(
             frames,
