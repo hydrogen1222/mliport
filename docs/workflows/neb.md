@@ -147,3 +147,9 @@ identity: model, task, head and dtype, cell and PBC, constraints, band setup and
 options. Step budgets are part of that identity in this beta, so a resume that
 changes `--max-steps` is rejected with `Resume fingerprint is incompatible`. The
 checkpoint is left untouched when that happens.
+
+A resume restores the band geometry recorded in the checkpoint and restarts the
+NEB optimisation from there (`geometry_resume_only`); it does not replay the
+previous optimiser state. The resumed run therefore converges to the same
+saddle, but its path — and its final energy — can differ slightly from an
+uninterrupted run. Every earlier checkpoint and export is kept.
