@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from dataclasses import dataclass, field, replace
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -187,6 +189,52 @@ def _collect_frames(frames: Iterable[Atoms]) -> _CollectedFrames | None:
     )
 
 
+def _parse_step_column(rows, key: str, *, source: str) -> np.ndarray | None:
+    """Parse a CSV ``step`` column exactly, or return ``None`` when unknown.
+
+    The cell text is read with :class:`~decimal.Decimal`, so ``9007199254740993``
+    and ``9007199254740993.0`` keep their exact integer value instead of being
+    rounded through ``float``.  A finite value that is not an exact integer is
+    rejected; a blank, unparseable or non-finite cell makes the whole column
+    "unknown", which is the pre-existing fallback (the caller then uses frame
+    info or the declared stride instead of fabricating an axis).
+    """
+
+    values: list[int] = []
+    unknown = False
+    for row in rows:
+        raw = row.get(key, "")
+        text = "" if raw is None else str(raw).strip()
+        if not text:
+            unknown = True
+            continue
+        try:
+            number = Decimal(text)
+        except InvalidOperation:
+            unknown = True
+            continue
+        if not number.is_finite():
+            unknown = True
+            continue
+        integral = number.to_integral_value()
+        if number != integral:
+            raise ValueError(
+                f"{source} must contain integer step indices; refusing to "
+                f"truncate fractional value {text!r}"
+            )
+        # Compare against the bounds as a Decimal: this rejects an
+        # astronomically large exponent (``1e999999999``) without first
+        # building a huge Python int.
+        if integral < _INT64_MIN or integral > _INT64_MAX:
+            raise ValueError(
+                f"{source} contains a step index outside the int64 range: {text!r}"
+            )
+        values.append(int(integral))
+    if unknown:
+        return None
+    return np.asarray(values, dtype=np.int64)
+
+
 def _read_thermodynamics(run_dir: Path) -> dict[str, np.ndarray]:
     for path in (run_dir / "raw" / "md.csv", run_dir / "md.csv"):
         if not path.is_file():
@@ -201,6 +249,12 @@ def _read_thermodynamics(run_dir: Path) -> dict[str, np.ndarray]:
                 columns[key] = np.asarray(
                     [str(row.get(key, "")) for row in rows], dtype="U16"
                 )
+                continue
+            if key == "step":
+                # Validate the text before any lossy float parse: step indices
+                # are exact integers, and ``float("9007199254740993")`` rounds.
+                parsed = _parse_step_column(rows, key, source="raw/md.csv step column")
+                columns[key] = np.full(len(rows), np.nan) if parsed is None else parsed
                 continue
             values: list[float] = []
             for row in rows:
@@ -241,6 +295,105 @@ def _uniform_integer_step(steps: np.ndarray | None) -> int | None:
     if not np.all(differences == differences[0]):
         return None
     return int(differences[0])
+
+
+#: Every integer up to ``2**53`` is exactly representable as a float64; beyond
+#: that a float cannot name a distinct integer, so a float step there is not a
+#: trustworthy step index.  Integer input is bounded by the ``int64`` range
+#: instead (which is asymmetric: ``-2**63`` is representable).
+_MAX_EXACT_FLOAT_INTEGER = float(2**53)
+_INT64_MIN = int(np.iinfo(np.int64).min)
+_INT64_MAX = int(np.iinfo(np.int64).max)
+
+
+def _step_index(value: Any, *, source: str) -> int:
+    """Return one exact integer step index, or refuse the element.
+
+    Python's exact ``int`` is checked first: an integer is never routed through
+    ``float``, where ``2**53 + 1`` would silently become ``2**53``.  A float is
+    accepted only when it is finite, integral and within the exactly
+    representable range.
+    """
+
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{source} must contain integer step indices")
+    if isinstance(value, (int, np.integer)):
+        integer = int(value)
+        if integer < _INT64_MIN or integer > _INT64_MAX:
+            raise ValueError(
+                f"{source} contains a step index outside the int64 range: {integer}"
+            )
+        return integer
+    if isinstance(value, (float, np.floating)):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(f"{source} must contain finite integer step indices")
+        if number != math.floor(number):
+            raise ValueError(
+                f"{source} must contain integer step indices; refusing to "
+                f"truncate fractional value {number!r}"
+            )
+        if abs(number) > _MAX_EXACT_FLOAT_INTEGER:
+            raise ValueError(
+                f"{source} contains a step index beyond the exactly "
+                f"representable float range: {number!r}"
+            )
+        return int(number)
+    raise ValueError(f"{source} must contain integer step indices")
+
+
+def _validated_step_array(array: np.ndarray, *, source: str) -> np.ndarray:
+    """Vectorised form of :func:`_step_index` for an already-built array."""
+
+    if np.issubdtype(array.dtype, np.integer):
+        if array.size:
+            low = int(array.min())
+            high = int(array.max())
+            if low < _INT64_MIN or high > _INT64_MAX:
+                offending = low if low < _INT64_MIN else high
+                raise ValueError(
+                    f"{source} contains a step index outside the int64 range: "
+                    f"{offending}"
+                )
+        return array.astype(np.int64, copy=False)
+    if not np.issubdtype(array.dtype, np.floating):
+        raise ValueError(f"{source} must contain integer step indices")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{source} must contain finite integer step indices")
+    fractional = array != np.floor(array)
+    if np.any(fractional):
+        raise ValueError(
+            f"{source} must contain integer step indices; refusing to "
+            f"truncate fractional values {array[fractional][:5].tolist()}"
+        )
+    inexact = np.abs(array) > _MAX_EXACT_FLOAT_INTEGER
+    if np.any(inexact):
+        raise ValueError(
+            f"{source} contains a step index beyond the exactly representable "
+            f"float range; refusing to trust {array[inexact][:5].tolist()}"
+        )
+    return array.astype(np.int64)
+
+
+def _validated_steps(values: Any, *, source: str) -> np.ndarray:
+    """Return ``values`` as ``int64`` step indices, refusing invalid input.
+
+    Step indices are integers by contract: mliport writes ``int`` steps and
+    :func:`_uniform_integer_step` only accepts integral values.  A non-array
+    sequence is validated element by element *before* it is turned into an
+    array, because ``np.asarray([2**53 + 1, 2.0])`` promotes to ``float64`` and
+    silently rounds the integer.  Text columns are parsed exactly by
+    :func:`_parse_step_column`.  Anything invalid is rejected rather than
+    reinterpreted, because a truncated or wrapped value fabricates a step axis
+    that is not in the file (AGENTS.md: never silently change dtype or
+    semantics).
+    """
+
+    if isinstance(values, np.ndarray):
+        return _validated_step_array(values, source=source)
+    return np.asarray(
+        [_step_index(value, source=source) for value in values], dtype=np.int64
+    )
 
 
 @dataclass(slots=True)
@@ -343,7 +496,11 @@ class TrajectoryDataset:
             run_dir=source_path.parent,
             source_path=source_path,
             times_fs=None if times_fs is None else np.asarray(list(times_fs), float),
-            steps=None if steps is None else np.asarray(list(steps), int),
+            steps=(
+                None
+                if steps is None
+                else _validated_steps(list(steps), source="steps argument")
+            ),
             phases=None if phases is None else np.asarray(list(phases), dtype="U16"),
             positions_convention=positions_convention,
             md_timestep_fs=md_timestep_fs,
@@ -455,9 +612,9 @@ class TrajectoryDataset:
 
         steps: np.ndarray | None = None
         if "step" in thermo and len(thermo["step"]) == nframes:
-            values = np.asarray(thermo["step"], dtype=float)
+            values = np.asarray(thermo["step"])
             if np.all(np.isfinite(values)):
-                steps = values.astype(int)
+                steps = _validated_steps(values, source="raw/md.csv step column")
         if steps is None:
             info_steps = frames.info_values("mliport_step")
             if info_steps is not None:

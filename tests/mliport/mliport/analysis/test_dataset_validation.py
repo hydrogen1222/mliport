@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 
 import numpy as np
@@ -144,6 +145,235 @@ def test_default_analysis_view_excludes_equilibration() -> None:
     assert production.nframes == 4
     assert production.times_fs.tolist() == [20, 30, 40, 50]
     assert all_frames.nframes == 6
+
+
+def _write_run_with_md_csv_steps(run, steps, *, step_text=None) -> None:
+    """Build a minimal valid mliport run whose ``raw/md.csv`` lists ``steps``.
+
+    ``step_text`` optionally overrides the literal text written in the ``step``
+    cell (to exercise exact text parsing of values that cannot survive a float).
+    """
+
+    raw = run / "raw"
+    raw.mkdir(parents=True)
+    with Trajectory(raw / "trajectory.traj", "w") as writer:
+        for index in range(len(steps)):
+            writer.write(
+                Atoms(
+                    "LiS",
+                    positions=[[0.1 * index, 0, 0], [2, 2, 2]],
+                    cell=[5, 5, 5],
+                    pbc=True,
+                )
+            )
+    with (raw / "md.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["step", "time_fs", "phase"])
+        for index, step in enumerate(steps):
+            cell = step if step_text is None else step_text[index]
+            writer.writerow([cell, index * 10.0, "production"])
+    (run / "artifacts.json").write_text(
+        json.dumps(
+            {
+                "trajectory": {
+                    "frame_interval_fs": 10.0,
+                    "positions_convention": "unwrapped",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_fractional_md_csv_steps_are_rejected_not_truncated(tmp_path) -> None:
+    """AUD-001: a fractional ``step`` column must fail closed, not be truncated.
+
+    ``TrajectoryDataset.load`` cast the finite ``md.csv`` step column with
+    ``astype(int)``, so steps ``0.5, 1.5, 2.5, 3.5`` silently loaded as
+    ``0, 1, 2, 3`` and the fabricated indices were re-exported as the step
+    axis.  Step indices are integers by contract, so the loader must refuse
+    the input instead of inventing a step axis that is not in the file.
+    """
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0.5, 1.5, 2.5, 3.5])
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.load(run)
+
+
+def test_integral_float_md_csv_steps_still_load(tmp_path) -> None:
+    """An integral float column (``0.0, 10.0, ...``) is a valid step axis."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0.0, 10.0, 20.0, 30.0])
+
+    dataset = TrajectoryDataset.load(run)
+
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == [0, 10, 20, 30]
+
+
+def test_out_of_range_md_csv_steps_are_rejected(tmp_path) -> None:
+    """A step value that overflows ``int64`` must not wrap silently."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0.0, 1.0, 2.0, 1.0e300])
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.load(run)
+
+
+def test_md_csv_astronomical_step_exponent_is_rejected(tmp_path) -> None:
+    """The bound check happens on the Decimal, before any huge int is built."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0, 1], step_text=["0", "1e999999999"])
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.load(run)
+
+
+def test_from_frames_rejects_fractional_steps() -> None:
+    """The in-memory constructor must not truncate fractional steps either."""
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.from_frames(
+            _frames(),
+            times_fs=[0, 10, 20, 30],
+            steps=[0.5, 1.5, 2.5, 3.5],
+            positions_convention="unwrapped",
+        )
+
+
+def test_from_frames_preserves_large_integer_steps_exactly() -> None:
+    """AUD-001 review: an integer step must never be rounded through float64.
+
+    ``2**53 + 1`` is not representable as a float64, so the earlier
+    ``np.asarray(..., dtype=float)`` turned it into ``2**53`` before the
+    integrality check could see it.  Integer input must survive verbatim.
+    """
+
+    steps = [2**53 + 1, 2**53 + 2, 2**53 + 3]
+    dataset = TrajectoryDataset.from_frames(
+        _frames(3),
+        times_fs=[0.0, 10.0, 20.0],
+        steps=steps,
+        positions_convention="unwrapped",
+    )
+
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == steps
+
+
+def test_from_frames_accepts_int64_min_and_rejects_overflow() -> None:
+    """The int64 range is asymmetric; only genuine overflow is rejected."""
+
+    dataset = TrajectoryDataset.from_frames(
+        _frames(2),
+        times_fs=[0.0, 10.0],
+        steps=[-(2**63), -(2**63) + 1],
+        positions_convention="unwrapped",
+    )
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == [-(2**63), -(2**63) + 1]
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.from_frames(
+            _frames(2),
+            times_fs=[0.0, 10.0],
+            steps=[0, 2**63],
+            positions_convention="unwrapped",
+        )
+
+
+def test_from_frames_preserves_mixed_integer_and_float_steps_exactly() -> None:
+    """AUD-001 round 2: a mixed sequence must not round the integer.
+
+    ``np.asarray([2**53 + 1, 2.0])`` promotes to ``float64`` and turns the
+    integer into ``2**53`` *before* any dtype check could see it, so a
+    heterogeneous sequence has to be validated element by element.
+    """
+
+    dataset = TrajectoryDataset.from_frames(
+        _frames(2),
+        times_fs=[0.0, 10.0],
+        steps=[2**53 + 1, 2.0],
+        positions_convention="unwrapped",
+    )
+
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == [2**53 + 1, 2]
+
+
+@pytest.mark.parametrize(
+    "bad_steps",
+    [
+        [2**53 + 1, 0.5],  # fractional element next to an exact integer
+        [2**63, 2.0],  # int64 overflow next to a legitimate float
+        [0, float("nan")],  # non-finite element
+        [0, "1"],  # non-numeric element
+    ],
+)
+def test_from_frames_rejects_invalid_mixed_sequences(bad_steps) -> None:
+    """Mixed input is validated element-wise; the bad element is never hidden."""
+
+    with pytest.raises(ValueError, match="step"):
+        TrajectoryDataset.from_frames(
+            _frames(2),
+            times_fs=[0.0, 10.0],
+            steps=bad_steps,
+            positions_convention="unwrapped",
+        )
+
+
+def test_md_csv_huge_integer_step_text_is_parsed_exactly(tmp_path) -> None:
+    """AUD-001 review: the step column is validated on its text, not via float.
+
+    ``float("9007199254740993")`` rounds to ``2**53``; the CSV reader must keep
+    the exact integer from the file.
+    """
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(
+        run,
+        [0, 2**53 + 1, 2**53 + 2],
+        step_text=["0", "9007199254740993", "9007199254740994"],
+    )
+
+    dataset = TrajectoryDataset.load(run)
+
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == [0, 2**53 + 1, 2**53 + 2]
+
+
+def test_md_csv_float_literal_step_keeps_its_exact_integer_value(tmp_path) -> None:
+    """``9007199254740993.0`` is an exact integer and must not be rounded."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(
+        run,
+        [0, 2**53 + 1],
+        step_text=["0.0", "9007199254740993.0"],
+    )
+
+    dataset = TrajectoryDataset.load(run)
+
+    assert dataset.steps is not None
+    assert dataset.steps.tolist() == [0, 2**53 + 1]
+
+
+def test_md_csv_unparseable_step_makes_the_axis_unknown(tmp_path) -> None:
+    """A blank/unparseable step cell keeps the historical "unknown" fallback."""
+
+    run = tmp_path / "run"
+    _write_run_with_md_csv_steps(run, [0, 1, 2], step_text=["0", "", "2"])
+
+    dataset = TrajectoryDataset.load(run)
+
+    # No explicit frame_stride_steps metadata is declared by the helper, so an
+    # unknown column leaves the step axis as None rather than fabricating one.
+    assert dataset.steps is None
 
 
 def test_frame_slice_recomputes_time_and_step_spacing() -> None:
