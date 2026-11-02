@@ -1610,13 +1610,17 @@ class MDRunner(BaseRunner):
                 "timestep_fs": float(self.timestep / units.fs),
                 "save_interval": self.save_interval,
                 "ensemble": self.ensemble.upper(),
-                "thermostat": self.thermostat.upper() if self.ensemble == "nvt" else None,
+                "thermostat": (
+                    self.thermostat.upper() if self.ensemble == "nvt" else None
+                ),
                 "target_temperature": self.temperature,
                 "seed": self.seed,
                 "velocity_policy": self.velocity_policy,
                 "md_provenance": self._md_provenance(),
                 "time": md_time,
-                "trajectory": MDTrajectorySummary(md_csv_path, output_stream.stats.count),
+                "trajectory": MDTrajectorySummary(
+                    md_csv_path, output_stream.stats.count
+                ),
                 "trajectory_frame_count": output_stream.stats.count,
                 "trajectory_path": str(traj_path) if self.write_trajectory else None,
                 "md_csv_path": str(md_csv_path),
@@ -1624,7 +1628,9 @@ class MDRunner(BaseRunner):
             }
 
             # Write outputs (XDATCAR was already streamed during the run)
-            self._emit_progress("writing_output", "Writing trajectory and output files...")
+            self._emit_progress(
+                "writing_output", "Writing trajectory and output files..."
+            )
             self._write_outputs(atoms, results)
             self._write_summary(results, atoms)
             if md_outcar_writer is not None:
