@@ -1208,11 +1208,15 @@ def test_md_keyboard_interrupt_exits_quickly_and_marks_cancelled(tmp_path):
 
 
 def test_md_manifest_records_source_pbc_for_xdatcar(tmp_path):
-    """The MD manifest and canonical ASE frames retain slab PBC flags."""
+    """The MD manifest and canonical ASE frames retain molecular PBC flags.
+
+    The bulk model contract forbids partial PBC, so use the supported
+    molecule task to exercise a non-3D mask in a real MD runner.
+    """
     atoms = _bulk_atoms(n=4)
-    atoms.set_pbc((True, True, False))
+    atoms.set_pbc(False)
     runner = MDRunner(
-        _RunWrapper(_FiniteCalc()),
+        _RunWrapper(_FiniteCalc(), task="molecule", has_stress=False),
         ensemble="NVE",
         temperature=300.0,
         timestep=0.5,
@@ -1229,10 +1233,10 @@ def test_md_manifest_records_source_pbc_for_xdatcar(tmp_path):
         runner.run(atoms)
 
     manifest = json.loads((tmp_path / "artifacts.json").read_text())
-    assert manifest["trajectory"]["pbc"] == [True, True, False]
+    assert manifest["trajectory"]["pbc"] == [False, False, False]
     from mliport.analysis import TrajectoryDataset, validate_trajectory  # noqa: PLC0415
 
     loaded = TrajectoryDataset.load(tmp_path / "vasp" / "XDATCAR")
-    assert loaded.pbc.tolist() == [True, True, False]
+    assert loaded.pbc.tolist() == [False, False, False]
     assert loaded.metadata["pbc_verified"] is True
     assert not validate_trajectory(loaded).eligible_for_rdf
