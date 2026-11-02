@@ -200,7 +200,24 @@ class ConfsearchCheckpointStore:
     def load(self) -> tuple[CheckpointData, dict[str, Any]]:
         if not self.path.is_file():
             raise ConfsearchPreparationError(f"No confsearch checkpoint at {self.path}")
-        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            # A truncated or unreadable file is a domain refusal, not a raw
+            # JSONDecodeError, and it is left on disk for inspection.
+            raise ConfsearchPreparationError(
+                f"confsearch checkpoint is not readable JSON: {self.path}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ConfsearchPreparationError(
+                f"confsearch checkpoint is not a JSON object: {self.path}"
+            )
+        schema = payload.get("schema")
+        if schema != CHECKPOINT_SCHEMA:
+            raise ConfsearchPreparationError(
+                f"confsearch checkpoint schema is {schema!r}, expected "
+                f"{CHECKPOINT_SCHEMA!r}"
+            )
         recorded = payload.get("resume_fingerprint")
         if not isinstance(recorded, Mapping):
             raise ConfsearchPreparationError("Checkpoint has no resume fingerprint")
