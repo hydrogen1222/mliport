@@ -1240,3 +1240,65 @@ def test_md_manifest_records_source_pbc_for_xdatcar(tmp_path):
     assert loaded.pbc.tolist() == [False, False, False]
     assert loaded.metadata["pbc_verified"] is True
     assert not validate_trajectory(loaded).eligible_for_rdf
+
+
+@pytest.mark.parametrize(
+    "failure_stage", ["final_safety_check", "write_outputs", "write_summary"]
+)
+def test_md_postrun_failure_leaves_failed_manifest_and_readable_frames(
+    tmp_path, monkeypatch, failure_stage
+):
+    """AUD-006: failures after integration must not publish completed status.
+
+    The MD frames are committed before final state evaluation and the
+    final result files. Even if a post-run stage fails, the manifest must
+    record a terminal failure, the original exception must escape, and the
+    raw trajectory must remain readable.
+    """
+    runner = MDRunner(
+        _RunWrapper(_FiniteCalc()),
+        ensemble="NVE",
+        temperature=300.0,
+        timestep=0.25,
+        steps=2,
+        save_interval=1,
+        output_dir=tmp_path,
+        pre_relax=False,
+        verbose=False,
+        seed=17,
+        com_policy="none",
+    )
+
+    def injected_failure(*_args, **_kwargs):
+        raise OSError("simulated post-run disk/model error")
+
+    if failure_stage == "final_safety_check":
+        original = runner._validate_md_safe_point
+
+        def fail_on_final_state(*args, **kwargs):
+            if kwargs.get("context") == "MD final structure":
+                injected_failure()
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(runner, "_validate_md_safe_point", fail_on_final_state)
+    elif failure_stage == "write_outputs":
+        monkeypatch.setattr(runner, "_write_outputs", injected_failure)
+    else:
+        monkeypatch.setattr(runner, "_write_summary", injected_failure)
+
+    with pytest.raises(OSError, match="simulated post-run disk/model error"):
+        runner.run(_bulk_atoms(n=4))
+
+    manifest_path = tmp_path / "artifacts.json"
+    assert manifest_path.is_file(), "terminal provenance must survive post-run errors"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["status"] == "failed"
+    assert manifest["error"]["type"] == "postrun_error"
+    assert "simulated post-run disk/model error" in manifest["error"]["message"]
+    assert manifest["trajectory"]["last_step"] == 2
+
+    raw = tmp_path / "raw" / "trajectory.traj"
+    assert len(Trajectory(raw)) == 3
+    outcar = (tmp_path / "vasp" / "OUTCAR").read_text(encoding="utf-8")
+    assert "Status:              failed" in outcar
+    assert "Status:              completed" not in outcar
