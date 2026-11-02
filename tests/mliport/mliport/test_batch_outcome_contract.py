@@ -47,7 +47,9 @@ def test_batch_optimization_reports_the_real_outcome(
     tmp_path, monkeypatch, outcome, expected_status, expected_success
 ):
     """A normally returned failed/unfinished optimization is not a success."""
-    monkeypatch.setattr(batch_module, "OptimizationRunner", _SyntheticOptimizationRunner)
+    monkeypatch.setattr(
+        batch_module, "OptimizationRunner", _SyntheticOptimizationRunner
+    )
     monkeypatch.setattr(_SyntheticOptimizationRunner, "result", outcome)
     structure = tmp_path / "sample.xyz"
     write(structure, Atoms("Li", positions=[[0, 0, 0]]))
