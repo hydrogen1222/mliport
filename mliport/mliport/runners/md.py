@@ -1425,6 +1425,24 @@ class MDRunner(BaseRunner):
 
         output_closed = False
 
+        def publish_terminal(
+            status: str, *, error: dict[str, Any] | None = None
+        ) -> None:
+            """Best-effort terminal provenance that never masks the real error.
+
+            The OUTCAR trailer and the manifest are written as far as the
+            filesystem allows.  A reporting failure (full disk, read-only
+            mount) must not replace the exception that ended the run, so it is
+            suppressed and the caller still sees the original cause (AUD-006).
+            """
+            if md_outcar_writer is not None:
+                with contextlib.suppress(Exception):
+                    md_outcar_writer.finalize(status=status)
+            with contextlib.suppress(Exception):
+                self._write_artifacts_manifest(
+                    status=status, frame_stats=output_stream.stats, error=error
+                )
+
         def close_output_stream(primary_error: BaseException | None = None) -> None:
             """Drain requested frames, reporting output failure as fatal."""
             nonlocal output_closed
@@ -1439,11 +1457,8 @@ class MDRunner(BaseRunner):
                     f"{output_error}",
                     level="error",
                 )
-                if md_outcar_writer is not None:
-                    md_outcar_writer.finalize(status="failed")
-                self._write_artifacts_manifest(
-                    status="failed",
-                    frame_stats=output_stream.stats,
+                publish_terminal(
+                    "failed",
                     error={
                         "type": "output_error",
                         "message": str(output_error),
@@ -1466,11 +1481,8 @@ class MDRunner(BaseRunner):
                 energy=float(atoms.get_potential_energy()),
                 forces=atoms.get_forces(apply_constraint=True),
             )
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="aborted")
-            self._write_artifacts_manifest(
-                status="aborted",
-                frame_stats=output_stream.stats,
+            publish_terminal(
+                "aborted",
                 error={
                     "type": "force_safety_abort",
                     "message": str(exc),
@@ -1487,11 +1499,7 @@ class MDRunner(BaseRunner):
         except CancellationRequested as exc:
             self.log("\n⚠️ MD simulation cancelled by user")
             close_output_stream(exc)
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="cancelled")
-            self._write_artifacts_manifest(
-                status="cancelled", frame_stats=output_stream.stats
-            )
+            publish_terminal("cancelled")
             raise  # Re-raise to propagate cancellation
         except KeyboardInterrupt as exc:
             # Ctrl-C is cancellation, not a crash: drain the writer thread
@@ -1499,20 +1507,12 @@ class MDRunner(BaseRunner):
             # publish a cancelled status before propagating (review R08).
             self.log("\n⚠️ MD simulation interrupted by user (KeyboardInterrupt)")
             close_output_stream(exc)
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="cancelled")
-            self._write_artifacts_manifest(
-                status="cancelled", frame_stats=output_stream.stats
-            )
+            publish_terminal("cancelled")
             raise
         except Exception as e:
             self.log(f"\n❌ MD simulation failed: {e}", level="error")
             close_output_stream(e)
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="failed")
-            self._write_artifacts_manifest(
-                status="failed", frame_stats=output_stream.stats
-            )
+            publish_terminal("failed")
             raise
         finally:
             # Backstop for BaseException paths that no handler above
@@ -1537,12 +1537,7 @@ class MDRunner(BaseRunner):
                     self.log(
                         f"MD output cleanup failed: {cleanup_error}", level="error"
                     )
-                if md_outcar_writer is not None:
-                    md_outcar_writer.finalize(status=terminal)
-                with contextlib.suppress(Exception):
-                    self._write_artifacts_manifest(
-                        status=terminal, frame_stats=output_stream.stats
-                    )
+                publish_terminal(terminal)
 
         close_output_stream()
 
@@ -1559,18 +1554,13 @@ class MDRunner(BaseRunner):
                     if isinstance(exc, (CancellationRequested, KeyboardInterrupt))
                     else "failed"
                 )
-                if md_outcar_writer is not None:
-                    with contextlib.suppress(Exception):
-                        md_outcar_writer.finalize(status=terminal)
-                with contextlib.suppress(Exception):
-                    self._write_artifacts_manifest(
-                        status=terminal,
-                        frame_stats=output_stream.stats,
-                        error={
-                            "type": "postrun_error",
-                            "message": f"{type(exc).__name__}: {exc}",
-                        },
-                    )
+                publish_terminal(
+                    terminal,
+                    error={
+                        "type": "postrun_error",
+                        "message": f"{type(exc).__name__}: {exc}",
+                    },
+                )
                 raise
 
         with postrun_failure_guard():

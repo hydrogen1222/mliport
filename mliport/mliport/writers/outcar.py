@@ -391,6 +391,7 @@ class MDOutcarWriter:
         self.output_path: Path | None = None
         self.configuration_index = 0
         self._finished = False
+        self._final_status: str | None = None
         self._stream: TextIO | None = None
 
     def write_header(
@@ -408,6 +409,7 @@ class MDOutcarWriter:
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.configuration_index = 0
         self._finished = False
+        self._final_status = None
 
         atom_counts = Counter(atoms.get_chemical_symbols())
         summary = "  ".join(
@@ -611,13 +613,27 @@ class MDOutcarWriter:
         final_energy: float | None = None,
         final_temperature: float | None = None,
     ) -> None:
-        """Finish the stream with an explicit MLIP calculation summary."""
-        if self.output_path is None or self._finished:
+        """Finish the stream with an explicit MLIP calculation summary.
+
+        Repeating the same status is a no-op.  A *different* status appends a
+        corrective summary instead: a post-run failure can happen after the
+        ``completed`` trailer was already written, and the file must not keep
+        claiming a status the run did not reach (AUD-006).  The earlier block is
+        kept -- evidence is never deleted -- and the last ``Status:`` line is
+        the authoritative one.
+        """
+        if self.output_path is None:
             return
+        if self._finished and self._final_status == status:
+            return
+        superseded = self._final_status if self._finished else None
         self.close_stream()
+        title = " MLIPORT MD SUMMARY"
+        if superseded is not None:
+            title += f" (CORRECTED: {superseded} -> {status})"
         lines = [
             "=" * 100,
-            " MLIPORT MD SUMMARY",
+            title,
             "=" * 100,
             f"Status:              {status}",
             f"Saved configurations:{self.configuration_index:12d}",
@@ -632,3 +648,4 @@ class MDOutcarWriter:
         with self.output_path.open("a", encoding="utf-8") as handle:
             handle.write("\n".join(lines))
         self._finished = True
+        self._final_status = status
