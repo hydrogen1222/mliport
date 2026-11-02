@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -10,6 +12,7 @@ from ase import Atoms
 from ase.io import read
 from ase.io.trajectory import Trajectory
 
+from mliport.analysis import TrajectoryDataset, validate_trajectory
 from mliport.writers.xdatcar import XdatcarWriter, convert_to_vasp_xdatcar
 
 if TYPE_CHECKING:
@@ -221,3 +224,96 @@ def test_convert_rejects_variable_cell_trajectory(tmp_path: Path) -> None:
         convert_to_vasp_xdatcar(source, output)
 
     assert not output.exists()
+
+
+def _slab() -> Atoms:
+    return Atoms(
+        "LiS",
+        positions=[[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]],
+        cell=[10.0, 10.0, 10.0],
+        pbc=(True, True, False),
+    )
+
+
+def test_standalone_xdatcar_does_not_claim_verified_bulk_pbc(tmp_path: Path) -> None:
+    """AUD-002: raw XDATCAR cannot certify the source PBC mask."""
+    slab = _slab()
+    assert not validate_trajectory(
+        TrajectoryDataset.from_frames(
+            [slab], times_fs=[0.0], positions_convention="unwrapped"
+        )
+    ).three_dimensional_pbc
+
+    path = tmp_path / "XDATCAR"
+    XdatcarWriter().write(path, [slab])
+    loaded = TrajectoryDataset.load(path)
+
+    # ASE assumes all True when reading the standard VASP file. Do not invent
+    # partial PBC for an unaccompanied file; instead mark it unverified.
+    assert loaded.pbc.tolist() == [True, True, True]
+    assert loaded.metadata["pbc_verified"] is False
+    report = validate_trajectory(loaded)
+    assert report.three_dimensional_pbc is False
+    assert report.eligible_for_rdf is False
+    assert report.eligible_for_msd is False
+    assert any("XDATCAR has no PBC mask" in item for item in report.warnings)
+
+
+@pytest.mark.parametrize(
+    ("mask", "expected_bulk"),
+    [
+        ([True, True, False], False),
+        ([True, True, True], True),
+        ([False, False, False], False),
+    ],
+)
+def test_xdatcar_restores_pbc_from_matching_md_manifest(
+    tmp_path: Path, mask, expected_bulk
+) -> None:
+    """Only a matching mliport manifest can recover the XDATCAR PBC mask."""
+    vasp = tmp_path / "vasp"
+    vasp.mkdir()
+    slab = _slab()
+    slab.set_pbc(mask)
+    path = vasp / "XDATCAR"
+    XdatcarWriter().write(path, [slab])
+    (tmp_path / "artifacts.json").write_text(
+        json.dumps(
+            {
+                "schema": "mliport.md-artifacts/3",
+                "status": "completed",
+                "trajectory": {"pbc": mask},
+                "artifacts": {
+                    "xdatcar": {"path": "vasp/XDATCAR", "format": "vasp-xdatcar"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = TrajectoryDataset.load(path)
+    assert loaded.metadata["pbc_verified"] is True
+    assert loaded.metadata["pbc_source"] == "mliport-md-artifacts"
+    assert loaded.pbc.tolist() == mask
+    assert validate_trajectory(loaded).three_dimensional_pbc is expected_bulk
+
+
+def test_xdatcar_rejects_unmatched_manifest_as_pbc_evidence(tmp_path: Path) -> None:
+    """An unrelated manifest in the directory must not certify 3D PBC."""
+    path = tmp_path / "XDATCAR"
+    XdatcarWriter().write(path, [_slab()])
+    (tmp_path / "artifacts.json").write_text(
+        json.dumps(
+            {
+                "schema": "mliport.md-artifacts/3",
+                "trajectory": {"pbc": [True, True, False]},
+                "artifacts": {
+                    "xdatcar": {"path": "other/XDATCAR", "format": "vasp-xdatcar"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = TrajectoryDataset.load(path)
+    assert loaded.metadata["pbc_verified"] is False
+    assert not validate_trajectory(loaded).eligible_for_rdf

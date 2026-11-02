@@ -136,7 +136,8 @@ def validate_trajectory(dataset: TrajectoryDataset) -> ValidationReport:
             atol=1.0e-12,
         )
     )
-    pbc3 = bool(dataset.pbc.all())
+    pbc_verified = bool(dataset.metadata.get("pbc_verified", True))
+    pbc3 = bool(dataset.pbc.all()) and pbc_verified
     phases = (
         dataset.phases
         if dataset.phases is not None
@@ -174,7 +175,14 @@ def validate_trajectory(dataset: TrajectoryDataset) -> ValidationReport:
             "Cell changes across frames; Analysis v2 refuses MSD/transport "
             "because affine lattice deformation is not separated from migration."
         )
-    if not pbc3:
+    if not pbc_verified:
+        warnings.append(
+            "Standalone XDATCAR has no PBC mask. ASE assumes 3D PBC, but "
+            "bulk RDF/MSD/transport are blocked until original PBC is "
+            "verified from the matching mliport artifact; use the lossless "
+            "ASE trajectory for external/older files."
+        )
+    elif not pbc3:
         warnings.append("Bulk RDF and transport require three-dimensional PBC")
     if not known_positions:
         warnings.append("Wrapped/unwrapped position convention is unknown")

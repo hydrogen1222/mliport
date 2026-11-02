@@ -50,6 +50,15 @@ run.log
 configurational against total stress. An ASE trajectory from any run can be turned
 into a standard XDATCAR with `mliport convert-xdatcar`.
 
+**XDATCAR PBC limitation:** standard VASP XDATCAR cannot encode the ASE
+`pbc` mask. For a non-3D-periodic MD input, the export warns that the mask
+is lost, while `artifacts.json` records the original `trajectory.pbc` array.
+When loading a matching mliport `vasp/XDATCAR`, the analysis reader restores
+that mask from the manifest. A standalone or older XDATCAR without matching
+source-PBC metadata has **unverified PBC**; even if ASE parses it with
+`pbc=[True,True,True]`, mliport does not certify it for bulk RDF/MSD or
+transport. Analyze the original `raw/trajectory.traj` when available.
+
 ## NEB
 
 ```text

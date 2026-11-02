@@ -45,6 +45,13 @@ run.log
 `forces_applied_eV_A`（施加约束之后的力），以及构型应力和总应力。任何 ASE 轨迹都可以用
 `mliport convert-xdatcar` 转成标准的 XDATCAR。
 
+**XDATCAR 的 PBC 限制：** 标准 VASP XDATCAR 不保存 ASE 的 `pbc` 掩码。
+非三维周期性 MD 导出时会给出信息丢失警告，原始掩码另存在 `artifacts.json`
+的 `trajectory.pbc` 中。加载与该清单匹配的 Mliport `vasp/XDATCAR` 时，
+分析程序会恢复原始 PBC。没有匹配来源元数据的独立或旧版 XDATCAR，其
+PBC **无法确认**；即使 ASE 默认读取为三维周期性，也不得据此放行体相
+RDF、MSD 或输运分析。有原始数据时请使用 `raw/trajectory.traj`。
+
 ## NEB
 
 ```text

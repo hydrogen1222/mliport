@@ -1205,3 +1205,35 @@ def test_md_keyboard_interrupt_exits_quickly_and_marks_cancelled(tmp_path):
     if outcar.exists():
         text = outcar.read_text(encoding="utf-8", errors="ignore")
         assert "cancelled" in text.lower()
+
+
+
+def test_md_manifest_records_source_pbc_for_xdatcar(tmp_path):
+    """The MD manifest and canonical ASE frames retain slab PBC flags."""
+    atoms = _bulk_atoms(n=4)
+    atoms.set_pbc((True, True, False))
+    runner = MDRunner(
+        _RunWrapper(_FiniteCalc()),
+        ensemble="NVE",
+        temperature=300.0,
+        timestep=0.5,
+        steps=2,
+        save_interval=1,
+        output_dir=tmp_path,
+        pre_relax=False,
+        verbose=False,
+        seed=12,
+        write_outcar=False,
+        write_stress=False,
+    )
+    with pytest.warns(UserWarning, match="XDATCAR cannot represent"):
+        runner.run(atoms)
+
+    manifest = json.loads((tmp_path / "artifacts.json").read_text())
+    assert manifest["trajectory"]["pbc"] == [True, True, False]
+    from mliport.analysis import TrajectoryDataset, validate_trajectory  # noqa: PLC0415
+
+    loaded = TrajectoryDataset.load(tmp_path / "vasp" / "XDATCAR")
+    assert loaded.pbc.tolist() == [True, True, False]
+    assert loaded.metadata["pbc_verified"] is True
+    assert not validate_trajectory(loaded).eligible_for_rdf

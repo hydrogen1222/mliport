@@ -22,6 +22,7 @@ import math
 import sys
 import threading
 import time
+import warnings
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -322,6 +323,9 @@ class MDRunner(BaseRunner):
         self.write_xdatcar = write_xdatcar
         self.write_trajectory = write_trajectory
         self.write_json = write_json
+        # The PBC mask is not encoded in standard XDATCAR. Capture the
+        # physical input contract for the manifest before any output starts.
+        self._source_pbc: tuple[bool, bool, bool] | None = None
 
         # MD output contract: ``raw`` is the lossless internal source of truth
         # and ``vasp`` is a syntax-compatible interoperability view.
@@ -665,6 +669,7 @@ class MDRunner(BaseRunner):
             },
             "trajectory": {
                 "frames": frame_stats.count,
+                "pbc": list(self._source_pbc) if self._source_pbc is not None else None,
                 "first_step": frame_stats.first_step,
                 "last_step": frame_stats.last_step,
                 "md_timestep_fs": timestep_fs,
@@ -1162,6 +1167,7 @@ class MDRunner(BaseRunner):
         self._validate_atomic_state(atoms, context="MD input atoms")
         atoms = self._prepare_atoms(atoms)
         self._validate_atomic_state(atoms, context="prepared MD atoms")
+        self._source_pbc = tuple(bool(flag) for flag in atoms.pbc)
         contract_atoms = atoms.copy()
         self._configure_com_policy(contract_atoms)
         if contract_atoms.has("momenta") and self.velocity_policy in {
@@ -1245,6 +1251,14 @@ class MDRunner(BaseRunner):
         traj_path = self.raw_dir / "trajectory.traj"
         md_csv_path = self.raw_dir / "md.csv"
         xdatcar_writer = XdatcarWriter() if self.write_xdatcar else None
+        if self.write_xdatcar and not bool(np.asarray(atoms.pbc, dtype=bool).all()):
+            warnings.warn(
+                "Standard XDATCAR cannot represent partial/nonperiodic ASE PBC "
+                "flags. The VASP-compatible export loses the PBC mask; use "
+                "raw/trajectory.traj or artifacts.json for the original flags.",
+                UserWarning,
+                stacklevel=2,
+            )
         xdatcar_path = self.vasp_dir / "XDATCAR"
         md_outcar_writer = MDOutcarWriter() if self.write_outcar else None
         if md_outcar_writer is not None:
