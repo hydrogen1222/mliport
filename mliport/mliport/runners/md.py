@@ -1425,6 +1425,24 @@ class MDRunner(BaseRunner):
 
         output_closed = False
 
+        def publish_terminal(
+            status: str, *, error: dict[str, Any] | None = None
+        ) -> None:
+            """Best-effort terminal provenance that never masks the real error.
+
+            The OUTCAR trailer and the manifest are written as far as the
+            filesystem allows.  A reporting failure (full disk, read-only
+            mount) must not replace the exception that ended the run, so it is
+            suppressed and the caller still sees the original cause (AUD-006).
+            """
+            if md_outcar_writer is not None:
+                with contextlib.suppress(Exception):
+                    md_outcar_writer.finalize(status=status)
+            with contextlib.suppress(Exception):
+                self._write_artifacts_manifest(
+                    status=status, frame_stats=output_stream.stats, error=error
+                )
+
         def close_output_stream(primary_error: BaseException | None = None) -> None:
             """Drain requested frames, reporting output failure as fatal."""
             nonlocal output_closed
@@ -1439,11 +1457,8 @@ class MDRunner(BaseRunner):
                     f"{output_error}",
                     level="error",
                 )
-                if md_outcar_writer is not None:
-                    md_outcar_writer.finalize(status="failed")
-                self._write_artifacts_manifest(
-                    status="failed",
-                    frame_stats=output_stream.stats,
+                publish_terminal(
+                    "failed",
                     error={
                         "type": "output_error",
                         "message": str(output_error),
@@ -1466,11 +1481,8 @@ class MDRunner(BaseRunner):
                 energy=float(atoms.get_potential_energy()),
                 forces=atoms.get_forces(apply_constraint=True),
             )
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="aborted")
-            self._write_artifacts_manifest(
-                status="aborted",
-                frame_stats=output_stream.stats,
+            publish_terminal(
+                "aborted",
                 error={
                     "type": "force_safety_abort",
                     "message": str(exc),
@@ -1487,11 +1499,7 @@ class MDRunner(BaseRunner):
         except CancellationRequested as exc:
             self.log("\n⚠️ MD simulation cancelled by user")
             close_output_stream(exc)
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="cancelled")
-            self._write_artifacts_manifest(
-                status="cancelled", frame_stats=output_stream.stats
-            )
+            publish_terminal("cancelled")
             raise  # Re-raise to propagate cancellation
         except KeyboardInterrupt as exc:
             # Ctrl-C is cancellation, not a crash: drain the writer thread
@@ -1499,20 +1507,12 @@ class MDRunner(BaseRunner):
             # publish a cancelled status before propagating (review R08).
             self.log("\n⚠️ MD simulation interrupted by user (KeyboardInterrupt)")
             close_output_stream(exc)
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="cancelled")
-            self._write_artifacts_manifest(
-                status="cancelled", frame_stats=output_stream.stats
-            )
+            publish_terminal("cancelled")
             raise
         except Exception as e:
             self.log(f"\n❌ MD simulation failed: {e}", level="error")
             close_output_stream(e)
-            if md_outcar_writer is not None:
-                md_outcar_writer.finalize(status="failed")
-            self._write_artifacts_manifest(
-                status="failed", frame_stats=output_stream.stats
-            )
+            publish_terminal("failed")
             raise
         finally:
             # Backstop for BaseException paths that no handler above
@@ -1537,79 +1537,103 @@ class MDRunner(BaseRunner):
                     self.log(
                         f"MD output cleanup failed: {cleanup_error}", level="error"
                     )
-                if md_outcar_writer is not None:
-                    md_outcar_writer.finalize(status=terminal)
-                with contextlib.suppress(Exception):
-                    self._write_artifacts_manifest(
-                        status=terminal, frame_stats=output_stream.stats
-                    )
+                publish_terminal(terminal)
 
         close_output_stream()
-        md_time = time.time() - start_time
 
-        final_energy = float(atoms.get_potential_energy())
-        final_forces_raw, final_forces_applied = self._force_views(
-            atoms, final_energy, context="MD final structure"
-        )
-        _, final_temp, _ = self._validate_md_safe_point(
-            atoms,
-            energy=final_energy,
-            forces_raw=final_forces_raw,
-            forces_applied=final_forces_applied,
-            context="MD final structure",
-        )
-        final_stress_data = self._stress_observables(atoms)
+        @contextlib.contextmanager
+        def postrun_failure_guard():
+            # The writer queue has drained, but final model evaluation and
+            # report generation can still fail. Every such failure must
+            # produce terminal provenance, never a missing/completed manifest.
+            try:
+                yield
+            except BaseException as exc:
+                terminal = (
+                    "cancelled"
+                    if isinstance(exc, (CancellationRequested, KeyboardInterrupt))
+                    else "failed"
+                )
+                publish_terminal(
+                    terminal,
+                    error={
+                        "type": "postrun_error",
+                        "message": f"{type(exc).__name__}: {exc}",
+                    },
+                )
+                raise
 
-        self.log(f"\nMD simulation completed in {md_time:.2f} s")
-        self.log(f"Final temperature: {final_temp:.1f} K")
-        self.log(f"Final energy: {final_energy:.6f} eV")
+        with postrun_failure_guard():
+            md_time = time.time() - start_time
 
-        # Build results
-        results = {
-            "energy": final_energy,
-            # ``forces`` remains the historical constraint-applied alias.
-            "forces": final_forces_applied,
-            "forces_raw_eV_A": final_forces_raw,
-            "forces_applied_eV_A": final_forces_applied,
-            **final_stress_data,
-            "temperature": final_temp,
-            "md_steps": self.total_steps,
-            "equilibration_steps": self.equilibration_steps,
-            "production_steps": self.steps,
-            "production_start_step": self.equilibration_steps,
-            "production_start_frame": output_stream.stats.production_start_frame,
-            "timestep_fs": float(self.timestep / units.fs),
-            "save_interval": self.save_interval,
-            "ensemble": self.ensemble.upper(),
-            "thermostat": self.thermostat.upper() if self.ensemble == "nvt" else None,
-            "target_temperature": self.temperature,
-            "seed": self.seed,
-            "velocity_policy": self.velocity_policy,
-            "md_provenance": self._md_provenance(),
-            "time": md_time,
-            "trajectory": MDTrajectorySummary(md_csv_path, output_stream.stats.count),
-            "trajectory_frame_count": output_stream.stats.count,
-            "trajectory_path": str(traj_path) if self.write_trajectory else None,
-            "md_csv_path": str(md_csv_path),
-            "pre_relaxed": self.pre_relax,
-        }
-
-        # Write outputs (XDATCAR was already streamed during the run)
-        self._emit_progress("writing_output", "Writing trajectory and output files...")
-        if md_outcar_writer is not None:
-            md_outcar_writer.finalize(
-                status="completed",
-                md_time_s=md_time,
-                final_energy=float(final_energy),
-                final_temperature=float(final_temp),
+            final_energy = float(atoms.get_potential_energy())
+            final_forces_raw, final_forces_applied = self._force_views(
+                atoms, final_energy, context="MD final structure"
             )
-        self._write_outputs(atoms, results)
-        self._write_artifacts_manifest(
-            status="completed", frame_stats=output_stream.stats
-        )
+            _, final_temp, _ = self._validate_md_safe_point(
+                atoms,
+                energy=final_energy,
+                forces_raw=final_forces_raw,
+                forces_applied=final_forces_applied,
+                context="MD final structure",
+            )
+            final_stress_data = self._stress_observables(atoms)
 
-        # Print summary
-        self._write_summary(results, atoms)
+            self.log(f"\nMD simulation completed in {md_time:.2f} s")
+            self.log(f"Final temperature: {final_temp:.1f} K")
+            self.log(f"Final energy: {final_energy:.6f} eV")
+
+            # Build results
+            results = {
+                "energy": final_energy,
+                # ``forces`` remains the historical constraint-applied alias.
+                "forces": final_forces_applied,
+                "forces_raw_eV_A": final_forces_raw,
+                "forces_applied_eV_A": final_forces_applied,
+                **final_stress_data,
+                "temperature": final_temp,
+                "md_steps": self.total_steps,
+                "equilibration_steps": self.equilibration_steps,
+                "production_steps": self.steps,
+                "production_start_step": self.equilibration_steps,
+                "production_start_frame": output_stream.stats.production_start_frame,
+                "timestep_fs": float(self.timestep / units.fs),
+                "save_interval": self.save_interval,
+                "ensemble": self.ensemble.upper(),
+                "thermostat": (
+                    self.thermostat.upper() if self.ensemble == "nvt" else None
+                ),
+                "target_temperature": self.temperature,
+                "seed": self.seed,
+                "velocity_policy": self.velocity_policy,
+                "md_provenance": self._md_provenance(),
+                "time": md_time,
+                "trajectory": MDTrajectorySummary(
+                    md_csv_path, output_stream.stats.count
+                ),
+                "trajectory_frame_count": output_stream.stats.count,
+                "trajectory_path": str(traj_path) if self.write_trajectory else None,
+                "md_csv_path": str(md_csv_path),
+                "pre_relaxed": self.pre_relax,
+            }
+
+            # Write outputs (XDATCAR was already streamed during the run)
+            self._emit_progress(
+                "writing_output", "Writing trajectory and output files..."
+            )
+            self._write_outputs(atoms, results)
+            self._write_summary(results, atoms)
+            if md_outcar_writer is not None:
+                md_outcar_writer.finalize(
+                    status="completed",
+                    md_time_s=md_time,
+                    final_energy=float(final_energy),
+                    final_temperature=float(final_temp),
+                )
+            self._write_artifacts_manifest(
+                status="completed", frame_stats=output_stream.stats
+            )
+
         self._emit_progress(
             "done",
             f"MD complete. Final T = {final_temp:.1f} K",

@@ -13,6 +13,7 @@ import json
 import subprocess
 import sys
 import textwrap
+import threading
 import tracemalloc
 import warnings
 
@@ -24,6 +25,7 @@ from ase.constraints import FixCom
 from ase.io import Trajectory, read
 
 from mliport.config.defaults import BUILTIN_DEFAULTS
+from mliport.protocols import CancellationRequested
 from mliport.runners.md import ForceSafetyAbort, MDRunner
 from mliport.runners.md_output import (
     AsyncMDOutputWriter,
@@ -1240,3 +1242,158 @@ def test_md_manifest_records_source_pbc_for_xdatcar(tmp_path):
     assert loaded.pbc.tolist() == [False, False, False]
     assert loaded.metadata["pbc_verified"] is True
     assert not validate_trajectory(loaded).eligible_for_rdf
+
+
+@pytest.mark.parametrize(
+    "failure_stage", ["final_safety_check", "write_outputs", "write_summary"]
+)
+def test_md_postrun_failure_leaves_failed_manifest_and_readable_frames(
+    tmp_path, monkeypatch, failure_stage
+):
+    """AUD-006: failures after integration must not publish completed status.
+
+    The MD frames are committed before final state evaluation and the
+    final result files. Even if a post-run stage fails, the manifest must
+    record a terminal failure, the original exception must escape, and the
+    raw trajectory must remain readable.
+    """
+    runner = MDRunner(
+        _RunWrapper(_FiniteCalc()),
+        ensemble="NVE",
+        temperature=300.0,
+        timestep=0.25,
+        steps=2,
+        save_interval=1,
+        output_dir=tmp_path,
+        pre_relax=False,
+        verbose=False,
+        seed=17,
+        com_policy="none",
+    )
+
+    def injected_failure(*_args, **_kwargs):
+        raise OSError("simulated post-run disk/model error")
+
+    if failure_stage == "final_safety_check":
+        original = runner._validate_md_safe_point
+
+        def fail_on_final_state(*args, **kwargs):
+            if kwargs.get("context") == "MD final structure":
+                injected_failure()
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(runner, "_validate_md_safe_point", fail_on_final_state)
+    elif failure_stage == "write_outputs":
+        monkeypatch.setattr(runner, "_write_outputs", injected_failure)
+    else:
+        monkeypatch.setattr(runner, "_write_summary", injected_failure)
+
+    with pytest.raises(OSError, match="simulated post-run disk/model error"):
+        runner.run(_bulk_atoms(n=4))
+
+    manifest_path = tmp_path / "artifacts.json"
+    assert manifest_path.is_file(), "terminal provenance must survive post-run errors"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["status"] == "failed"
+    assert manifest["error"]["type"] == "postrun_error"
+    assert "simulated post-run disk/model error" in manifest["error"]["message"]
+    assert manifest["trajectory"]["last_step"] == 2
+
+    raw = tmp_path / "raw" / "trajectory.traj"
+    assert len(Trajectory(raw)) == 3
+    outcar = (tmp_path / "vasp" / "OUTCAR").read_text(encoding="utf-8")
+    assert "Status:              failed" in outcar
+    assert "Status:              completed" not in outcar
+
+
+def test_md_manifest_write_failure_does_not_leave_a_completed_outcar(
+    tmp_path, monkeypatch
+):
+    """AUD-006: the manifest is the commit point of the run.
+
+    The OUTCAR summary is written just before the manifest. If the manifest
+    write itself fails, the OUTCAR must not keep claiming a status the run did
+    not reach: the post-run guard has to be able to correct the trailer it has
+    already written.
+    """
+    runner = MDRunner(
+        _RunWrapper(_FiniteCalc()),
+        ensemble="NVE",
+        temperature=300.0,
+        timestep=0.25,
+        steps=2,
+        save_interval=1,
+        output_dir=tmp_path,
+        pre_relax=False,
+        verbose=False,
+        seed=17,
+        com_policy="none",
+    )
+
+    original = runner._write_artifacts_manifest
+
+    def fail_on_completed(*, status, frame_stats, error=None):
+        if status == "completed":
+            raise OSError("simulated manifest write failure")
+        return original(status=status, frame_stats=frame_stats, error=error)
+
+    monkeypatch.setattr(runner, "_write_artifacts_manifest", fail_on_completed)
+
+    with pytest.raises(OSError, match="simulated manifest write failure"):
+        runner.run(_bulk_atoms(n=4))
+
+    manifest = json.loads((tmp_path / "artifacts.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "failed"
+    assert manifest["error"]["type"] == "postrun_error"
+    # The frames committed before the failure are untouched and still readable.
+    assert len(Trajectory(tmp_path / "raw" / "trajectory.traj")) == 3
+
+    outcar = (tmp_path / "vasp" / "OUTCAR").read_text(encoding="utf-8")
+    statuses = [
+        line.split(":", 1)[1].strip()
+        for line in outcar.splitlines()
+        if line.startswith("Status:")
+    ]
+    assert statuses, "the OUTCAR must carry a terminal status"
+    # The earlier ``completed`` block is kept (evidence is never deleted), but
+    # the last status -- the authoritative one -- must be the real outcome.
+    assert statuses[-1] == "failed"
+    assert "CORRECTED" in outcar
+
+
+def test_md_cancellation_survives_a_manifest_write_failure(tmp_path, monkeypatch):
+    """AUD-006: best-effort reporting must never mask the original error.
+
+    The terminal handlers used to call the manifest writer unguarded, so an
+    ``OSError`` from a full disk replaced the ``CancellationRequested`` and the
+    run was classified FAILED (exit 1) instead of CANCELLED (exit 130).
+    """
+    cancel_event = threading.Event()
+    cancel_event.set()
+    runner = MDRunner(
+        _RunWrapper(_FiniteCalc()),
+        ensemble="NVE",
+        temperature=300.0,
+        timestep=0.25,
+        steps=2,
+        save_interval=1,
+        output_dir=tmp_path,
+        pre_relax=False,
+        verbose=False,
+        seed=17,
+        com_policy="none",
+        cancel_event=cancel_event,
+    )
+
+    def fail_manifest(*, status, frame_stats, error=None):
+        raise OSError("simulated full disk during reporting")
+
+    monkeypatch.setattr(runner, "_write_artifacts_manifest", fail_manifest)
+
+    with pytest.raises(CancellationRequested):
+        runner.run(_bulk_atoms(n=4))
+
+    # The OUTCAR trailer is written before the manifest attempt and still
+    # records the real outcome; only the manifest could not be persisted.
+    outcar = (tmp_path / "vasp" / "OUTCAR").read_text(encoding="utf-8")
+    assert "Status:              cancelled" in outcar
