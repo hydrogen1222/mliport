@@ -19,6 +19,7 @@ import numpy as np
 from ase.io import read
 from tqdm import tqdm
 
+from mliport.run_status import RunOutcome, classify_result
 from mliport.runners.optimization import OptimizationRunner
 from mliport.runners.singlepoint import SinglePointRunner
 from mliport.writers.json_writer import JsonWriter
@@ -137,7 +138,7 @@ class BatchRunner:
 
         if not files:
             print(f"No structure files found in {input_dir}")
-            return {"total": 0, "success": 0, "failed": 0}
+            return {"total": 0, "success": 0, "failed": 0, "not_converged": 0}
 
         print(f"Found {len(files)} structure files")
 
@@ -160,6 +161,7 @@ class BatchRunner:
         results_list = []
         success_count = 0
         failed_count = 0
+        not_converged_count = 0
 
         iterator = tqdm(paths, desc="Processing structures") if self.verbose else paths
         for filepath in iterator:
@@ -173,22 +175,30 @@ class BatchRunner:
                 sub_dir = self.output_dir / output_name
                 sub_dir.mkdir(exist_ok=True)
                 result = self._run_single(atoms, sub_dir, filepath.stem)
+                outcome = RunOutcome(result["status"])
+                successful = outcome is RunOutcome.COMPLETED
                 results_list.append(
                     {
                         "filename": filepath.name,
                         "formula": atoms.get_chemical_formula(),
                         "natoms": len(atoms),
-                        "success": True,
+                        "success": successful,
                         **result,
                     }
                 )
-                success_count += 1
+                if successful:
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    if outcome is RunOutcome.NOT_CONVERGED:
+                        not_converged_count += 1
             except Exception as e:
                 error_msg = f"{type(e).__name__}: {e!s}"
                 results_list.append(
                     {
                         "filename": filepath.name,
                         "success": False,
+                        "status": RunOutcome.FAILED.value,
                         "error": error_msg,
                         "traceback": traceback.format_exc(),
                     }
@@ -202,6 +212,7 @@ class BatchRunner:
             "total": len(paths),
             "success": success_count,
             "failed": failed_count,
+            "not_converged": not_converged_count,
             "results": results_list,
         }
 
@@ -248,8 +259,15 @@ class BatchRunner:
         # Run calculation
         results = runner.execute(atoms)
 
-        # Extract key results
+        # A returned optimizer result is not automatically a successful run:
+        # failed optimizers may keep partial results, and max_steps can be
+        # reached without convergence. Preserve the runner's outcome.
+        outcome = classify_result(results, calc_type=self.calc_type)
+
         return {
+            "status": outcome.value,
+            "converged": results.get("converged") if self.calc_type == "opt" else None,
+            "error": results.get("error") if outcome is RunOutcome.FAILED else None,
             "energy": results.get("energy"),
             "fmax": (
                 np.max(np.linalg.norm(results.get("forces"), axis=1))
@@ -278,6 +296,7 @@ class BatchRunner:
             "total": summary["total"],
             "success": summary["success"],
             "failed": summary["failed"],
+            "not_converged": summary["not_converged"],
         }
         if self.job_name:
             metadata["job_name"] = self.job_name

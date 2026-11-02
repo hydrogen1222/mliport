@@ -27,7 +27,10 @@ is the point of batching: you pay the startup cost a single time.
 One run directory per structure under `--output`, each with the usual single
 point or relaxation files, plus progress and failure reporting for the batch as
 a whole. Every structure keeps its own model identity and resolved
-configuration.
+configuration. The `batch_summary.json` entries expose `status` as
+`completed`, `not_converged`, or `failed`. Only completed runs have
+`success: true`; non-converged optimizations remain in the `failed`
+aggregate count and also increment `not_converged`.
 
 ## When something fails
 
