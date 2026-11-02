@@ -1206,8 +1206,6 @@ def test_md_keyboard_interrupt_exits_quickly_and_marks_cancelled(tmp_path):
         text = outcar.read_text(encoding="utf-8", errors="ignore")
         assert "cancelled" in text.lower()
 
-
-
 def test_md_manifest_records_source_pbc_for_xdatcar(tmp_path):
     """The MD manifest and canonical ASE frames retain slab PBC flags."""
     atoms = _bulk_atoms(n=4)
