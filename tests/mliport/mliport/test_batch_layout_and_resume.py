@@ -296,3 +296,80 @@ def test_engine_resume_accepts_existing_batch_outputs(tmp_path):
         sp_engine.output_directory_claim(),
     ):
         pass
+
+
+def _first_run(tmp_path):
+    root = tmp_path / "ML-OPT"
+    files = _ml_opt_tree(root)
+    out = tmp_path / "out"
+    BatchRunner(
+        object(), calc_type="opt", output_dir=out, verbose=False
+    ).run_from_files(files, input_root=root)
+    return root, files, out
+
+
+def _resume(files, root, out):
+    return BatchRunner(
+        object(), calc_type="opt", output_dir=out, verbose=False, resume=True
+    ).run_from_files(files, input_root=root)
+
+
+def test_resume_recomputes_a_structure_whose_input_changed(tmp_path, recording_opt):
+    root, files, out = _first_run(tmp_path)
+    changed = root / "P15Cl15" / "ewald_rank_0001" / "1.cif"
+    write(changed, Atoms("Li", positions=[[0.5, 0, 0]], cell=[5, 5, 5], pbc=True))
+
+    recording_opt.calls = []
+    summary = _resume(files, root, out)
+    rerun = [c["output_dir"].relative_to(out).as_posix() for c in recording_opt.calls]
+    assert rerun == ["P15Cl15/ewald_rank_0001/1"]
+    assert summary["reused"] == 3
+
+
+def test_resume_recomputes_a_structure_whose_outputs_are_missing(
+    tmp_path, recording_opt
+):
+    root, files, out = _first_run(tmp_path)
+    (out / "P10Cl20" / "ewald_rank_0002" / "1" / "CONTCAR").unlink()
+    truncated = out / "P15Cl15" / "ewald_rank_0002" / "1" / "CONTCAR"
+    truncated.write_text("")
+
+    recording_opt.calls = []
+    summary = _resume(files, root, out)
+    rerun = sorted(
+        c["output_dir"].relative_to(out).as_posix() for c in recording_opt.calls
+    )
+    assert rerun == ["P10Cl20/ewald_rank_0002/1", "P15Cl15/ewald_rank_0002/1"]
+    assert summary["reused"] == 2
+    assert summary["success"] == 4
+
+
+def test_batch_manifest_identifies_model_weights_by_content(tmp_path):
+    model = tmp_path / "model.model"
+    model.write_bytes(b"weights v1")
+    engine = _batch_engine(tmp_path, run_options={})
+    first = engine._batch_run_identity()
+    model.write_bytes(b"weights v2")  # same path, different weights
+    second = engine._batch_run_identity()
+    assert first["model_path"] == second["model_path"]
+    assert first["model_sha256"] != second["model_sha256"]
+
+
+def test_batch_resume_appends_to_run_log(tmp_path, monkeypatch):
+    class _NoopBatchRunner:
+        def __init__(self, calculator, **kwargs):
+            pass
+
+        def run_from_files(self, files, input_root=None):
+            return {"total": 0, "success": 0, "failed": 0, "not_converged": 0}
+
+    monkeypatch.setattr(batch_module, "BatchRunner", _NoopBatchRunner)
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "run.log").write_text("EARLIER BATCH LOG\n")
+    engine = _batch_engine(tmp_path, run_options={}, resume=True)
+    monkeypatch.setattr(engine, "_create_calculator", lambda: _FakeWrapper())
+    engine.run_batch([])
+    log = (run / "run.log").read_text()
+    assert log.startswith("EARLIER BATCH LOG")
+    assert "Resuming batch" in log

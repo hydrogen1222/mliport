@@ -53,17 +53,18 @@ mliport batch ML-OPT/ \
 ## 中断与 `--resume`
 
 每个结构一算完就记录结果：它自己目录下的 `batch_status.json`，以及批量目录下
-`batch_progress.jsonl` 追加的一行。`batch_manifest.json` 记录决定这批计算的设置：模型、task、
+`batch_progress.jsonl` 追加的一行。`batch_manifest.json` 记录决定这批计算的设置：模型（路径；本地模型文件还记录权重的 sha256）、task、
 计算器选项和优化参数。`batch_summary.json` 在整批结束时写出。
 
 任务中断后，用同样的命令加上 `--resume` 重跑：
 
-- 记录为 `completed` 或 `not_converged` 的结构直接复用，不重算（同样设置下重跑确定性的优化，结果不会变）；
+- 记录为 `completed` 或 `not_converged` 的结构直接复用，不重算（同样设置下重跑确定性的优化，结果不会变）。
+  前提是输入文件内容（sha256）和当时一致，且这次计算写出的每个输出文件都还在、大小没变；否则重算；
 - 记录为 `failed` 的结构，以及中断时正在算的那个结构，从输入结构重新算；
 - 只要 `batch_manifest.json` 里有任何设置不同，就拒绝续跑，保证不会把不同设置算出的结果混在一起。
   想让未收敛的结构多算几步，请换一个新的 `--output` 目录。
 
-`--resume` 不能和 `--overwrite` 一起用。中断时正在算的结构从输入几何重新开始，优化器不会从中断的那一步接着算。
+`--resume` 不能和 `--overwrite` 一起用，续跑时 `run.log` 追加写入。中断时正在算的结构从输入几何重新开始，优化器不会从中断的那一步接着算。
 
 ## 注意
 

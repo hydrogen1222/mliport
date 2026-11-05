@@ -11,6 +11,7 @@ Processes multiple structures sequentially while reusing one loaded model.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import traceback
@@ -58,8 +59,9 @@ class BatchRunner:
     settings that define the batch) plus an append-only
     ``batch_progress.jsonl``. With ``resume=True`` a structure whose status
     file records a finished outcome (completed or not converged) under the
-    same manifest is reused instead of recomputed; failed and unfinished
-    structures run again.
+    same manifest, for the same input content and with all of its recorded
+    output files intact, is reused instead of recomputed; everything else
+    (failed, unfinished, changed input, missing outputs) runs again.
     """
 
     MANIFEST_NAME = "batch_manifest.json"
@@ -275,8 +277,15 @@ class BatchRunner:
         return manifest
 
     def _reusable_record(
-        self, sub_dir: Path, manifest: dict[str, Any]
+        self, filepath: Path, sub_dir: Path, manifest: dict[str, Any]
     ) -> dict[str, Any] | None:
+        """Return the recorded result only if it is still trustworthy.
+
+        Reuse requires: a finished outcome under the identical manifest, the
+        same input file content (sha256) as when it was computed, and every
+        output file the run produced still present with its recorded size.
+        Anything else is recomputed.
+        """
         status_path = sub_dir / self.STATUS_NAME
         if not status_path.exists():
             return None
@@ -288,6 +297,20 @@ class BatchRunner:
             return None
         if record.get("status") not in self.REUSABLE_OUTCOMES:
             return None
+        try:
+            if record.get("input_sha256") != _file_sha256(filepath):
+                return None
+        except OSError:
+            return None
+        outputs = record.get("outputs")
+        if not isinstance(outputs, dict) or not outputs:
+            return None
+        if self.calc_type == "opt" and "CONTCAR" not in outputs:
+            return None
+        for name, size in outputs.items():
+            path = sub_dir / name
+            if not path.is_file() or path.stat().st_size != size:
+                return None
         return record
 
     def run_from_files(
@@ -323,7 +346,7 @@ class BatchRunner:
             record: dict[str, Any] | None = None
             reused = False
             if self.resume:
-                record = self._reusable_record(sub_dir, manifest)
+                record = self._reusable_record(filepath, sub_dir, manifest)
                 reused = record is not None
             if record is None:
                 record = self._process_one(filepath, rel, sub_dir, manifest)
@@ -338,7 +361,8 @@ class BatchRunner:
                 failed_count += 1
                 if outcome is RunOutcome.NOT_CONVERGED:
                     not_converged_count += 1
-            record.pop("manifest", None)
+            for internal in ("manifest", "outputs"):
+                record.pop(internal, None)
             results_list.append(record)
             if not reused:
                 _append_jsonl(progress_path, record)
@@ -376,6 +400,8 @@ class BatchRunner:
             "output_name": rel.as_posix(),
         }
         try:
+            # Hash first: the reused record must describe exactly this input.
+            base["input_sha256"] = _file_sha256(filepath)
             atoms = read(filepath)
             result = self._run_single(atoms, sub_dir, filepath.stem)
             outcome = RunOutcome(result["status"])
@@ -400,7 +426,16 @@ class BatchRunner:
             }
             if self.verbose:
                 print(f"\nError processing {filepath}: {error_msg}")
-        _atomic_write_json(status_path, {**record, "manifest": manifest})
+        outputs = {
+            child.name: child.stat().st_size
+            for child in sorted(sub_dir.iterdir())
+            if child.is_file()
+            and child.name != self.STATUS_NAME
+            and not child.name.startswith(".")
+        }
+        _atomic_write_json(
+            status_path, {**record, "outputs": outputs, "manifest": manifest}
+        )
         return record
 
     def _run_single(
@@ -504,6 +539,14 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, np.ndarray):
         return value.tolist()
     return str(value)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
