@@ -14,6 +14,26 @@ Internal (no user-visible behaviour change):
   a shared helper that additionally records `dispersion`. No scientific record
   invalidated and no result changes.
 
+Batch fixes and features:
+
+- **Batch outputs no longer collide on equal file names.** Each structure's
+  output directory now mirrors its path below the input directory, so
+  `A/rank_1/1.cif` and `B/rank_1/1.cif` no longer write into the same `1_cif`
+  directory (the later one silently replaced the earlier one while the summary
+  still counted both as successes). Flat directories keep their old names; any
+  remaining collision stops the batch before it runs.
+- **`mliport batch --calc-type opt` honours relaxation settings.** `--fmax`,
+  `--max-steps`, `--optimizer`, `--cell-opt` and `--fix-symmetry` (and the same
+  keys in settings/INCAR) now reach the optimizer; previously every batch
+  relaxation ran with FIRE, 0.05 eV/Å, 500 steps and a fixed cell. They are
+  rejected for `--calc-type sp` instead of being ignored.
+- **Per-structure status and `--resume`.** Every finished structure writes
+  `batch_status.json` and a line in `batch_progress.jsonl` immediately;
+  `batch_manifest.json` records the batch settings. `mliport batch --resume`
+  reuses completed and not-converged structures, reruns failed and unfinished
+  ones, and refuses to resume when any setting differs. Cooperative
+  cancellation now stops the batch instead of being recorded as a failure.
+
 New features:
 
 - **Configuration search (`confsearch`, new `CALC_TYPE = CONFSEARCH`).** MD-based

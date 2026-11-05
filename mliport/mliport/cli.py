@@ -1102,8 +1102,49 @@ Examples:
         type=str,
         default=None,
         help=(
-            "File glob to match. If omitted, discovers *.cif, *.xyz, *.vasp "
-            "and POSCAR*."
+            "File glob to match, relative to INPUT_DIR; may span directories, "
+            "e.g. '*/ewald_rank_*/1.cif' or '**/*.cif'. If omitted, discovers "
+            "*.cif, *.xyz, *.vasp and POSCAR* directly in INPUT_DIR."
+        ),
+    )
+    batch_parser.add_argument(
+        "--fmax",
+        type=float,
+        default=None,
+        help="--calc-type opt: force convergence threshold in eV/Angstrom (default: 0.05).",
+    )
+    batch_parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="--calc-type opt: maximum optimization steps per structure (default: 500).",
+    )
+    batch_parser.add_argument(
+        "--optimizer",
+        type=str,
+        default=None,
+        choices=["FIRE", "BFGS", "LBFGS"],
+        help="--calc-type opt: optimization algorithm (default: FIRE).",
+    )
+    batch_parser.add_argument(
+        "--cell-opt",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="--calc-type opt: optimize cell parameters (requires stress support).",
+    )
+    batch_parser.add_argument(
+        "--fix-symmetry",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="--calc-type opt: preserve crystal symmetry during optimization.",
+    )
+    batch_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Continue an interrupted batch in the same --output directory: "
+            "structures already completed or not converged under identical "
+            "settings are reused, failed and unfinished ones run again."
         ),
     )
     batch_parser.add_argument(
@@ -2007,7 +2048,14 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
         # batch `--calc-type` selects the sub-calculation (sp/opt).
         if getattr(args, "calc_type", None) is not None:
             opts["sub_calc_type"] = args.calc_type
-        for key in ("pattern",):
+        for key in (
+            "pattern",
+            "fmax",
+            "max_steps",
+            "optimizer",
+            "cell_opt",
+            "fix_symmetry",
+        ):
             value = getattr(args, key, None)
             if value is not None:
                 opts[key] = value
@@ -2078,6 +2126,9 @@ def _resolve_engine_config(
         job_name if job_name is not None else getattr(args, "name", None)
     )
     engine_config.overwrite = bool(getattr(args, "overwrite", False))
+    # Batch resume only; other subcommands (neb, confsearch) have their own
+    # checkpoint-based --resume handled by their runners.
+    engine_config.resume = calc_type == "batch" and bool(getattr(args, "resume", False))
     _maybe_reexec_for_device_isolation(resolved)
     return engine_config, resolved, settings
 
@@ -3082,6 +3133,10 @@ def cmd_batch(args: argparse.Namespace) -> int:
         print(f"Error: Input directory not found: {input_dir}")
         return 1
 
+    if getattr(args, "resume", False) and getattr(args, "overwrite", False):
+        print("Error: --resume and --overwrite are mutually exclusive.")
+        return 1
+
     config, resolved, _settings = _resolve_engine_config(args, "batch")
     pattern = resolved.run_options.get("pattern")
 
@@ -3114,7 +3169,18 @@ def cmd_batch(args: argparse.Namespace) -> int:
                 files,
                 log_fn=_console_log,
                 started_at=started_at,
+                input_root=input_dir,
             )
+        print(
+            f"Batch done: {summary['success']} completed, "
+            f"{summary.get('not_converged', 0)} not converged, "
+            f"{summary['failed'] - summary.get('not_converged', 0)} failed"
+            + (
+                f" ({summary['reused']} reused from the earlier run)"
+                if summary.get("reused")
+                else ""
+            )
+        )
         if summary["failed"] > 0:
             return 1
         return 0
