@@ -79,6 +79,9 @@ class EngineConfig:
             the final output directory. The default refuses them, so a rerun
             can never silently destroy a previous trajectory or a VASP
             OUTCAR/CONTCAR in the same directory.
+        resume: Batch only. Continue an earlier batch in the same output
+            directory: finished structures recorded under an identical batch
+            manifest are reused, everything else runs again.
     """
 
     calc_type: Literal["sp", "opt", "md", "neb", "batch"]
@@ -101,6 +104,7 @@ class EngineConfig:
     strict_config: bool = True
     detach: bool = False
     overwrite: bool = False
+    resume: bool = False
 
     def __post_init__(self) -> None:
         from mliport.backend_selection import (  # noqa: PLC0415
@@ -317,7 +321,15 @@ class CalculationEngine:
         if self._output_claimed:
             yield output
             return
-        ensure_output_available(output, overwrite=self.config.overwrite)
+        if self.config.resume:
+            if self.config.calc_type != "batch":
+                raise ValueError("resume is only supported for batch runs.")
+            if self.config.overwrite:
+                raise ValueError("resume and overwrite are mutually exclusive.")
+            # The batch runner verifies batch_manifest.json before reusing
+            # anything, so existing outputs are expected here, not refused.
+        else:
+            ensure_output_available(output, overwrite=self.config.overwrite)
         with run_directory_lock(output):
             self._output_claimed = True
             try:
@@ -446,7 +458,9 @@ class CalculationEngine:
         log_fn: Any | None,
         started_at: float | None,
     ) -> dict[str, Any]:
-        with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
+        with LiveRunLogger(
+            self.run_log_path, callback=log_fn, append=self.config.resume
+        ) as run_logger:
             run_logger(f"Output directory: {self.output_dir.resolve()}")
             run_logger(f"Live log: {self.run_log_path}")
             run_logger(f"Follow live output: {follow_log_command(self.run_log_path)}")
@@ -724,6 +738,7 @@ class CalculationEngine:
         progress_callback: ProgressCallback | None = None,
         log_fn: Any | None = None,
         started_at: float | None = None,
+        input_root: Path | None = None,
     ) -> dict[str, Any]:
         """Run batch calculation on multiple structure files.
 
@@ -732,6 +747,8 @@ class CalculationEngine:
             progress_callback: Optional callback for progress events.
             log_fn: Optional callback receiving live log messages.
             started_at: Monotonic timestamp when the user requested the run.
+            input_root: Directory that per-structure output directories mirror
+                (default: deepest common parent of ``files``).
 
         Returns:
             Batch summary dictionary.
@@ -742,7 +759,32 @@ class CalculationEngine:
                 progress_callback=progress_callback,
                 log_fn=log_fn,
                 started_at=started_at,
+                input_root=input_root,
             )
+
+    #: Calculator options that only affect resources, not results; they may
+    #: change between a batch and its resume.
+    _BATCH_RESOURCE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"torch_num_threads", "gpu_memory_growth", "gpu_memory_limit_mb"}
+    )
+
+    def _batch_run_identity(self) -> dict[str, Any]:
+        calc_opts = {
+            key: value
+            for key, value in self._effective_calculator_options().items()
+            if key not in self._BATCH_RESOURCE_KEYS
+        }
+        model = Path(self.config.model_path).expanduser()
+        # A checkpoint file is recorded by absolute path; a named foundation
+        # model (not a file) is recorded verbatim.
+        model_id = str(model.resolve()) if model.exists() else str(model)
+        return {
+            "model_type": self.config.model_type,
+            "model_path": model_id,
+            "task": self.config.task,
+            "inference_mode": self.config.inference_mode,
+            "calculator_options": calc_opts,
+        }
 
     def _run_batch_claimed(
         self,
@@ -751,6 +793,7 @@ class CalculationEngine:
         progress_callback: ProgressCallback | None,
         log_fn: Any | None,
         started_at: float | None,
+        input_root: Path | None = None,
     ) -> dict[str, Any]:
         from mliport.runners.batch import BatchRunner  # noqa: PLC0415
 
@@ -778,9 +821,30 @@ class CalculationEngine:
             timing.mark_compute_started()
 
             opts = self._effective_run_options()
+            sub_calc_type = opts.get("sub_calc_type", "sp")
+            opt_keys = ("optimizer", "fmax", "max_steps", "cell_opt", "fix_symmetry")
+            sub_kwargs: dict[str, Any] = {}
+            if sub_calc_type == "opt":
+                # Same single-source defaults as a standalone `opt` run.
+                sub_kwargs = {
+                    key: opts.get(key, BUILTIN_DEFAULTS["opt"][key]) for key in opt_keys
+                }
+                run_logger(
+                    "Batch optimization: "
+                    + ", ".join(f"{k}={v}" for k, v in sub_kwargs.items())
+                )
+            else:
+                given = sorted(key for key in opt_keys if key in opts)
+                if given:
+                    raise ValueError(
+                        f"Optimization options {given} only apply to batch "
+                        "--calc-type opt; refusing to ignore them."
+                    )
+            if self.config.resume:
+                run_logger("Resuming batch: finished structures will be reused.")
             runner = BatchRunner(
                 calculator,
-                calc_type=opts.get("sub_calc_type", "sp"),
+                calc_type=sub_calc_type,
                 output_dir=self.config.output_dir,
                 parallel=opts.get("parallel", False),
                 max_workers=opts.get("max_workers", 1),
@@ -793,9 +857,12 @@ class CalculationEngine:
                 spin=opts.get("spin"),
                 progress_callback=progress_callback,
                 log_fn=run_logger,
+                resume=self.config.resume,
+                run_identity=self._batch_run_identity(),
+                **sub_kwargs,
             )
             try:
-                summary = runner.run_from_files(files)
+                summary = runner.run_from_files(files, input_root=input_root)
             except Exception as exc:
                 run_logger(f"Batch calculation failed: {exc}", "error")
                 raise
