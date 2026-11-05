@@ -65,21 +65,24 @@ input directory fails closed.
 Every structure records its outcome the moment it finishes:
 `batch_status.json` in its own directory, and one line appended to
 `batch_progress.jsonl` in the batch directory. `batch_manifest.json` stores the
-settings that define the batch: model, task, calculator options and the
-relaxation settings. `batch_summary.json` is written when the batch ends.
+settings that define the batch: model (path and, for a local checkpoint, the
+sha256 of its weights), task, calculator options and the relaxation settings. `batch_summary.json` is written when the batch ends.
 
 If the batch is interrupted, rerun the same command with `--resume`:
 
 - structures recorded as `completed` or `not_converged` are reused, not
   recomputed (rerunning a deterministic relaxation with the same settings would
-  give the same answer);
+  give the same answer), but only if the input file still has the content it
+  had when it was computed (sha256) and every output file the run wrote is
+  still there with its recorded size; otherwise the structure runs again;
 - structures recorded as `failed`, and the one that was running when the batch
   stopped, run again from their input structure;
 - the batch refuses to resume if any setting in `batch_manifest.json` differs,
   so results computed with different settings are never mixed. To relax the
   unconverged structures further, use a new `--output` directory.
 
-`--resume` cannot be combined with `--overwrite`. The structure that was
+`--resume` cannot be combined with `--overwrite`; it appends to the existing
+`run.log`. The structure that was
 running restarts from its input geometry; the optimizer does not continue from
 the interrupted step.
 

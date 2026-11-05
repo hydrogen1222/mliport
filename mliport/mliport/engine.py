@@ -458,9 +458,7 @@ class CalculationEngine:
         log_fn: Any | None,
         started_at: float | None,
     ) -> dict[str, Any]:
-        with LiveRunLogger(
-            self.run_log_path, callback=log_fn, append=self.config.resume
-        ) as run_logger:
+        with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
             run_logger(f"Output directory: {self.output_dir.resolve()}")
             run_logger(f"Live log: {self.run_log_path}")
             run_logger(f"Follow live output: {follow_log_command(self.run_log_path)}")
@@ -774,13 +772,23 @@ class CalculationEngine:
             for key, value in self._effective_calculator_options().items()
             if key not in self._BATCH_RESOURCE_KEYS
         }
+        from mliport.model_record import hash_model_path  # noqa: PLC0415
+
         model = Path(self.config.model_path).expanduser()
-        # A checkpoint file is recorded by absolute path; a named foundation
-        # model (not a file) is recorded verbatim.
-        model_id = str(model.resolve()) if model.exists() else str(model)
+        # A local checkpoint (file or directory) is identified by content, so
+        # replacing the weights behind the same path is detected on resume.
+        # A named foundation model resolved by the backend has no local path
+        # to hash and is recorded by name only.
+        if model.exists():
+            model_id = str(model.resolve())
+            model_sha256 = hash_model_path(model, error_class=ValueError)
+        else:
+            model_id = str(model)
+            model_sha256 = None
         return {
             "model_type": self.config.model_type,
             "model_path": model_id,
+            "model_sha256": model_sha256,
             "task": self.config.task,
             "inference_mode": self.config.inference_mode,
             "calculator_options": calc_opts,
@@ -800,7 +808,9 @@ class CalculationEngine:
         timing = RunTiming(
             started_at=time.perf_counter() if started_at is None else started_at
         )
-        with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
+        with LiveRunLogger(
+            self.run_log_path, callback=log_fn, append=self.config.resume
+        ) as run_logger:
             run_logger(f"Output directory: {self.output_dir.resolve()}")
             run_logger(f"Live log: {self.run_log_path}")
             run_logger(f"Follow live output: {follow_log_command(self.run_log_path)}")
