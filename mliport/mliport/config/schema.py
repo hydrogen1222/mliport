@@ -181,7 +181,7 @@ _SPECS: list[OptionSpec] = [
         str,
         frozenset({"calculator"}),
         aliases={"MODEL_TYPE", "model"},
-        choices=("uma", "fairchem", "mace", "dpa", "grace"),
+        choices=("uma", "fairchem", "mace", "dpa", "grace", "nep"),
         description="MLIP engine.",
     ),
     OptionSpec(
@@ -319,6 +319,35 @@ _SPECS: list[OptionSpec] = [
         aliases={"D3_DAMPING"},
         choices=("zero", "bj", "zerom", "bjm"),
         description="DFT-D3 damping function (default: bj, i.e. D3(BJ)).",
+    ),
+    # --- NEP dual-runtime calculator options (PR #61 section C) ---
+    # ``nep_runtime`` is scoped to ``calculator.nep`` so the resolver rejects it
+    # for every other engine instead of recording a switch that never executes.
+    # D3 is deliberately absent from the NEP option set: the factory rejects a
+    # NEP + D3 combination rather than silently double-counting dispersion.
+    OptionSpec(
+        "nep_runtime",
+        str,
+        frozenset({"calculator.nep"}),
+        aliases={"NEP_RUNTIME"},
+        choices=("ase", "gpumd"),
+        description=(
+            "NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) "
+            "or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; "
+            "mliport never infers it or falls back between the two."
+        ),
+    ),
+    OptionSpec(
+        "nep_gpumd_command",
+        str,
+        frozenset({"calculator.nep"}),
+        aliases={"NEP_GPUMD_COMMAND", "gpumd_executable"},
+        description=(
+            "Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the "
+            "GPUNEP ASE adapter). Launched as an argv list, never through a "
+            "shell; its real path, version and SHA256 are recorded."
+        ),
+        is_path=True,
     ),
     # --- molecular electronic state (applied to atoms.info by every runner) ---
     OptionSpec(

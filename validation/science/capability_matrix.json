@@ -9,7 +9,8 @@
   ],
   "limitations": [
     "Advanced explicit atom mapping/image-shift control is available through API/direct CLI/TUI only; the INCAR-style key set deliberately does not expose neb_atom_map or neb_image_shifts.",
-    "The interface capability matrix is not an equivalence claim: a 'yes' means the entry point can express the feature, not that every validation scenario is covered through it."
+    "The interface capability matrix is not an equivalence claim: a 'yes' means the entry point can express the feature, not that every validation scenario is covered through it.",
+    "NEP has two execution runtimes (NEP_RUNTIME=ase|gpumd) with different numeric precision and cost models; a 'yes' for a NEP feature does not imply the two runtimes are interchangeable evidence."
   ],
   "features": [
     {
@@ -179,6 +180,30 @@
       "incar": "no",
       "tui": "no",
       "note": "Exports are written by every run (top/rank_NNN); `mliport confsearch export RUN [--top-k K] [--window E]` re-exports from the run's registry representatives (quench geometries; the original top/ dirs hold refined geometries)."
+    },
+    {
+      "feature": "nep_runtime_selection",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "yes",
+      "note": "NEP_RUNTIME=ase|gpumd is a required explicit choice for MODEL_TYPE=NEP in every entry point; it is never inferred from the device or the task, and there is no auto mode."
+    },
+    {
+      "feature": "nep_native_gpumd_workflows",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "yes",
+      "tui": "partial",
+      "note": "NEP_RUNTIME=gpumd performs sp/opt/md in one native gpumd process. neb, batch and confsearch are rejected for that runtime and are available only through NEP_RUNTIME=ase; mliport never reroutes a runtime silently."
+    },
+    {
+      "feature": "nep_native_unwrapped_trajectory",
+      "api": "yes",
+      "direct_cli": "yes",
+      "incar": "no",
+      "tui": "no",
+      "note": "The native runtime always requests dump_xyz unwrapped_position and records msd_eligible in the manifest. Transport analysis from wrapped positions alone is refused; this is a data-contract detail, not an INCAR key."
     }
   ]
 }

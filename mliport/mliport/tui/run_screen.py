@@ -143,7 +143,7 @@ class RunScreen(Screen):
         if not model_type:
             raise ValueError(
                 "No MLIP backend selected; go back and choose UMA, MACE, "
-                "DPA or GRACE."
+                "DPA, GRACE or NEP."
             )
         if not model_file and not resume_path:
             raise ValueError("No model file configured; go back and set it.")
@@ -158,6 +158,8 @@ class RunScreen(Screen):
             "torch_num_threads",
             "default_dtype",
             "head",
+            "nep_runtime",
+            "nep_gpumd_command",
             "d3",
             "d3_xc",
             "d3_damping",

@@ -346,14 +346,18 @@ class IncarConfig(dict):
             )
         )
 
-        # Validate specific keys
-        valid_model_types = {"uma", "fairchem", "mace", "dpa", "grace"}
+        # Validate specific keys. The accepted set comes from the single
+        # backend-selection table so a new backend cannot be added to the CLI
+        # but rejected by the INCAR reader (or vice versa).
+        from mliport.backend_selection import model_type_choices  # noqa: PLC0415
+
+        valid_model_types = set(model_type_choices())
         if "MODEL_TYPE" in self:
             mt = self.get_str("MODEL_TYPE").lower()
             if mt not in valid_model_types:
                 errors.append(
                     f"Invalid MODEL_TYPE '{mt}'. "
-                    f"Must be one of: {', '.join(valid_model_types - {'fairchem'})}"
+                    f"Must be one of: {', '.join(sorted(valid_model_types))}"
                 )
 
         # UMA tasks + generic bulk/molecule (non-UMA engines)

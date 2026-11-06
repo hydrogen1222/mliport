@@ -32,7 +32,11 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mliport.backend_selection import canonical_model_type, option_applies_to_backend
+from mliport.backend_selection import (
+    canonical_model_type,
+    model_type_choices,
+    option_applies_to_backend,
+)
 from mliport.config import get_schema
 from mliport.devices import resolve_device_uuid
 from mliport.jobs import JobManager, JobStatus, _lock_file, _unlock_file
@@ -65,7 +69,9 @@ _STRUCTURAL_KEYS = {
     "options",
 }
 _VALID_CALC_TYPES = {"sp", "opt", "md", "neb", "confsearch"}
-_VALID_ENGINES = {"uma", "fairchem", "mace", "dpa", "grace"}
+#: Engines the queue may dispatch. Derived from the single backend table so a
+#: newly added backend cannot be runnable from the CLI but queued nowhere.
+_VALID_ENGINES = set(model_type_choices())
 _CALC_SCOPES = {"sp", "opt", "md", "neb", "batch", "confsearch"}
 
 #: option key -> CLI flag mapping for the shared command builder.
@@ -84,6 +90,8 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "neighbor_skin": ("--neighbor-skin",),
     "default_dtype": ("--dtype",),
     "head": ("--head",),
+    "nep_runtime": ("--nep-runtime",),
+    "nep_gpumd_command": ("--gpumd-command",),
     "d3": ("--d3", "--no-d3"),
     "d3_xc": ("--d3-xc",),
     "d3_damping": ("--d3-damping",),

@@ -286,9 +286,49 @@ def _grace_steps(
     ]
 
 
+def _nep_steps(
+    backend: BackendSpec,
+    profile: SourceProfile,
+    *,
+    cpu: bool,
+) -> list[InstallStep]:
+    """NEP (Calorine) install steps.
+
+    Calorine is a compiled C++ extension (numpy + ASE), not a deep-learning
+    framework, so there is no framework wheel to pin.  The native ``gpumd``
+    binary is a separate build that mliport deliberately does NOT perform
+    automatically: it needs a matching CUDA toolkit and an architecture flag,
+    and a silently mis-architected binary would fail at run time rather than
+    install time.  The plan therefore installs the ASE runtime and records the
+    prerequisite for the native runtime in a warning, which ``doctor --engine
+    nep`` re-checks afterwards.
+    """
+    python = f"{backend.venv_name}/bin/python"
+    steps: list[InstallStep] = [
+        InstallStep(
+            stage="pip",
+            description=f"Install {backend.label} ASE runtime (calorine + ASE)",
+            argv=[
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                python,
+                backend.requirement,
+                "ase>=3.23",
+                "numpy",
+            ],
+            env={"PIP_EXTRA_INDEX_URL": profile.index_url}
+            if getattr(profile, "index_url", None)
+            else {},
+        )
+    ]
+    return steps
+
+
 def generate_plan(
     gpus: Sequence[GpuInfo] | None,
-    engines: Sequence[str] = ("uma", "mace", "dpa", "grace"),
+    engines: Sequence[str] = ("uma", "mace", "dpa", "grace", "nep"),
     *,
     source: str = "auto",
     python_version: str = "3.12",
@@ -301,7 +341,7 @@ def generate_plan(
     Args:
         gpus: Detected GPUs (``None`` or empty = CPU-only).
         engines: Backend engines to install (``"uma"``, ``"mace"``,
-            ``"dpa"``, ``"grace"``).
+            ``"dpa"``, ``"grace"``, ``"nep"``).
         source: Source profile name (``"auto"``, ``"official"``, one of the
             ``"china"`` / explicit ``"china-*"`` profiles, ``"offline"``,
             or ``"custom"``).
@@ -335,6 +375,10 @@ def generate_plan(
             (backend.requirement, backend.requires_python),
         ]
         for bp in backend.arch_profiles.values():
+            if backend.framework not in {"torch", "tensorflow"}:
+                # NEP: the pin is the CUDA toolkit used to build gpumd, not a
+                # Python framework wheel, so there is no FRAMEWORK_PYTHON entry.
+                continue
             key = (backend.framework, bp.framework_version)
             if key not in FRAMEWORK_PYTHON:
                 raise InstallPlanError(f"Unknown framework Python/wheel support: {key}")
@@ -416,7 +460,15 @@ def generate_plan(
             plan.steps.append(_clean_step(backend))
         plan.steps.append(_venv_step(backend, py_ver))
 
-        if engine == "grace":
+        if engine == "nep":
+            plan.warnings.append(
+                "NEP: the native runtime needs a separately built `gpumd` "
+                "binary (CUDA toolkit + matching -arch=sm_XX). mliport does not "
+                "build it automatically; set NEP_GPUMD_COMMAND afterwards and "
+                "confirm with `mliport doctor --engine nep`."
+            )
+            plan.steps.extend(_nep_steps(backend, src, cpu=is_cpu))
+        elif engine == "grace":
             if is_cpu:
                 plan.warnings.append(
                     "TensorPotential 0.6.0 on Linux requires tensorflow[and-cuda] "
@@ -469,10 +521,13 @@ def generate_plan(
         # One immutable constraint set across every resolver stage. In
         # particular, installing the backend must not replace the CUDA build
         # selected by the earlier framework stage.
-        framework_pin = f"{backend.framework}=={bp.framework_version}"
-        if backend.framework == "torch":
-            framework_pin += "+cpu" if is_cpu else f"+{cuda_tag}"
-        pins = [framework_pin, backend.requirement, *bp.extra_packages]
+        pins = []
+        if backend.framework in {"torch", "tensorflow"}:
+            framework_pin = f"{backend.framework}=={bp.framework_version}"
+            if backend.framework == "torch":
+                framework_pin += "+cpu" if is_cpu else f"+{cuda_tag}"
+            pins.append(framework_pin)
+        pins.extend([backend.requirement, *bp.extra_packages])
         pins.extend(pkg for pkg in backend.install_packages()[1:] if "==" in pkg)
         constraint_path = f"{backend.venv_name}/mliport-constraints.txt"
         constraint_text = "\n".join(dict.fromkeys(pins)) + "\n"

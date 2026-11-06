@@ -9,9 +9,10 @@
 | DPA（DeepMD-kit） | [DPA](dpa.md) | `dpa` | `DPA-3.1-3M.pt`，配合 `--head Omat24` |
 | GRACE | [GRACE](grace.md) | `grace` | `GRACE-2L-OMAT-medium-base` |
 | UMA（FAIRChem） | [UMA](uma.md) | `uma`（或 `fairchem`） | `uma-s-1p2.pt`，配合 `--task omat` |
+| NEP | [NEP](nep.md) | `nep`（必须再加 `--nep-runtime ase|gpumd`） | 你自己的 `nep.txt` |
 
 各后端的框架和 Python 版本要求不同，所以各自装在单独的环境里（`.venv-mace`、`.venv-dpa`、
-`.venv-grace`、`.venv`），详见[安装](../installation.md)。检查某个后端能否正常运行，用 `doctor`：
+`.venv-grace`、`.venv`、`.venv-nep`），详见[安装](../installation.md)。检查某个后端能否正常运行，用 `doctor`：
 
 ```bash
 .venv-mace/bin/mliport doctor --engine mace --device auto

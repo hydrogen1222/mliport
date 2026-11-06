@@ -16,6 +16,38 @@ Internal (no user-visible behaviour change):
 
 New features:
 
+- **NEP backend with two explicit execution runtimes (`MODEL_TYPE = NEP`,
+  tracking PR #61).** `NEP_RUNTIME = ase` runs Calorine `CPUNEP` on `cpu`
+  (float64, in-process) or `GPUNEP` on `cuda` (float32, one `gpumd` subprocess
+  per ASE evaluation); `NEP_RUNTIME = gpumd` runs sp/opt/md in a single native
+  `gpumd` process on `cuda` (float32) with raw `native/` output, a normalised
+  `trajectory.extxyz`, unwrapped positions and a `manifest.json` carrying the
+  terminal status. The runtime is a required, explicit user decision in the
+  CLI, Python API, INCAR/settings, TUI and queue; mliport never infers it from
+  the device or falls back between the two, and `neb`/`batch`/`confsearch` are
+  refused for the native runtime instead of being rerouted. `gpumd` is only
+  invoked as an argv list (never through a shell) and its path, version and
+  SHA-256 are recorded. DFT-D3 is rejected for NEP (no evidence it avoids
+  double-counting a NEP van der Waals term). GPUMD's `nvt_*` coupling constant
+  `T_coup = tau_T/dt` is derived from the ASE-style `friction`/`bussi_tau`/
+  `nhc_tdamp` and recorded with the mapping. New `docs/backends/nep.md` and
+  `nep.zh.md`, `mliport doctor --engine nep`, and an opt-in `.venv-nep` install
+  plan entry. No existing backend default, dtype, task or output changed.
+- **Validation harness: model-identity comparison for directory artifacts
+  (audit H-01).** `validation/science/scripts/neb_suite.py` compared the
+  engine-recorded path hash with the manifest's `model_sha256`, which for a
+  GRACE SavedModel directory is the *distributed archive* identity. Every GRACE
+  saddle record was therefore a false `fail` even when the barrier, CI
+  convergence, force and negative-mode criteria all passed. The harness now
+  hashes the local artifact with the same algorithm `mliport.model_record`
+  uses (`common.artifact_sha256`) and records the manifest identity separately;
+  the file-by-file manifest check is unchanged. No threshold was relaxed, no
+  historical record rewritten.
+- **Validation harness: `--tiers t3` argument forwarding (audit H-02).**
+  `run_suite.py` started `omat_eval.py` without its required `--subset`, so the
+  tier could never run. `--subset` is now forwarded and `--tiers t3` without it
+  is rejected with an actionable message instead of an argparse failure inside
+  the child.
 - **Configuration search (`confsearch`, new `CALC_TYPE = CONFSEARCH`).** MD-based
   configuration search for one adsorbate on a periodic slab (spec revision 4,
   tracking PR #61): multiple starts (user-prepared mode A, or automatic

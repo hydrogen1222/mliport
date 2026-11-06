@@ -81,7 +81,11 @@ def test_backend_keys_match() -> None:
         assert backend.engine == key
         assert backend.version  # non-empty
         assert backend.distribution  # non-empty
-        assert backend.framework in ("torch", "tensorflow")
+        # NEP is deliberately not a deep-learning-framework backend: the ASE
+        # runtime is a compiled numpy extension (calorine) and the native
+        # runtime is an external gpumd binary, so there is no torch/TensorFlow
+        # wheel to pin.
+        assert backend.framework in ("torch", "tensorflow", "numpy")
 
 
 def test_arch_profile_keys_exist() -> None:

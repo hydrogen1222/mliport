@@ -212,6 +212,32 @@ class CalculatorFactory:
                 neighbor_cache=kwargs.get("neighbor_cache", True),
                 neighbor_skin=kwargs.get("neighbor_skin", 1.5),
             )
+        elif m_type == "nep":
+            from mliport.calculators.nep_calc import NEPCalculatorWrapper  # noqa: PLC0415
+
+            from mliport.backend_selection import (  # noqa: PLC0415
+                normalize_device_for_nep,
+                normalize_nep_runtime,
+            )
+
+            runtime = normalize_nep_runtime(kwargs.get("nep_runtime"))
+            # A NEP runtime the ASE adapter cannot express must be routed to
+            # the native GPUMD runner, never turned into a per-step ASE
+            # calculator (PR #61 section A.5).
+            if runtime == "gpumd":
+                raise ValueError(
+                    "NEP_RUNTIME=gpumd is a native gpumd process, not an ASE "
+                    "calculator. The engine dispatches it to "
+                    "mliport.gpumd.runner; do not construct it through "
+                    "CalculatorFactory."
+                )
+            base = NEPCalculatorWrapper(
+                model_path=model_path,
+                device=normalize_device_for_nep(runtime, device),
+                task=normalized_task,
+                nep_runtime=runtime,
+                gpumd_command=kwargs.get("nep_gpumd_command"),
+            )
         else:
             raise ValueError(
                 f"Unsupported model type: '{model_type}'. "

@@ -511,6 +511,66 @@ BACKENDS: dict[str, BackendSpec] = {
             ),
         },
     ),
+    # ── NEP ───────────────────────────────────────────────────────────
+    # NEP is a potential family, not a framework-specific network.  The ASE
+    # runtime needs the compiled ``calorine`` extension (numpy + ASE); the
+    # native runtime needs the separately built ``gpumd`` binary.  There is no
+    # torch/tensorflow wheel to pin, so ``framework`` is ``"numpy"`` and the
+    # arch profiles describe the CUDA toolkit the gpumd binary must target.
+    "nep": BackendSpec(
+        engine="nep",
+        label="NEP (Calorine / GPUMD)",
+        distribution="calorine",
+        version="4.1",
+        framework="numpy",
+        upstream_constraint="calorine>=3.5; gpumd built from source",
+        requires_python=SpecifierSet(">=3.9"),
+        arch_profiles={
+            "maxwell": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=False,
+                notes="gpumd must be built for sm_50; CUDA 13 dropped Maxwell. "
+                "Not verified by mliport.",
+            ),
+            "pascal": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=True,
+                notes="Build gpumd with CUDA_ARCH=-arch=sm_60.",
+            ),
+            "volta": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=True,
+                notes="V100 (sm_70). Build gpumd with CUDA_ARCH=-arch=sm_70; "
+                "verified locally with GPUMD 5.9.1 + CUDA 12.9.",
+            ),
+            "turing": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=True,
+                notes="Build gpumd with CUDA_ARCH=-arch=sm_75.",
+            ),
+            "ampere": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=True,
+                notes="Build gpumd with CUDA_ARCH=-arch=sm_80.",
+            ),
+            "ada": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=True,
+                notes="Build gpumd with CUDA_ARCH=-arch=sm_89.",
+            ),
+            "hopper": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=True,
+                notes="Build gpumd with CUDA_ARCH=-arch=sm_90.",
+            ),
+            "blackwell": BackendArchProfile(
+                framework_version="12.9",
+                upstream_supported=False,
+                notes="gpumd must be built for sm_100/sm_120 with a CUDA "
+                "toolkit that supports Blackwell. Not verified by mliport.",
+            ),
+        },
+    ),
     # ── GRACE ─────────────────────────────────────────────────────────
     "grace": BackendSpec(
         engine="grace",
