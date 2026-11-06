@@ -407,6 +407,14 @@ def test_engine_dispatches_gpumd_to_the_native_runner(tmp_path, monkeypatch):
     """``NEP_RUNTIME=gpumd`` must never construct an ASE calculator."""
     model = _nep_model(tmp_path)
     binary = _gpumd_executable(tmp_path)
+    # Resolving the leased GPU UUID shells out to ``nvidia-smi``; a unit test
+    # must not require a GPU present, so stand in for the resolver.
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "mliport.devices.resolve_visible_device",
+        lambda _device: SimpleNamespace(uuid="GPU-unit-test-uuid"),
+    )
     engine = CalculationEngine.from_config(
         EngineConfig(
             calc_type="sp",
