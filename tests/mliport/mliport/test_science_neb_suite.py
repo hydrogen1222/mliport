@@ -24,9 +24,11 @@ Scientific pins:
 from __future__ import annotations
 
 import importlib
+import json
 import math
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -37,6 +39,7 @@ _SCRIPTS = Path(__file__).resolve().parents[3] / "validation" / "science" / "scr
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+common = importlib.import_module("common")
 neb_suite = importlib.import_module("neb_suite")
 
 
@@ -496,9 +499,7 @@ def _write_band_checkpoint(tmp_path, images):
     )
 
 
-def _saddle_workflow_ctx(canonical_calc):
-    from types import SimpleNamespace
-
+def _saddle_workflow_ctx(canonical_calc, model_path):
     engines_mod = importlib.import_module("engines")
     return (
         engines_mod.EngineContext(
@@ -509,6 +510,7 @@ def _saddle_workflow_ctx(canonical_calc):
                 "upstream_model_id": "r01-toy",
                 "identity": "R01 analytic toy",
             },
+            model_path=str(model_path),
             wrapper=None,
             calculator=canonical_calc,
             device="cpu",
@@ -538,6 +540,10 @@ def _run_saddle_workflow(tmp_path, *, x_values, ci_converged, two_atoms=False):
             images.append(atoms)
     else:
         images = _double_well_band(x_values)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    toy_model = tmp_path / "toy.model"
+    toy_model.write_bytes(b"deterministic toy artifact for the R01 identity check")
+    artifact_hash = common.artifact_sha256(toy_model)
     checkpoint = _write_band_checkpoint(tmp_path, images)
     ci_calc = _DoubleWellCalculator()
     ci_image = images[2].copy()
@@ -550,7 +556,7 @@ def _run_saddle_workflow(tmp_path, *, x_values, ci_converged, two_atoms=False):
         "barrier_forward_sampled_eV": 1.0,
         "model": {
             "model_type": "mace",
-            "model_sha256": "a" * 64,
+            "model_sha256": artifact_hash,
             "task": "bulk",
             "head_effective": None,
             "dtype_requested": "float64",
@@ -558,7 +564,7 @@ def _run_saddle_workflow(tmp_path, *, x_values, ci_converged, two_atoms=False):
         },
         "latest_checkpoint": str(checkpoint),
     }
-    ctx, args = _saddle_workflow_ctx(ci_calc)
+    ctx, args = _saddle_workflow_ctx(ci_calc, toy_model)
     args.out = tmp_path / "records"
     neb_suite._STATE[(ctx.engine, ctx.profile_id)] = {"ci_neb5": {"payload": payload}}
     code = neb_suite.workflow_saddle_hessian(ctx, args, args.out)
@@ -836,3 +842,192 @@ def test_neb_suite_module_constants_match_taskbook():
     assert neb_suite.ZERO_SCALE_EV_A2 == 1e-3
     assert neb_suite.NEG_ROBUST_EV_A2 == -1e-2
     assert neb_suite.TANGENT_OVERLAP_MIN == 0.8
+
+
+# ---------------------------------------------------------------------------
+# AUD-008 / H-01 + H-02: harness identity and tier-argument forwarding
+# ---------------------------------------------------------------------------
+
+
+def _single_file_artifact(tmp_path: Path) -> Path:
+    model = tmp_path / "model.bin"
+    model.write_bytes(b"deterministic artifact bytes")
+    return model
+
+
+def _directory_artifact(tmp_path: Path) -> Path:
+    """A GRACE-like exported SavedModel: several files, nested directories."""
+    model = tmp_path / "saved_model"
+    (model / "variables").mkdir(parents=True, exist_ok=True)
+    (model / "saved_model.pb").write_bytes(b"protobuf-graph")
+    (model / "variables" / "variables.index").write_bytes(b"index")
+    (model / "variables" / "variables.data-00000-of-00001").write_bytes(b"weights")
+    return model
+
+
+def test_artifact_sha256_matches_mliport_path_hashing(tmp_path):
+    """H-01: the harness must hash artifacts exactly as mliport does.
+
+    ``mliport.model_record.hash_model_path`` writes the value under
+    ``model_sha256`` in a result provenance record.  If the harness used a
+    different scheme (e.g. "sha256 of the single saved_model.pb") every GRACE
+    directory artifact would be reported as an identity mismatch.
+    """
+    from mliport.model_record import hash_model_path
+
+    single = _single_file_artifact(tmp_path)
+    assert common.artifact_sha256(single) == hash_model_path(
+        single, error_class=ValueError
+    )
+    directory = _directory_artifact(tmp_path)
+    assert common.artifact_sha256(directory) == hash_model_path(
+        directory, error_class=ValueError
+    )
+
+
+def test_artifact_sha256_is_order_independent_and_content_sensitive(tmp_path):
+    first = _directory_artifact(tmp_path / "a")
+    second = _directory_artifact(tmp_path / "b")
+    assert common.artifact_sha256(first) == common.artifact_sha256(second)
+    (second / "variables" / "variables.index").write_bytes(b"index-changed")
+    assert common.artifact_sha256(first) != common.artifact_sha256(second)
+
+
+def test_model_identity_check_compares_like_with_like_for_directory_artifacts():
+    """H-01: a GRACE directory artifact must not be a false ``fail``.
+
+    The manifest's ``model_sha256`` for a directory profile is the *archive*
+    identity.  Comparing it with the engine's path hash can never succeed, so
+    it produced a false ``fail`` on every GRACE saddle record (a barrier that
+    itself passed every physical criterion).
+    """
+    directory_hash = "a" * 64
+    ctx = SimpleNamespace(
+        engine="grace",
+        task="bulk",
+        head=None,
+        model_sha256="b" * 64,  # archive identity from the manifest
+        artifact_sha256=directory_hash,
+    )
+    payload = {
+        "model": {
+            "model_type": "grace",
+            "model_sha256": directory_hash,
+            "task": "bulk",
+        }
+    }
+    result = neb_suite.model_identity_check(ctx, payload)
+    assert result["ok"] is True, result["checks"]
+    assert result["checks"]["model_sha256"] is True
+    assert result["manifest_model_sha256"] == "b" * 64
+    assert result["artifact_sha256"] == directory_hash
+
+
+def test_model_identity_check_still_rejects_a_genuinely_different_artifact():
+    """The H-01 fix must not weaken the identity gate."""
+    ctx = SimpleNamespace(
+        engine="grace",
+        task="bulk",
+        head=None,
+        model_sha256="b" * 64,
+        artifact_sha256="a" * 64,
+    )
+    payload = {
+        "model": {
+            "model_type": "grace",
+            "model_sha256": "c" * 64,  # different artifact
+            "task": "bulk",
+        }
+    }
+    result = neb_suite.model_identity_check(ctx, payload)
+    assert result["ok"] is False
+    assert result["checks"]["model_sha256"] is False
+
+
+def test_run_suite_forwards_subset_to_omat_eval(tmp_path, monkeypatch):
+    """H-02: ``--tiers t3`` must pass ``--subset`` to ``omat_eval.py``.
+
+    Without the forwarding, t3 started ``omat_eval.py`` with its required
+    ``--subset`` missing, so the tier could never produce evidence.
+    """
+    import run_suite
+
+    calls: list[list[str]] = []
+
+    class _Done:
+        returncode = 0
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(list(cmd))
+        return _Done()
+
+    venv_python = tmp_path / "python"
+    venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(run_suite, "venv_python", lambda *_a, **_k: str(venv_python))
+    monkeypatch.setattr(run_suite.subprocess, "run", fake_run)
+    monkeypatch.setattr(run_suite, "resolve_gpu_uuid", lambda _device: None)
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"profiles": {"nep_omat": {"head": None, "dtype": None}}}),
+        encoding="utf-8",
+    )
+    subset = tmp_path / "omat24_subset.extxyz"
+    subset.write_text("1\ncomment\nH 0 0 0\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_suite.py",
+            "--tiers",
+            "t3",
+            "--engine",
+            "nep",
+            "--profile-id",
+            "nep_omat",
+            "--model",
+            str(tmp_path / "nep.txt"),
+            "--manifest",
+            str(manifest),
+            "--out",
+            str(tmp_path / "out"),
+            "--subset",
+            str(subset),
+        ],
+    )
+    assert run_suite.main() == 0
+    assert len(calls) == 1
+    command = calls[0]
+    assert command[1].endswith("omat_eval.py")
+    assert "--subset" in command
+    assert command[command.index("--subset") + 1] == str(subset)
+
+
+def test_run_suite_rejects_t3_without_subset(monkeypatch, capsys):
+    """H-02: the failure must be actionable, not an argparse error in t3."""
+    import run_suite
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_suite.py",
+            "--tiers",
+            "t3",
+            "--engine",
+            "mace",
+            "--profile-id",
+            "p",
+            "--model",
+            "m",
+            "--manifest",
+            "mf",
+            "--out",
+            "o",
+        ],
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        run_suite.main()
+    assert exit_info.value.code == 2
+    assert "--subset" in capsys.readouterr().err
