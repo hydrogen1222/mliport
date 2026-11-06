@@ -20,7 +20,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
@@ -250,6 +250,7 @@ class NativeGPUMDRunner(BaseRunner):
         write_stress: bool = True,
         write_json: bool = True,
         identity_extra: Mapping[str, Any] | None = None,
+        allow_existing_native: bool = False,
     ):
         """Initialise the runner; no GPUMD process is launched yet."""
         self.calc_type = _normalise_calc_type(calc_type)
@@ -338,6 +339,7 @@ class NativeGPUMDRunner(BaseRunner):
         )
         self.restart_interval = restart_interval
         self.unwrapped = bool(unwrapped)
+        self.allow_existing_native = bool(allow_existing_native)
         self.timeout_s = timeout_s
 
         # Accepted for constructor compatibility with the ASE runners; the
@@ -411,7 +413,7 @@ class NativeGPUMDRunner(BaseRunner):
                 "nep_cutoffs": dict(self._nep_info["cutoffs"]),
             }
         )
-
+        self._claim_native_directory()
         self.native_dir.mkdir(parents=True, exist_ok=True)
         model_xyz_path = self.native_dir / "model.xyz"
         build_model_xyz(prepared, model_xyz_path)
@@ -448,6 +450,56 @@ class NativeGPUMDRunner(BaseRunner):
             self._error = exc
             self._write_manifest_safely("failed")
             raise
+
+    #: Files whose presence means ``native/`` already holds a finished run.
+    _PREVIOUS_RUN_MARKERS: ClassVar[tuple[str, ...]] = (
+        "run.in",
+        "model.xyz",
+        "thermo.out",
+        "traj.xyz",
+        "sp.xyz",
+        "opt.xyz",
+        "restart.xyz",
+    )
+
+    def _claim_native_directory(self) -> None:
+        """Never mix two runs inside one ``native/`` directory.
+
+        GPUMD's ``dump_xyz`` and ``dump_thermo`` **append**. Re-running into a
+        directory that already holds a previous run therefore produced a
+        ``sp.xyz`` with two frames (the SP parser correctly refused it) and
+        would silently concatenate two trajectories for MD — i.e. analysis
+        over frames from two different potentials/runs.  Both outcomes are
+        unacceptable, so a stale directory is refused unless the caller
+        explicitly allowed overwriting, and even then the old tree is moved
+        aside (never deleted) as ``native.attempt-<n>``.
+        """
+        if not self.native_dir.exists():
+            return
+        stale = [
+            name
+            for name in self._PREVIOUS_RUN_MARKERS
+            if (self.native_dir / name).exists()
+        ]
+        if not stale:
+            return
+        if not self.allow_existing_native:
+            raise RuntimeError(
+                f"{self.native_dir} already contains output from a previous run "
+                f"({', '.join(sorted(stale))}). GPUMD appends to dump_xyz and "
+                "thermo.out, so running here would mix two trajectories. Use a "
+                "fresh output directory, or pass --overwrite to move the old "
+                "raw output aside."
+            )
+        index = 1
+        while (self.output_dir / f"native.attempt-{index}").exists():
+            index += 1
+        archived = self.output_dir / f"native.attempt-{index}"
+        self.native_dir.rename(archived)
+        self.log(
+            f"Previous raw GPUMD output moved to {archived} (--overwrite); "
+            "nothing was deleted."
+        )
 
     # ------------------------------------------------------------------
     # Process execution and provenance

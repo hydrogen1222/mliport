@@ -618,6 +618,10 @@ class CalculationEngine:
             progress_callback=progress_callback,
             cancel_event=cancel_event,
             write_json=self.config.settings.get("write_json", True),
+            # ``--overwrite`` is the user's explicit permission to reuse the
+            # directory; the runner then moves the previous raw tree aside
+            # instead of appending to it.
+            allow_existing_native=bool(self.config.overwrite),
             identity_extra={
                 "nep_runtime": "gpumd",
                 "device_requested": self.config.device,

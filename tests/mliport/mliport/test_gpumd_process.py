@@ -412,3 +412,64 @@ def test_leased_gpu_uuid_reaches_the_child_environment(tmp_path):
         manifest["provenance"]["cuda_visible_devices"]
         == "GPU-1234abcd-0000-1111-2222-333344445555"
     )
+
+
+# ---------------------------------------------------------------------------
+# AUD-006 analogue: never mix two runs in one native/ directory
+# ---------------------------------------------------------------------------
+
+
+def _stub_runner(tmp_path: Path, **kwargs):
+    from types import SimpleNamespace
+
+    from mliport.gpumd.runner import NativeGPUMDRunner
+
+    script = _script(tmp_path, "stub_gpumd.sh", "exit 0")
+    model = tmp_path / "nep.txt"
+    model.write_text("nep4 1 O\ncutoff 8 4 232 26\n", encoding="utf-8")
+    engine = SimpleNamespace(
+        gpumd_command=str(script), nep_path=str(model), task="bulk"
+    )
+    run_dir = tmp_path / "run"
+    (run_dir / "native").mkdir(parents=True, exist_ok=True)
+    return NativeGPUMDRunner(
+        engine, calc_type="sp", output_dir=run_dir, verbose=False, **kwargs
+    )
+
+
+def test_stale_native_directory_is_refused_instead_of_appended(tmp_path):
+    """GPUMD appends to dump_xyz/thermo.out, so a rerun must not reuse them.
+
+    A real re-run into the same directory appended a second frame to ``sp.xyz``;
+    the SP parser then correctly refused it, but for MD the frames of two runs
+    would have been concatenated into one analysis trajectory.
+    """
+    runner = _stub_runner(tmp_path)
+    (runner.native_dir / "sp.xyz").write_text("previous run\n", encoding="utf-8")
+    with pytest.raises(
+        RuntimeError, match="already contains output from a previous run"
+    ):
+        runner.run(
+            Atoms("O2", positions=[[0, 0, 0], [1.2, 0, 0]], cell=[6, 6, 6], pbc=True)
+        )
+    # Nothing was deleted.
+    assert (runner.native_dir / "sp.xyz").read_text(
+        encoding="utf-8"
+    ) == "previous run\n"
+
+
+def test_explicit_overwrite_moves_the_previous_raw_tree_aside(tmp_path):
+    runner = _stub_runner(tmp_path, allow_existing_native=True)
+    (runner.native_dir / "traj.xyz").write_text("previous run\n", encoding="utf-8")
+    runner._claim_native_directory()
+    archived = runner.output_dir / "native.attempt-1"
+    assert archived.is_dir()
+    assert (archived / "traj.xyz").read_text(encoding="utf-8") == "previous run\n"
+    assert not runner.native_dir.exists() or not list(runner.native_dir.iterdir())
+
+
+def test_clean_native_directory_is_untouched(tmp_path):
+    runner = _stub_runner(tmp_path)
+    runner._claim_native_directory()
+    assert runner.native_dir.is_dir()
+    assert not (runner.output_dir / "native.attempt-1").exists()
