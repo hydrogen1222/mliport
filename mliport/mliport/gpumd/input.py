@@ -300,6 +300,7 @@ def parse_nep_model(path: str | Path) -> dict[str, Any]:
         "raw_first_line": data["raw_first_line"],
     }
 
+
 def _resolve_thermostat(
     *,
     dt_fs: float,
