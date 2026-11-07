@@ -153,7 +153,7 @@ def convert_checkpoint(source: Path, target: Path, *, trusted: bool) -> dict[str
         }
         # Publish both only after all checks pass. They contain no model tensors.
         # On an error, leave no file that could be mistaken for verified output.
-        target.write_bytes(temp.read_bytes())
+        os.replace(temp, target)
         try:
             provenance_file.write_text(
                 json.dumps(record, indent=2, ensure_ascii=False) + "\n",
