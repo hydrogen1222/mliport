@@ -496,6 +496,15 @@ class NEPCalculatorWrapper(BaseMLIPCalculator):
                 None if header is None else list(header["element_types"])
             ),
             "nep_model_version": None if header is None else header["model_version"],
+            "nep_format_version": None if header is None else header["format_version"],
+            "nep_model_type": None if header is None else header["model_type"],
+            "nep_cutoff_by_element_A": (
+                None if header is None else header["cutoff_by_element_A"]
+            ),
+            "nep_zbl": None if header is None else header["zbl"],
+            "nep_energy_reference_eV": (
+                None if header is None else header["energy_reference_eV"]
+            ),
             "nep_cutoff_radial": None if header is None else header["cutoff_radial"],
             "nep_cutoff_angular": None if header is None else header["cutoff_angular"],
             "per_call_subprocess": self._device != "cpu",
