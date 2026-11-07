@@ -126,6 +126,14 @@ jobs:
           MLIPORT_REAL_INSTALL_LOGDIR: ${{ runner.temp }}/nep-install-logs
         run: |
           .venv-ci/bin/python -m pytest tests/mliport/mliport/test_install_nep_real.py -v -rA -p no:cacheprovider
+      - name: Print install logs
+        if: always()
+        run: |
+          for f in "${{ runner.temp }}"/nep-install-logs/*.log; do
+            echo "::group::$(basename "$f")"
+            cat "$f"
+            echo "::endgroup::"
+          done
       - name: Upload install logs
         if: always()
         uses: actions/upload-artifact@v4
