@@ -45,6 +45,7 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
             if not first:
                 raise ValueError(f"NEP model file is empty: {model_path}")
             tokens = first.strip().split()
+            had_leading_blank = not tokens
             if not tokens:
                 if first.startswith("\ufeff"):
                     raise ValueError("NEP model header must not start with a BOM")
