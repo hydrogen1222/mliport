@@ -16,10 +16,19 @@ from typing import Any
 
 _SYMBOL = re.compile(r"[A-Z][a-z]?")
 _LEGACY = re.compile(r"nep([0-9]+)(?:_(zbl))?", re.IGNORECASE)
-_VERSIONED_FIELDS = frozenset({
-    "format_version", "model", "cutoff", "zbl", "n_max", "basis_size",
-    "l_max", "ann", "energy_reference",
-})
+_VERSIONED_FIELDS = frozenset(
+    {
+        "format_version",
+        "model",
+        "cutoff",
+        "zbl",
+        "n_max",
+        "basis_size",
+        "l_max",
+        "ann",
+        "energy_reference",
+    }
+)
 
 
 def _float_fields(values: list[str], *, name: str) -> list[float]:
@@ -60,7 +69,11 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
                 raise ValueError(
                     f"Malformed NEP model header (unrecognised type) {first.strip()!r}"
                 )
-            if versioned and (had_leading_blank or not first.startswith("nep ") or first.startswith("\ufeff")):
+            if versioned and (
+                had_leading_blank
+                or not first.startswith("nep ")
+                or first.startswith("\ufeff")
+            ):
                 raise ValueError("Versioned NEP header must be the physical first line")
             if len(tokens) < 3:
                 raise ValueError("NEP model header needs a count and element symbols")
@@ -103,8 +116,14 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
     legacy_version = int(match.group(1)) if match else None
     if versioned:
         required = {
-            "format_version", "model", "cutoff", "n_max", "basis_size",
-            "l_max", "ann", "energy_reference",
+            "format_version",
+            "model",
+            "cutoff",
+            "n_max",
+            "basis_size",
+            "l_max",
+            "ann",
+            "energy_reference",
         }
         if "model" in fields and fields["model"] != ["nep"]:
             raise ValueError(
@@ -143,7 +162,9 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
                 raise ValueError("NEP v1 cutoff needs 4 or 2*T+2 numbers")
             neighbors = values[-2:]
             if any(x < 0 or not x.is_integer() for x in neighbors):
-                raise ValueError("NEP cutoff neighbour capacities must be nonnegative integers")
+                raise ValueError(
+                    "NEP cutoff neighbour capacities must be nonnegative integers"
+                )
             max_neighbours_radial, max_neighbours_angular = map(int, neighbors)
         else:
             if len(values) not in (2, 4):
@@ -170,9 +191,13 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
 
     energy_reference: list[float] | None = None
     if "energy_reference" in fields:
-        energy_reference = _float_fields(fields["energy_reference"], name="energy_reference")
+        energy_reference = _float_fields(
+            fields["energy_reference"], name="energy_reference"
+        )
         if len(energy_reference) != count:
-            raise ValueError("NEP energy_reference must have exactly one value per element")
+            raise ValueError(
+                "NEP energy_reference must have exactly one value per element"
+            )
 
     return {
         "model_token": tokens[0],
