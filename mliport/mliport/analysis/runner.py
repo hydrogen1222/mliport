@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from mliport.analysis.dataset import TrajectoryDataset
+from mliport.analysis.dataset import TrajectoryDataset, _gpumd_manifest
 from mliport.analysis.schema import AnalysisRequest
 from mliport.analysis.validation import InvalidTrajectoryError, UnsupportedAnalysisError
 
@@ -207,6 +207,7 @@ _RUN_METADATA_FILES = (
     "run_context.json",
     "raw/md.csv",
     "md.csv",
+    "manifest.json",
 )
 
 
@@ -247,15 +248,21 @@ def source_fingerprint(path: Path) -> dict[str, Any]:
     resolved = path.expanduser().resolve()
     run_dir = _run_dir_for(resolved)
     if resolved.is_dir():
-        for candidate in (
-            resolved / "raw" / "trajectory.traj",
-            resolved / "trajectory.traj",
-            resolved / "vasp" / "XDATCAR",
-            resolved / "XDATCAR",
-        ):
-            if candidate.is_file():
-                resolved = candidate
-                break
+        if _gpumd_manifest(resolved) is not None:
+            # A native GPUMD run directory is identified by its manifest; the
+            # trajectory may legitimately be absent (a failed run), which the
+            # loader then refuses with a precise message.
+            resolved = resolved / "trajectory.extxyz"
+        else:
+            for candidate in (
+                resolved / "raw" / "trajectory.traj",
+                resolved / "trajectory.traj",
+                resolved / "vasp" / "XDATCAR",
+                resolved / "XDATCAR",
+            ):
+                if candidate.is_file():
+                    resolved = candidate
+                    break
     if not resolved.exists():
         return {"path": str(resolved), "exists": False}
     stat = resolved.stat()

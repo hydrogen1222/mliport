@@ -159,13 +159,51 @@ GPUMD `ensemble nvt_*` 的耦合常数是 `T_coup = tau_T / dt`（无量纲）�
 <out>/native/stdout.log
 <out>/native/stderr.log
 <out>/native/restart.xyz     仅当请求 dump_restart 时
-<out>/native/gpumd_provenance.json
+<out>/native/provenance.json
 <out>/trajectory.extxyz      规范化轨迹（step、time、cell、pbc、unwrapped）
-<out>/model.manifest.json    终态 + 身份 + 帧计数
+<out>/manifest.json          终态 + 身份 + 已验证的帧时间表
 ```
 
 原始 GPUMD 文件在任何规范化之前写出，成功或失败都不会被删除。`gpumd` 退出码为 0 但关键
 输出缺失或无法解析时，状态记为 `failed`，绝不会记为 `completed`。
+
+### MD 何时才算 `completed`？
+
+退出码 0 只说明进程结束了。只有当 dump 是所执行 `run.in` 的完整产物时，MD 才记为
+`completed`：
+
+- 帧数等于 `steps // dump_interval`（GPUMD 每完成 `dump_interval` 步写一帧，请求步数不是
+  间隔整数倍时，末尾不足一个间隔的部分不写帧；V100 实测 20 步/间隔 10 得 2 帧，200 步/间隔
+  20 得 10 帧）；
+- 每一帧都有记录下来的 `Time=`（绝不推断），时间严格递增、间隔均匀等于
+  `dump_interval * dt`、落在积分步网格上，且最后一帧位于所请求运行的最后一个 dump 间隔内；
+- 每一帧都是输入的元素种类与顺序、完整三维 PBC、输入晶胞（原生 NVE/NVT 为定胞）以及与第
+  0 帧相同的列；
+- `thermo.out` 行数与帧数一致，且表头给出 `dump_thermo`、`dt_output`、`num_atoms` 时必须
+  与 `run.in`/输入一致。
+
+任一条不满足即记为 `failed`，原因写入清单与结果。规范化的 `trajectory.extxyz` 先写成
+`.partial`，所有检查通过后才发布，因此失败的运行不会留下看似结果的文件，`native/` 下的原始
+文件作为证据保留。清单还记录已验证的时间表（`trajectory.schedule`：帧数、首末步与时间、
+间隔、坐标约定）以及轨迹的 SHA-256。
+
+第一帧在其 dump 间隔内的偏移是 GPUMD 的实现细节，这里不做断言；帧数、间隔均匀性与对请求
+窗口的覆盖已足以确定运行长度。请求步数不是间隔整数倍时，最后一次 dump 之后的步数没有任何
+输出，对它们只有退出码这一项证据。
+
+转换是单次流式处理（内存里只有一帧），长运行的后处理开销取决于单帧大小而非运行长度。
+
+### 加载原生运行目录做分析
+
+`TrajectoryDataset.load(<out>)`（因此所有 `mliport analyze` 任务）接受原生 GPUMD 运行目录。
+清单具有权威性：必须是状态为 `completed` 的 MD 运行，`trajectory.extxyz` 必须与运行器记录
+的 SHA-256 逐字节一致，并且帧必须与清单一致（帧数、原子数、PBC、坐标约定、记录的时间与
+步数）。否则加载器抛出 `InvalidTrajectoryError`，不会生成数据集。数据集携带 GPUMD 记录的
+时间轴与步数、dump 间隔与 `dt`、三维 PBC、GPUMD 自己使用的原子质量、`run.in` 中的目标温度，
+以及实际 dump 的坐标约定（带 `unwrapped_position` 为 `unwrapped`，否则为 `wrapped`）。与清
+单矛盾的显式 `positions_convention`、`md_timestep_fs`、`frame_stride_steps`、
+`frame_interval_fs` 会被拒绝。原生 dump 不含速度（`dump_xyz` 不带 `vel`），因此 VACF 类分析
+对它不可用。
 
 ### 单位与符号
 

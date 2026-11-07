@@ -14,6 +14,32 @@ Internal (no user-visible behaviour change):
   a shared helper that additionally records `dispersion`. No scientific record
   invalidated and no result changes.
 
+Native GPUMD runtime fixes (PR #88; no existing backend result changes):
+
+- **Native GPUMD run directories load through `TrajectoryDataset.load()`.** The
+  analysis layer could not discover `trajectory.extxyz`/`manifest.json` at all.
+  The loader now accepts a native run directory only when its manifest is
+  `completed`, describes an MD run, and vouches for the trajectory (SHA-256,
+  frame count, atoms, PBC, position convention, recorded time and step axes);
+  anything else raises `InvalidTrajectoryError`. The dataset keeps the
+  GPUMD-recorded times and steps, 3-D PBC, unwrapped coordinates when dumped
+  (otherwise `wrapped`, never promoted), and GPUMD's own per-atom masses.
+  Missing time is never inferred.
+- **Exit status 0 is no longer completion for native MD.** The dump must hold
+  `steps // dump_interval` frames with a recorded, uniform, on-grid time axis
+  ending inside the requested window, the input species/PBC/cell in every frame,
+  and a `thermo.out` aligned with it. A short or mixed dump is `failed`, leaves
+  no `trajectory.extxyz`, and keeps the raw output. Non-divisible save intervals
+  are accepted.
+- **Native MD post-processing streams.** The dump was parsed into a list of
+  `Atoms`, parsed again for the summary and again for writing; it is now read
+  once, one frame at a time, and the normalised trajectory is published
+  atomically after every check passed.
+- **A zero-time-step native single point whose coordinates or cell moved now
+  fails** instead of reporting `positions_unchanged: false` as `completed`.
+- The manifest only advertises a trajectory this run committed, and the docs'
+  layout text now names the real files (`manifest.json`, `native/provenance.json`).
+
 Batch fixes and features:
 
 - **Batch outputs no longer collide on equal file names.** Each structure's

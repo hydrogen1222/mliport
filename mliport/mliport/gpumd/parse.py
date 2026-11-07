@@ -23,9 +23,10 @@ the raw GPUMD tensors are preserved under ``Frame.extra`` for provenance.
 
 from __future__ import annotations
 
+import contextlib
 import math
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -37,12 +38,16 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Frame",
+    "GPUMDIncompleteRunError",
     "GPUMDParseError",
+    "NormalizedTrajectoryWriter",
     "iter_extxyz_frames",
     "md_frames_summary",
+    "normalized_frame_atoms",
     "optimization_result",
     "parse_extxyz_frames",
     "parse_thermo_out",
+    "read_thermo_header",
     "single_point_from_dump",
     "voigt_stress",
     "write_normalized_trajectory",
@@ -95,6 +100,17 @@ _MINIMIZE_COMMAND = re.compile(r"^\s*minimize\s+(?P<body>.+)$")
 
 class GPUMDParseError(ValueError):
     """Raised when native GPUMD output is missing, truncated or inconsistent."""
+
+
+class GPUMDIncompleteRunError(GPUMDParseError):
+    """Raised when ``gpumd`` ended cleanly but its output is not the whole run.
+
+    Exit status 0 only says that the process ended.  A dump that is well formed
+    frame by frame can still be short (a killed job manager, a full disk, a
+    stub or a malformed external program), and reporting it as a completed run
+    would hand a truncated trajectory to transport analysis as if it covered the
+    requested simulation time.
+    """
 
 
 @dataclass
@@ -600,6 +616,80 @@ def parse_thermo_out(path: str | Path) -> dict[str, np.ndarray]:
     return result
 
 
+def _int_or_none(token: str) -> int | None:
+    """Parse an integer header token, or ``None`` when it is not one."""
+    try:
+        return int(token)
+    except ValueError:
+        return None
+
+
+def _float_or_none(token: str) -> float | None:
+    """Parse a finite float header token, or ``None`` when it is not one."""
+    try:
+        value = float(token)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def read_thermo_header(path: str | Path) -> dict[str, Any]:
+    """Read the ``#`` metadata block of ``thermo.out`` without reading its rows.
+
+    GPUMD 5.9.1 records the output interval (``dump_thermo``), the output period
+    in fs (``dt_output``) and the atom count above the numeric rows.  Those
+    values are cross-checked against ``run.in`` so that a ``thermo.out`` that
+    was appended to by a second run, or written for another structure, cannot
+    pass as this run's.  A field that is absent or unparseable is ``None``: this
+    function never guesses, and the caller decides whether a missing field is
+    acceptable.
+
+    Args:
+        path: ``thermo.out`` file.
+
+    Returns:
+        Mapping with ``dump_thermo`` (int), ``dt_output_fs`` (float, only when
+        the file states the unit ``fs``), ``num_atoms`` (int) and
+        ``format_version`` (str); each is ``None`` when not stated.
+
+    Raises:
+        GPUMDParseError: If the file does not exist.
+    """
+    source = Path(path)
+    if not source.is_file():
+        raise GPUMDParseError(f"thermo.out not found: {source}")
+    header: dict[str, Any] = {
+        "dump_thermo": None,
+        "dt_output_fs": None,
+        "num_atoms": None,
+        "format_version": None,
+    }
+    with source.open("r", encoding="utf-8", errors="strict") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if not stripped.startswith("#"):
+                break
+            tokens = stripped.lstrip("#").split()
+            if len(tokens) < 2:
+                continue
+            keyword = tokens[0].lower()
+            if keyword == "dump_thermo":
+                header["dump_thermo"] = _int_or_none(tokens[1])
+            elif keyword == "num_atoms":
+                header["num_atoms"] = _int_or_none(tokens[1])
+            elif keyword == "format_version":
+                header["format_version"] = tokens[1]
+            elif (
+                keyword == "dt_output"
+                and len(tokens) >= 3
+                and tokens[2].lower() == "fs"
+            ):
+                header["dt_output_fs"] = _float_or_none(tokens[1])
+    return header
+
+
 def voigt_stress(stress: Any) -> np.ndarray:
     """Return the 6-component Voigt form of a 3x3 stress tensor.
 
@@ -898,8 +988,164 @@ def md_frames_summary(path: str | Path) -> dict[str, Any]:
     }
 
 
+def normalized_frame_atoms(
+    frame: Frame,
+    *,
+    dt_fs: float | None = None,
+    source_path: str | Path | None = None,
+) -> Atoms:
+    """Return the ASE ``Atoms`` that one normalised trajectory frame is written from.
+
+    The frame carries ``step``, ``time``, ``energy``, PBC, Lattice and the chosen
+    positions.  When unwrapped positions exist they become ``pos`` and the
+    wrapped positions are retained as ``wrapped_position``; otherwise ``pos`` is
+    the wrapped position (no replacement is invented here).
+
+    ``mliport_step`` / ``mliport_time_fs`` carry the same values as ``step`` /
+    ``time`` under the names the analysis dataset reads.  Neither is ever
+    inferred when the source frame does not state it, except that a missing step
+    is derived from ``time_fs / dt_fs`` exactly as before.
+
+    Args:
+        frame: One frame parsed from native GPUMD output.
+        dt_fs: MD time step, used only to derive a missing frame ``step`` from
+            ``time_fs``.
+        source_path: Optional raw source recorded in the frame's info.
+
+    Returns:
+        A new ``Atoms`` object; the input frame is not modified.
+    """
+    atoms = frame.atoms.copy()
+    if frame.unwrapped_positions is not None:
+        positions = np.asarray(frame.unwrapped_positions, dtype=float)
+        convention = "unwrapped"
+        atoms.set_array(
+            "wrapped_position",
+            np.asarray(frame.atoms.get_positions(), dtype=float),
+        )
+        atoms.set_array("unwrapped_position", positions)
+    else:
+        positions = np.asarray(frame.atoms.get_positions(), dtype=float)
+        convention = "wrapped"
+    atoms.set_positions(positions)
+    mass = frame.extra.get("mass")
+    if mass is not None:
+        # GPUMD's own per-atom masses (the ones it integrated with), not ASE's
+        # table: they are part of the physics the trajectory was produced with.
+        atoms.set_masses(np.asarray(mass, dtype=float).reshape(-1))
+    if frame.forces is not None:
+        atoms.set_array("forces", np.asarray(frame.forces, dtype=float))
+    if frame.velocities is not None:
+        atoms.set_array("vel", np.asarray(frame.velocities, dtype=float))
+
+    step = frame.step
+    if step is None and frame.time_fs is not None and dt_fs:
+        step = int(round(float(frame.time_fs) / float(dt_fs)))
+    if step is not None:
+        atoms.info["step"] = int(step)
+        atoms.info["mliport_step"] = int(step)
+    if frame.time_fs is not None:
+        atoms.info["time"] = float(frame.time_fs)
+        atoms.info["mliport_time_fs"] = float(frame.time_fs)
+    atoms.info["energy"] = float(frame.energy_eV)
+    atoms.info["positions_convention"] = convention
+    if source_path is not None:
+        atoms.info["source"] = str(source_path)
+    atoms.calc = None
+    return atoms
+
+
+class NormalizedTrajectoryWriter:
+    """Write a normalised extended-XYZ trajectory one frame at a time.
+
+    Long MD runs hold 10^4-10^6 frames.  Building every frame as an ``Atoms``
+    object before writing (and again to summarise) costs
+    ``O(frames x atoms)`` memory and doubles the I/O, so the writer keeps one
+    frame in memory and appends it to disk immediately.
+
+    Frames are written to ``<path>.partial`` and only :meth:`commit` moves the
+    file to ``<path>``.  A run that fails an acceptance check after the last
+    frame was streamed (short dump, thermo mismatch, ...) therefore never leaves
+    a ``trajectory.extxyz`` that looks like a result; the raw GPUMD output is
+    the evidence and is untouched.  The context manager removes the partial
+    file on any exit that did not commit.
+
+    Example:
+        >>> with NormalizedTrajectoryWriter(out, dt_fs=1.0) as writer:
+        ...     for frame in iter_extxyz_frames(dump):
+        ...         writer.write(frame)
+        ...     writer.commit()
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        dt_fs: float | None = None,
+        source_path: str | Path | None = None,
+    ) -> None:
+        self.path = Path(path)
+        self._partial = self.path.with_name(self.path.name + ".partial")
+        self._dt_fs = dt_fs
+        self._source_path = source_path
+        self._handle: Any = None
+        self._ase_write: Any = None
+        self._count = 0
+        self._committed = False
+
+    @property
+    def nframes(self) -> int:
+        """Number of frames written so far."""
+        return self._count
+
+    def __enter__(self) -> NormalizedTrajectoryWriter:
+        try:
+            from ase.io import write as ase_write  # noqa: PLC0415
+        except ImportError as exc:  # pragma: no cover - ASE is a hard dependency
+            raise GPUMDParseError("ASE is required to write a trajectory") from exc
+        self._ase_write = ase_write
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = self._partial.open("w", encoding="utf-8")
+        return self
+
+    def write(self, frame: Frame) -> None:
+        """Append one frame to the partial file."""
+        if self._handle is None:
+            raise RuntimeError("NormalizedTrajectoryWriter is not open")
+        atoms = normalized_frame_atoms(
+            frame, dt_fs=self._dt_fs, source_path=self._source_path
+        )
+        try:
+            self._ase_write(self._handle, atoms, format="extxyz")
+        except (OSError, ValueError) as exc:
+            raise GPUMDParseError(
+                f"Could not write normalised trajectory {self.path}: {exc}"
+            ) from exc
+        self._count += 1
+
+    def commit(self) -> Path:
+        """Publish the partial file as the final trajectory and return its path."""
+        if self._count == 0:
+            raise GPUMDParseError("Cannot write an empty normalised trajectory")
+        self._close()
+        self._partial.replace(self.path)
+        self._committed = True
+        return self.path
+
+    def _close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self._close()
+        if not self._committed:
+            with contextlib.suppress(OSError):
+                self._partial.unlink()
+
+
 def write_normalized_trajectory(
-    frames: list[Frame],
+    frames: Iterable[Frame],
     path: str | Path,
     *,
     dt_fs: float | None = None,
@@ -907,11 +1153,10 @@ def write_normalized_trajectory(
 ) -> Path:
     """Write a deterministic, ASE-readable normalised extended-XYZ trajectory.
 
-    Frames carry ``step``, ``time``, ``energy``, PBC, Lattice and the chosen
-    positions.  When unwrapped positions exist they become ``pos`` and the
-    wrapped positions are retained as ``wrapped_position``; otherwise ``pos``
-    is the wrapped position and the caller must record that MSD analysis is not
-    eligible (no replacement is invented here).
+    ``frames`` may be any iterable, including a generator: frames are consumed
+    and written one at a time, never collected.  See
+    :func:`normalized_frame_atoms` for what each frame carries and
+    :class:`NormalizedTrajectoryWriter` for the commit semantics.
 
     Args:
         frames: Frames parsed from native GPUMD output.
@@ -926,53 +1171,9 @@ def write_normalized_trajectory(
     Raises:
         GPUMDParseError: If ``frames`` is empty or ASE cannot write the file.
     """
-    if not frames:
-        raise GPUMDParseError("Cannot write an empty normalised trajectory")
-    try:
-        from ase.io import write as ase_write  # noqa: PLC0415
-    except ImportError as exc:  # pragma: no cover - ASE is a hard dependency
-        raise GPUMDParseError("ASE is required to write a trajectory") from exc
-
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    output: list[Atoms] = []
-    for frame in frames:
-        atoms = frame.atoms.copy()
-        if frame.unwrapped_positions is not None:
-            positions = np.asarray(frame.unwrapped_positions, dtype=float)
-            convention = "unwrapped"
-            atoms.set_array(
-                "wrapped_position",
-                np.asarray(frame.atoms.get_positions(), dtype=float),
-            )
-            atoms.set_array("unwrapped_position", positions)
-        else:
-            positions = np.asarray(frame.atoms.get_positions(), dtype=float)
-            convention = "wrapped"
-        atoms.set_positions(positions)
-        if frame.forces is not None:
-            atoms.set_array("forces", np.asarray(frame.forces, dtype=float))
-        if frame.velocities is not None:
-            atoms.set_array("vel", np.asarray(frame.velocities, dtype=float))
-
-        step = frame.step
-        if step is None and frame.time_fs is not None and dt_fs:
-            step = int(round(float(frame.time_fs) / float(dt_fs)))
-        if step is not None:
-            atoms.info["step"] = int(step)
-        if frame.time_fs is not None:
-            atoms.info["time"] = float(frame.time_fs)
-        atoms.info["energy"] = float(frame.energy_eV)
-        atoms.info["positions_convention"] = convention
-        if source_path is not None:
-            atoms.info["source"] = str(source_path)
-        atoms.calc = None
-        output.append(atoms)
-
-    try:
-        ase_write(str(destination), output, format="extxyz")
-    except (OSError, ValueError) as exc:
-        raise GPUMDParseError(
-            f"Could not write normalised trajectory {destination}: {exc}"
-        ) from exc
-    return destination
+    with NormalizedTrajectoryWriter(
+        path, dt_fs=dt_fs, source_path=source_path
+    ) as writer:
+        for frame in frames:
+            writer.write(frame)
+        return writer.commit()

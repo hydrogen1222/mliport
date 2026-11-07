@@ -181,14 +181,68 @@ amu·Å/(ASE internal time unit), so the conversion is
 <out>/native/stdout.log
 <out>/native/stderr.log
 <out>/native/restart.xyz    only when dump_restart was requested
-<out>/native/gpumd_provenance.json
+<out>/native/provenance.json
 <out>/trajectory.extxyz     normalised frames (step, time, cell, pbc, unwrapped)
-<out>/model.manifest.json   terminal status + identity + frame accounting
+<out>/manifest.json         terminal status + identity + verified frame schedule
 ```
 
 Raw GPUMD files are written before any normalisation and never deleted, on
 success or failure. A `gpumd` exit status of 0 with a missing or unparseable
 required output is reported as `failed`, never `completed`.
+
+### When is an MD run `completed`?
+
+Exit status 0 only says that the process ended. An MD run is `completed` only
+if its dump is the complete product of the `run.in` that was executed:
+
+- the number of frames equals `steps // dump_interval` (GPUMD writes one frame
+  per `dump_interval` completed steps, so a request that is not a multiple of
+  the interval ends with a partial interval that writes no frame; 20 steps at
+  interval 10 gave 2 frames and 200 at 20 gave 10 on a V100);
+- every frame carries a recorded `Time=` (never inferred), the times are
+  strictly increasing and uniformly spaced by `dump_interval * dt`, sit on the
+  integration-step grid, and the last frame lies inside the final dump interval
+  of the requested run;
+- every frame has the input species in the input order, full 3-D PBC, the input
+  cell (the native NVE/NVT ensembles are fixed-cell) and the same columns as
+  frame 0;
+- `thermo.out` has exactly one row per frame and, when its header states them,
+  the same `dump_thermo`, `dt_output` and `num_atoms` as `run.in`/the input.
+
+A run that fails any of these is `failed` with the reason in the manifest and in
+the result. The normalised `trajectory.extxyz` is written to a `.partial` file
+and published only after every check passed, so a failed run never leaves
+something that looks like a result; the raw `native/` files stay as evidence.
+The manifest also records the verified schedule (`trajectory.schedule`: frame
+count, first/last step and time, interval, position convention) and the
+trajectory's SHA-256.
+
+The offset of the *first* frame inside its dump interval is a GPUMD detail that
+is not asserted here; count, spacing and coverage of the requested window fix
+the run length without it. The steps after the last dump of a request that is
+not a multiple of the interval leave no output, so for them the exit status is
+the only evidence.
+
+The conversion is a single streaming pass (one frame in memory), so the
+post-processing cost of a long run is bounded by the frame size, not the run
+length.
+
+### Loading a native run for analysis
+
+`TrajectoryDataset.load(<out>)` (and therefore every `mliport analyze`
+task) accepts a native GPUMD run directory. The manifest is authoritative: the
+run must be an MD run with status `completed`, `trajectory.extxyz` must be
+byte-identical to the SHA-256 the runner recorded, and the frames must agree
+with the manifest (count, atoms, PBC, position convention, recorded times and
+steps). Otherwise the loader raises `InvalidTrajectoryError` instead of
+producing a dataset. The dataset carries the GPUMD-recorded time axis and steps,
+the dump interval and `dt`, 3-D PBC, GPUMD's own per-atom masses, the target
+temperature from `run.in`, and the position convention actually dumped
+(`unwrapped` with `unwrapped_position`, otherwise `wrapped`). Explicit
+`positions_convention`, `md_timestep_fs`, `frame_stride_steps` or
+`frame_interval_fs` that contradict the manifest are refused. The native dump
+holds no velocities (`dump_xyz` is run without `vel`), so VACF-type analyses are
+unavailable for it.
 
 ### Units and signs
 

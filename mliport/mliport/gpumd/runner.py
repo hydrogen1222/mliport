@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
+from mliport.gpumd.audit import MDDumpAudit, MDScheduleReport
 from mliport.gpumd.input import (
     build_model_xyz,
     build_run_in,
@@ -32,12 +33,16 @@ from mliport.gpumd.input import (
     validate_elements,
 )
 from mliport.gpumd.parse import (
+    GPUMDIncompleteRunError,
     GPUMDParseError,
-    md_frames_summary,
+    NormalizedTrajectoryWriter,
+    iter_extxyz_frames,
     optimization_result,
     parse_extxyz_frames,
     parse_thermo_out,
+    read_thermo_header,
     single_point_from_dump,
+    voigt_stress,
     write_normalized_trajectory,
 )
 from mliport.gpumd.process import (
@@ -53,6 +58,8 @@ from mliport.runners.base import BaseRunner
 if TYPE_CHECKING:
     from ase import Atoms
 
+    from mliport.gpumd.parse import Frame
+
 __all__ = ["NEPGPUMDIdentity", "NativeGPUMDRunner"]
 
 _CALC_TYPE_ALIASES = {
@@ -65,6 +72,10 @@ _CALC_TYPE_ALIASES = {
 }
 
 _MANIFEST_SCHEMA = "mliport.gpumd-manifest/1"
+
+#: A zero-time-step single point must reproduce the input structure to this
+#: wrapped-image tolerance (Angstrom); anything larger means GPUMD moved atoms.
+_SP_GEOMETRY_TOLERANCE_A = 1.0e-6
 
 
 def _normalise_calc_type(value: str) -> str:
@@ -108,6 +119,15 @@ def _engine_value(engine: Any, names: tuple[str, ...], default: Any = None) -> A
             if value is not None:
                 return value
     return default
+
+
+def _file_sha256(path: Path) -> str:
+    """Return the SHA-256 of a file, read in chunks (never held in memory)."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _json_default(value: Any) -> Any:
@@ -392,6 +412,11 @@ class NativeGPUMDRunner(BaseRunner):
         self._last_command: list[str] | None = None
         self._result: dict[str, Any] | None = None
         self._run_entry: dict[str, Any] | None = None
+        self._md_report: MDScheduleReport | None = None
+        # True only after *this* run committed a verified trajectory.  A file
+        # that merely exists at ``trajectory_path`` may belong to an earlier run
+        # in the same output directory and must never be advertised as ours.
+        self._trajectory_written = False
         self._error: BaseException | None = None
         self._secondary_errors: list[dict[str, str]] = []
 
@@ -625,7 +650,7 @@ class NativeGPUMDRunner(BaseRunner):
             "stress": None,
             "natoms": None,
             "trajectory_path": (
-                str(self.trajectory_path) if self.trajectory_path.exists() else None
+                str(self.trajectory_path) if self._trajectory_written else None
             ),
             "native_dir": str(self.native_dir),
             "provenance": self._provenance,
@@ -673,9 +698,7 @@ class NativeGPUMDRunner(BaseRunner):
             parsed["forces"],
             context="native GPUMD single point",
         )
-        positions_unchanged, max_delta = self._positions_unchanged(
-            atoms, parsed["positions"], parsed["cell"]
-        )
+        positions_unchanged, max_delta = self._require_unchanged_geometry(atoms, parsed)
         frames = parse_extxyz_frames(dump)
         if frames and frames[0].step is None:
             frames[0].step = 0
@@ -705,6 +728,7 @@ class NativeGPUMDRunner(BaseRunner):
             }
         )
         self._run_entry = self._run_entry_for("sp")
+        self._trajectory_written = True
         return result
 
     def _parse_opt_result(self, atoms: Atoms) -> dict[str, Any]:
@@ -756,38 +780,70 @@ class NativeGPUMDRunner(BaseRunner):
             }
         )
         self._run_entry = self._run_entry_for("opt")
+        self._trajectory_written = True
         return result
 
     def _parse_md_result(self, atoms: Atoms) -> dict[str, Any]:
-        """Parse ``traj.xyz`` + ``thermo.out`` into the standard MD result."""
+        """Verify ``traj.xyz`` + ``thermo.out`` and convert them in one pass.
+
+        The dump is streamed exactly once: every frame is checked by
+        :class:`~mliport.gpumd.audit.MDDumpAudit`, written to the normalised
+        trajectory and dropped, so memory is bounded by one frame however long
+        the run was.  The normalised trajectory is published only after the
+        whole dump has been accepted as the complete product of ``run.in``;
+        exit status 0 alone never makes a run ``completed``.
+        """
         dump = self.native_dir / "traj.xyz"
         thermo_path = self.native_dir / "thermo.out"
-        frames = parse_extxyz_frames(dump)
-        summary = md_frames_summary(dump)
+        provenance = self._run_in_provenance or {}
+        steps = int(provenance["steps"])
+        dump_interval = int(provenance["dump_interval"])
+        dt_fs = float(provenance["timestep_fs"])
         thermo = parse_thermo_out(thermo_path)
+        thermo_header = read_thermo_header(thermo_path)
         temperatures = np.asarray(thermo["T"], dtype=float)
         if temperatures.size == 0:
             raise GPUMDParseError(f"{thermo_path}: no temperature rows")
         final_temperature = float(temperatures[-1])
         if not math.isfinite(final_temperature):
             raise GPUMDParseError(f"{thermo_path}: final temperature is not finite")
-        final = frames[-1]
-        self._check_finite(
-            atoms,
-            final.energy_eV,
-            final.forces,
-            context="native GPUMD MD final frame",
+        if thermo_header["num_atoms"] not in (None, len(atoms)):
+            raise GPUMDIncompleteRunError(
+                f"{thermo_path}: thermo.out states {thermo_header['num_atoms']} "
+                f"atoms but the input structure has {len(atoms)}"
+            )
+        audit = MDDumpAudit(
+            steps=steps,
+            dump_interval=dump_interval,
+            dt_fs=dt_fs,
+            symbols=atoms.get_chemical_symbols(),
+            cell=atoms.cell.array,
+            thermo_rows=int(temperatures.size),
+            thermo_dump_interval=thermo_header["dump_thermo"],
+            thermo_dt_output_fs=thermo_header["dt_output_fs"],
+            source=str(dump),
         )
-        for frame in frames:
-            if frame.step is None and frame.time_fs is not None and self.timestep_fs:
-                frame.step = int(round(float(frame.time_fs) / float(self.timestep_fs)))
-        write_normalized_trajectory(
-            frames,
-            self.trajectory_path,
-            dt_fs=self.timestep_fs,
-            source_path=dump,
-        )
-        unwrapped_available = bool(summary["unwrapped_available"])
+        final: Frame | None = None
+        with NormalizedTrajectoryWriter(
+            self.trajectory_path, dt_fs=dt_fs, source_path=dump
+        ) as writer:
+            for frame in iter_extxyz_frames(dump):
+                audit.observe_frame(frame)
+                writer.write(frame)
+                final = frame
+            report = audit.verify()
+            if final is None:  # pragma: no cover - verify() rejects empty dumps
+                raise GPUMDIncompleteRunError(f"{dump}: the dump contains no frames")
+            self._check_finite(
+                atoms,
+                final.energy_eV,
+                final.forces,
+                context="native GPUMD MD final frame",
+            )
+            writer.commit()
+        self._trajectory_written = True
+        self._md_report = report
+        unwrapped_available = report.positions_convention == "unwrapped"
         msd_eligible = unwrapped_available
         msd_reason = (
             None
@@ -799,8 +855,6 @@ class NativeGPUMDRunner(BaseRunner):
         )
         stress = None
         if final.stress_eV_A3 is not None:
-            from mliport.gpumd.parse import voigt_stress  # noqa: PLC0415
-
             stress = voigt_stress(final.stress_eV_A3)
         result = self._base_result()
         result.update(
@@ -808,21 +862,23 @@ class NativeGPUMDRunner(BaseRunner):
                 "status": "completed",
                 "converged": None,
                 "energy": final.energy_eV,
-                "energy_per_atom": final.energy_eV / summary["natoms"],
+                "energy_per_atom": final.energy_eV / report.natoms,
                 "forces": final.forces,
                 "stress": stress,
-                "natoms": summary["natoms"],
+                "natoms": report.natoms,
                 "temperature": final_temperature,
                 "temperature_mean": float(np.mean(temperatures)),
                 "temperature_min": float(np.min(temperatures)),
                 "temperature_max": float(np.max(temperatures)),
                 "nsteps": self.steps,
-                "nframes": summary["nframes"],
-                "steps_per_frame": [frame.step for frame in frames],
-                "times_fs": summary["times_fs"],
+                "nframes": report.nframes,
+                "steps_per_frame": report.steps.tolist(),
+                "times_fs": report.times_fs.tolist(),
+                "md_schedule": report.to_dict(),
                 "unwrapped_available": unwrapped_available,
                 "msd_eligible": msd_eligible,
                 "msd_ineligible_reason": msd_reason,
+                "positions_convention": report.positions_convention,
                 "thermo_summary": {
                     "nrows": int(temperatures.size),
                     "T_final": final_temperature,
@@ -840,29 +896,8 @@ class NativeGPUMDRunner(BaseRunner):
         self._run_entry = self._run_entry_for("md")
         self._run_entry.update(
             {
-                "steps": self.steps,
-                "dt_fs": self.timestep_fs,
-                "ensemble": (
-                    None if self.ensemble is None else str(self.ensemble).upper()
-                ),
-                "thermostat": self.thermostat,
-                "thermostat_mapping": (
-                    None
-                    if self._run_in_provenance is None
-                    else self._run_in_provenance.get("thermostat_mapping")
-                ),
-                "T_coup": (
-                    None
-                    if self._run_in_provenance is None
-                    else self._run_in_provenance.get("T_coup")
-                ),
-                "seed": self.seed,
-                "dump_interval": (
-                    None
-                    if self._run_in_provenance is None
-                    else self._run_in_provenance.get("dump_interval")
-                ),
-                "nframes": summary["nframes"],
+                "dump_interval": dump_interval,
+                "nframes": report.nframes,
                 "unwrapped_available": unwrapped_available,
                 "msd_eligible": msd_eligible,
                 "msd_ineligible_reason": msd_reason,
@@ -940,7 +975,47 @@ class NativeGPUMDRunner(BaseRunner):
         delta -= np.round(delta)
         delta_cartesian = delta @ matrix
         max_delta = float(np.max(np.abs(delta_cartesian)))
-        return max_delta <= 1e-6, max_delta
+        return max_delta <= _SP_GEOMETRY_TOLERANCE_A, max_delta
+
+    def _require_unchanged_geometry(
+        self, atoms: Atoms, parsed: Mapping[str, Any]
+    ) -> tuple[bool, float]:
+        """Refuse a zero-time-step single point whose geometry is not the input.
+
+        ``run.in`` for a single point uses ``time_step 0``, so the dumped
+        positions and cell must reproduce the input structure.  If they do not,
+        the energy and forces describe a different structure than the one that
+        was asked for; reporting them as ``completed`` would put a wrong number
+        into a ranking.  The check is made against the dump's own cell as well,
+        because wrapped fractional coordinates are only comparable when both
+        sides use the same cell.
+
+        Returns:
+            ``(True, max_wrapped_displacement_A)`` when the geometry is unchanged.
+
+        Raises:
+            GPUMDParseError: If any atom moved, or the cell changed, by more
+                than ``_SP_GEOMETRY_TOLERANCE_A``.
+        """
+        positions_unchanged, max_delta = self._positions_unchanged(
+            atoms, parsed["positions"], parsed["cell"]
+        )
+        dumped_cell = np.asarray(parsed["cell"], dtype=float)
+        input_cell = np.asarray(atoms.cell.array, dtype=float)
+        if dumped_cell.shape != input_cell.shape:
+            cell_change = float("inf")
+        else:
+            cell_change = float(np.max(np.abs(dumped_cell - input_cell)))
+        if not positions_unchanged or cell_change > _SP_GEOMETRY_TOLERANCE_A:
+            raise GPUMDParseError(
+                "native GPUMD single point does not reproduce the input "
+                f"structure: largest wrapped atomic displacement {max_delta:.3e} A, "
+                f"largest cell change {cell_change:.3e} A (tolerance "
+                f"{_SP_GEOMETRY_TOLERANCE_A:g} A) although run.in uses time_step 0. "
+                "The dumped energy and forces belong to a different structure than "
+                "the one requested, so no single-point result is reported."
+            )
+        return positions_unchanged, max_delta
 
     def _relative(self, path: str | Path) -> str:
         """Path relative to ``output_dir`` for the manifest."""
@@ -970,11 +1045,14 @@ class NativeGPUMDRunner(BaseRunner):
             "opt_dump": (self.native_dir / "opt.xyz", "gpumd-extxyz-dump"),
             "restart": (self.native_dir / "restart.xyz", "gpumd-restart"),
             "neighbor": (self.native_dir / "neighbor.out", "text"),
-            "trajectory": (
+        }
+        if self._trajectory_written:
+            # A trajectory.extxyz that this run did not commit may belong to an
+            # earlier run in the same output directory; it is never advertised.
+            candidates["trajectory"] = (
                 self.trajectory_path,
                 "mliport-normalized-extxyz",
-            ),
-        }
+            )
         artifacts: dict[str, dict[str, Any]] = {}
         for name, (path, file_format) in candidates.items():
             if not path.is_file():
@@ -1008,6 +1086,7 @@ class NativeGPUMDRunner(BaseRunner):
             "msd_eligible",
             "positions_unchanged",
             "positions_max_delta_A",
+            "positions_convention",
             "converged_reason",
         )
         for key in scalar_keys:
@@ -1020,6 +1099,40 @@ class NativeGPUMDRunner(BaseRunner):
                 continue
             summary[key] = value
         return summary
+
+    def _trajectory_block(self) -> dict[str, Any] | None:
+        """Describe the committed normalised trajectory for ``TrajectoryDataset``.
+
+        ``None`` unless this run committed a verified trajectory.  The block
+        records only what was *verified* (frame count, recorded times and steps,
+        position convention, the MD schedule audit); the loader refuses a
+        trajectory whose own frames contradict it.
+        """
+        if not self._trajectory_written:
+            return None
+        block: dict[str, Any] = {
+            "path": self._relative(self.trajectory_path),
+            "format": "extxyz",
+            "sha256": _file_sha256(self.trajectory_path),
+            "bytes": self.trajectory_path.stat().st_size,
+        }
+        if self._md_report is not None:
+            report = self._md_report
+            block.update(
+                {
+                    "nframes": report.nframes,
+                    "natoms": report.natoms,
+                    "positions_convention": report.positions_convention,
+                    "dt_fs": report.dt_fs,
+                    "frame_interval_fs": report.frame_interval_fs,
+                    "first_step": report.first_step,
+                    "last_step": report.last_step,
+                    "first_time_fs": report.first_time_fs,
+                    "last_time_fs": report.last_time_fs,
+                    "schedule": report.to_dict(),
+                }
+            )
+        return block
 
     def _manifest_payload(self, status: str) -> dict[str, Any]:
         """Build the manifest payload for the current run."""
@@ -1054,9 +1167,10 @@ class NativeGPUMDRunner(BaseRunner):
             "native_dir": self._relative(self.native_dir),
             "trajectory_path": (
                 self._relative(self.trajectory_path)
-                if self.trajectory_path.exists()
+                if self._trajectory_written
                 else None
             ),
+            "trajectory": self._trajectory_block(),
             "command": self._last_command,
             "process": (
                 None if self._last_outcome is None else self._last_outcome.to_dict()
