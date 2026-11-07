@@ -148,8 +148,8 @@ options. Step budgets are part of that identity in this beta, so a resume that
 changes `--max-steps` is rejected with `Resume fingerprint is incompatible`. The
 checkpoint is left untouched when that happens.
 
-A resume restores the band geometry recorded in the checkpoint and restarts the
+A resume restores the band geometry recorded in the checkpoint but restarts
 NEB optimisation from there (`geometry_resume_only`); it does not replay the
-previous optimiser state. The resumed run therefore converges to the same
-saddle, but its path — and its final energy — can differ slightly from an
-uninterrupted run. Every earlier checkpoint and export is kept.
+previous optimiser state. Convergence, the final saddle and the barrier can
+differ from an uninterrupted run, so verify convergence and compare the
+results before interpreting them. Every earlier checkpoint and export is kept.
