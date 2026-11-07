@@ -86,6 +86,10 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
                 key = words[0].lower()
                 if versioned and key not in _VERSIONED_FIELDS:
                     raise ValueError(f"Unsupported NEP v1 header field: {key}")
+                if not versioned and key not in _VERSIONED_FIELDS:
+                    # Legacy models have an unmarked numerical parameter body;
+                    # do not parse its thousands of coefficients as header rows.
+                    break
                 if key in fields:
                     raise ValueError(f"Repeated NEP header field: {key}")
                 fields[key] = words[1:]
