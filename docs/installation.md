@@ -1,7 +1,7 @@
 # Installation
 
 mliport does not live in one big environment. Each backend (MACE, DPA, GRACE,
-UMA) pulls in its own deep-learning stack, and those stacks do not always get
+UMA, and the opt-in NEP) pulls in its own stack, and those stacks do not always get
 along, so the installer builds **one environment per backend** and installs
 mliport into each. The `mliport` you run from `.venv-mace` can only run MACE;
 the one in `.venv` can only run UMA, and so on. Pick the backends you need,
@@ -30,6 +30,26 @@ On a machine without one:
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
+NEP is opt-in: it is not in the default engine list, because its native runtime
+also needs a `gpumd` binary that you build yourself (see
+[NEP](backends/nep.md)). Add it explicitly:
+
+```bash
+./scripts/install_mliport.sh --engines nep --device cpu     # CPU ASE runtime (Calorine CPUNEP)
+./scripts/install_mliport.sh --engines nep --device auto    # GPU machine; the closing doctor needs your gpumd build
+```
+
+Like every other backend, `.venv-nep` gets the pinned `calorine` and an editable
+mliport in one resolver run, so `.venv-nep/bin/mliport` exists and `doctor` can
+run. The installer does not compile `gpumd`. With `--device cpu` the install
+needs no `gpumd`: the CPU ASE runtime works immediately. With `--device cuda`, or
+`--device auto` on a machine with an NVIDIA GPU, the closing `doctor` checks the
+CUDA path and fails naming `gpumd` until one is on `PATH` or in
+`MLIPORT_GPUMD_COMMAND`. The environment is already installed by then, but the
+`bin/mliport-nep` launcher is only written after every step succeeds, so either
+build `gpumd` and re-run the installer, or install with `--device cpu` /
+`--skip-doctor` (and call `.venv-nep/bin/mliport` directly in the meantime).
+
 Pass fewer engines if you only need some. `--dry-run` prints every step without
 executing anything. Unless you give `--skip-doctor`, the installer runs
 `mliport doctor` in each environment when it finishes. The analysis, transport
@@ -53,9 +73,14 @@ any scientific option for you.
 | UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
 | MACE | `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
 | DPA (DeepMD-kit) | `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit==3.1.3` (torch 2.10.0) |
-| NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (numpy 12.9) |
+| NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (NumPy/ASE, resolved by the installer; gpumd built with CUDA Toolkit 12.9) |
 | GRACE | `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
 <!-- END GENERATED -->
+
+For NEP the parenthesis names two different things: Calorine runs on NumPy and
+ASE, which the installer resolves together with mliport (neither is pinned
+separately), while `CUDA Toolkit 12.9` is the toolkit the separately built
+`gpumd` binary was verified with. They are not one version.
 
 The `Python` column is what the installer will accept for that backend: the
 intersection of the Python versions mliport supports, the backend's own
@@ -76,6 +101,7 @@ installer never quietly picks a different version.
 .venv-dpa/bin/mliport  doctor --engine dpa  --device auto
 .venv-grace/bin/mliport doctor --engine grace --device auto
 .venv/bin/mliport       doctor --engine uma  --device auto
+.venv-nep/bin/mliport   doctor --engine nep  --device cpu     # if you installed NEP
 ```
 
 Each command exits 0 when the required checks pass and ends with a line such as
@@ -93,6 +119,7 @@ Call the CLI from the environment that owns the backend:
 .venv-dpa/bin/mliport   sp structure.cif --model model.pt   --model-type dpa --head Omat24
 .venv-grace/bin/mliport sp structure.cif --model saved_model --model-type grace
 .venv/bin/mliport       sp structure.cif --model uma.pt     --model-type uma
+.venv-nep/bin/mliport   sp structure.cif --model nep.txt    --model-type nep --nep-runtime ase --device cpu
 ```
 
 The launchers in `./bin/` run exactly these commands. On Windows each
@@ -167,7 +194,7 @@ installer from fetching a managed interpreter.
 
 A four-engine GPU install takes roughly 25–35 GB, most of it PyTorch and
 TensorFlow; a CPU install is smaller. To remove a backend, delete its
-environment directory (`.venv-mace`, `.venv-dpa`, `.venv-grace` or `.venv`).
+environment directory (`.venv-mace`, `.venv-dpa`, `.venv-grace`, `.venv-nep` or `.venv`).
 The repository and your model files are untouched, and the `./bin/mliport-*`
 launchers go with the `bin/` directory. Run the installer again to recreate an
 environment.

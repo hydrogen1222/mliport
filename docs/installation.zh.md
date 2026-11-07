@@ -1,6 +1,6 @@
 # 安装
 
-四个后端（MACE、DPA、GRACE、UMA）各自依赖不同版本的深度学习框架，放在同一个环境里经常
+各后端（MACE、DPA、GRACE、UMA，以及需要显式选择的 NEP）各自依赖不同的运行时栈，放在同一个环境里经常
 冲突。所以安装脚本给**每个后端单独建一个环境**，每个环境里各装一份 mliport。`.venv-mace`
 里的 `mliport` 只能跑 MACE，`.venv` 里的只能跑 UMA，其余类推。需要哪个后端就装哪个，用的
 时候从对应环境里调用 `mliport`。
@@ -27,6 +27,22 @@ cd mliport
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
+NEP 需要显式选择：它不在默认引擎列表里，因为它的原生路径还需要你自己编译的 `gpumd`
+（见 [NEP](backends/nep.md)）：
+
+```bash
+./scripts/install_mliport.sh --engines nep --device cpu     # CPU 的 ASE 路径（Calorine CPUNEP）
+./scripts/install_mliport.sh --engines nep --device auto    # 有 GPU 的机器；结尾的 doctor 需要你编译的 gpumd
+```
+
+与其他后端一样，`.venv-nep` 在同一次依赖解析里装入固定版本的 `calorine` 和可编辑安装的
+mliport，所以 `.venv-nep/bin/mliport` 一定存在，`doctor` 才能运行。安装脚本不会编译
+`gpumd`。用 `--device cpu` 安装时不需要 `gpumd`，CPU 的 ASE 路径装好即可使用。用 `--device cuda`，或者在
+有 NVIDIA GPU 的机器上用 `--device auto`，结尾的 `doctor` 会检查 CUDA 路径，在 `PATH` 或
+`MLIPORT_GPUMD_COMMAND` 里找不到 `gpumd` 时会报错并点名 `gpumd`。此时环境已经装好，但
+`bin/mliport-nep` 启动器要等所有步骤都成功才会写出；可以编译好 `gpumd` 后重新运行安装脚本，也可以改用
+`--device cpu` 或 `--skip-doctor` 安装（期间直接用 `.venv-nep/bin/mliport`）。
+
 只要部分后端时，`--engines` 后面少写几个就行。`--dry-run` 只打印要执行的步骤，不真正安装。
 安装结束时脚本会在每个环境里运行一次 `mliport doctor`（加 `--skip-doctor` 可以跳过）。分析、
 输运和电解质相关的依赖会一起装好，不用另外安装。
@@ -48,9 +64,13 @@ cd mliport
 | UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
 | MACE | `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
 | DPA (DeepMD-kit) | `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit==3.1.3` (torch 2.10.0) |
-| NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (numpy 12.9) |
+| NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1`（NumPy/ASE 由安装器解析；gpumd 需用 CUDA Toolkit 12.9 编译） |
 | GRACE | `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
 <!-- END GENERATED -->
+
+NEP 一行括号里的两个东西不是同一个版本：Calorine 运行在 NumPy 和 ASE 之上，二者由安装器与
+mliport 一起解析（不单独锁定）；`CUDA Toolkit 12.9` 则是单独编译的 `gpumd` 二进制所验证过的
+工具包版本。
 
 `Python` 一列是该后端可用的 Python 版本，取 mliport、后端本身和所需框架三者支持范围的交集。
 这张表由兼容性注册表（`mliport/mliport/install/compatibility.py`）自动生成，具体的版本锁定
@@ -67,6 +87,7 @@ cd mliport
 .venv-dpa/bin/mliport  doctor --engine dpa  --device auto
 .venv-grace/bin/mliport doctor --engine grace --device auto
 .venv/bin/mliport       doctor --engine uma  --device auto
+.venv-nep/bin/mliport   doctor --engine nep  --device cpu     # 若安装了 NEP
 ```
 
 必需的检查都通过时，命令以 0 退出，最后一行类似 `Environment checks passed for MACE on CUDA.`。
@@ -83,6 +104,7 @@ cd mliport
 .venv-dpa/bin/mliport   sp structure.cif --model model.pt   --model-type dpa --head Omat24
 .venv-grace/bin/mliport sp structure.cif --model saved_model --model-type grace
 .venv/bin/mliport       sp structure.cif --model uma.pt     --model-type uma
+.venv-nep/bin/mliport   sp structure.cif --model nep.txt    --model-type nep --nep-runtime ase --device cpu
 ```
 
 `./bin/` 里的启动脚本执行的就是这些命令。Windows 上每个环境里有一个 `Scripts\mliport.exe`，
@@ -144,7 +166,7 @@ Turing 之前的 GPU 依赖 CUDA 12.6 版本，而 PyTorch 从 2.15 起不再提
 ## 磁盘占用与卸载
 
 四个后端都装 GPU 版大约占 25–35 GB，大部分是 PyTorch 和 TensorFlow；CPU 版小一些。要删掉
-某个后端，直接删除它的环境目录（`.venv-mace`、`.venv-dpa`、`.venv-grace` 或 `.venv`）即可，
+某个后端，直接删除它的环境目录（`.venv-mace`、`.venv-dpa`、`.venv-grace`、`.venv-nep` 或 `.venv`）即可，
 仓库和模型文件不受影响。`./bin/mliport-*` 启动脚本可以连同 `bin/` 目录一起删。需要时重新
 运行安装脚本即可恢复。
 

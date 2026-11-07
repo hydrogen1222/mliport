@@ -23,7 +23,7 @@ mliport 不会推断 runtime、不会从设备反推 runtime，也不会在两�
 <!-- BEGIN GENERATED: environment -->
 | 环境 | Python | 运行时 |
 |---|---|---|
-| `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (numpy 12.9) |
+| `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1`（NumPy/ASE 由安装器解析；gpumd 需用 CUDA Toolkit 12.9 编译） |
 
 ```bash
 ./scripts/install_mliport.sh --engines nep --device auto
@@ -37,11 +37,14 @@ mliport 不会推断 runtime、不会从设备反推 runtime，也不会在两�
 |---|---|---|---|---|---|
 <!-- END GENERATED -->
 
-Calorine 是编译扩展，因此 NEP 使用独立环境：
+Calorine 是编译扩展，因此 NEP 使用独立环境。上面的安装脚本会在该环境里装入固定版本的
+`calorine` **和**可编辑安装的 mliport，所以 `.venv-nep/bin/mliport` 一定存在。手动安装时，
+等价做法是在仓库根目录用同一次解析装好两者（不含 mliport 的环境没有 `mliport` 命令，也无法
+运行 `doctor`）：
 
 ```bash
 uv venv .venv-nep --python 3.12
-uv pip install --python .venv-nep/bin/python calorine ase
+uv pip install --python .venv-nep/bin/python -e './mliport[analysis-all]' calorine==4.1
 ```
 
 原生路径还需要 `gpumd` 可执行文件。mliport 安装器**不**自动构建它（需要与本机 GPU 匹配
@@ -54,12 +57,17 @@ source /path/to/cuda/env.sh          # 提供 nvcc 与 libcublas/libcusolver/lib
 make CUDA_ARCH="-arch=sm_70" -j16    # sm_70 = V100，按你的 GPU 选择
 ```
 
-然后用 `NEP_GPUMD_COMMAND` / `--gpumd-command` 指向它，或把它放进 `PATH`。
-一次性检查两条路径：
+mliport 在 V100（`sm_70`）上用 GPUMD 5.9.1 与 CUDA 12.9 验证过；其他 GPU 和工具包版本未经
+验证（各架构的 `-arch` 取值见安装器兼容性注册表）。然后用 `NEP_GPUMD_COMMAND` /
+`--gpumd-command` 指向该二进制，或把它放进 `PATH`。`mliport doctor` 在 `PATH` 或环境变量
+`MLIPORT_GPUMD_COMMAND` 里查找 `gpumd`（它不读取 `NEP_GPUMD_COMMAND`）。一次性检查两条路径：
 
 ```bash
 .venv-nep/bin/mliport doctor --engine nep --device cuda:0
 ```
+
+没有 `gpumd` 时，`--device cpu` 仍然通过（Calorine `CPUNEP` 不需要它），`--device cuda` 会失败，
+并在报错里点明缺少可执行文件。
 
 `doctor --engine nep` 会报告 Calorine/ASE 版本、解析到的 `gpumd` 路径与 SHA-256，以及其
 版本横幅首行。它**不会**加载模型：真正跑 NEP 还需要你的 `nep.txt`。

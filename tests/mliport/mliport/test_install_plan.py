@@ -318,3 +318,125 @@ def test_steps_are_argv_lists() -> None:
     for step in plan.steps:
         assert isinstance(step.argv, list)
         assert all(isinstance(a, str) for a in step.argv)
+
+
+# ---------------------------------------------------------------------------
+# NEP: mliport itself must be installed into .venv-nep (tracking #61)
+# ---------------------------------------------------------------------------
+
+_NEP_PIP_ARGV_START = ("uv", "pip", "install")
+
+
+def _nep_install(plan):
+    steps = [s for s in _pip_cmds(plan) if "-e" in s.argv]
+    assert len(steps) == 1, [s.argv for s in _pip_cmds(plan)]
+    return steps[0]
+
+
+def test_nep_plan_installs_editable_mliport_with_pinned_calorine() -> None:
+    plan = generate_plan(None, ["nep"], device="cpu")
+    step = _nep_install(plan)
+    argv = step.argv
+    assert tuple(argv[:3]) == _NEP_PIP_ARGV_START
+    assert argv[argv.index("--python") + 1] == ".venv-nep/bin/python"
+    assert argv[argv.index("-e") + 1] == "./mliport[analysis-all]"
+    assert "calorine==4.1" in argv
+    # NumPy/ASE come from the resolver (mliport requires ase>=3.26), never from
+    # hand-written pins that could contradict it.
+    assert not any(a.startswith(("numpy", "ase")) for a in argv)
+    assert "--constraint" in argv
+    assert "calorine==4.1" in plan_constraints_text(plan)
+
+
+def plan_constraints_text(plan) -> str:
+    step = next(s for s in plan.steps if s.stage == "constraints")
+    return step.argv[-1]
+
+
+def test_nep_plan_stage_order_ends_with_launchable_verify() -> None:
+    plan = generate_plan(None, ["nep"], device="cpu")
+    stages = [s.stage for s in plan.steps]
+    assert stages == ["venv", "constraints", "pip", "check", "inventory", "verify"]
+    # mliport is installed before anything that executes .venv-nep/bin/mliport
+    verify = plan.steps[-1]
+    assert verify.argv[0] == ".venv-nep/bin/mliport"
+    assert verify.argv[1:4] == ["doctor", "--engine", "nep"]
+    first_mliport_install = stages.index("pip")
+    assert first_mliport_install < stages.index("verify")
+
+
+def test_nep_plan_does_not_rely_on_ignored_pip_environment() -> None:
+    """The managed source profiles strip PIP_*/UV_* env, so mirror selection must
+    be argv-based; the old PIP_EXTRA_INDEX_URL env on the NEP step was dead."""
+    for source in ("official", "china", "offline", "custom"):
+        plan = generate_plan(None, ["nep"], device="cpu", source=source)
+        for step in plan.steps:
+            assert not any(k.startswith(("PIP_", "UV_")) for k in step.env), source
+
+
+def test_nep_plan_honours_china_mirror() -> None:
+    plan = generate_plan(None, ["nep"], device="cpu", source="china")
+    argv = _nep_install(plan).argv
+    assert "--index-url" in argv
+    assert argv[argv.index("--index-url") + 1].startswith("https://mirrors.tuna.")
+    assert "--offline" not in argv
+
+
+def test_nep_plan_honours_offline_and_custom() -> None:
+    offline = generate_plan(None, ["nep"], device="cpu", source="offline")
+    assert "--offline" in _nep_install(offline).argv
+    for step in offline.steps:
+        joined = " ".join(step.argv)
+        assert "http://" not in joined and "https://" not in joined
+
+    custom = generate_plan(None, ["nep"], device="cpu", source="custom")
+    joined = " ".join(_nep_install(custom).argv)
+    assert "--index-url" not in joined and "--extra-index-url" not in joined
+
+
+def test_nep_official_plan_has_no_mirror_flags() -> None:
+    argv = _nep_install(generate_plan(None, ["nep"], device="cpu")).argv
+    assert "--index-url" not in argv and "--offline" not in argv
+
+
+def test_nep_clean_removes_only_its_own_environment() -> None:
+    plan = generate_plan(None, ["nep"], device="cpu", clean=True)
+    clean = [s for s in plan.steps if s.stage == "clean"]
+    assert [s.argv for s in clean] == [["rm", "-rf", ".venv-nep"]]
+
+
+def test_nep_is_opt_in_and_isolated_from_other_backends() -> None:
+    from mliport.install.cli import _parser
+
+    assert "nep" not in _parser().parse_args([]).engines
+    assert _parser().parse_args(["--engines", "nep"]).engines == ["nep"]
+
+    both = generate_plan(None, ["mace", "nep"], device="cpu", clean=True)
+    alone_mace = generate_plan(None, ["mace"], device="cpu", clean=True)
+    alone_nep = generate_plan(None, ["nep"], device="cpu", clean=True)
+    # Adding NEP appends its own steps; the MACE steps are byte-identical.
+    mace_in_both = [s.argv for s in both.steps if ".venv-mace" in " ".join(s.argv)]
+    assert mace_in_both == [s.argv for s in alone_mace.steps]
+    nep_in_both = [s.argv for s in both.steps if ".venv-nep" in " ".join(s.argv)]
+    assert nep_in_both == [s.argv for s in alone_nep.steps]
+    # no step touches another backend's environment
+    for step in both.steps:
+        joined = " ".join(step.argv)
+        assert not (".venv-mace" in joined and ".venv-nep" in joined)
+
+
+@pytest.mark.parametrize("engine", ["mace", "dpa", "grace", "uma"])
+def test_other_backends_install_mliport_exactly_once_and_never_calorine(engine) -> None:
+    plan = generate_plan(None, [engine], device="cpu")
+    editable = [s for s in _pip_cmds(plan) if "-e" in s.argv]
+    assert len(editable) == 1
+    assert "calorine" not in _all_argv(plan)
+
+
+def test_nep_plan_still_warns_that_gpumd_is_not_built() -> None:
+    plan = generate_plan(None, ["nep"], device="cpu")
+    text = " ".join(plan.warnings)
+    assert "gpumd" in text
+    assert "does not build it" in text
+    assert "MLIPORT_GPUMD_COMMAND" in text
+    assert "NEP_GPUMD_COMMAND" in text
