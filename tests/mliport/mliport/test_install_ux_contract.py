@@ -69,6 +69,51 @@ def test_readme_states_the_real_installation_model(readme):
     assert "bin/mliport-mace" in text
 
 
+@pytest.mark.parametrize("readme", ["README.md", "README_CN.md"])
+def test_readme_documents_the_nep_backend(readme):
+    text = (REPO / readme).read_text(encoding="utf-8")
+    assert "--engines nep" in text  # opt-in install command
+    assert ".venv-nep" in text and "bin/mliport-nep" in text  # environment table
+    assert "--model-type nep" in text and "--nep-runtime" in text  # example
+    assert "gpumd" in text and "nep.txt" in text  # limits: own model, own build
+    assert "docs/backends/nep" in text
+    assert "NEP_GPUMD_COMMAND" not in text  # doctor reads MLIPORT_GPUMD_COMMAND
+
+
+def test_nep_runtime_stack_separates_numpy_from_cuda_toolkit():
+    from mliport.install.compatibility import runtime_stack_text
+
+    for lang in ("en", "zh"):
+        text = runtime_stack_text("nep", lang)
+        assert "calorine==4.1" in text
+        assert "12.9" in text and "CUDA Toolkit" in text
+        # the old wording read as "calorine 4.1 needs numpy 12.9"
+        assert "calorine==4.1` (12.9)" not in text
+        assert "numpy 12.9" not in text.lower()
+    # torch/tf backends keep their framework pins
+    assert "torch==" in runtime_stack_text("mace", "en")
+
+
+@pytest.mark.parametrize("name", ["installation.md", "installation.zh.md"])
+def test_installation_docs_never_pair_calorine_with_the_cuda_version(name):
+    text = (REPO / "docs" / name).read_text(encoding="utf-8")
+    assert "calorine==4.1` (12.9)" not in text
+    assert "calorine==4.1 (numpy" not in text.lower()
+    assert "--engines nep" in text and ".venv-nep/bin/mliport" in text
+
+
+@pytest.mark.parametrize("name", ["nep.md", "nep.zh.md"])
+def test_nep_backend_page_installs_mliport_and_names_the_doctor_variable(name):
+    text = (REPO / "docs" / "backends" / name).read_text(encoding="utf-8")
+    assert "-e './mliport[analysis-all]' calorine==4.1" in text
+    assert "MLIPORT_GPUMD_COMMAND" in text
+
+
+def test_installer_help_lists_nep():
+    text = (REPO / "scripts" / "install_mliport.sh").read_text(encoding="utf-8")
+    assert "[--engines mace dpa grace uma nep]" in text
+
+
 # --------------------------------------------------------------- DOC-03
 def test_build_plan_fails_closed_for_backend_incompatible_python():
     from mliport.install.plan import InstallPlanError, generate_plan

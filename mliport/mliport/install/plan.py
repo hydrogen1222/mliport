@@ -295,35 +295,43 @@ def _nep_steps(
     """NEP (Calorine) install steps.
 
     Calorine is a compiled C++ extension (numpy + ASE), not a deep-learning
-    framework, so there is no framework wheel to pin.  The native ``gpumd``
-    binary is a separate build that mliport deliberately does NOT perform
-    automatically: it needs a matching CUDA toolkit and an architecture flag,
-    and a silently mis-architected binary would fail at run time rather than
-    install time.  The plan therefore installs the ASE runtime and records the
-    prerequisite for the native runtime in a warning, which ``doctor --engine
-    nep`` re-checks afterwards.
+    framework, so there is no framework wheel to pin.  Like every other
+    backend, the isolated environment gets the pinned backend package **and**
+    an editable mliport in a single resolver run: the ``verify`` stage calls
+    ``<venv>/bin/mliport doctor``, which cannot exist unless mliport itself is
+    installed into that environment.  One resolve (rather than separate
+    ``calorine`` / ``mliport`` installs) keeps ASE and NumPy consistent between
+    the two; NumPy is deliberately left to the resolver because neither mliport
+    nor Calorine pins it.  The source profile is applied exactly as for the
+    other backends (mirror index, ``--offline``), so ``--source china`` /
+    ``offline`` / ``custom`` keep their promised semantics.
+
+    The native ``gpumd`` binary is a separate build that mliport deliberately
+    does NOT perform automatically: it needs a matching CUDA toolkit and an
+    architecture flag, and a silently mis-architected binary would fail at run
+    time rather than install time.  The plan therefore installs the ASE runtime
+    and records the prerequisite for the native runtime in a warning, which
+    ``doctor --engine nep`` re-checks afterwards.
     """
     python = f"{backend.venv_name}/bin/python"
-    steps: list[InstallStep] = [
+    argv = _uv_pip(
+        profile,
+        python,
+        "-e",
+        "./mliport[analysis-all]",
+        *backend.install_packages(),
+    )
+    argv += build_package_source_args(profile)
+    return [
         InstallStep(
             stage="pip",
-            description=f"Install {backend.label} ASE runtime (calorine + ASE)",
-            argv=[
-                "uv",
-                "pip",
-                "install",
-                "--python",
-                python,
-                backend.requirement,
-                "ase>=3.23",
-                "numpy",
-            ],
-            env={"PIP_EXTRA_INDEX_URL": profile.index_url}
-            if getattr(profile, "index_url", None)
-            else {},
+            description=(
+                f"Install {backend.label} ASE runtime "
+                "(pinned calorine + editable mliport)"
+            ),
+            argv=argv,
         )
     ]
-    return steps
 
 
 def generate_plan(
@@ -464,8 +472,10 @@ def generate_plan(
             plan.warnings.append(
                 "NEP: the native runtime needs a separately built `gpumd` "
                 "binary (CUDA toolkit + matching -arch=sm_XX). mliport does not "
-                "build it automatically; set NEP_GPUMD_COMMAND afterwards and "
-                "confirm with `mliport doctor --engine nep`."
+                "build it automatically. Without it only the CPU ASE runtime "
+                "(`NEP_RUNTIME=ase` on cpu) works. After building, set "
+                "NEP_GPUMD_COMMAND for mliport runs and make `gpumd` visible to "
+                "`mliport doctor --engine nep` (on PATH or MLIPORT_GPUMD_COMMAND)."
             )
             plan.steps.extend(_nep_steps(backend, src, cpu=is_cpu))
         elif engine == "grace":

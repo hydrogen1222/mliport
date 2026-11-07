@@ -102,3 +102,42 @@ jobs:
               raise SystemExit("direct-force models must be rejected")
           print("capability wheel smoke ok on", sys.version)
           PY
+
+  # Really executes scripts/install_mliport.sh for the NEP backend (network,
+  # uv, a fresh .venv-nep) and runs doctor from the result. Plan-level checks
+  # live in tests/mliport/mliport/test_install_plan.py and run everywhere.
+  installer-real-nep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "mliport/pyproject.toml"
+      - name: Install pytest only
+        run: |
+          uv venv .venv-ci --python 3.12
+          uv pip install --python .venv-ci/bin/python pytest
+      - name: Real NEP install, doctor, reinstall, mirror, offline
+        env:
+          MLIPORT_REAL_INSTALL: "1"
+          MLIPORT_REAL_INSTALL_LOGDIR: ${{ runner.temp }}/nep-install-logs
+        run: |
+          .venv-ci/bin/python -m pytest tests/mliport/mliport/test_install_nep_real.py -v -rA -p no:cacheprovider
+      - name: Print install logs
+        if: always()
+        run: |
+          for f in "${{ runner.temp }}"/nep-install-logs/*.log; do
+            echo "::group::$(basename "$f")"
+            cat "$f"
+            echo "::endgroup::"
+          done
+      - name: Upload install logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nep-install-logs
+          path: ${{ runner.temp }}/nep-install-logs
+          if-no-files-found: warn

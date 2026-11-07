@@ -28,7 +28,7 @@ the precision behind your back.
 <!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
 |---|---|---|
-| `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (numpy 12.9) |
+| `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (NumPy/ASE, resolved by the installer; gpumd built with CUDA Toolkit 12.9) |
 
 ```bash
 ./scripts/install_mliport.sh --engines nep --device auto
@@ -42,11 +42,15 @@ the precision behind your back.
 |---|---|---|---|---|---|
 <!-- END GENERATED -->
 
-NEP lives in its own environment because Calorine is a compiled extension:
+NEP lives in its own environment because Calorine is a compiled extension. The
+installer above creates it with the pinned `calorine` **and** an editable
+mliport, so `.venv-nep/bin/mliport` exists. By hand, the equivalent is one
+resolver run from the repository root (an environment without mliport has no
+`mliport` command and cannot run `doctor`):
 
 ```bash
 uv venv .venv-nep --python 3.12
-uv pip install --python .venv-nep/bin/python calorine ase
+uv pip install --python .venv-nep/bin/python -e './mliport[analysis-all]' calorine==4.1
 ```
 
 The native runtime additionally needs the `gpumd` executable, which is *not*
@@ -60,12 +64,19 @@ source /path/to/cuda/env.sh          # provides nvcc + libcublas/libcusolver/lib
 make CUDA_ARCH="-arch=sm_70" -j16    # sm_70 = V100; pick your own architecture
 ```
 
-Then point mliport at it with `NEP_GPUMD_COMMAND` / `--gpumd-command`, or put it
-on `PATH`. Verify both runtimes at once:
+mliport was verified with GPUMD 5.9.1 and CUDA 12.9 on a V100 (`sm_70`); other
+GPUs and toolkits are unverified (see the table of `-arch` values in the
+installer's compatibility registry). Then point mliport at the binary with
+`NEP_GPUMD_COMMAND` / `--gpumd-command`, or put it on `PATH`. `mliport doctor`
+looks for `gpumd` on `PATH` or in the `MLIPORT_GPUMD_COMMAND` environment
+variable (it does not read `NEP_GPUMD_COMMAND`). Verify both runtimes at once:
 
 ```bash
 .venv-nep/bin/mliport doctor --engine nep --device cuda:0
 ```
+
+Without `gpumd`, `--device cpu` still passes (Calorine `CPUNEP` needs none) and
+`--device cuda` fails with a message that names the missing executable.
 
 `doctor --engine nep` reports the Calorine/ASE versions, the resolved `gpumd`
 path and SHA-256, and the first lines of its version banner. It does **not**

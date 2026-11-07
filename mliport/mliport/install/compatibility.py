@@ -695,7 +695,31 @@ def python_versions_for(engine: str) -> tuple[str, ...]:
     return tuple(v for v in SUPPORTED_PYTHON_VERSIONS if v in constraint)
 
 
-def backend_environment_rows() -> list[dict[str, str]]:
+def runtime_stack_text(engine: str, lang: str = "en") -> str:
+    """Human-readable runtime stack of one backend for the generated docs.
+
+    For torch/TensorFlow backends the version is the pinned framework wheel.
+    NEP has no framework wheel: Calorine sits on NumPy/ASE (resolved by the
+    installer, not pinned here), and the only version in its arch profiles is
+    the **CUDA Toolkit** the separately built ``gpumd`` binary targets.  Those
+    two must never be rendered as one "numpy 12.9".
+    """
+    backend = BACKENDS[engine]
+    versions = "/".join(framework_versions(backend))
+    if backend.framework == "numpy":
+        if lang == "zh":
+            return (
+                f"`{backend.requirement}`（NumPy/ASE 由安装器解析；"
+                f"gpumd 需用 CUDA Toolkit {versions} 编译）"
+            )
+        return (
+            f"`{backend.requirement}` (NumPy/ASE, resolved by the installer; "
+            f"gpumd built with CUDA Toolkit {versions})"
+        )
+    return f"`{backend.requirement}` ({backend.framework} {versions})"
+
+
+def backend_environment_rows(lang: str = "en") -> list[dict[str, str]]:
     """One row per backend for the generated documentation matrix."""
     rows: list[dict[str, str]] = []
     for engine, backend in BACKENDS.items():
@@ -706,10 +730,7 @@ def backend_environment_rows() -> list[dict[str, str]]:
                 "label": backend.label,
                 "environment": backend.venv_name,
                 "python": ", ".join(versions),
-                "runtime": (
-                    f"`{backend.requirement}` "
-                    f"({backend.framework} {'/'.join(framework_versions(backend))})"
-                ),
+                "runtime": runtime_stack_text(engine, lang),
             }
         )
     return rows
@@ -723,4 +744,5 @@ __all__ = [
     "backend_environment_rows",
     "framework_versions",
     "python_versions_for",
+    "runtime_stack_text",
 ]

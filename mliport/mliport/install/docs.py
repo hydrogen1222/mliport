@@ -43,7 +43,7 @@ def render_backend_matrix(lang: str = "en") -> str:
         "| " + " | ".join(header) + " |",
         "|---|---|---|---|",
     ]
-    for row in backend_environment_rows():
+    for row in backend_environment_rows(lang):
         lines.append(
             f"| {row['label']} | `{row['environment']}` | {row['python']} "
             f"| {row['runtime']} |"

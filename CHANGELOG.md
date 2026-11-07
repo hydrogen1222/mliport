@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+NEP installer and documentation integration (tracking #61):
+
+- **`--engines nep` now installs mliport into `.venv-nep`.** The NEP install step
+  only installed `calorine`, ASE and NumPy, so the verify stage failed with
+  `FileNotFoundError` on `.venv-nep/bin/mliport`. It is now one resolver run with
+  an editable `./mliport[analysis-all]` plus the pinned `calorine==4.1`, built from
+  the same `_uv_pip` and package-source arguments as the other backends. The NEP
+  step previously set `PIP_EXTRA_INDEX_URL` (which the installer strips for managed
+  profiles) and read a non-existent `profile.index_url`, so `--source china*` and
+  `--source offline` were silently ignored for NEP; they are honoured now. NEP stays
+  opt-in and isolated in `.venv-nep`; the plans of the other backends are unchanged.
+  The installer still does not build `gpumd`.
+- **Docs.** `README.md`/`README_CN.md` describe the NEP backend (install, environment
+  table, example, limits). The generated environment table no longer prints
+  `calorine==4.1 (12.9)`: for NEP the NumPy/ASE dependency is resolved by the
+  installer and 12.9 is the CUDA Toolkit used to build `gpumd`. The manual NEP
+  install route now includes mliport, and the docs state that `doctor` finds
+  `gpumd` on `PATH` or via `MLIPORT_GPUMD_COMMAND` (not `NEP_GPUMD_COMMAND`).
+
 Internal (no user-visible behaviour change):
 
 - **Shared runner safety helpers.** The numerical-safety gates that MD already
