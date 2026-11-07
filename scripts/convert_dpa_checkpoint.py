@@ -46,14 +46,23 @@ def _normalize(value: Any, *, torch: Any, numpy: Any, changes: list[str], path: 
         if not all(isinstance(key, str | int) for key in value):
             raise TypeError(f"Unsupported mapping key at {path}")
         return type(value)(
-            (key, _normalize(item, torch=torch, numpy=numpy, changes=changes,
-                             path=f"{path}.{key}"))
+            (
+                key,
+                _normalize(
+                    item,
+                    torch=torch,
+                    numpy=numpy,
+                    changes=changes,
+                    path=f"{path}.{key}",
+                ),
+            )
             for key, item in value.items()
         )
     if isinstance(value, list | tuple):
         items = [
-            _normalize(item, torch=torch, numpy=numpy, changes=changes,
-                       path=f"{path}[{index}]")
+            _normalize(
+                item, torch=torch, numpy=numpy, changes=changes, path=f"{path}[{index}]"
+            )
             for index, item in enumerate(value)
         ]
         return tuple(items) if isinstance(value, tuple) else items
@@ -122,7 +131,9 @@ def convert_checkpoint(source: Path, target: Path, *, trusted: bool) -> dict[str
             raise ValueError(f"Tensor identity changed during conversion: {name}")
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+    )
     os.close(fd)
     temp = Path(temp_name)
     try:
@@ -169,10 +180,13 @@ def convert_checkpoint(source: Path, target: Path, *, trusted: bool) -> dict[str
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path, help="Original trusted DeepMD training .pt")
+    parser.add_argument(
+        "source", type=Path, help="Original trusted DeepMD training .pt"
+    )
     parser.add_argument("target", type=Path, help="New inference-compatible .pt")
     parser.add_argument(
-        "--i-trust-this-file", action="store_true",
+        "--i-trust-this-file",
+        action="store_true",
         help="Required: allow unsafe pickle deserialization of this specific source",
     )
     args = parser.parse_args()
