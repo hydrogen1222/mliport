@@ -102,6 +102,10 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
             "format_version", "model", "cutoff", "n_max", "basis_size",
             "l_max", "ann", "energy_reference",
         }
+        if "model" in fields and fields["model"] != ["nep"]:
+            raise ValueError(
+                f"Unsupported NEP model type {fields['model']!r}; only 'nep' is supported"
+            )
         missing = sorted(required - fields.keys())
         if missing:
             raise ValueError(f"NEP v1 model header missing fields: {missing}")
