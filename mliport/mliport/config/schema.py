@@ -374,7 +374,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "optimizer",
         str,
-        frozenset({"opt"}),
+        frozenset({"opt", "batch"}),
         aliases={"OPT_ALGO", "opt_algo"},
         choices=("FIRE", "BFGS", "LBFGS"),
         description="Geometry optimization algorithm.",
@@ -382,7 +382,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "fmax",
         float,
-        frozenset({"opt", "neb"}),
+        frozenset({"opt", "neb", "batch"}),
         aliases={"FMAX"},
         minimum=0.0,
         description="Force convergence threshold in eV/Angstrom.",
@@ -390,7 +390,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "max_steps",
         int,
-        frozenset({"opt", "neb"}),
+        frozenset({"opt", "neb", "batch"}),
         aliases={"MAX_STEPS"},
         minimum=0,
         description="Maximum optimization steps.",
@@ -398,14 +398,14 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "cell_opt",
         bool,
-        frozenset({"opt"}),
+        frozenset({"opt", "batch"}),
         aliases={"CELL_OPT"},
         description="Optimize cell parameters (requires stress support).",
     ),
     OptionSpec(
         "fix_symmetry",
         bool,
-        frozenset({"opt"}),
+        frozenset({"opt", "batch"}),
         aliases={"FIX_SYMMETRY"},
         description="Preserve crystal symmetry during optimization.",
     ),

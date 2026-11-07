@@ -35,10 +35,43 @@ class EngineContext:
     backend_version: str
     framework_version: str
     diagnostics: dict[str, Any] = field(default_factory=dict)
+    #: Resolved local model artifact. Optional only so synthetic CPU test
+    #: contexts can omit it; :attr:`artifact_sha256` fails closed without it.
+    model_path: str = ""
 
     @property
     def model_sha256(self) -> str:
+        """Manifest identity of the model profile.
+
+        For a single-file artifact this is the artifact's SHA-256.  For a
+        directory artifact it is the *distributed archive* identity, which is
+        why it must never be compared with an engine-recorded path hash
+        (audit H-01); use :attr:`artifact_sha256` for that.
+        """
         return self.profile["model_sha256"]
+
+    @property
+    def artifact_sha256(self) -> str:
+        """SHA-256 of the local artifact, using mliport's own path hashing.
+
+        This is the value ``mliport.model_record.build_model_record`` writes
+        into ``model_sha256`` of a result provenance record, so an identity
+        check comparing the two is a genuine like-for-like comparison for both
+        file and directory artifacts.
+
+        Raises:
+            RuntimeError: when the context was built without a model path.  It
+                is never silently substituted with the manifest identity,
+                because that substitution is exactly the H-01 false mismatch.
+        """
+        if not self.model_path:
+            msg = (
+                f"EngineContext for profile {self.profile_id!r} has no model "
+                "path; the artifact hash cannot be verified. Build the context "
+                "through build_engine(), which records it."
+            )
+            raise RuntimeError(msg)
+        return common.artifact_sha256(self.model_path)
 
     @property
     def model_identity(self) -> str:
@@ -105,6 +138,7 @@ def build_engine(
         engine=engine,
         profile_id=profile_id,
         profile=profile,
+        model_path=str(Path(model_path).resolve()),
         wrapper=wrapper,
         calculator=calculator,
         device=device,
