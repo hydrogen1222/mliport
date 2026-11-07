@@ -12,6 +12,16 @@ DPA checkpoint migration (#91):
   Only use it with verified trusted checkpoints; model predictions still require
   scientific reference validation.
 
+Confsearch checkpoint integrity (AUD-007, #83):
+
+- Fixed checkpoint/resume to preserve each individual minimum member's atomic
+  geometry and classification together with its energy/origin. Prior resumes
+  could export representative coordinates with a different member's energy.
+- Checkpoint schema and registry schema are now version 2; old schema-1
+  checkpoints are refused on resume because their per-member geometries cannot
+  be recovered. Existing artifacts remain untouched and need provenance
+  assessment if created after a resume. Added exact extxyz resume regressions.
+
 NEP installer and documentation integration (tracking #61):
 
 - **`--engines nep` now installs mliport into `.venv-nep`.** The NEP install step
