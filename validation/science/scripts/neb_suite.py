@@ -327,6 +327,15 @@ def model_identity_check(ctx, payload) -> dict[str, Any]:
     The product result carries a ``model`` identity record; the suite only
     certifies a saddle when the engine, artifact hash, task/head all match
     the context whose calculator is used for the FD Hessian (review R01).
+
+    The artifact hash is compared with :attr:`EngineContext.artifact_sha256`
+    (the same path-hashing algorithm ``mliport.model_record`` writes into the
+    record), NOT with the manifest's ``model_sha256``.  For a directory
+    artifact such as an exported GRACE SavedModel the manifest value is the
+    distributed *archive* identity, so comparing it with a path hash produced
+    a false ``fail`` on every GRACE saddle (audit H-01).  The manifest
+    identity is still verified, but by ``resolve_profile`` (file-by-file for
+    directory artifacts) at start-up; here it is only recorded.
     """
     model = payload.get("model") if isinstance(payload, dict) else None
     if not isinstance(model, dict):
@@ -338,7 +347,7 @@ def model_identity_check(ctx, payload) -> dict[str, Any]:
         }
     checks: dict[str, bool] = {
         "model_type": model.get("model_type") == ctx.engine,
-        "model_sha256": model.get("model_sha256") == ctx.model_sha256,
+        "model_sha256": model.get("model_sha256") == ctx.artifact_sha256,
     }
     if ctx.task is not None:
         checks["task"] = model.get("task") == ctx.task
@@ -348,6 +357,10 @@ def model_identity_check(ctx, payload) -> dict[str, Any]:
         "ok": all(checks.values()),
         "checks": checks,
         "record": {k: model.get(k) for k in _MODEL_IDENTITY_FIELDS},
+        # Kept for provenance only: the manifest identity is not comparable
+        # with a path hash for directory artifacts (audit H-01).
+        "manifest_model_sha256": ctx.model_sha256,
+        "artifact_sha256": ctx.artifact_sha256,
     }
 
 

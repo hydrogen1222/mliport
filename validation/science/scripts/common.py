@@ -81,6 +81,48 @@ def sha256_file(path: str | Path) -> str:
     return h.hexdigest()
 
 
+#: Directory artifacts (e.g. an exported GRACE SavedModel) cannot be hashed
+#: with the single-file algorithm the manifest uses for distributed archives.
+#: mliport itself fingerprints a model *path* with
+#: :func:`mliport.model_record.hash_model_path`, which hashes a file's bytes but
+#: hashes a directory as ``sha256`` over ``(len(rel_path)||rel_path||bytes)`` of
+#: every file in sorted order.  The validation harness must compare like with
+#: like, so it reimplements exactly that algorithm here and a regression test
+#: asserts the two agree (audit H-01).
+def artifact_sha256(path: str | Path) -> str:
+    """Hash a model artifact exactly as ``mliport.model_record.hash_model_path``.
+
+    Directory artifacts are fingerprinted file-by-file in sorted order; a
+    manifest's ``model_sha256`` for a directory is the *distributed archive*
+    identity and is verified separately through ``secondary_hashes``.
+    """
+    model = Path(path).expanduser().resolve()
+    if not model.exists():
+        msg = f"model path not found: {model}"
+        raise FileNotFoundError(msg)
+    digest = hashlib.sha256()
+    if model.is_file():
+        with model.open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        return digest.hexdigest()
+    if not model.is_dir():
+        msg = f"unsupported model path type: {model}"
+        raise ValueError(msg)
+    files = sorted(child for child in model.rglob("*") if child.is_file())
+    if not files:
+        msg = f"model directory contains no files: {model}"
+        raise ValueError(msg)
+    for child in files:
+        relative = child.relative_to(model).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        with child.open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+    return digest.hexdigest()
+
+
 def structure_id(atoms: Atoms) -> str:
     """Stable hash of a structure (species, positions, cell, pbc).
 
