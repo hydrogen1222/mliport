@@ -210,7 +210,7 @@ def test_online_explicit_planner_override_skips_target_lookup(tmp_path: Path) ->
     assert result.returncode != 0
     # The planner override must be honoured: no `uv python find` preflight at all.
     assert calls.read_text(encoding="utf-8").splitlines() == [
-        "venv --python 3.12 .venv-mace"
+        "venv --python 3.12 --allow-existing .venv-mace"
     ]
     # The full plan validated (engine x target-python matrix accepted) and the
     # run reached the venv step, where the stub uv aborts with exit 42.

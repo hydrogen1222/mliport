@@ -22,14 +22,25 @@ DPA 模型通过 `deepmd-kit` 加载。很多 DPA 模型是多任务模型，带
 <!-- BEGIN GENERATED: environment -->
 | 环境 | Python | 运行时 |
 |---|---|---|
-| `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit==3.1.3` (torch 2.10.0) |
+| `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit @ git+https://github.com/deepmodeling/deepmd-kit.git@0edeaef5617e9878edeb2346bf37bb6a035a4f51` (torch 2.11.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines dpa --device auto
 ```
 <!-- END GENERATED -->
 
-加载模型需要 `deepmd-kit[torch]` 的元数据，安装脚本会同时装上对应版本的 `mpich`。
+安装器固定上游提交 `0edeaef5617e9878edeb2346bf37bb6a035a4f51`（包版本
+`3.2.1.dev63+g0edeaef56`）与 PyTorch 2.11.0。已发布的 3.2.0 wheel 能加载
+DPA4-Neo，但不支持这些 DPA4C 检查点的 `gaussian/fix` 径向基。固定源码包含
+上游对此基函数的实现；mliport 不改写检查点的设置或权重。
+
+此安装路径需要 Git 和 C++ 编译工具链。使用 CUDA PyTorch 时，先配置 CUDA Toolkit
+（设置 `CUDA_HOME` 或 `CUDA_PATH`，并把 `nvcc` 放入 `PATH`）。安装器将显式工具包路径
+传给 CMake，使用选定的 PyTorch 构建，并关闭此环境中的 TensorFlow。V100 使用带
+`sm_70` 内核的 `2.11.0+cu126` wheel。运行时还需要 e3nn、vesin/vesin-torch 和 mpich。
+
+依赖包继续使用选定的镜像，固定源码需要访问 GitHub。离线安装从本地 `packages/`
+目录读取版本完全一致的预构建 wheel，不访问 GitHub。
 
 ## 固定的 profile
 
@@ -52,6 +63,19 @@ DPA 模型通过 `deepmd-kit` 加载。很多 DPA 模型是多任务模型，带
 dp --pt show DPA-3.1-3M.pt model-branch
 ```
 
+单任务的 DPA4-Neo、DPA4C-Nano、DPA4C-Mini 与 DPA-4.1C-Air 使用同一入口，
+无需 `--head`，例如：
+
+```bash
+bin/mliport-dpa sp structure.cif --model-type dpa --task bulk --device cuda:0 \
+  --model models/DPA4C-Nano-OMat24.pt
+```
+
+DeePMD 根据检查点参数的命名选择常规 PyTorch 或 PyTorch-exportable 求值器。
+mliport 记录实际求值器、GPU 身份与参数精度，并对照选定分支核验 `.pt` 张量，
+拒绝部分加载或训练张量发生变化。固定上游对 DPA4C 整数索引缓存的重建、
+无桥接非自旋模型的描述符版本迁移，单独记录在 `checkpoint_migrations` 中。
+
 ## 可信训练 checkpoint 的兼容转换
 
 部分 DPA-SSE 训练检查点在优化器状态和模型训练信息中包含 NumPy 标量。
@@ -71,6 +95,11 @@ NumPy 标量转换为 Python 标量，并通过 `weights_only=True` 重新读取
 `.conversion.json` 记录原文件路径、两份 SHA-256 与转换项目。
 这只能证明**文件兼容**，不能证明能量和力的预测等价；正式科研使用前，
 仍需用真实 DeePMD 推理与可信参考结果进行对照。
+
+2024 年 7 月的 `SSE-VASP-dpa2.pt` 还与当前网络存在参数布局差异，例如
+检查点的 `(800, 128)` 矩阵在当前网络中为 `(640, 128)`。转换 NumPy 元数据不能
+解决此问题；在匹配的旧版实现通过验证前，该文件仍不受支持。mliport 不重排权重，
+也不初始化缺失的训练参数来强行运行它。
 
 ## 需要知道的事
 

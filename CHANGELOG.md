@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+DPA4 runtime compatibility:
+
+- Pin PyTorch 2.11.0 and upstream DeePMD commit
+  `0edeaef5617e9878edeb2346bf37bb6a035a4f51` for DPA4-Neo and the published
+  DPA4C checkpoints using `gaussian/fix`. Install the SO(3)/neighbor-list
+  dependencies, build against the selected torch ABI, and retain exact source
+  and package constraints. Existing matching Python environments are preserved
+  during installation; offline source-runtime installs use a local wheelhouse.
+- Record actual device and precision for both regular and exportable PyTorch
+  evaluators. Reject partial `.pt` loads and changed learned tensors, while
+  recording the pinned upstream's non-spin descriptor schema migration and
+  regenerated integer gather caches.
+- The legacy DPA-SSE checkpoint remains incompatible with the current network
+  layout after its metadata conversion; no weight reshaping or missing-weight
+  initialization is used to make it load.
+
 DPA checkpoint migration (#91):
 
 - Added explicit trust-gated offline conversion of legacy DPA-SSE training

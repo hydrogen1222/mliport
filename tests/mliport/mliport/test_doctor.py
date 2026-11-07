@@ -97,7 +97,7 @@ def test_doctor_with_nonexistent_model_fails_closed(monkeypatch):
 def test_inventory_never_imports_optional_backends(monkeypatch):
     _controlled_environment(
         monkeypatch,
-        **{"deepmd-kit": "3.1.3", "tensorpotential": "0.6.0"},
+        **{"deepmd-kit": "3.2.1.dev63+g0edeaef56", "tensorpotential": "0.6.0"},
     )
     monkeypatch.setattr("mliport.doctor.detect_gpus", lambda: None)
 
@@ -139,7 +139,7 @@ def test_cpu_target_does_not_require_cuda(monkeypatch):
 
 
 def test_dpa_pb_model_selects_tensorflow_runtime_probe(monkeypatch, tmp_path):
-    _controlled_environment(monkeypatch, **{"deepmd-kit": "3.1.3"})
+    _controlled_environment(monkeypatch, **{"deepmd-kit": "3.2.1.dev63+g0edeaef56"})
     monkeypatch.setattr("mliport.doctor.detect_gpus", lambda: None)
     model = tmp_path / "legacy.pb"
     model.write_bytes(b"placeholder")
@@ -177,14 +177,14 @@ def test_dpa_pb_model_selects_tensorflow_runtime_probe(monkeypatch, tmp_path):
 
 
 def test_model_probe_requires_explicit_task(monkeypatch, tmp_path):
-    _controlled_environment(monkeypatch, **{"deepmd-kit": "3.1.3"})
+    _controlled_environment(monkeypatch, **{"deepmd-kit": "3.2.1.dev63+g0edeaef56"})
     monkeypatch.setattr("mliport.doctor.detect_gpus", lambda: None)
     monkeypatch.setattr(
         "mliport.doctor._runtime_probe",
         lambda *args, **kwargs: {
             "ok": True,
             "framework": "torch",
-            "torch_version": "2.10.0",
+            "torch_version": "2.11.0",
             "cuda_available": False,
             "device_count": 0,
             "arch_list": [],
@@ -348,7 +348,7 @@ def test_doctor_p40_dpa_recommends_exact_deepmd_cu126_build(monkeypatch):
 
     _controlled_environment(
         monkeypatch,
-        **{"deepmd-kit": "3.1.3", "torch": "2.10.0+cu128"},
+        **{"deepmd-kit": "3.2.1.dev63+g0edeaef56", "torch": "2.11.0+cu128"},
     )
     monkeypatch.setattr(
         "mliport.doctor.detect_gpus",
@@ -359,7 +359,7 @@ def test_doctor_p40_dpa_recommends_exact_deepmd_cu126_build(monkeypatch):
         lambda engine, device, framework=None: {
             "ok": True,
             "framework": "torch",
-            "torch_version": "2.10.0+cu128",
+            "torch_version": "2.11.0+cu128",
             "cuda_runtime": "12.8",
             "cuda_available": True,
             "device_count": 1,
@@ -379,8 +379,8 @@ def test_doctor_p40_dpa_recommends_exact_deepmd_cu126_build(monkeypatch):
     runtime_gpu = next(check for check in checks if check["name"] == "Runtime GPU 0")
 
     assert runtime_gpu["status"] == "fail"
-    assert "2.10.0+cu126" in runtime_gpu["detail"]
-    assert "torch==2.10.0+cu126" in runtime_gpu["detail"]
+    assert "2.11.0+cu126" in runtime_gpu["detail"]
+    assert "torch==2.11.0+cu126" in runtime_gpu["detail"]
     assert "2.8.0" not in runtime_gpu["detail"]
     assert "does NOT match" in runtime_gpu["detail"]
     assert failures == 1
@@ -405,7 +405,9 @@ def test_doctor_falls_back_to_nvidia_smi_when_container_reports_zero_vram(
 
 
 def test_backend_import_failure_is_not_reported_as_installed_runtime(monkeypatch):
-    _controlled_environment(monkeypatch, **{"deepmd-kit": "3.1.3", "torch": "2.10.0"})
+    _controlled_environment(
+        monkeypatch, **{"deepmd-kit": "3.2.1.dev63+g0edeaef56", "torch": "2.11.0"}
+    )
     monkeypatch.setattr("mliport.doctor.detect_gpus", lambda: None)
     monkeypatch.setattr(
         "mliport.doctor._runtime_probe",
@@ -447,12 +449,12 @@ def test_torch_recommendation_is_uma_specific():
     """DPA's ABI-matched Torch must not be replaced with UMA's recommendation."""
     assert _should_warn_torch_mismatch(
         uma_installed=True,
-        installed_torch="2.10.0+cu126",
+        installed_torch="2.11.0+cu126",
         recommended_torch="2.6.0+cu124",
     )
     assert not _should_warn_torch_mismatch(
         uma_installed=False,
-        installed_torch="2.10.0+cu126",
+        installed_torch="2.11.0+cu126",
         recommended_torch="2.6.0+cu124",
     )
 

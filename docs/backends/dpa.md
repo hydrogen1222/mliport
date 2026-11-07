@@ -27,15 +27,29 @@ mean: you pass it explicitly as the head, or the run fails closed.
 <!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
 |---|---|---|
-| `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit==3.1.3` (torch 2.10.0) |
+| `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit @ git+https://github.com/deepmodeling/deepmd-kit.git@0edeaef5617e9878edeb2346bf37bb6a035a4f51` (torch 2.11.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines dpa --device auto
 ```
 <!-- END GENERATED -->
 
-The model loader needs the `deepmd-kit[torch]` metadata, and the installer
-brings along the matching `mpich` package.
+The installer pins upstream commit `0edeaef5617e9878edeb2346bf37bb6a035a4f51`
+(package version `3.2.1.dev63+g0edeaef56`) and PyTorch 2.11.0. The released
+3.2.0 wheel loads DPA4-Neo but rejects the `gaussian/fix` basis in these DPA4C
+checkpoints. The pinned source contains the upstream implementation of this
+basis; mliport does not rewrite checkpoint settings or weights.
+
+This route needs Git and a C++ build toolchain. With CUDA PyTorch, configure
+the CUDA Toolkit before installing (set `CUDA_HOME` or `CUDA_PATH` and put
+`nvcc` on `PATH`). The installer forwards that explicit toolkit location to
+CMake, builds against the selected PyTorch, and disables TensorFlow in this
+environment. V100 uses the `2.11.0+cu126` wheel with `sm_70` kernels. Runtime
+dependencies include e3nn, vesin/vesin-torch and mpich.
+
+Package mirrors still supply dependencies, but the pinned source requires
+GitHub access. Offline installation takes a prebuilt wheel of the exact pinned
+version from the local `packages/` directory; it never contacts GitHub.
 
 ## Pinned profiles
 
@@ -58,6 +72,22 @@ want as `--head` (`HEAD` in an INCAR file):
 ```bash
 dp --pt show DPA-3.1-3M.pt model-branch
 ```
+
+Single-task DPA4-Neo, DPA4C-Nano, DPA4C-Mini and DPA-4.1C-Air checkpoints
+use the same entry point without `--head`, for example:
+
+```bash
+bin/mliport-dpa sp structure.cif --model-type dpa --task bulk --device cuda:0 \
+  --model models/DPA4C-Nano-OMat24.pt
+```
+
+DeePMD selects its regular PyTorch or PyTorch-exportable evaluator from the
+checkpoint's parameter dialect. mliport records the evaluator, actual GPU
+identity and parameter dtype. It checks loaded `.pt` tensors against the
+selected checkpoint head and rejects partial loads or changed learned tensors.
+The pinned upstream's rebuilding of DPA4C integer gather caches and its
+unbridged non-spin descriptor-version migration are recorded separately in
+`checkpoint_migrations`.
 
 ## Trusted training checkpoint compatibility
 
@@ -82,6 +112,12 @@ hashes, conversions and the original source path. This verifies *file
 compatibility*, not energy/force equivalence: run real DeePMD predictions with
 the converted model and compare against the original trusted reference before
 scientific use.
+
+The July 2024 `SSE-VASP-dpa2.pt` also has network-layout differences with this
+runtime (for example a `(800, 128)` matrix where the current network expects
+`(640, 128)`). Converting NumPy metadata does not repair that mismatch.
+It remains unsupported until a matching legacy implementation is validated;
+mliport does not reshape weights or initialize missing learned parameters.
 
 ## Things to know
 
