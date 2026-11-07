@@ -60,7 +60,7 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
                 raise ValueError(
                     f"Unrecognised or unsupported NEP model header {first.strip()!r}"
                 )
-            if versioned and (not first.startswith("nep ") or first.startswith("\ufeff")):
+            if versioned and (had_leading_blank or not first.startswith("nep ") or first.startswith("\ufeff")):
                 raise ValueError("Versioned NEP header must be the physical first line")
             if len(tokens) < 3:
                 raise ValueError("NEP model header needs a count and element symbols")
