@@ -29,7 +29,7 @@ from mliport.neb.io import atomic_write_json, canonical_fingerprint
 if TYPE_CHECKING:
     from typing import Any
 
-CHECKPOINT_SCHEMA = "mliport.confsearch-checkpoint/1"
+CHECKPOINT_SCHEMA = "mliport.confsearch-checkpoint/2"
 RESUME_FINGERPRINT_SCHEMA = "mliport.confsearch-resume-fingerprint/1"
 
 #: Model-identity keys (spec section 11.2 revision 5).  Where the model ran or
@@ -200,7 +200,29 @@ class ConfsearchCheckpointStore:
     def load(self) -> tuple[CheckpointData, dict[str, Any]]:
         if not self.path.is_file():
             raise ConfsearchPreparationError(f"No confsearch checkpoint at {self.path}")
-        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            # A truncated or unreadable file is a domain refusal, not a raw
+            # JSONDecodeError, and it is left on disk for inspection.
+            raise ConfsearchPreparationError(
+                f"confsearch checkpoint is not readable JSON: {self.path}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ConfsearchPreparationError(
+                f"confsearch checkpoint is not a JSON object: {self.path}"
+            )
+        schema = payload.get("schema")
+        if schema != CHECKPOINT_SCHEMA:
+            raise ConfsearchPreparationError(
+                f"confsearch checkpoint schema is {schema!r}, expected "
+                f"{CHECKPOINT_SCHEMA!r}"
+            )
+        if payload.get("checkpoint_schema_revision") != CS_CHECKPOINT_SCHEMA_REVISION:
+            raise ConfsearchPreparationError(
+                "Incompatible confsearch checkpoint layout: per-member geometry "
+                "was not preserved by earlier revisions. Refusing unsafe resume."
+            )
         recorded = payload.get("resume_fingerprint")
         if not isinstance(recorded, Mapping):
             raise ConfsearchPreparationError("Checkpoint has no resume fingerprint")
