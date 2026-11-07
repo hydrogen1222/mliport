@@ -59,6 +59,30 @@ want as `--head` (`HEAD` in an INCAR file):
 dp --pt show DPA-3.1-3M.pt model-branch
 ```
 
+## Trusted training checkpoint compatibility
+
+Some DPA-SSE training checkpoints include NumPy scalars in both optimizer
+metadata and model training information. DeePMD explicitly uses
+`torch.load(weights_only=True)`, so these checkpoints cannot be loaded
+directly. For a **locally verified, trusted** source file only, convert it
+without modifying the original:
+
+```bash
+.venv-dpa/bin/python scripts/convert_dpa_checkpoint.py \
+  models/SSE-VASP-dpa2.pt models/SSE-VASP-dpa2-inference.pt \
+  --i-trust-this-file
+```
+
+The converter runs unsafe pickle deserialization **only after explicit opt-in**;
+never use it for a checkpoint from an unknown or untrusted source. It drops
+optimizer state, normalizes NumPy scalars inside the model metadata and
+verifies that every tensor, dtype and value is unchanged when reloaded with
+`weights_only=True`. A separate `.conversion.json` preserves both SHA-256
+hashes, conversions and the original source path. This verifies *file
+compatibility*, not energy/force equivalence: run real DeePMD predictions with
+the converted model and compare against the original trusted reference before
+scientific use.
+
 ## Things to know
 
 - **Leaving out the head on a multi-task checkpoint is a fatal configuration
