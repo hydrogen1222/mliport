@@ -11,13 +11,9 @@ Two contracts the spec makes explicit and the existing suites do not cover:
 All runs use the synthetic ``EggCrateCalculator`` on disposable CPU
 directories; no GPU or real model is involved.
 
-Known gap, reported separately (see the ``xfail`` below): the checkpoint
-serialises only the *representative* geometry of each unique minimum, so a
-resumed run writes the representative's coordinates for every member of that
-minimum in ``minima/all_minima.extxyz``.  Restoring per-member geometry is a
-checkpoint-layout change that would have to bump
-``CS_CHECKPOINT_SCHEMA_REVISION`` (invalidating in-flight checkpoints), so it
-needs an owner decision rather than being folded into this PR.
+Schema 2 stores every member's own geometry and classification. Earlier
+schema-1 checkpoints cannot safely restore per-member coordinates and must
+fail closed; previously resumed artifacts require provenance review.
 """
 
 from __future__ import annotations
@@ -50,6 +46,7 @@ _COMPARED = (
     "search_results.json",
     "minima/registry.json",
     "diagnostics/discovery.csv",
+    "minima/all_minima.extxyz",
 )
 
 
@@ -223,15 +220,6 @@ def test_load_refuses_a_truncated_checkpoint(tmp_path, monkeypatch):
     assert path.is_file()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "AUD-007: the checkpoint stores only the representative geometry, so a "
-        "resumed run reports it for every member of that minimum; restoring "
-        "per-member geometry changes the checkpoint layout and needs a "
-        "CS_CHECKPOINT_SCHEMA_REVISION bump (owner decision)"
-    ),
-)
 def test_resume_preserves_every_member_geometry(tmp_path, monkeypatch):
     """``all_minima.extxyz`` must hold the real geometry of every quench."""
 
@@ -251,3 +239,20 @@ def test_resume_preserves_every_member_geometry(tmp_path, monkeypatch):
     assert len(before) == len(after)
     for expected, actual in zip(before, after, strict=True):
         assert np.allclose(expected.positions, actual.positions, atol=1e-12)
+
+
+def test_old_checkpoint_schema_is_refused_without_overwrite(tmp_path, monkeypatch):
+    """Schema v1 lost member geometries and may not be resumed by v2."""
+    source = _interrupted(tmp_path, monkeypatch, stop_after=2)
+    target = tmp_path / "legacy"
+    shutil.copytree(source, target)
+    path = target / "checkpoints" / "confsearch.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["schema"] = "mliport.confsearch-checkpoint/1"
+    payload["checkpoint_schema_revision"] = 1
+    original = json.dumps(payload)
+    path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ConfsearchPreparationError, match="schema"):
+        ConfsearchCheckpointStore(target).load()
+    assert path.read_text(encoding="utf-8") == original
