@@ -25,6 +25,8 @@ jobs:
         run: uv run --no-project --with packaging python scripts/generate_docs.py --check
       - name: Ruff check
         run: uvx ruff@0.5.1 check --output-format=github mliport/mliport tests scripts
+      - name: Print formatter diff (temporary review aid)
+        run: uvx ruff@0.5.1 format --diff mliport/mliport tests scripts || true
       - name: Ruff format check
         run: |
           # Emit one annotation per unformatted file so failures are visible
