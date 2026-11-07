@@ -53,7 +53,7 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
             first = handle.readline()
             if not first:
                 raise ValueError(f"NEP model file is empty: {model_path}")
-            tokens = first.strip().split()
+            tokens = first.split("#", 1)[0].strip().split()
             had_leading_blank = not tokens
             if not tokens:
                 if first.startswith("\ufeff"):
