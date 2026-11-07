@@ -478,7 +478,13 @@ class MinimumRegistry:
                     ),
                 )
                 for member in entry.get("members", []):
-                    required = ("numbers", "positions_A", "cell_A", "pbc", "classification")
+                    required = (
+                        "numbers",
+                        "positions_A",
+                        "cell_A",
+                        "pbc",
+                        "classification",
+                    )
                     if any(key not in member for key in required):
                         raise ConfsearchPreparationError(
                             "Checkpoint member lacks individual geometry or classification"
