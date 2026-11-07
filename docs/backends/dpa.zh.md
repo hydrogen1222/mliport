@@ -52,6 +52,26 @@ DPA 模型通过 `deepmd-kit` 加载。很多 DPA 模型是多任务模型，带
 dp --pt show DPA-3.1-3M.pt model-branch
 ```
 
+## 可信训练 checkpoint 的兼容转换
+
+部分 DPA-SSE 训练检查点在优化器状态和模型训练信息中包含 NumPy 标量。
+DeePMD 明确使用 `torch.load(weights_only=True)`，因此无法直接读取。
+**只有明确确认来源可信**时，才使用以下离线转换，原始文件不会被修改：
+
+```bash
+.venv-dpa/bin/python scripts/convert_dpa_checkpoint.py \
+  models/SSE-VASP-dpa2.pt models/SSE-VASP-dpa2-inference.pt \
+  --i-trust-this-file
+```
+
+转换脚本仅在显式授权后才执行可能运行任意代码的 pickle 反序列化，
+不要用它处理不可信的模型文件。脚本会去掉优化器状态，把模型元数据中的
+NumPy 标量转换为 Python 标量，并通过 `weights_only=True` 重新读取，
+验证所有张量的名称、精度、形状和数值都没有变化。独立的
+`.conversion.json` 记录原文件路径、两份 SHA-256 与转换项目。
+这只能证明**文件兼容**，不能证明能量和力的预测等价；正式科研使用前，
+仍需用真实 DeePMD 推理与可信参考结果进行对照。
+
 ## 需要知道的事
 
 - **多任务模型必须写 head，否则报错。** 没有默认分支。
