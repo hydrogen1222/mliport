@@ -192,6 +192,26 @@ def _no_gpumd_env() -> dict[str, str]:
     return env
 
 
+def _gpu_host_env(shim_dir: Path) -> dict[str, str]:
+    """A V100 host, as reported by an ``nvidia-smi`` shim (CI has no GPU).
+
+    ``doctor --device cuda`` asks ``nvidia-smi`` for the device first and
+    crashes with a traceback when there is none, before it ever reaches the
+    gpumd check; the shim is therefore what makes the gpumd path observable.
+    """
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    smi = shim_dir / "nvidia-smi"
+    smi.write_text(
+        "#!/bin/sh\necho 'Tesla V100-SXM2-16GB, 7.0, 580.173.02, 16384, 0, "
+        "GPU-00000000-0000-0000-0000-000000000000'\n",
+        encoding="utf-8",
+    )
+    smi.chmod(0o755)
+    env = _no_gpumd_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+    return env
+
+
 # ---------------------------------------------------------------------------
 # first install, official sources (shared by the tests below)
 # ---------------------------------------------------------------------------
@@ -250,11 +270,12 @@ def test_doctor_cpu_passes_without_gpumd(workspace: Path) -> None:
     assert result.returncode == 0, _output(result)
 
 
-def test_doctor_cuda_names_the_missing_gpumd_binary(workspace: Path) -> None:
-    result = _doctor(
-        workspace, "cuda", env=_no_gpumd_env(), log_name="03-doctor-cuda-no-gpumd"
-    )
-    assert result.returncode != 0, "must fail closed, not pretend the GPU path works"
+def test_doctor_cuda_names_the_missing_gpumd_binary(
+    workspace: Path, tmp_path: Path
+) -> None:
+    env = _gpu_host_env(tmp_path / "gpu-shim")
+    result = _doctor(workspace, "cuda", env=env, log_name="03-doctor-cuda-no-gpumd")
+    assert result.returncode != 0, "must fail closed, not pretend GPU NEP works"
     assert "gpumd" in _output(result).lower()
 
 
@@ -262,18 +283,19 @@ def test_doctor_cuda_accepts_gpumd_given_through_mliport_gpumd_command(
     workspace: Path, tmp_path: Path
 ) -> None:
     fake = tmp_path / "gpumd"
-    fake.write_text("#!/bin/sh\necho 'fake gpumd for doctor probe'\n", encoding="utf-8")
+    fake.write_text("#!/bin/sh\necho 'fake gpumd for doctor'\n", encoding="utf-8")
     fake.chmod(0o755)
-    env = _no_gpumd_env()
+    env = _gpu_host_env(tmp_path / "gpu-shim")
     env["MLIPORT_GPUMD_COMMAND"] = str(fake)
     result = _doctor(workspace, "cuda", env=env, log_name="04-doctor-cuda-fake-gpumd")
     assert result.returncode == 0, _output(result)
 
     # doctor does not read NEP_GPUMD_COMMAND; documented, and pinned here.
-    env = _no_gpumd_env()
+    env = _gpu_host_env(tmp_path / "gpu-shim")
     env["NEP_GPUMD_COMMAND"] = str(fake)
     other = _doctor(workspace, "cuda", env=env)
     assert other.returncode != 0
+    assert "gpumd" in _output(other).lower()
 
 
 def test_nep_install_is_isolated_from_other_backends(workspace: Path) -> None:
@@ -303,18 +325,23 @@ def test_nep_install_is_isolated_from_other_backends(workspace: Path) -> None:
         assert not (workspace / "bin" / f"mliport-{other}").exists()
 
 
-def test_repeat_install_keeps_working_and_keeps_the_environment(
+def test_plain_repeat_install_fails_closed_and_leaves_the_environment_alone(
     workspace: Path,
 ) -> None:
+    """Without ``--clean`` the venv step stops because ``.venv-nep`` exists.
+
+    This is how every backend's plan behaves (``uv venv`` without
+    ``--allow-existing``); NEP is pinned to the same behaviour and, above all,
+    the working environment must be left untouched.
+    """
     marker = workspace / ".venv-nep" / "reinstall-marker"
     marker.write_text("kept", encoding="utf-8")
     result = _install(
-        workspace, "--device", "cpu", "--source", "official", log_name="05-reinstall"
+        workspace, "--device", "cpu", "--source", "official", log_name="05-repeat"
     )
-    assert result.returncode == 0, _output(result)
-    assert marker.read_text(encoding="utf-8") == "kept", (
-        "plain re-run must not delete the environment"
-    )
+    assert result.returncode != 0
+    assert "already exists" in _output(result)
+    assert marker.read_text(encoding="utf-8") == "kept"
     assert _is_executable_file(workspace / ".venv-nep" / "bin" / "mliport")
     assert _doctor(workspace, "cpu", env=_no_gpumd_env()).returncode == 0
 
@@ -367,17 +394,7 @@ def test_gpu_host_install_without_gpumd_stops_at_doctor_and_names_gpumd(
     no GPU) with ``--device auto`` asks for the CUDA path.  Without gpumd the
     closing doctor must fail naming it, the environment itself stays installed,
     and the launcher is not advertised as installed."""
-    shim_dir = tmp_path / "gpu-shim"
-    shim_dir.mkdir()
-    smi = shim_dir / "nvidia-smi"
-    smi.write_text(
-        "#!/bin/sh\necho 'Tesla V100-SXM2-16GB, 7.0, 580.173.02, 16384, 0, "
-        "GPU-00000000-0000-0000-0000-000000000000'\n",
-        encoding="utf-8",
-    )
-    smi.chmod(0o755)
-    env = _no_gpumd_env()
-    env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+    env = _gpu_host_env(tmp_path / "gpu-shim")
 
     path = _copy_workspace(tmp_path / "repo")
     result = _install(
@@ -391,9 +408,9 @@ def test_gpu_host_install_without_gpumd_stops_at_doctor_and_names_gpumd(
     )
     assert result.returncode != 0
     assert "gpumd" in _output(result).lower()
-    assert _is_executable_file(path / ".venv-nep" / "bin" / "mliport"), (
-        "environment itself is installed"
-    )
+    assert _is_executable_file(
+        path / ".venv-nep" / "bin" / "mliport"
+    ), "environment itself is installed"
     assert not (path / "bin" / "mliport-nep").exists()
 
 

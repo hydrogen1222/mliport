@@ -50,7 +50,9 @@ CUDA path and fails naming `gpumd` until one is on `PATH` or in
 build `gpumd` and re-run the installer, or install with `--device cpu` /
 `--skip-doctor` (and call `.venv-nep/bin/mliport` directly in the meantime).
 
-Pass fewer engines if you only need some. `--dry-run` prints every step without
+Re-running the installer while an environment already exists stops at its creation
+step and leaves that environment untouched; add `--clean` to delete and rebuild
+only the environments of the engines you name. Pass fewer engines if you only need some. `--dry-run` prints every step without
 executing anything. Unless you give `--skip-doctor`, the installer runs
 `mliport doctor` in each environment when it finishes. The analysis, transport
 and electrolyte features come with the same install; there is no second step.

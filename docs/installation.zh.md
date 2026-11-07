@@ -43,7 +43,8 @@ mliport，所以 `.venv-nep/bin/mliport` 一定存在，`doctor` 才能运行。
 `bin/mliport-nep` 启动器要等所有步骤都成功才会写出；可以编译好 `gpumd` 后重新运行安装脚本，也可以改用
 `--device cpu` 或 `--skip-doctor` 安装（期间直接用 `.venv-nep/bin/mliport`）。
 
-只要部分后端时，`--engines` 后面少写几个就行。`--dry-run` 只打印要执行的步骤，不真正安装。
+环境已经存在时重新运行安装脚本，会在创建环境这一步停下，原有环境不会被改动；加 `--clean` 才会删除并重建
+你所指定后端的环境（只动这些）。只要部分后端时，`--engines` 后面少写几个就行。`--dry-run` 只打印要执行的步骤，不真正安装。
 安装结束时脚本会在每个环境里运行一次 `mliport doctor`（加 `--skip-doctor` 可以跳过）。分析、
 输运和电解质相关的依赖会一起装好，不用另外安装。
 
