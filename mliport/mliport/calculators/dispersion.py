@@ -96,6 +96,18 @@ def normalize_d3_options(
     damping = (
         DEFAULT_D3_DAMPING if d3_damping is None else str(d3_damping).strip().lower()
     )
+    if model_type == "nep":
+        # PR #61 N-B04: D3 may only be enabled when both the model and the
+        # executor are proven compatible and double counting is excluded.  NEP
+        # models can themselves carry a van der Waals (nep4-vdw) dispersion
+        # term and that format is not part of this round's verified scope, so
+        # the combination is rejected instead of silently added.
+        raise ValueError(
+            "DFT-D3 cannot be combined with MODEL_TYPE=nep: mliport has no "
+            "verified evidence that a NEP model (which may already include a "
+            "van der Waals term) plus a D3 correction avoids double-counting "
+            "dispersion."
+        )
     if not xc:
         raise ValueError("d3_xc must name the model's reference functional.")
     if damping not in D3_DAMPINGS:

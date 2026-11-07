@@ -14,6 +14,32 @@ Internal (no user-visible behaviour change):
   a shared helper that additionally records `dispersion`. No scientific record
   invalidated and no result changes.
 
+Native GPUMD runtime fixes (PR #88; no existing backend result changes):
+
+- **Native GPUMD run directories load through `TrajectoryDataset.load()`.** The
+  analysis layer could not discover `trajectory.extxyz`/`manifest.json` at all.
+  The loader now accepts a native run directory only when its manifest is
+  `completed`, describes an MD run, and vouches for the trajectory (SHA-256,
+  frame count, atoms, PBC, position convention, recorded time and step axes);
+  anything else raises `InvalidTrajectoryError`. The dataset keeps the
+  GPUMD-recorded times and steps, 3-D PBC, unwrapped coordinates when dumped
+  (otherwise `wrapped`, never promoted), and GPUMD's own per-atom masses.
+  Missing time is never inferred.
+- **Exit status 0 is no longer completion for native MD.** The dump must hold
+  `steps // dump_interval` frames with a recorded, uniform, on-grid time axis
+  ending inside the requested window, the input species/PBC/cell in every frame,
+  and a `thermo.out` aligned with it. A short or mixed dump is `failed`, leaves
+  no `trajectory.extxyz`, and keeps the raw output. Non-divisible save intervals
+  are accepted.
+- **Native MD post-processing streams.** The dump was parsed into a list of
+  `Atoms`, parsed again for the summary and again for writing; it is now read
+  once, one frame at a time, and the normalised trajectory is published
+  atomically after every check passed.
+- **A zero-time-step native single point whose coordinates or cell moved now
+  fails** instead of reporting `positions_unchanged: false` as `completed`.
+- The manifest only advertises a trajectory this run committed, and the docs'
+  layout text now names the real files (`manifest.json`, `native/provenance.json`).
+
 Batch fixes and features:
 
 - **Batch outputs no longer collide on equal file names.** Each structure's
@@ -40,6 +66,38 @@ Batch fixes and features:
 
 New features:
 
+- **NEP backend with two explicit execution runtimes (`MODEL_TYPE = NEP`,
+  tracking PR #61).** `NEP_RUNTIME = ase` runs Calorine `CPUNEP` on `cpu`
+  (float64, in-process) or `GPUNEP` on `cuda` (float32, one `gpumd` subprocess
+  per ASE evaluation); `NEP_RUNTIME = gpumd` runs sp/opt/md in a single native
+  `gpumd` process on `cuda` (float32) with raw `native/` output, a normalised
+  `trajectory.extxyz`, unwrapped positions and a `manifest.json` carrying the
+  terminal status. The runtime is a required, explicit user decision in the
+  CLI, Python API, INCAR/settings, TUI and queue; mliport never infers it from
+  the device or falls back between the two, and `neb`/`batch`/`confsearch` are
+  refused for the native runtime instead of being rerouted. `gpumd` is only
+  invoked as an argv list (never through a shell) and its path, version and
+  SHA-256 are recorded. DFT-D3 is rejected for NEP (no evidence it avoids
+  double-counting a NEP van der Waals term). GPUMD's `nvt_*` coupling constant
+  `T_coup = tau_T/dt` is derived from the ASE-style `friction`/`bussi_tau`/
+  `nhc_tdamp` and recorded with the mapping. New `docs/backends/nep.md` and
+  `nep.zh.md`, `mliport doctor --engine nep`, and an opt-in `.venv-nep` install
+  plan entry. No existing backend default, dtype, task or output changed.
+- **Validation harness: model-identity comparison for directory artifacts
+  (audit H-01).** `validation/science/scripts/neb_suite.py` compared the
+  engine-recorded path hash with the manifest's `model_sha256`, which for a
+  GRACE SavedModel directory is the *distributed archive* identity. Every GRACE
+  saddle record was therefore a false `fail` even when the barrier, CI
+  convergence, force and negative-mode criteria all passed. The harness now
+  hashes the local artifact with the same algorithm `mliport.model_record`
+  uses (`common.artifact_sha256`) and records the manifest identity separately;
+  the file-by-file manifest check is unchanged. No threshold was relaxed, no
+  historical record rewritten.
+- **Validation harness: `--tiers t3` argument forwarding (audit H-02).**
+  `run_suite.py` started `omat_eval.py` without its required `--subset`, so the
+  tier could never run. `--subset` is now forwarded and `--tiers t3` without it
+  is rejected with an actionable message instead of an argparse failure inside
+  the child.
 - **Configuration search (`confsearch`, new `CALC_TYPE = CONFSEARCH`).** MD-based
   configuration search for one adsorbate on a periodic slab (spec revision 4,
   tracking PR #61): multiple starts (user-prepared mode A, or automatic

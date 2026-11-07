@@ -33,7 +33,11 @@ import numpy as np
 from ase.io import read
 from ase.io import write as ase_write
 
-from mliport.backend_selection import PROCESS_ISOLATED_BACKENDS
+from mliport.backend_selection import (
+    NEP_RUNTIMES,
+    PROCESS_ISOLATED_BACKENDS,
+    model_type_choices,
+)
 from mliport.config import (
     IncarConfig,
     get_default_config,
@@ -236,6 +240,32 @@ Examples:
             help="UMA inference mode (default: task-specific; turbo is rejected for other engines).",
         )
         p.add_argument(
+            "--nep-runtime",
+            dest="nep_runtime",
+            type=str,
+            default=None,
+            choices=list(NEP_RUNTIMES),
+            help=(
+                "NEP execution runtime (required for --model-type nep): 'ase' "
+                "runs Calorine CPUNEP on cpu / GPUNEP on cuda; 'gpumd' runs one "
+                "native gpumd process per job on cuda. mliport never infers or "
+                "falls back between them."
+            ),
+        )
+        p.add_argument(
+            "--gpumd-command",
+            "--nep-gpumd-command",
+            dest="nep_gpumd_command",
+            type=str,
+            default=None,
+            metavar="PATH",
+            help=(
+                "Path to the gpumd executable used by --nep-runtime gpumd (and "
+                "by Calorine GPUNEP). Launched as argv, never through a shell; "
+                "path, version and SHA256 are recorded."
+            ),
+        )
+        p.add_argument(
             "--cpu-threads",
             "--torch-num-threads",
             dest="torch_num_threads",
@@ -420,7 +450,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     sp_parser.add_argument(
@@ -479,7 +509,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     opt_parser.add_argument(
@@ -570,7 +600,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     md_parser.add_argument(
@@ -755,7 +785,7 @@ Examples:
     neb_parser.add_argument(
         "--model-type",
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
     )
     neb_parser.add_argument("--task", default=None)
     neb_parser.add_argument(
@@ -876,7 +906,7 @@ Examples:
     )
     conf_run.add_argument("--model", type=str, default=None)
     conf_run.add_argument(
-        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+        "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_run.add_argument("--task", type=str, default=None)
     conf_run.add_argument("--output", type=str, default=None)
@@ -1009,7 +1039,7 @@ Examples:
     conf_resume.add_argument("run", help="Run directory to resume")
     conf_resume.add_argument("--model", type=str, default=None)
     conf_resume.add_argument(
-        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+        "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_resume.add_argument("--task", type=str, default=None)
     _add_resolver_args(conf_resume, trajectory_output_flags=False)
@@ -1023,7 +1053,7 @@ Examples:
     )
     conf_extend.add_argument("--model", type=str, default=None)
     conf_extend.add_argument(
-        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+        "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_extend.add_argument("--task", type=str, default=None)
     _add_resolver_args(conf_extend, trajectory_output_flags=False)
@@ -1075,7 +1105,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     batch_parser.add_argument(
@@ -1260,7 +1290,7 @@ Examples:
     )
     template_parser.add_argument(
         "--engine",
-        choices=["uma", "fairchem", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         default=None,
         help=(
             "Render backend-specific model fields. Omit for a "
@@ -1756,7 +1786,7 @@ Examples:
     )
     doctor_parser.add_argument(
         "--engine",
-        choices=["auto", "uma", "mace", "dpa", "grace"],
+        choices=["auto", *model_type_choices()],
         default="auto",
         help=(
             "Engine to runtime-check. auto (default) performs a side-effect-free "
@@ -1968,6 +1998,8 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
         "neighbor_skin",
         "default_dtype",
         "head",
+        "nep_runtime",
+        "nep_gpumd_command",
         "d3",
         "d3_xc",
         "d3_damping",

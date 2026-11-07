@@ -7,6 +7,7 @@ not calculate diffusion or any other derived scientific observable.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 from dataclasses import dataclass, field, replace
@@ -37,14 +38,37 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+#: Schema of the manifest written by the native GPUMD runner.
+_GPUMD_MANIFEST_SCHEMA = "mliport.gpumd-manifest/1"
+_GPUMD_TRAJECTORY_NAME = "trajectory.extxyz"
+
+
+def _gpumd_manifest(run_dir: Path) -> dict[str, Any] | None:
+    """Return the native-GPUMD manifest of ``run_dir``, or ``None`` if it has none."""
+    path = run_dir / "manifest.json"
+    if not path.is_file():
+        return None
+    try:
+        manifest = _read_json(path)
+    except (OSError, ValueError):
+        return None
+    return manifest if manifest.get("schema") == _GPUMD_MANIFEST_SCHEMA else None
+
+
 def _discover_source(source: str | Path) -> tuple[Path, Path]:
     path = Path(source).expanduser().resolve()
     if path.is_file():
+        if path.name == _GPUMD_TRAJECTORY_NAME and _gpumd_manifest(path.parent):
+            return path.parent, path
         if path.parent.name in {"raw", "vasp"}:
             return path.parent.parent, path
         return path.parent, path
     if not path.is_dir():
         raise FileNotFoundError(f"Trajectory or run directory not found: {path}")
+    if _gpumd_manifest(path) is not None:
+        # The manifest, not the mere presence of a file, decides whether this
+        # directory holds a trajectory; ``load`` verifies it before reading.
+        return path, path / _GPUMD_TRAJECTORY_NAME
     for candidate in (
         path / "raw" / "trajectory.traj",
         path / "trajectory.traj",
@@ -55,8 +79,204 @@ def _discover_source(source: str | Path) -> tuple[Path, Path]:
             return path, candidate
     raise FileNotFoundError(
         "No supported trajectory found. Expected raw/trajectory.traj, "
-        "trajectory.traj, vasp/XDATCAR, or XDATCAR under " + str(path)
+        "trajectory.traj, vasp/XDATCAR, XDATCAR, or a native GPUMD run "
+        "directory (manifest.json + trajectory.extxyz) under " + str(path)
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _NativeGPUMDRun:
+    """What the manifest of a native GPUMD run vouches for (see ``_verify_native``)."""
+
+    manifest: dict[str, Any]
+    block: dict[str, Any]
+    nframes: int
+    natoms: int
+    convention: str
+    dt_fs: float
+    dump_interval: int
+    frame_interval_fs: float
+    first_step: int
+    last_step: int
+    first_time_fs: float
+    last_time_fs: float
+    temperature_K: float | None
+
+
+def _native_fail(message: str) -> Exception:
+    from mliport.analysis.validation import InvalidTrajectoryError  # noqa: PLC0415
+
+    return InvalidTrajectoryError(f"Native GPUMD run refused: {message}")
+
+
+def _manifest_number(block: dict[str, Any], key: str, *, integer: bool) -> Any:
+    value = block.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise _native_fail(f"manifest trajectory.{key} is missing or not a number")
+    if not math.isfinite(float(value)):
+        raise _native_fail(f"manifest trajectory.{key} is not finite")
+    if integer:
+        if float(value) != math.floor(float(value)):
+            raise _native_fail(f"manifest trajectory.{key} is not an integer")
+        return int(value)
+    return float(value)
+
+
+def _verify_native(run_dir: Path, source_path: Path) -> _NativeGPUMDRun:
+    """Accept a native GPUMD run directory only if its manifest vouches for it.
+
+    Fails closed: the run must be an MD run that finished with status
+    ``completed``, its manifest must describe a verified schedule (frame count,
+    recorded times, position convention), and ``trajectory.extxyz`` must be the
+    byte-identical file the runner committed.  Nothing here infers a missing
+    value; a manifest that lacks one is refused.
+    """
+    manifest = _gpumd_manifest(run_dir)
+    if manifest is None:  # pragma: no cover - callers check first
+        raise _native_fail(f"{run_dir} has no mliport.gpumd-manifest/1 manifest")
+    status = manifest.get("status")
+    if status != "completed":
+        error = manifest.get("error") or {}
+        detail = error.get("message") if isinstance(error, dict) else None
+        raise _native_fail(
+            f"manifest status is {status!r}, not 'completed'"
+            + (f" ({detail})" if detail else "")
+            + "; the raw GPUMD output under native/ is kept as evidence"
+        )
+    calc_type = manifest.get("calc_type")
+    if calc_type != "md":
+        raise _native_fail(
+            f"calc_type is {calc_type!r}; only an MD run is a time trajectory "
+            "(an optimisation path or single point must not enter transport "
+            "analysis)"
+        )
+    result = manifest.get("result")
+    if not isinstance(result, dict) or result.get("status") != "completed":
+        raise _native_fail("manifest result does not record a completed MD run")
+    block = manifest.get("trajectory")
+    if not isinstance(block, dict):
+        raise _native_fail(
+            "manifest has no trajectory block; this run did not commit a "
+            "verified normalised trajectory"
+        )
+    relative = block.get("path")
+    if (
+        relative != _GPUMD_TRAJECTORY_NAME
+        or manifest.get("trajectory_path") != relative
+    ):
+        raise _native_fail(
+            f"manifest trajectory path {relative!r} is not {_GPUMD_TRAJECTORY_NAME!r}"
+        )
+    if source_path != run_dir / _GPUMD_TRAJECTORY_NAME:
+        raise _native_fail("trajectory path escapes the run directory")
+    if not source_path.is_file():
+        raise _native_fail(f"{source_path} is missing although the manifest lists it")
+    expected_hash = block.get("sha256")
+    if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+        raise _native_fail("manifest records no SHA-256 for the trajectory")
+    digest = hashlib.sha256()
+    with source_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected_hash:
+        raise _native_fail(
+            f"{source_path.name} does not match the SHA-256 recorded in the "
+            "manifest (modified or truncated after the run)"
+        )
+    convention = block.get("positions_convention")
+    if convention not in {"wrapped", "unwrapped"}:
+        raise _native_fail(
+            f"manifest positions_convention {convention!r} is not wrapped/unwrapped"
+        )
+    nframes = _manifest_number(block, "nframes", integer=True)
+    natoms = _manifest_number(block, "natoms", integer=True)
+    dt_fs = _manifest_number(block, "dt_fs", integer=False)
+    interval = _manifest_number(block, "frame_interval_fs", integer=False)
+    first_step = _manifest_number(block, "first_step", integer=True)
+    last_step = _manifest_number(block, "last_step", integer=True)
+    first_time = _manifest_number(block, "first_time_fs", integer=False)
+    last_time = _manifest_number(block, "last_time_fs", integer=False)
+    schedule = block.get("schedule")
+    if not isinstance(schedule, dict) or schedule.get("schedule_verified") is not True:
+        raise _native_fail("manifest does not record a verified MD schedule")
+    dump_interval = _manifest_number(schedule, "dump_interval", integer=True)
+    if nframes < 1 or natoms < 1 or dt_fs <= 0 or interval <= 0 or dump_interval < 1:
+        raise _native_fail("manifest schedule has a non-positive count or interval")
+    if not math.isclose(interval, dump_interval * dt_fs, rel_tol=1e-9, abs_tol=1e-9):
+        raise _native_fail(
+            f"manifest frame interval {interval:g} fs != dump_interval * dt = "
+            f"{dump_interval * dt_fs:g} fs"
+        )
+    if schedule.get("nframes") != nframes:
+        raise _native_fail("manifest frame counts disagree")
+    run_in = manifest.get("run_in")
+    provenance = run_in.get("provenance") if isinstance(run_in, dict) else None
+    temperature = (
+        provenance.get("temperature") if isinstance(provenance, dict) else None
+    )
+    return _NativeGPUMDRun(
+        manifest=manifest,
+        block=block,
+        nframes=nframes,
+        natoms=natoms,
+        convention=convention,
+        dt_fs=dt_fs,
+        dump_interval=dump_interval,
+        frame_interval_fs=interval,
+        first_step=first_step,
+        last_step=last_step,
+        first_time_fs=first_time,
+        last_time_fs=last_time,
+        temperature_K=(
+            float(temperature)
+            if isinstance(temperature, (int, float))
+            and not isinstance(temperature, bool)
+            else None
+        ),
+    )
+
+
+def _check_native_frames(native: _NativeGPUMDRun, frames: _CollectedFrames) -> None:
+    """Cross-check the parsed frames against what the manifest vouches for.
+
+    The hash already proves the file is the committed one; this guards the
+    reader (for example an ASE version that drops a key) and refuses to build a
+    dataset whose frames contradict the declared time axis, step axis, PBC or
+    position convention rather than quietly repairing any of them.
+    """
+    if frames.nframes != native.nframes or frames.positions.shape[1] != native.natoms:
+        raise _native_fail(
+            f"trajectory.extxyz has {frames.nframes} frames x "
+            f"{frames.positions.shape[1]} atoms; the manifest records "
+            f"{native.nframes} x {native.natoms}"
+        )
+    if not bool(np.all(frames.pbc)):
+        raise _native_fail(
+            f"frames have pbc={frames.pbc.tolist()}; native GPUMD runs are 3-D periodic"
+        )
+    conventions = set(frames.info.get("positions_convention", []))
+    if conventions != {native.convention}:
+        raise _native_fail(
+            f"frames declare positions_convention {sorted(map(str, conventions))}, "
+            f"the manifest declares {native.convention!r}"
+        )
+    times = frames.info_values("mliport_time_fs")
+    steps = frames.info_values("mliport_step")
+    if times is None or steps is None:
+        raise _native_fail("a frame lacks its recorded time or step")
+    time_axis = np.asarray(times, dtype=float)
+    step_axis = np.asarray(steps)
+    if not (
+        np.isclose(time_axis[0], native.first_time_fs, rtol=1e-9, atol=1e-9)
+        and np.isclose(time_axis[-1], native.last_time_fs, rtol=1e-9, atol=1e-9)
+        and int(step_axis[0]) == native.first_step
+        and int(step_axis[-1]) == native.last_step
+    ):
+        raise _native_fail("frame times/steps differ from the manifest's verified span")
+    if not np.array_equal(
+        np.rint(time_axis / native.dt_fs).astype(np.int64), step_axis
+    ):
+        raise _native_fail("frame steps are inconsistent with frame times and dt")
 
 
 def _iter_frames(path: Path) -> Iterator[Atoms]:
@@ -80,6 +300,7 @@ _FRAME_INFO_KEYS = (
     "mliport_step",
     "mliport_phase",
     "trajectory_kind",
+    "positions_convention",
 )
 
 
@@ -527,13 +748,44 @@ class TrajectoryDataset:
         """
 
         run_dir, source_path = _discover_source(source)
+        native: _NativeGPUMDRun | None = None
+        if (
+            source_path == run_dir / _GPUMD_TRAJECTORY_NAME
+            and _gpumd_manifest(run_dir) is not None
+        ):
+            # Verified *before* the file is parsed: a failed, partial or
+            # modified native run is refused, never loaded as a trajectory.
+            native = _verify_native(run_dir, source_path)
+            if md_timestep_fs is not None and not math.isclose(
+                float(md_timestep_fs), native.dt_fs, rel_tol=1e-9, abs_tol=1e-12
+            ):
+                raise ValueError(
+                    f"md_timestep_fs={md_timestep_fs!r} conflicts with the native "
+                    f"GPUMD manifest ({native.dt_fs:g} fs)"
+                )
+            if frame_stride_steps is not None and int(frame_stride_steps) != (
+                native.dump_interval
+            ):
+                raise ValueError(
+                    f"frame_stride_steps={frame_stride_steps!r} conflicts with the "
+                    f"native GPUMD dump interval ({native.dump_interval})"
+                )
         frames = _collect_frames(_iter_frames(source_path))
         if frames is None:
             raise ValueError(f"Trajectory contains no frames: {source_path}")
+        if native is not None:
+            _check_native_frames(native, frames)
 
         artifacts = _read_json(run_dir / "artifacts.json")
         resolved = _read_json(run_dir / "resolved_config.json")
         trajectory_meta = artifacts.get("trajectory", {})
+        if native is not None:
+            trajectory_meta = {
+                "md_timestep_fs": native.dt_fs,
+                "frame_stride_steps": native.dump_interval,
+                "frame_interval_fs": native.frame_interval_fs,
+                "positions_convention": native.convention,
+            }
         # ASE's standard XDATCAR reader unconditionally sets pbc=True even
         # for slab/molecule input. Treat that value as an unverified parser
         # assumption unless the matching mliport MD manifest records a mask.
@@ -687,18 +939,28 @@ class TrajectoryDataset:
         )
 
         target_temperature = run_options.get("temperature")
+        source_format = (
+            "ase-traj" if source_path.suffix.lower() == ".traj" else "xdatcar"
+        )
+        run_status = artifacts.get("status", "external_or_unknown")
+        if native is not None:
+            target_temperature = native.temperature_K
+            source_format = "gpumd-extxyz"
+            run_status = native.manifest["status"]
+            time_source = "GPUMD dump Time= (recorded)"
+            pbc_source = "gpumd-manifest"
         metadata = {
             "artifacts": artifacts,
             "resolved_config": resolved,
-            "run_status": artifacts.get("status", "external_or_unknown"),
+            "run_status": run_status,
             "time_source": time_source,
             "target_temperature_K": target_temperature,
-            "source_format": "ase-traj"
-            if source_path.suffix.lower() == ".traj"
-            else "xdatcar",
+            "source_format": source_format,
             "pbc_verified": pbc_verified,
             "pbc_source": pbc_source,
         }
+        if native is not None:
+            metadata["gpumd_manifest"] = native.manifest
         return cls._from_collected(
             frames,
             run_dir=run_dir,

@@ -65,6 +65,21 @@ _ENGINE_SPECS: dict[str, dict[str, str]] = {
         "framework": "tensorflow",
         "install": "Install tensorpotential in the dedicated .venv-grace environment.",
     },
+    # NEP has two execution runtimes.  Calorine supplies the ASE calculator
+    # (CPUNEP float64 / GPUNEP float32-per-subprocess); the native runtime needs
+    # only the ``gpumd`` binary.  ``doctor --engine nep`` reports both, because
+    # "import calorine works" says nothing about whether native GPUMD can run.
+    "nep": {
+        "label": "NEP",
+        "distribution": "calorine",
+        "module": "calorine.calculators",
+        "framework": "numpy",
+        "install": (
+            "Install calorine (ASE runtime) in the dedicated .venv-nep "
+            "environment and build/probe the gpumd binary for the native "
+            "runtime; see docs/backends/nep.md."
+        ),
+    },
 }
 
 
@@ -205,6 +220,9 @@ def _runtime_probe(
     spec = _ENGINE_SPECS[engine]
     selected_framework = framework or spec["framework"]
     compute_target = "cpu" if device == "cpu" else "cuda"
+    # NEP: the GPU runtimes need a gpumd binary; let the caller pass one
+    # explicitly instead of guessing from PATH only.
+    gpumd_env = str(os.environ.get("MLIPORT_GPUMD_COMMAND") or "")
     script = f"""
 import importlib
 import json
@@ -244,6 +262,42 @@ try:
         if probe_value != 14.0:
             raise RuntimeError(f"unexpected PyTorch probe value {{probe_value}}")
         payload["compute_probe"] = f"tensor dot product on {{tensor_device}}"
+    elif payload["framework"] == "numpy":
+        # NEP: Calorine is a compiled C++ extension on top of numpy/ASE, not a
+        # deep-learning framework.  Probe the calculator imports, then check the
+        # ``gpumd`` executable that GPUNEP and the native runtime both need.
+        import shutil
+        import subprocess
+
+        import numpy
+        payload.update(
+            numpy_version=str(numpy.__version__),
+            calorine_version=str(
+                getattr(importlib.import_module("calorine"), "__version__", "unknown")
+            ),
+            ase_version=str(
+                getattr(importlib.import_module("ase"), "__version__", "unknown")
+            ),
+        )
+        gpumd_path = shutil.which("gpumd") or {gpumd_env!r}
+        payload["gpumd_path"] = gpumd_path or None
+        payload["native_gpumd_available"] = bool(gpumd_path)
+        if gpumd_path:
+            banner = subprocess.run(
+                [gpumd_path], capture_output=True, text=True, timeout=60,
+                check=False,
+            )
+            payload["gpumd_banner_tail"] = (banner.stdout or "").strip().splitlines()[:6]
+        target = {compute_target!r}
+        payload["compute_probe"] = (
+            "calorine/ASE import + numpy dot product (no model inference: a NEP "
+            "run additionally needs a target nep.txt model)"
+        )
+        if target == "cuda" and not gpumd_path:
+            raise RuntimeError(
+                "GPU NEP (Calorine GPUNEP or native gpumd) requires a gpumd "
+                "executable; none was found on PATH or via MLIPORT_GPUMD_COMMAND"
+            )
     else:
         import tensorflow as tf
         physical = list(tf.config.list_physical_devices("GPU"))
@@ -550,7 +604,7 @@ def _gpu_architecture_evidence(
                 break
     except (OSError, ValueError, KeyError, TypeError):
         classification = None
-    if classification is None and engine in {"mace", "dpa", "grace", "uma"}:
+    if classification is None and engine in {"mace", "dpa", "grace", "uma", "nep"}:
         from mliport.install.compatibility import (  # noqa: PLC0415
             get_backend_arch_profile,
         )
@@ -667,7 +721,7 @@ def run_diagnostics(
     if target_engine == "fairchem":
         target_engine = "uma"
     if target_engine != "auto" and target_engine not in _ENGINE_SPECS:
-        raise ValueError("engine must be auto, uma, mace, dpa, or grace")
+        raise ValueError("engine must be auto, uma, mace, dpa, grace, or nep")
     requested_device = _normalize_device(device)
     if default_dtype not in {"float32", "float64"}:
         raise ValueError("default_dtype must be float32 or float64")
@@ -681,7 +735,7 @@ def run_diagnostics(
                 "status": "skip",
                 "detail": (
                     "No backend is imported in inventory mode. Choose --engine "
-                    "uma, mace, dpa, or grace for a runtime check."
+                    "uma, mace, dpa, grace, or nep for a runtime check."
                 ),
             }
         )
@@ -1038,6 +1092,31 @@ def run_diagnostics(
                         "name": "CUDA runtime",
                         "value": f"available ({runtime.get('device_count', 0)} visible GPU(s))",
                         "status": "ok",
+                    }
+                )
+            elif runtime.get("framework") == "numpy":
+                # NEP's GPU capability is the gpumd executable, not a
+                # framework CUDA context: CPUNEP/GPUNEP/native run GPU work in
+                # a child gpumd process, so numpy never sees a CUDA device.
+                gpumd_path = runtime.get("gpumd_path")
+                checks.append(
+                    {
+                        "name": "CUDA runtime",
+                        "value": (
+                            f"gpumd executable probe: {gpumd_path}"
+                            if gpumd_path
+                            else "no gpumd executable found"
+                        ),
+                        "status": "ok" if gpumd_path else "fail",
+                        "detail": (
+                            "NEP GPU work runs inside a spawned gpumd process; "
+                            "verify the device there (mliport records the actual "
+                            "GPU UUID per run). Set MLIPORT_GPUMD_COMMAND or put "
+                            "gpumd on PATH."
+                            if not gpumd_path
+                            else "The spawned gpumd process performs the CUDA "
+                            "work; numpy itself has no CUDA context by design."
+                        ),
                     }
                 )
             else:

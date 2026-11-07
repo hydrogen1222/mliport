@@ -10,9 +10,11 @@ with `No MLIP backend was selected`. Nothing falls back to something else.
 | DPA (DeepMD-kit) | [DPA](dpa.md) | `dpa` | `DPA-3.1-3M.pt` with `--head Omat24` |
 | GRACE | [GRACE](grace.md) | `grace` | `GRACE-2L-OMAT-medium-base` |
 | UMA (FAIRChem) | [UMA](uma.md) | `uma` (or `fairchem`) | `uma-s-1p2.pt` with `--task omat` |
+| NEP | [NEP](nep.md) | `nep` (+ required `--nep-runtime ase|gpumd`) | your own `nep.txt` |
 
 Each backend lives in its own environment (`.venv-mace`, `.venv-dpa`,
-`.venv-grace`, `.venv`) because their frameworks and Python requirements differ;
+`.venv-grace`, `.venv`, `.venv-nep`) because their frameworks and Python
+requirements differ;
 see [Installation](../installation.md) for how that works. To check that one of
 them can really run, ask `doctor`:
 
