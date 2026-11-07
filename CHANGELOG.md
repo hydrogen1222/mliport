@@ -12,6 +12,17 @@ DPA checkpoint migration (#91):
   Only use it with verified trusted checkpoints; model predictions still require
   scientific reference validation.
 
+NEP model-format compatibility (#90):
+
+- Recognize GPUMD format-version-1 energy NEP files such as NEP89 (first
+  line `nep 89 ...`, separate `format_version 1` and `model nep`). Both
+  runtime paths use the same strict header parser. Record format revision,
+  model family, ordered elements, cutoffs, ZBL, energy references and native
+  model SHA-256; refuse unsupported temperature, charge, dipole, spin and vdW
+  families rather than treating them as plain energy NEP.
+- Legacy `nep4` and `nep4_zbl` headers remain accepted. The parser checks
+  model metadata, not the numerical parameter block or real GPU inference.
+
 Confsearch checkpoint integrity (AUD-007, #83):
 
 - Fixed checkpoint/resume to preserve each individual minimum member's atomic

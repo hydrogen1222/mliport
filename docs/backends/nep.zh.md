@@ -240,6 +240,27 @@ GPa              = -ase_stress * 160.2176634
 `restart.xyz` 是覆盖式输出且不含随机数状态；仅仅存在一个文件并不等于可复现的 MD
 checkpoint，清单如实记录这一点。
 
+## GPUMD 新版模型格式（包括 NEP89）
+
+新版 GPUMD 模型第一行列出元素，后面用 `format_version 1` 和
+`model nep` 分别声明文件格式与模型类型，不再必须使用旧版的 `nep4`：
+
+```text
+nep 2 Li S
+format_version 1
+model nep
+zbl 1 2
+cutoff 6 5 274 158
+```
+
+两条 NEP 路径现在共用解析逻辑，记录元素顺序、模型类型、文件格式版本、
+ZBL、元素参考能量及按元素给出的 cutoff。原生 GPUMD 的来源记录还保留
+模型原文件的 SHA-256。当前**仅支持普通能量模型** `model nep`；
+自旋、温度、qNEP、偶极、极化率与学习型 vdW 变种会明确拒绝。
+解析器只检查元数据，不验证完整参数块；实际计算还需要支持该格式的
+新版 GPUMD 可执行文件。Calorine 能否读取这种新格式尚未实测，
+建议首先使用原生 GPUMD 路径验收。
+
 ## 本版本的已知边界
 
 - 不支持 `qNEP` / `TNEP` / `nep4-vdw`：这些模型类型改变能量的含义（自由能、偶极），不能

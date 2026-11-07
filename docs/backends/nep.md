@@ -289,6 +289,29 @@ in this release.
 `restart.xyz` is an overwrite-only file with no RNG state; a single existing
 file is not a reproducible MD checkpoint, and it is recorded as such.
 
+## Versioned GPUMD model files (including NEP89)
+
+New GPUMD models can use an element list on the first line followed by
+`format_version 1` and `model nep` instead of the legacy `nep4` token:
+
+```text
+nep 2 Li S
+format_version 1
+model nep
+zbl 1 2
+cutoff 6 5 274 158
+```
+
+Both NEP runtimes now recognize this format and keep the declared element
+order, model family, format version, ZBL, energy references and per-element
+cutoffs in their scientific identity. Native provenance also retains the
+original model's SHA-256. Only the **standard energy model** (`model nep`)
+is accepted: spin/temperature, qNEP, dipole, polarizability and learned-vdW
+variants are intentionally rejected. The parser validates metadata but does
+**not** verify the complete parameter block. You still need a GPUMD binary
+that understands the file version. Calorine support for this newer model
+layout has not been verified; use the native runtime for its first real test.
+
 ## Known limits of this release
 
 - No `qNEP` / `TNEP` / `nep4-vdw` support: those model types change the meaning
