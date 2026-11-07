@@ -116,6 +116,8 @@ jobs:
           python-version: "3.12"
           enable-cache: true
           cache-dependency-glob: "mliport/pyproject.toml"
+      - name: TEMP diagnose ruff 0.5.1 format diff
+        run: uvx ruff@0.5.1 format --diff tests/mliport/mliport/test_install_nep_real.py || true
       - name: Install pytest only
         run: |
           uv venv .venv-ci --python 3.12

@@ -50,18 +50,35 @@ TUNA_PROBE = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/calorine/"
 # ---------------------------------------------------------------------------
 
 
+# uv settings that say *where* things live (not *which index* to use).  CI
+# images set them so that uv finds its managed Python and cache; stripping them
+# would make the bootstrap report "no local Python".
+_UV_LOCATION_VARS = {
+    "UV_CACHE_DIR",
+    "UV_PYTHON_INSTALL_DIR",
+    "UV_PYTHON_BIN_DIR",
+    "UV_PYTHON_CACHE_DIR",
+    "UV_TOOL_DIR",
+    "UV_TOOL_BIN_DIR",
+}
+
+
 def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     """The user's shell, minus anything that could mask an installer defect.
 
     ``PYTHONPATH`` in particular is what let the old NEP install reach the
-    ``inventory`` stage without mliport in ``.venv-nep``.
+    ``inventory`` stage without mliport in ``.venv-nep``.  Index/offline/python
+    selection variables are dropped; uv's location variables are kept.
     """
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(("PIP_", "UV_", "MLIPORT_", "NEP_", "PYTHON"))
-        and k not in {"VIRTUAL_ENV", "CONDA_PREFIX"}
-    }
+    env = {}
+    for key, value in os.environ.items():
+        if key in {"VIRTUAL_ENV", "CONDA_PREFIX"}:
+            continue
+        if key.startswith(("PIP_", "MLIPORT_", "NEP_", "PYTHON")):
+            continue
+        if key.startswith("UV_") and key not in _UV_LOCATION_VARS:
+            continue
+        env[key] = value
     env.update(extra or {})
     return env
 
