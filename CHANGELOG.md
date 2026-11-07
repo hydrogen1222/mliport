@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+DPA checkpoint migration (#91):
+
+- Added explicit trust-gated offline conversion of legacy DPA-SSE training
+  `.pt` checkpoints whose NumPy scalar metadata is rejected by DeePMD's
+  `weights_only=True` loader. The converter does not patch upstream or change
+  global deserialization policy; it preserves float64 tensors exactly, removes
+  optimizer data and records input/output SHA-256 in a separate provenance file.
+  Only use it with verified trusted checkpoints; model predictions still require
+  scientific reference validation.
+
 NEP installer and documentation integration (tracking #61):
 
 - **`--engines nep` now installs mliport into `.venv-nep`.** The NEP install step
