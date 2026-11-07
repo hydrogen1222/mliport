@@ -36,21 +36,21 @@ def _normalize(value: Any, *, torch: Any, numpy: Any, changes: list[str], path: 
         return value
     if isinstance(value, numpy.generic):
         normalized = value.item()
-        if not isinstance(normalized, (int, float, bool, complex, str, bytes)):
+        if not isinstance(normalized, int | float | bool | complex | str | bytes):
             raise TypeError(f"Unsupported NumPy scalar at {path}: {type(value)!r}")
         changes.append(f"{path}: {type(value).__name__} -> {type(normalized).__name__}")
         return normalized
-    if value is None or isinstance(value, (str, bytes, bool, int, float, complex)):
+    if value is None or isinstance(value, str | bytes | bool | int | float | complex):
         return value
-    if isinstance(value, (dict, OrderedDict)):
-        if not all(isinstance(key, (str, int)) for key in value):
+    if isinstance(value, dict | OrderedDict):
+        if not all(isinstance(key, str | int) for key in value):
             raise TypeError(f"Unsupported mapping key at {path}")
         return type(value)(
             (key, _normalize(item, torch=torch, numpy=numpy, changes=changes,
                              path=f"{path}.{key}"))
             for key, item in value.items()
         )
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         items = [
             _normalize(item, torch=torch, numpy=numpy, changes=changes,
                        path=f"{path}[{index}]")
@@ -72,7 +72,7 @@ def _tensors(value: Any, prefix: str = ""):
     elif isinstance(value, dict):
         for name, child in value.items():
             yield from _tensors(child, f"{prefix}.{name}")
-    elif isinstance(value, (tuple, list)):
+    elif isinstance(value, tuple | list):
         for idx, child in enumerate(value):
             yield from _tensors(child, f"{prefix}[{idx}]")
 
