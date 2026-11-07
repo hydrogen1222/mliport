@@ -202,8 +202,14 @@ def _gpu_host_env(shim_dir: Path) -> dict[str, str]:
     shim_dir.mkdir(parents=True, exist_ok=True)
     smi = shim_dir / "nvidia-smi"
     smi.write_text(
-        "#!/bin/sh\necho 'Tesla V100-SXM2-16GB, 7.0, 580.173.02, 16384, 0, "
-        "GPU-00000000-0000-0000-0000-000000000000'\n",
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        # mliport.devices: index,uuid only
+        "  *index,uuid*) echo '0, GPU-00000000-0000-0000-0000-000000000000' ;;\n"
+        # installer hardware probe: name,compute_cap,driver,memory,index,uuid
+        "  *) echo 'Tesla V100-SXM2-16GB, 7.0, 580.173.02, 16384, 0, "
+        "GPU-00000000-0000-0000-0000-000000000000' ;;\n"
+        "esac\n",
         encoding="utf-8",
     )
     smi.chmod(0o755)
