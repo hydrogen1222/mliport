@@ -1,4 +1,5 @@
 """Trust-gated DPA checkpoint conversion regression tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,9 +34,10 @@ def test_trusted_conversion_preserves_double_tensor_and_model_metadata(tmp_path)
     safe = torch.load(target, map_location="cpu", weights_only=True)
     assert set(safe) == {"model"}
     assert safe["model"]["_extra_state"]["train_infos"]["lr"] == 0.0125
-    assert safe["model"]["_extra_state"]["model_params"] == original["model"][
-        "_extra_state"
-    ]["model_params"]
+    assert (
+        safe["model"]["_extra_state"]["model_params"]
+        == original["model"]["_extra_state"]["model_params"]
+    )
     assert torch.equal(safe["model"]["layer.weight"], original["model"]["layer.weight"])
     assert safe["model"]["layer.weight"].dtype == torch.float64
     assert source.read_bytes() == source_bytes
