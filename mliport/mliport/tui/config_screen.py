@@ -124,6 +124,7 @@ class ConfigScreen(Screen):
                         ("MACE", "mace"),
                         ("DPA (DeepMD-kit)", "dpa"),
                         ("GRACE", "grace"),
+                        ("NEP (Calorine / native GPUMD)", "nep"),
                     ],
                     prompt="Select a backend (required)",
                     allow_blank=True,
@@ -186,6 +187,29 @@ class ConfigScreen(Screen):
                     value=str(self.app.get_config("head", "") or ""),
                     placeholder="e.g., default or Domains_SSE_PBE",
                     id="head-input",
+                )
+
+                yield Label(
+                    "NEP Runtime (required for NEP; never inferred):",
+                    id="nep-runtime-label",
+                )
+                yield Select(
+                    options=[
+                        ("ase - Calorine CPUNEP/GPUNEP calculator", "ase"),
+                        ("gpumd - native gpumd process (cuda)", "gpumd"),
+                    ],
+                    value=self.app.get_config("nep_runtime", "ase") or Select.NULL,
+                    allow_blank=True,
+                    id="nep-runtime-select",
+                )
+                yield Label(
+                    "gpumd executable (NEP_GPUMD_COMMAND):",
+                    id="nep-command-label",
+                )
+                yield Input(
+                    value=str(self.app.get_config("nep_gpumd_command", "") or ""),
+                    placeholder="/path/to/gpumd",
+                    id="nep-command-input",
                 )
 
                 yield Label("UMA Inference Mode:", id="inference-mode-label")
@@ -931,6 +955,7 @@ class ConfigScreen(Screen):
         is_uma = model_type == "uma"
         is_mace = model_type == "mace"
         is_grace = model_type == "grace"
+        is_nep = model_type == "nep"
         has_head = model_type in {"mace", "dpa"}
 
         task_label = self.query_one("#task-type-label", Label)
@@ -947,6 +972,21 @@ class ConfigScreen(Screen):
             "#activation-checkpointing-select",
         ):
             self.query_one(selector).display = is_uma
+        for selector in (
+            "#nep-runtime-label",
+            "#nep-runtime-select",
+            "#nep-command-label",
+            "#nep-command-input",
+        ):
+            self.query_one(selector).display = is_nep
+        # A NEP model and a DFT-D3 correction cannot be proven not to
+        # double-count dispersion, so the D3 controls are hidden for NEP and
+        # the request is rejected instead of being applied silently.
+        for selector in ("#d3-row",):
+            try:
+                self.query_one(selector).display = not is_nep
+            except Exception:  # noqa: BLE001 - NEB forms do not render D3
+                pass
         for selector in (
             "#grace-memory-limit-label",
             "#grace-memory-limit-input",
@@ -1354,6 +1394,41 @@ class ConfigScreen(Screen):
         if model_type in {"mace", "dpa"}:
             head = self.query_one("#head-input", Input).value.strip()
             self.app.update_config("head", head or None)
+        if model_type == "nep":
+            from mliport.backend_selection import (  # noqa: PLC0415
+                normalize_device_for_nep,
+                normalize_nep_runtime,
+            )
+
+            runtime_select = self.query_one("#nep-runtime-select", Select)
+            try:
+                nep_runtime = normalize_nep_runtime(
+                    None
+                    if runtime_select.value is Select.NULL
+                    else str(runtime_select.value)
+                )
+                normalize_device_for_nep(nep_runtime, device)
+            except ValueError as exc:
+                self.notify(str(exc), severity="error")
+                return
+            self.app.update_config("nep_runtime", nep_runtime)
+            command = self.query_one("#nep-command-input", Input).value.strip()
+            self.app.update_config("nep_gpumd_command", command or None)
+            if nep_runtime == "gpumd" and not command:
+                self.notify(
+                    "NEP_RUNTIME=gpumd needs the gpumd executable path",
+                    severity="error",
+                )
+                return
+            # Clearing a stale D3 request is required: the resolver rejects
+            # NEP + D3 rather than silently dropping the correction.
+            self.app.update_config("d3", None)
+            self.app.update_config("d3_xc", None)
+            self.app.update_config("d3_damping", None)
+        else:
+            self.app.update_config("nep_runtime", None)
+            self.app.update_config("nep_gpumd_command", None)
+
         if model_type == "uma":
             inference_select = self.query_one("#inference-mode-select", Select)
             self.app.update_config("inference_mode", str(inference_select.value))
@@ -1378,7 +1453,11 @@ class ConfigScreen(Screen):
             self.app.update_config("torch_num_threads", threads)
         else:
             self.app.update_config("torch_num_threads", None)
-        if calc_type != "neb" and self.query_one("#d3-switch", Switch).value:
+        if (
+            calc_type != "neb"
+            and model_type != "nep"
+            and self.query_one("#d3-switch", Switch).value
+        ):
             from mliport.calculators.dispersion import (  # noqa: PLC0415
                 normalize_d3_options,
             )

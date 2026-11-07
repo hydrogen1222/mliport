@@ -33,7 +33,11 @@ import numpy as np
 from ase.io import read
 from ase.io import write as ase_write
 
-from mliport.backend_selection import PROCESS_ISOLATED_BACKENDS
+from mliport.backend_selection import (
+    NEP_RUNTIMES,
+    PROCESS_ISOLATED_BACKENDS,
+    model_type_choices,
+)
 from mliport.config import (
     IncarConfig,
     get_default_config,
@@ -236,6 +240,32 @@ Examples:
             help="UMA inference mode (default: task-specific; turbo is rejected for other engines).",
         )
         p.add_argument(
+            "--nep-runtime",
+            dest="nep_runtime",
+            type=str,
+            default=None,
+            choices=list(NEP_RUNTIMES),
+            help=(
+                "NEP execution runtime (required for --model-type nep): 'ase' "
+                "runs Calorine CPUNEP on cpu / GPUNEP on cuda; 'gpumd' runs one "
+                "native gpumd process per job on cuda. mliport never infers or "
+                "falls back between them."
+            ),
+        )
+        p.add_argument(
+            "--gpumd-command",
+            "--nep-gpumd-command",
+            dest="nep_gpumd_command",
+            type=str,
+            default=None,
+            metavar="PATH",
+            help=(
+                "Path to the gpumd executable used by --nep-runtime gpumd (and "
+                "by Calorine GPUNEP). Launched as argv, never through a shell; "
+                "path, version and SHA256 are recorded."
+            ),
+        )
+        p.add_argument(
             "--cpu-threads",
             "--torch-num-threads",
             dest="torch_num_threads",
@@ -420,7 +450,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     sp_parser.add_argument(
@@ -479,7 +509,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     opt_parser.add_argument(
@@ -570,7 +600,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     md_parser.add_argument(
@@ -755,7 +785,7 @@ Examples:
     neb_parser.add_argument(
         "--model-type",
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
     )
     neb_parser.add_argument("--task", default=None)
     neb_parser.add_argument(
@@ -876,7 +906,7 @@ Examples:
     )
     conf_run.add_argument("--model", type=str, default=None)
     conf_run.add_argument(
-        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+        "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_run.add_argument("--task", type=str, default=None)
     conf_run.add_argument("--output", type=str, default=None)
@@ -1009,7 +1039,7 @@ Examples:
     conf_resume.add_argument("run", help="Run directory to resume")
     conf_resume.add_argument("--model", type=str, default=None)
     conf_resume.add_argument(
-        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+        "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_resume.add_argument("--task", type=str, default=None)
     _add_resolver_args(conf_resume, trajectory_output_flags=False)
@@ -1023,7 +1053,7 @@ Examples:
     )
     conf_extend.add_argument("--model", type=str, default=None)
     conf_extend.add_argument(
-        "--model-type", type=str, default=None, choices=["uma", "mace", "dpa", "grace"]
+        "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_extend.add_argument("--task", type=str, default=None)
     _add_resolver_args(conf_extend, trajectory_output_flags=False)
@@ -1075,7 +1105,7 @@ Examples:
         "--model-type",
         type=str,
         default=None,
-        choices=["uma", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         help="MLIP engine type; required unless a model alias/profile " "provides it.",
     )
     batch_parser.add_argument(
@@ -1102,8 +1132,49 @@ Examples:
         type=str,
         default=None,
         help=(
-            "File glob to match. If omitted, discovers *.cif, *.xyz, *.vasp "
-            "and POSCAR*."
+            "File glob to match, relative to INPUT_DIR; may span directories, "
+            "e.g. '*/ewald_rank_*/1.cif' or '**/*.cif'. If omitted, discovers "
+            "*.cif, *.xyz, *.vasp and POSCAR* directly in INPUT_DIR."
+        ),
+    )
+    batch_parser.add_argument(
+        "--fmax",
+        type=float,
+        default=None,
+        help="--calc-type opt: force convergence threshold in eV/Angstrom (default: 0.05).",
+    )
+    batch_parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="--calc-type opt: maximum optimization steps per structure (default: 500).",
+    )
+    batch_parser.add_argument(
+        "--optimizer",
+        type=str,
+        default=None,
+        choices=["FIRE", "BFGS", "LBFGS"],
+        help="--calc-type opt: optimization algorithm (default: FIRE).",
+    )
+    batch_parser.add_argument(
+        "--cell-opt",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="--calc-type opt: optimize cell parameters (requires stress support).",
+    )
+    batch_parser.add_argument(
+        "--fix-symmetry",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="--calc-type opt: preserve crystal symmetry during optimization.",
+    )
+    batch_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Continue an interrupted batch in the same --output directory: "
+            "structures already completed or not converged under identical "
+            "settings are reused, failed and unfinished ones run again."
         ),
     )
     batch_parser.add_argument(
@@ -1219,7 +1290,7 @@ Examples:
     )
     template_parser.add_argument(
         "--engine",
-        choices=["uma", "fairchem", "mace", "dpa", "grace"],
+        choices=list(model_type_choices()),
         default=None,
         help=(
             "Render backend-specific model fields. Omit for a "
@@ -1715,7 +1786,7 @@ Examples:
     )
     doctor_parser.add_argument(
         "--engine",
-        choices=["auto", "uma", "mace", "dpa", "grace"],
+        choices=["auto", *model_type_choices()],
         default="auto",
         help=(
             "Engine to runtime-check. auto (default) performs a side-effect-free "
@@ -1927,6 +1998,8 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
         "neighbor_skin",
         "default_dtype",
         "head",
+        "nep_runtime",
+        "nep_gpumd_command",
         "d3",
         "d3_xc",
         "d3_damping",
@@ -2007,7 +2080,14 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
         # batch `--calc-type` selects the sub-calculation (sp/opt).
         if getattr(args, "calc_type", None) is not None:
             opts["sub_calc_type"] = args.calc_type
-        for key in ("pattern",):
+        for key in (
+            "pattern",
+            "fmax",
+            "max_steps",
+            "optimizer",
+            "cell_opt",
+            "fix_symmetry",
+        ):
             value = getattr(args, key, None)
             if value is not None:
                 opts[key] = value
@@ -2078,6 +2158,9 @@ def _resolve_engine_config(
         job_name if job_name is not None else getattr(args, "name", None)
     )
     engine_config.overwrite = bool(getattr(args, "overwrite", False))
+    # Batch resume only; other subcommands (neb, confsearch) have their own
+    # checkpoint-based --resume handled by their runners.
+    engine_config.resume = calc_type == "batch" and bool(getattr(args, "resume", False))
     _maybe_reexec_for_device_isolation(resolved)
     return engine_config, resolved, settings
 
@@ -3082,6 +3165,10 @@ def cmd_batch(args: argparse.Namespace) -> int:
         print(f"Error: Input directory not found: {input_dir}")
         return 1
 
+    if getattr(args, "resume", False) and getattr(args, "overwrite", False):
+        print("Error: --resume and --overwrite are mutually exclusive.")
+        return 1
+
     config, resolved, _settings = _resolve_engine_config(args, "batch")
     pattern = resolved.run_options.get("pattern")
 
@@ -3114,7 +3201,18 @@ def cmd_batch(args: argparse.Namespace) -> int:
                 files,
                 log_fn=_console_log,
                 started_at=started_at,
+                input_root=input_dir,
             )
+        print(
+            f"Batch done: {summary['success']} completed, "
+            f"{summary.get('not_converged', 0)} not converged, "
+            f"{summary['failed'] - summary.get('not_converged', 0)} failed"
+            + (
+                f" ({summary['reused']} reused from the earlier run)"
+                if summary.get("reused")
+                else ""
+            )
+        )
         if summary["failed"] > 0:
             return 1
         return 0

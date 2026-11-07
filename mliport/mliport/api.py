@@ -84,6 +84,9 @@ def _build_api_cli(
     default_dtype: str | None,
     head: str | None,
     extra: dict[str, Any] | None,
+    *,
+    nep_runtime: str | None = None,
+    nep_gpumd_command: str | None = None,
 ) -> dict[str, Any]:
     """Collect non-None API kwargs into a canonical option dict for the resolver."""
     cli: dict[str, Any] = {}
@@ -94,6 +97,8 @@ def _build_api_cli(
         ("inference_mode", inference_mode),
         ("default_dtype", default_dtype),
         ("head", head),
+        ("nep_runtime", nep_runtime),
+        ("nep_gpumd_command", nep_gpumd_command),
     ):
         if value is not None:
             cli[key] = value
@@ -192,6 +197,8 @@ def run_single_point(
     model_alias: str | None = None,
     default_dtype: str | None = None,
     head: str | None = None,
+    nep_runtime: str | None = None,
+    nep_gpumd_command: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
     overwrite: bool = False,
@@ -204,7 +211,7 @@ def run_single_point(
     Args:
         structure: ASE Atoms object or path to structure file
         model_path: Path to model checkpoint
-        model_type: MLIP engine (uma, mace, dpa, grace). None = resolver decides.
+        model_type: MLIP engine (uma, mace, dpa, grace, nep). None = resolver decides.
         task: Model head (omat, omol, oc20, oc25, odac, omc).
         device: Device for calculation (cpu or cuda).
         inference_mode: Inference-mode override.
@@ -215,6 +222,13 @@ def run_single_point(
         model_alias: Named model alias from settings.ini [model:NAME].
         default_dtype: MACE dtype override (float32 or float64).
         head: MACE head or DeepMD/DPA multi-task branch name.
+        nep_runtime: Explicit NEP execution runtime, ``"ase"`` (Calorine
+            CPUNEP on cpu / GPUNEP on cuda) or ``"gpumd"`` (one native
+            gpumd process per job on cuda). Required with
+            ``model_type="nep"``; never inferred or auto-fallen-back.
+        nep_gpumd_command: Path to the ``gpumd`` executable, required by
+            ``nep_runtime="gpumd"`` and by Calorine GPUNEP. Launched as
+            argv, never through a shell.
         profile: Reusable profile from settings.ini [profile:NAME].
         strict_config: Override strict-config behaviour.
         overwrite: Allow replacing calculation outputs that already exist in
@@ -241,7 +255,16 @@ def run_single_point(
         print(f"Loading model: {model_path}")
 
     cli = _build_api_cli(
-        "sp", model_type, task, device, inference_mode, default_dtype, head, kwargs
+        "sp",
+        model_type,
+        task,
+        device,
+        inference_mode,
+        default_dtype,
+        head,
+        kwargs,
+        nep_runtime=nep_runtime,
+        nep_gpumd_command=nep_gpumd_command,
     )
     config = _api_resolve(
         "sp",
@@ -282,6 +305,8 @@ def run_optimization(
     model_alias: str | None = None,
     default_dtype: str | None = None,
     head: str | None = None,
+    nep_runtime: str | None = None,
+    nep_gpumd_command: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
     overwrite: bool = False,
@@ -296,7 +321,7 @@ def run_optimization(
     Args:
         structure: ASE Atoms object or path to structure file.
         model_path: Path to model checkpoint.
-        model_type: MLIP engine (uma, mace, dpa, grace).
+        model_type: MLIP engine (uma, mace, dpa, grace, nep).
         task: Model head.
         device: Device for calculation (cpu or cuda).
         inference_mode: Inference-mode override.
@@ -312,6 +337,13 @@ def run_optimization(
         model_alias: Named model alias from settings.ini.
         default_dtype: MACE dtype override.
         head: MACE head or DeepMD/DPA multi-task branch name.
+        nep_runtime: Explicit NEP execution runtime, ``"ase"`` (Calorine
+            CPUNEP on cpu / GPUNEP on cuda) or ``"gpumd"`` (one native
+            gpumd process per job on cuda). Required with
+            ``model_type="nep"``; never inferred or auto-fallen-back.
+        nep_gpumd_command: Path to the ``gpumd`` executable, required by
+            ``nep_runtime="gpumd"`` and by Calorine GPUNEP. Launched as
+            argv, never through a shell.
         profile: Reusable profile from settings.ini.
         strict_config: Override strict-config behaviour.
         overwrite: Allow replacing existing calculation outputs.
@@ -349,7 +381,16 @@ def run_optimization(
             extra[name] = value
 
     cli = _build_api_cli(
-        "opt", model_type, task, device, inference_mode, default_dtype, head, extra
+        "opt",
+        model_type,
+        task,
+        device,
+        inference_mode,
+        default_dtype,
+        head,
+        extra,
+        nep_runtime=nep_runtime,
+        nep_gpumd_command=nep_gpumd_command,
     )
     config = _api_resolve(
         "opt",
@@ -397,6 +438,8 @@ def run_md(
     model_alias: str | None = None,
     default_dtype: str | None = None,
     head: str | None = None,
+    nep_runtime: str | None = None,
+    nep_gpumd_command: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
     overwrite: bool = False,
@@ -414,7 +457,7 @@ def run_md(
     Args:
         structure: ASE Atoms object or path to structure file.
         model_path: Path to model checkpoint.
-        model_type: MLIP engine (uma, mace, dpa, grace).
+        model_type: MLIP engine (uma, mace, dpa, grace, nep).
         task: Model head.
         device: Device for calculation (cpu or cuda).
         inference_mode: Inference-mode override (UMA "turbo" is opt-in).
@@ -437,6 +480,13 @@ def run_md(
         model_alias: Named model alias from settings.ini.
         default_dtype: MACE dtype override.
         head: MACE head or DeepMD/DPA multi-task branch name.
+        nep_runtime: Explicit NEP execution runtime, ``"ase"`` (Calorine
+            CPUNEP on cpu / GPUNEP on cuda) or ``"gpumd"`` (one native
+            gpumd process per job on cuda). Required with
+            ``model_type="nep"``; never inferred or auto-fallen-back.
+        nep_gpumd_command: Path to the ``gpumd`` executable, required by
+            ``nep_runtime="gpumd"`` and by Calorine GPUNEP. Launched as
+            argv, never through a shell.
         profile: Reusable profile from settings.ini.
         strict_config: Override strict-config behaviour.
         overwrite: Allow replacing existing calculation outputs.
@@ -484,7 +534,16 @@ def run_md(
             extra[name] = value
 
     cli = _build_api_cli(
-        "md", model_type, task, device, inference_mode, default_dtype, head, extra
+        "md",
+        model_type,
+        task,
+        device,
+        inference_mode,
+        default_dtype,
+        head,
+        extra,
+        nep_runtime=nep_runtime,
+        nep_gpumd_command=nep_gpumd_command,
     )
     config = _api_resolve(
         "md",
@@ -540,6 +599,8 @@ def run_confsearch(
     model_alias: str | None = None,
     default_dtype: str | None = None,
     head: str | None = None,
+    nep_runtime: str | None = None,
+    nep_gpumd_command: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
     **kwargs: Any,
@@ -616,6 +677,8 @@ def run_confsearch(
         default_dtype,
         head,
         extra,
+        nep_runtime=nep_runtime,
+        nep_gpumd_command=nep_gpumd_command,
     )
     config, resolved = _api_resolve_full(
         "confsearch",
@@ -679,6 +742,8 @@ def run_neb(
     model_alias: str | None = None,
     default_dtype: str | None = None,
     head: str | None = None,
+    nep_runtime: str | None = None,
+    nep_gpumd_command: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
     **kwargs,
@@ -765,6 +830,8 @@ def run_neb(
         default_dtype,
         head,
         extra,
+        nep_runtime=nep_runtime,
+        nep_gpumd_command=nep_gpumd_command,
     )
     config, resolved = _api_resolve_full(
         "neb",
@@ -811,6 +878,8 @@ def calculate_energy(
     model_alias: str | None = None,
     default_dtype: str | None = None,
     head: str | None = None,
+    nep_runtime: str | None = None,
+    nep_gpumd_command: str | None = None,
     profile: str | None = None,
     strict_config: bool | None = None,
     output_dir: str | Path | None = None,
@@ -824,7 +893,7 @@ def calculate_energy(
     Args:
         structure: ASE Atoms object or path to structure file.
         model_path: Path to model checkpoint.
-        model_type: MLIP engine (uma, mace, dpa, grace).
+        model_type: MLIP engine (uma, mace, dpa, grace, nep).
         task: Model head.
         device: Device for calculation (cpu or cuda).
         relax: Whether to pre-relax structure before energy calculation.
@@ -835,6 +904,13 @@ def calculate_energy(
         model_alias: Named model alias from settings.ini.
         default_dtype: MACE dtype override.
         head: MACE head or DeepMD/DPA multi-task branch name.
+        nep_runtime: Explicit NEP execution runtime, ``"ase"`` (Calorine
+            CPUNEP on cpu / GPUNEP on cuda) or ``"gpumd"`` (one native
+            gpumd process per job on cuda). Required with
+            ``model_type="nep"``; never inferred or auto-fallen-back.
+        nep_gpumd_command: Path to the ``gpumd`` executable, required by
+            ``nep_runtime="gpumd"`` and by Calorine GPUNEP. Launched as
+            argv, never through a shell.
         profile: Reusable profile from settings.ini.
         strict_config: Override strict-config behaviour.
         output_dir: Directory for the calculation files. ``None`` (default)
@@ -872,6 +948,8 @@ def calculate_energy(
                 model_alias=model_alias,
                 default_dtype=default_dtype,
                 head=head,
+                nep_runtime=nep_runtime,
+                nep_gpumd_command=nep_gpumd_command,
                 profile=profile,
                 strict_config=strict_config,
                 output_dir=scratch,
@@ -891,6 +969,8 @@ def calculate_energy(
             model_alias=model_alias,
             default_dtype=default_dtype,
             head=head,
+            nep_runtime=nep_runtime,
+            nep_gpumd_command=nep_gpumd_command,
             profile=profile,
             strict_config=strict_config,
             output_dir=str(output_dir),
@@ -908,6 +988,8 @@ def calculate_energy(
             model_alias=model_alias,
             default_dtype=default_dtype,
             head=head,
+            nep_runtime=nep_runtime,
+            nep_gpumd_command=nep_gpumd_command,
             profile=profile,
             strict_config=strict_config,
             output_dir=str(output_dir),

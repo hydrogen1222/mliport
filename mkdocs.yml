@@ -104,6 +104,7 @@ nav:
       - backends/dpa.md
       - backends/grace.md
       - backends/uma.md
+      - backends/nep.md
   - Workflows:
       - workflows/index.md
       - workflows/single-point.md

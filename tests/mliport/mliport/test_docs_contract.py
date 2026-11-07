@@ -37,6 +37,7 @@ PAGES = (
     "backends/dpa",
     "backends/grace",
     "backends/uma",
+    "backends/nep",
     "workflows/index",
     "workflows/single-point",
     "workflows/optimization",

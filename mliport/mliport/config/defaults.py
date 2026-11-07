@@ -227,6 +227,8 @@ def _neutral_model_section() -> list[str]:
         "#   MODEL_TYPE = MACE   TASK = bulk    # optional: HEAD, DEFAULT_DTYPE",
         "#   MODEL_TYPE = DPA    TASK = bulk    HEAD = Omat24",
         "#   MODEL_TYPE = GRACE  TASK = bulk    # optional: NEIGHBOR_CACHE",
+        "#   MODEL_TYPE = NEP    TASK = bulk    NEP_RUNTIME = ase|gpumd",
+        "#                       (gpumd also needs NEP_GPUMD_COMMAND)",
     ]
 
 
@@ -259,6 +261,12 @@ def _engine_model_section(engine: str, calc_type: str) -> list[str]:
         lines.append("# Optional GRACE fields:")
         lines.append("# NEIGHBOR_CACHE = true")
         lines.append("# NEIGHBOR_SKIN = 1.5")
+    elif normalized == "nep":
+        # NEP has two execution runtimes; the runtime is a required user
+        # decision and is never inferred (PR #61 section C).
+        lines.append("TASK = bulk")
+        lines.append("NEP_RUNTIME = ase  # ase | gpumd (required)")
+        lines.append("# NEP_GPUMD_COMMAND = /path/to/gpumd")
     else:  # pragma: no cover - require_model_type validates before this point
         lines.append("TASK = bulk")
     return lines

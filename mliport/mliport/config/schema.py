@@ -181,7 +181,7 @@ _SPECS: list[OptionSpec] = [
         str,
         frozenset({"calculator"}),
         aliases={"MODEL_TYPE", "model"},
-        choices=("uma", "fairchem", "mace", "dpa", "grace"),
+        choices=("uma", "fairchem", "mace", "dpa", "grace", "nep"),
         description="MLIP engine.",
     ),
     OptionSpec(
@@ -320,6 +320,35 @@ _SPECS: list[OptionSpec] = [
         choices=("zero", "bj", "zerom", "bjm"),
         description="DFT-D3 damping function (default: bj, i.e. D3(BJ)).",
     ),
+    # --- NEP dual-runtime calculator options (PR #61 section C) ---
+    # ``nep_runtime`` is scoped to ``calculator.nep`` so the resolver rejects it
+    # for every other engine instead of recording a switch that never executes.
+    # D3 is deliberately absent from the NEP option set: the factory rejects a
+    # NEP + D3 combination rather than silently double-counting dispersion.
+    OptionSpec(
+        "nep_runtime",
+        str,
+        frozenset({"calculator.nep"}),
+        aliases={"NEP_RUNTIME"},
+        choices=("ase", "gpumd"),
+        description=(
+            "NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) "
+            "or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; "
+            "mliport never infers it or falls back between the two."
+        ),
+    ),
+    OptionSpec(
+        "nep_gpumd_command",
+        str,
+        frozenset({"calculator.nep"}),
+        aliases={"NEP_GPUMD_COMMAND", "gpumd_executable"},
+        description=(
+            "Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the "
+            "GPUNEP ASE adapter). Launched as an argv list, never through a "
+            "shell; its real path, version and SHA256 are recorded."
+        ),
+        is_path=True,
+    ),
     # --- molecular electronic state (applied to atoms.info by every runner) ---
     OptionSpec(
         "charge",
@@ -345,7 +374,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "optimizer",
         str,
-        frozenset({"opt"}),
+        frozenset({"opt", "batch"}),
         aliases={"OPT_ALGO", "opt_algo"},
         choices=("FIRE", "BFGS", "LBFGS"),
         description="Geometry optimization algorithm.",
@@ -353,7 +382,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "fmax",
         float,
-        frozenset({"opt", "neb"}),
+        frozenset({"opt", "neb", "batch"}),
         aliases={"FMAX"},
         minimum=0.0,
         description="Force convergence threshold in eV/Angstrom.",
@@ -361,7 +390,7 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "max_steps",
         int,
-        frozenset({"opt", "neb"}),
+        frozenset({"opt", "neb", "batch"}),
         aliases={"MAX_STEPS"},
         minimum=0,
         description="Maximum optimization steps.",
@@ -369,14 +398,14 @@ _SPECS: list[OptionSpec] = [
     OptionSpec(
         "cell_opt",
         bool,
-        frozenset({"opt"}),
+        frozenset({"opt", "batch"}),
         aliases={"CELL_OPT"},
         description="Optimize cell parameters (requires stress support).",
     ),
     OptionSpec(
         "fix_symmetry",
         bool,
-        frozenset({"opt"}),
+        frozenset({"opt", "batch"}),
         aliases={"FIX_SYMMETRY"},
         description="Preserve crystal symmetry during optimization.",
     ),
