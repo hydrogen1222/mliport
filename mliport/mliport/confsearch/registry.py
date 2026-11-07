@@ -178,6 +178,15 @@ class UniqueMinimum:
                     "status": member.status,
                     "flags": list(member.flags),
                     "origin": member.origin.to_dict(),
+                    # The representative is not a substitute for each quench:
+                    # member energy/origin MUST remain paired with its geometry.
+                    "numbers": [int(z) for z in member.atoms.numbers],
+                    "cell_A": np.asarray(member.atoms.cell, dtype=float).tolist(),
+                    "pbc": [bool(x) for x in member.atoms.pbc],
+                    "positions_A": np.asarray(
+                        member.atoms.get_positions(), dtype=float
+                    ).tolist(),
+                    "classification": member.classification.to_dict(),
                     "cumulative_md_ps": _json_float(member.cumulative_md_ps),
                     "quench_index": int(member.quench_index),
                 }
@@ -410,7 +419,7 @@ class MinimumRegistry:
 
     def to_dict(self) -> dict:
         return {
-            "schema": "mliport.confsearch-registry/1",
+            "schema": "mliport.confsearch-registry/2",
             "n_records": self.total_records(),
             "counters": {
                 "next_unique_id": self._next_unique_id,
@@ -440,6 +449,13 @@ class MinimumRegistry:
         """Rebuild a registry from a checkpoint payload (fingerprints recomputed)."""
         from ase import Atoms  # noqa: PLC0415
 
+        from mliport.confsearch.errors import ConfsearchPreparationError  # noqa: PLC0415
+
+        if payload.get("schema") != "mliport.confsearch-registry/2":
+            raise ConfsearchPreparationError(
+                "Checkpoint registry lacks per-member geometry (schema 2 required); "
+                "historical resumed minima may have incorrect coordinates."
+            )
         registry = cls(
             options=options, adsorbate=np.asarray(adsorbate, dtype=int), fixed=fixed
         )
@@ -452,9 +468,6 @@ class MinimumRegistry:
                     cell=np.asarray(representative["cell_A"], dtype=float),
                     pbc=np.asarray(representative["pbc"], dtype=bool),
                 )
-                classification = rebuild_classification(
-                    representative["classification"]
-                )
                 unique = UniqueMinimum(
                     unique_id=int(entry["id"]),
                     status=str(entry.get("status", status)),
@@ -465,11 +478,47 @@ class MinimumRegistry:
                     ),
                 )
                 for member in entry.get("members", []):
+                    required = (
+                        "numbers",
+                        "positions_A",
+                        "cell_A",
+                        "pbc",
+                        "classification",
+                    )
+                    if any(key not in member for key in required):
+                        raise ConfsearchPreparationError(
+                            "Checkpoint member lacks individual geometry or classification"
+                        )
+                    positions = np.asarray(member["positions_A"], dtype=float)
+                    numbers = np.asarray(member["numbers"], dtype=int)
+                    member_cell = np.asarray(member["cell_A"], dtype=float)
+                    member_pbc = np.asarray(member["pbc"], dtype=bool)
+                    if (
+                        positions.shape != (len(geometry), 3)
+                        or not np.isfinite(positions).all()
+                        or not np.array_equal(numbers, geometry.numbers)
+                        or not np.array_equal(member_cell, np.asarray(geometry.cell))
+                        or not np.array_equal(member_pbc, geometry.pbc)
+                    ):
+                        raise ConfsearchPreparationError(
+                            "Checkpoint member geometry is inconsistent or non-finite"
+                        )
+                    member_atoms = Atoms(
+                        numbers=numbers,
+                        positions=positions,
+                        cell=member_cell,
+                        pbc=member_pbc,
+                    )
+                    classification = rebuild_classification(member["classification"])
+                    if classification.status != member["status"]:
+                        raise ConfsearchPreparationError(
+                            "Checkpoint member classification and status disagree"
+                        )
                     origin = member["origin"]
                     record = MinimumRecord(
                         record_id=int(member["record_id"]),
                         energy_eV=float(member["energy_eV"]),
-                        atoms=geometry.copy(),
+                        atoms=member_atoms,
                         classification=classification,
                         origin=MinimumOrigin(
                             replica=int(origin["replica"]),
