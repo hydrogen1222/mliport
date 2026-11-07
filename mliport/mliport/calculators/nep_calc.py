@@ -160,6 +160,7 @@ def parse_nep_model_header(path: str | Path) -> dict[str, Any]:
         "energy_reference_eV": data["energy_reference_eV"],
     }
 
+
 def _normalize_device(device: str | int | None) -> tuple[str, int | None]:
     """Validate a device string for NEP and return its canonical form.
 
