@@ -271,85 +271,34 @@ def validate_elements(atoms: Atoms, nep_element_types: Any) -> None:
 
 
 def parse_nep_model(path: str | Path) -> dict[str, Any]:
-    """Parse the small header of a NEP model file.
+    """Read and validate the NEP identity shared with the ASE runtime.
 
-    Only the identity fields needed for provenance are read: the model format,
-    element types and the radial/angular cutoffs.  The parameter body is never
-    interpreted, so a corrupt body still fails inside GPUMD rather than here.
-
-    Args:
-        path: NEP model file (``nep.txt``).
-
-    Returns:
-        Mapping with ``model_format`` (e.g. ``"nep4"``), ``model_version``
-        (integer suffix), ``element_types``, ``cutoffs`` (``radial_A`` /
-        ``angular_A``) and ``raw_first_line``.
-
-    Raises:
-        ValueError: If the header cannot be identified.
+    Legacy nep4 and versioned GPUMD format_version 1 use independent version
+    namespaces; model_type is strictly validated and stored separately.
+    The full parameter block is left to the GPUMD executable to interpret.
     """
-    model_path = Path(path)
-    if not model_path.is_file():
-        raise ValueError(f"NEP model file not found: {model_path}")
-    lines = model_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    first_line = next((line for line in lines if line.strip()), None)
-    if first_line is None:
-        raise ValueError(f"NEP model file is empty: {model_path}")
-    tokens = first_line.split()
-    model_format = tokens[0].lower()
-    if not model_format.startswith("nep") or not model_format[3:].isdigit():
-        raise ValueError(
-            f"Unrecognised NEP model header {first_line!r} in {model_path}"
-        )
-    if len(tokens) < 2:
-        raise ValueError(
-            f"NEP model header does not declare an element count: {first_line!r}"
-        )
-    try:
-        element_count = int(tokens[1])
-    except ValueError as exc:
-        raise ValueError(
-            f"NEP model header has a non-integer element count: {first_line!r}"
-        ) from exc
-    if element_count <= 0:
-        raise ValueError(
-            f"NEP model header declares {element_count} element types: "
-            f"{first_line!r}"
-        )
-    element_types = tokens[2 : 2 + element_count]
-    if len(element_types) != element_count:
-        raise ValueError(
-            "NEP model header declares "
-            f"{element_count} element types but lists {len(element_types)}: "
-            f"{first_line!r}"
-        )
+    from mliport.nep_model_format import read_nep_model_metadata  # noqa: PLC0415
 
-    cutoffs: dict[str, float] = {}
-    for line in lines[1:]:
-        tokens = line.split()
-        if not tokens or tokens[0].lower() != "cutoff":
-            continue
-        try:
-            radial = float(tokens[1])
-            angular = float(tokens[2])
-        except (IndexError, ValueError) as exc:
-            raise ValueError(
-                f"Malformed NEP cutoff line {line!r} in {model_path}"
-            ) from exc
-        cutoffs = {"radial_A": radial, "angular_A": angular}
-        break
-    if not cutoffs:
-        raise ValueError(f"NEP model file has no 'cutoff' line: {model_path}")
-
+    data = read_nep_model_metadata(path)
+    radial = data["cutoff_radial"]
+    angular = data["cutoff_angular"]
+    if radial is None or angular is None:
+        raise ValueError(f"NEP model file has no 'cutoff' line: {path}")
     return {
-        "model_format": model_format,
-        "model_version": int(model_format[3:]),
-        "element_types": list(element_types),
-        "cutoffs": cutoffs,
-        "cutoff_max_A": max(cutoffs.values()),
-        "raw_first_line": first_line,
+        "model_format": data["model_token"],
+        "model_version": data["legacy_model_version"],
+        "format_version": data["format_version"],
+        "model_type": data["model_type"],
+        "element_types": list(data["element_types"]),
+        "cutoffs": {"radial_A": radial, "angular_A": angular},
+        "cutoff_by_element_A": data["cutoff_by_element_A"],
+        "max_neighbours_radial": data["max_neighbours_radial"],
+        "max_neighbours_angular": data["max_neighbours_angular"],
+        "zbl": data["zbl"],
+        "energy_reference_eV": data["energy_reference_eV"],
+        "cutoff_max_A": max(radial, angular),
+        "raw_first_line": data["raw_first_line"],
     }
-
 
 def _resolve_thermostat(
     *,
