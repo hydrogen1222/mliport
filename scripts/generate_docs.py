@@ -44,6 +44,7 @@ sys.path.insert(0, str(REPO / "mliport"))
 from mliport.install.compatibility import (  # noqa: E402
     BACKENDS,
     python_versions_for,
+    runtime_stack_text,
 )
 from mliport.install.docs import (  # noqa: E402
     LANGUAGES,
@@ -100,9 +101,6 @@ def _sha_short(sha: object) -> str:
 def render_backend_environment(engine: str, lang: str) -> str:
     """Environment, Python range and runtime stack of one backend."""
     backend = BACKENDS[engine]
-    frameworks = "/".join(
-        sorted({p.framework_version for p in backend.arch_profiles.values()})
-    )
     return "\n".join(
         [
             _row(_ENVIRONMENT_HEADER[lang]),
@@ -111,7 +109,7 @@ def render_backend_environment(engine: str, lang: str) -> str:
                 [
                     f"`{backend.venv_name}`",
                     ", ".join(python_versions_for(engine)),
-                    f"`{backend.requirement}` ({backend.framework} {frameworks})",
+                    runtime_stack_text(engine, lang),
                 ]
             ),
             "",

@@ -137,7 +137,25 @@ def main() -> int:
         help="tier-script case selection forwarded verbatim (t7: md / "
         "transport / gemdat)",
     )
+    parser.add_argument(
+        "--subset",
+        default=None,
+        help=(
+            "t3 OMat24 validation subset (.extxyz) forwarded to omat_eval.py. "
+            "omat_eval.py requires --subset, so running --tiers t3 without it "
+            "is rejected here with an actionable message instead of failing "
+            "later inside argparse (audit H-02)."
+        ),
+    )
     args = parser.parse_args()
+    if "t3" in [tier for tier in args.tiers.split(",") if tier] and not args.subset:
+        parser.error(
+            "--tiers t3 requires --subset PATH: omat_eval.py has no default "
+            "subset (it is pinned by omat_subset.py with an immutable seed). "
+            "Build it first, e.g. "
+            "`python validation/science/scripts/omat_subset.py --out "
+            "<work>/omat24/omat24_subset.extxyz`, then pass it here."
+        )
 
     python = venv_python(args.engine, args.venv)
     out_dir = Path(args.out)
@@ -205,6 +223,10 @@ def main() -> int:
                 cmd += ["--tag", args.tag]
             if args.cases:
                 cmd += ["--cases", args.cases]
+            # H-02: without this forwarding, `--tiers t3` started omat_eval.py
+            # with its required --subset missing, so the tier could never run.
+            if args.subset and script == "omat_eval.py":
+                cmd += ["--subset", args.subset]
             print(f"[run_suite] {args.engine}/{tier}: {Path(script).name}")
             proc = subprocess.run(cmd, check=False, env=child_env)  # noqa: S603
             if proc.returncode != 0:

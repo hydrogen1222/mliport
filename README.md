@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README_CN.md)
 
-Run machine-learned interatomic potentials — MACE, DPA, GRACE and UMA — from one
+Run machine-learned interatomic potentials — MACE, DPA, GRACE, UMA and NEP — from one
 command line, one terminal UI and one Python API. Give it a structure and a
 checkpoint; it relaxes, runs molecular dynamics, finds NEB barriers, searches adsorbate
 configurations on a slab or analyzes a trajectory, and writes the files a VASP user expects: `OUTCAR`, `OSZICAR`,
@@ -14,10 +14,12 @@ your chemistry depends on the checkpoint you choose.
 
 What you get:
 
-- **The same workflow on four backends.** Single point, fixed- and variable-cell
+- **The same workflow on every backend.** Single point, fixed- and variable-cell
   relaxation, NVE/NVT MD (Langevin, Bussi, Nosé–Hoover chain), NEB and CI-NEB,
   MD-based configuration search for an adsorbate on a slab, batch sweeps and a job
-  queue, from the CLI, an INCAR-style file, the TUI or Python.
+  queue, from the CLI, an INCAR-style file, the TUI or Python. NEP's native `gpumd`
+  runtime covers only single point, relaxation and MD (see
+  [NEP](docs/backends/nep.md)).
 - **No silent guessing.** There is no default backend, and a misspelled option, or
   one that belongs to another backend, stops the run. Configuration errors fail
   closed.
@@ -37,7 +39,7 @@ The full documentation is at <https://hydrogen1222.github.io/mliport/> (English 
 | run my first calculation | [Quickstart](docs/quickstart.md) |
 | check a model on a system with a known answer | [Test systems](docs/test-systems.md) |
 | install one or more backends, on GPU or CPU | [Installation](docs/installation.md) |
-| understand what MACE, DPA, GRACE and UMA are and pick one | [Backends](docs/backends/index.md), [Models](docs/models.md) |
+| understand what MACE, DPA, GRACE, UMA and NEP are and pick one | [Backends](docs/backends/index.md), [Models](docs/models.md) |
 | set options through the CLI, an INCAR-style file or `settings.ini` | [Configuration](docs/configuration.md) |
 | single point, relaxation, MD, NEB, configuration search, batch, queue | [Workflows](docs/workflows/index.md) |
 | MSD, diffusion, conductivity, RDF, spectra, Arrhenius | [Analysis](docs/analysis/index.md) |
@@ -60,6 +62,9 @@ cd mliport
 
 # or CPU only
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
+
+# NEP is opt-in (add it explicitly, alone or with the others)
+./scripts/install_mliport.sh --engines nep --device cpu
 ```
 
 The installer pins the upstream backend versions, installs the analysis extras and
@@ -76,6 +81,15 @@ together with CPU, offline and proxy setups and uninstalling.
 | DPA | `.venv-dpa` | `bin/mliport-dpa` |
 | GRACE | `.venv-grace` | `bin/mliport-grace` |
 | UMA | `.venv` | `bin/mliport-uma` |
+| NEP | `.venv-nep` | `bin/mliport-nep` |
+
+NEP is not part of the default engine list. The installer puts the pinned `calorine`
+and an editable mliport into `.venv-nep`, which is enough for the CPU ASE runtime
+(`CPUNEP`, float64). The native runtime and `GPUNEP` also need a `gpumd` executable,
+which the installer does **not** build (it needs your CUDA toolkit and a matching
+`-arch=sm_XX`). On a GPU host, `--device auto|cuda` makes the closing `doctor` demand `gpumd`, so
+use `--device cpu` until you have built it; see [docs/backends/nep.md](docs/backends/nep.md) for the build and for
+`mliport doctor --engine nep`.
 
 Run mliport from the environment of the backend you want, or through its launcher:
 
@@ -99,6 +113,7 @@ path with `--model`; a local directory works offline.
 | DPA | `DPA-3.1-3M.pt` | [deepmodelingcommunity/DPA-3.1-3M](https://huggingface.co/deepmodelingcommunity/DPA-3.1-3M) |
 | GRACE | `GRACE-2L-OMAT-medium-base` | [AMS-ICAMS-RUB/grace-foundation-models](https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models) |
 | UMA | `uma-s-1p2.pt` | [facebook/UMA](https://huggingface.co/facebook/UMA) |
+| NEP | your own `nep.txt` | trained for your elements and conditions; mliport ships and downloads none |
 
 The hashes the validation suite uses are pinned in
 [`validation/science/model_manifest.json`](validation/science/model_manifest.json).
@@ -135,6 +150,7 @@ fails; mliport never falls back to another model on its own.
 .venv-dpa/bin/mliport   sp LGPS.vasp --model DPA-3.1-3M.pt --model-type dpa --task bulk --head Omat24 --device cuda
 .venv-grace/bin/mliport sp LGPS.vasp --model GRACE-2L-OMAT-medium-base --model-type grace --task bulk --device cuda
 .venv/bin/mliport       sp LGPS.vasp --model uma-s-1p2.pt --model-type uma --task omat --device cuda
+.venv-nep/bin/mliport   sp LGPS.vasp --model nep.txt --model-type nep --nep-runtime ase --device cpu
 ```
 
 | Engine | `--model-type` | Task / head | Good to know |
@@ -143,6 +159,7 @@ fails; mliport never falls back to another model on its own.
 | DPA | `dpa` | `bulk`, `--head Omat24` | multitask checkpoint; a missing head is an error, not a guess |
 | GRACE | `grace` | `bulk` | TensorFlow runtime, CPU and GPU |
 | UMA | `uma` (`fairchem` is an alias) | `omat` | `--task omol` for molecules; non-commercial research license |
+| NEP | `nep` + required `--nep-runtime ase\|gpumd` | `bulk` (PBC only) | runtime is never inferred; `ase` = Calorine (`cpu` float64, `cuda` float32 via one `gpumd` process per call), `gpumd` = one native process per run (float32) |
 
 DPA and GRACE cannot change GPU after their framework has loaded, so when
 `CUDA_VISIBLE_DEVICES` is unset the CLI restarts the command in a fresh process with
@@ -255,8 +272,8 @@ Options for each task are in [docs/analysis/index.md](docs/analysis/index.md).
 
 ## Configuration
 
-The backend is always explicit (`--model-type mace|dpa|grace|uma` plus `--model`, or
-an alias). Configuration is strict: unknown and cross-backend keys are errors, and
+The backend is always explicit (`--model-type mace|dpa|grace|uma|nep` plus `--model`,
+or an alias; `nep` also needs `--nep-runtime`). Configuration is strict: unknown and cross-backend keys are errors, and
 `--lenient-config` downgrades them for exploratory runs. `mliport config` inspects
 settings; a project `settings.ini` can define aliases, and `--settings PATH` wins
 over the user and project files. Each run writes `resolved_config.json` with the
@@ -272,6 +289,14 @@ INCAR-style input covers the common controls, not every interface. Which option 
 entry point (API, direct CLI, INCAR, TUI) can express is recorded in
 `validation/science/capability_matrix.json`; a `no` or `partial` there means that
 entry point cannot say it, and nothing is translated silently.
+
+NEP limits: you supply the `nep.txt`, and mliport cannot say whether it fits your
+material. The native `gpumd` runtime has no CPU path and refuses NEB, batch and
+confsearch instead of switching to the ASE runtime; DFT-D3 is rejected; `qNEP`,
+`TNEP` and `nep4-vdw` models are unsupported; partial PBC is refused. NEP is not part
+of the validation campaign summarised below: its real-hardware evidence is a V100 with
+GPUMD 5.9.1 and CUDA 12.9, and other GPUs and toolkits are unverified. Details:
+[docs/backends/nep.md](docs/backends/nep.md).
 
 Model accuracy belongs to the upstream checkpoint. Short MD runs check the workflow,
 not equilibration. NEB's pre-flight shows the forces match the energy, which says

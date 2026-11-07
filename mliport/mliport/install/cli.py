@@ -46,11 +46,15 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--engines",
         nargs="+",
+        # NEP is opt-in: its native runtime additionally needs a separately
+        # built gpumd binary, so it is not part of the default "all backends"
+        # install (see docs/backends/nep.md).
         default=["uma", "mace", "dpa", "grace"],
         help=(
-            "Engines to install (default: all four). Accepts the documented "
-            "space-separated form (`--engines mace dpa grace uma`) and the "
-            "comma-separated form (`--engines mace,dpa,grace,uma`)."
+            "Engines to install (default: uma mace dpa grace; add `nep` "
+            "explicitly). Accepts the documented space-separated form "
+            "(`--engines mace dpa grace uma`) and the comma-separated form "
+            "(`--engines mace,dpa,grace,uma`)."
         ),
     )
     p.add_argument(

@@ -459,6 +459,46 @@ def resolve_config(
             ),
         ).value
     )
+    if model_type == "nep":
+        # NEP has two execution runtimes with different devices and different
+        # numeric precision (PR #61 section C/D).  Resolve the runtime once,
+        # here, so every downstream entry point sees the same normalised pair.
+        from mliport.backend_selection import (  # noqa: PLC0415
+            normalize_device_for_nep,
+            normalize_nep_runtime,
+        )
+
+        runtime_source = sources.get("nep_runtime")
+        runtime = normalize_nep_runtime(
+            runtime_source.value if runtime_source is not None else None
+        )
+        sources["nep_runtime"] = ResolvedValue(
+            runtime,
+            (
+                runtime_source.source
+                if runtime_source is not None
+                else "built-in defaults"
+            ),
+        )
+        device = normalize_device_for_nep(runtime, device)
+        sources["device"] = ResolvedValue(
+            device,
+            (
+                sources["device"].source
+                if "device" in sources
+                else "built-in defaults (NEP runtime device)"
+            ),
+        )
+        nep_model = Path(model_path).expanduser()
+        if not model_path:
+            raise ValueError("MODEL_TYPE=nep requires MODEL_PATH to a nep.txt file")
+        if nep_model.is_dir():
+            raise ValueError(
+                f"NEP model path {nep_model} is a directory. A NEP model is a "
+                "single nep.txt file; a model directory has no single identity."
+            )
+        if not nep_model.is_file():
+            raise FileNotFoundError(f"NEP model file not found: {nep_model}")
     # inference_mode defaults to the full-precision 'default' preset for every
     # calculation type; UMA 'turbo' (TF32 + torch.compile) is an explicit opt-in.
     inference_mode = str(
@@ -693,6 +733,28 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
                 raise ValueError(
                     f"{coupling_name} must be > 0 for NVT {thermostat.upper()} dynamics"
                 )
+
+    if resolved.model_type == "nep":
+        # PR #61 section C: the runtime is an explicit user decision, and a
+        # workflow the selected runtime does not implement must fail before any
+        # GPU is claimed or any output directory is created.  The runtime and
+        # device are normalised here; nothing is mutated after construction.
+        from mliport.backend_selection import (  # noqa: PLC0415
+            normalize_nep_runtime,
+            require_nep_support,
+        )
+
+        require_nep_support(
+            normalize_nep_runtime(resolved.calculator_options.get("nep_runtime")),
+            resolved.calc_type,
+        )
+        if "d3" in resolved.calculator_options or "d3" in resolved.run_options:
+            raise ValueError(
+                "DFT-D3 cannot be combined with MODEL_TYPE=nep: mliport has no "
+                "evidence that a NEP model plus a D3 correction avoids "
+                "double-counting dispersion, so the combination is rejected "
+                "rather than applied silently."
+            )
 
     all_opts: dict[str, Any] = {}
     all_opts.update(resolved.calculator_options)

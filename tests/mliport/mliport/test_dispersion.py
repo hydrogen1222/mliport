@@ -247,8 +247,40 @@ def test_factory_rejects_d3_for_uma_omol_before_loading(tmp_path):
 
 
 def test_every_backend_accepts_the_d3_options():
-    for keys in CALCULATOR_OPTION_KEYS.values():
+    """D3 is a per-backend opt-in; NEP is the one deliberate exclusion.
+
+    PR #61 N-B04: a NEP model may itself carry a van der Waals term, and
+    mliport has no evidence that a NEP + D3 combination avoids double-counting
+    dispersion, so the option keys are not offered for NEP and the factory
+    rejects the request instead of silently applying a correction.
+    """
+    assert set(CALCULATOR_OPTION_KEYS) == {"uma", "mace", "dpa", "grace", "nep"}
+    for backend, keys in CALCULATOR_OPTION_KEYS.items():
+        if backend == "nep":
+            assert not ({"d3", "d3_xc", "d3_damping"} & keys)
+            continue
         assert {"d3", "d3_xc", "d3_damping"} <= keys
+
+
+def test_nep_rejects_d3_in_the_factory_and_the_normaliser(tmp_path):
+    """NEP + D3 is refused at both entry points, never silently applied."""
+    model = tmp_path / "nep.txt"
+    model.write_text("nep4 65 Ba Ti O\ncutoff 8 4 60 0\n", encoding="utf-8")
+    with pytest.raises(
+        ValueError, match="DFT-D3 cannot be combined with MODEL_TYPE=nep"
+    ):
+        normalize_d3_options("nep", "bulk", d3=True)
+    # The factory must also refuse: NEP does not list the D3 option keys.
+    with pytest.raises(ValueError, match="not applicable to engine 'nep'"):
+        CalculatorFactory.create(
+            "nep",
+            model,
+            device="cpu",
+            task="bulk",
+            strict=True,
+            nep_runtime="ase",
+            d3=True,
+        )
 
 
 def test_incar_keys_are_known_to_the_schema():

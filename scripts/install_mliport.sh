@@ -65,7 +65,7 @@ for ARG in "$@"; do
 done
 
 bootstrap_help() {
-    echo "Usage: install_mliport.sh [--engines mace dpa grace uma] [--device auto|cuda|cpu]"
+    echo "Usage: install_mliport.sh [--engines mace dpa grace uma nep] [--device auto|cuda|cpu]"
     echo "       [--source auto|official|china|china-aliyun|china-ustc|china-tencent|custom|offline]"
     echo "       [--python 3.10|3.11|3.12] [--dry-run] [--clean] [--skip-doctor] [--non-interactive]"
     echo "UMA requires Python >=3.11. Help and dry-run never download Python."

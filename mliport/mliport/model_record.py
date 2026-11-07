@@ -35,6 +35,10 @@ BACKEND_DISTRIBUTIONS = {
     "mace": "mace-torch",
     "dpa": "deepmd-kit",
     "grace": "tensorpotential",
+    # NEP-ASE carries its own inference implementation inside ``calorine``;
+    # the native runtime's identity is the ``gpumd`` binary (hash + version),
+    # recorded separately because it is not a Python distribution.
+    "nep": "calorine",
 }
 
 
@@ -46,6 +50,11 @@ def framework_distributions(model_type: str, model_path: str | Path) -> tuple[st
         )
     if model_type == "grace":
         return ("tensorflow",)
+    if model_type == "nep":
+        # Both NEP runtimes need ASE for the structure/trajectory contract, and
+        # the ASE runtime additionally needs calorine (checked via
+        # BACKEND_DISTRIBUTIONS above).
+        return ("calorine", "ase")
     return ("torch",)
 
 
@@ -126,6 +135,10 @@ def build_model_record(
     backend_version = info.get("backend_version") or distribution_version(
         backend_distribution
     )
+    if not backend_version and model_type == "nep":
+        # The native runtime has no Calorine installation; its exact identity
+        # is the gpumd binary version+hash, which the calculator reports.
+        backend_version = info.get("gpumd_version")
     if not backend_version:
         raise error_class(
             f"Cannot determine exact backend version for {backend_distribution!r}"
@@ -151,7 +164,7 @@ def build_model_record(
     model_alias = None
     if source is not None and source.source.startswith("model alias "):
         model_alias = source.source.removeprefix("model alias ").strip("'")
-    return {
+    record = {
         "model_type": model_type,
         "actual_device_type": info.get("actual_device_type", "unknown"),
         "actual_device_logical_index": info.get("actual_device_logical_index"),
@@ -183,6 +196,27 @@ def build_model_record(
             "actual_device", info.get("device", resolved.device)
         ),
     }
+    if model_type == "nep":
+        # PR #61 sections C/D/F: the runtime, the native executor identity and
+        # the numeric precision are part of "which model produced this number".
+        # Two NEP runs of the same nep.txt through different runtimes are NOT
+        # interchangeable evidence, so every one of these fields is recorded.
+        record.update(
+            {
+                "nep_runtime": info.get("nep_runtime")
+                or calculator_options.get("nep_runtime"),
+                "nep_element_types": info.get("nep_element_types"),
+                "nep_model_version": info.get("nep_model_version"),
+                "nep_model_cutoffs": info.get("nep_model_cutoffs"),
+                "numeric_precision": info.get("default_dtype")
+                or info.get("numeric_precision"),
+                "per_call_subprocess": info.get("per_call_subprocess"),
+                "gpumd_executable": info.get("gpumd_executable"),
+                "gpumd_sha256": info.get("gpumd_sha256"),
+                "gpumd_version": info.get("gpumd_version"),
+            }
+        )
+    return record
 
 
 __all__ = [

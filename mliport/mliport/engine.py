@@ -79,6 +79,9 @@ class EngineConfig:
             the final output directory. The default refuses them, so a rerun
             can never silently destroy a previous trajectory or a VASP
             OUTCAR/CONTCAR in the same directory.
+        resume: Batch only. Continue an earlier batch in the same output
+            directory: finished structures recorded under an identical batch
+            manifest are reused, everything else runs again.
     """
 
     calc_type: Literal["sp", "opt", "md", "neb", "batch"]
@@ -101,6 +104,7 @@ class EngineConfig:
     strict_config: bool = True
     detach: bool = False
     overwrite: bool = False
+    resume: bool = False
 
     def __post_init__(self) -> None:
         from mliport.backend_selection import (  # noqa: PLC0415
@@ -188,6 +192,8 @@ class CalculationEngine:
                 f"Unknown calc_type '{self.config.calc_type}'. "
                 f"Must be one of: {', '.join(self.VALID_CALC_TYPES)}"
             )
+        if self.config.model_type == "nep":
+            self._validate_nep_selection()
         # Validate option keys against the central schema (plan section 10).
         # In strict mode unknown / mistyped keys raise; otherwise they warn,
         # preserving the historical non-fatal behaviour.
@@ -224,6 +230,67 @@ class CalculationEngine:
     # must be routed to ``calculator_options`` for backward compatibility.
     _CALC_OPTION_KEYS: ClassVar[frozenset[str]] = _LEGACY_CALC_OPTION_KEYS
 
+    # ------------------------------------------------------------------
+    # NEP dual-runtime dispatch (PR #61 sections B/C/D)
+    # ------------------------------------------------------------------
+    @property
+    def nep_runtime(self) -> str | None:
+        """The explicit NEP runtime (``ase``/``gpumd``), or ``None``.
+
+        ``None`` for every non-NEP backend; NEP itself is fail-closed without
+        an explicit runtime, so a NEP config never reports ``None`` here after
+        :meth:`_validate_nep_selection` has run.
+        """
+        if self.config.model_type != "nep":
+            return None
+        value = self._effective_calculator_options().get("nep_runtime")
+        return None if value is None else str(value).strip().lower()
+
+    @property
+    def uses_native_gpumd(self) -> bool:
+        """True when this run must be executed by the native GPUMD runner.
+
+        The native path is a job-level external process, so it must never be
+        routed through :class:`CalculatorFactory`/an ASE runner (PR #61 A.5).
+        """
+        return self.nep_runtime == "gpumd"
+
+    def _validate_nep_selection(self) -> None:
+        """Fail closed on an invalid NEP runtime/device/workflow combination.
+
+        Runs before any model import, GPU claim or output directory creation so
+        an unsupported request never leaves half a run behind.
+        """
+        from mliport.backend_selection import (  # noqa: PLC0415
+            normalize_device_for_nep,
+            normalize_nep_runtime,
+            require_nep_support,
+        )
+
+        runtime = normalize_nep_runtime(self.nep_runtime)
+        self.config.device = normalize_device_for_nep(runtime, self.config.device)
+        require_nep_support(runtime, self.config.calc_type)
+        if self.config.torch_num_threads is not None:
+            raise ValueError(
+                "TORCH_NUM_THREADS/--cpu-threads is a PyTorch/TensorFlow control "
+                "and has no effect on a NEP potential (Calorine CPU inference and "
+                "native gpumd are not PyTorch). Remove it instead of recording a "
+                "thread setting that does not execute."
+            )
+        command = self._effective_calculator_options().get("nep_gpumd_command")
+        if runtime == "gpumd" and not command:
+            raise ValueError(
+                "NEP_RUNTIME=gpumd requires NEP_GPUMD_COMMAND (--gpumd-command) "
+                "pointing at the gpumd executable. mliport will not guess a "
+                "binary or fall back to the ASE runtime."
+            )
+        if runtime == "ase" and self.config.device != "cpu" and not command:
+            raise ValueError(
+                f"NEP_RUNTIME=ase on {self.config.device} uses Calorine GPUNEP, "
+                "which needs NEP_GPUMD_COMMAND (--gpumd-command) to launch its "
+                "per-evaluation gpumd subprocess."
+            )
+
     def _effective_calculator_options(self) -> dict:
         """Return calculator options, merging legacy ``options`` calc keys."""
         opts = dict(self.config.calculator_options)
@@ -256,6 +323,17 @@ class CalculationEngine:
 
         calc_opts = self._effective_calculator_options()
         backend = canonical_model_type(self.config.model_type)
+        if backend == "nep" and self.config.device != "cpu":
+            # Calorine GPUNEP writes inputs, launches gpumd and reads outputs on
+            # every ASE evaluation.  Saying so once, loudly, prevents a user
+            # from reading an ASE-MD steps/s number as native GPUMD throughput.
+            warnings.warn(
+                "NEP_RUNTIME=ase on a CUDA device runs Calorine GPUNEP: every "
+                "ASE calculator evaluation starts a gpumd subprocess. This is "
+                "coordination-expensive and must not be reported as native "
+                "GPUMD MD performance; use NEP_RUNTIME=gpumd for continuous MD.",
+                stacklevel=2,
+            )
         # Apply a user-selected thread limit to every PyTorch backend before
         # its model is imported/constructed. UMA also receives the value in its
         # InferenceSettings below.
@@ -317,7 +395,15 @@ class CalculationEngine:
         if self._output_claimed:
             yield output
             return
-        ensure_output_available(output, overwrite=self.config.overwrite)
+        if self.config.resume:
+            if self.config.calc_type != "batch":
+                raise ValueError("resume is only supported for batch runs.")
+            if self.config.overwrite:
+                raise ValueError("resume and overwrite are mutually exclusive.")
+            # The batch runner verifies batch_manifest.json before reusing
+            # anything, so existing outputs are expected here, not refused.
+        else:
+            ensure_output_available(output, overwrite=self.config.overwrite)
         with run_directory_lock(output):
             self._output_claimed = True
             try:
@@ -462,13 +548,23 @@ class CalculationEngine:
                     )
                 )
 
-            calculator = self._create_calculator()
-            runner = self._create_runner(
-                calculator,
-                progress_callback=progress_callback,
-                log_fn=run_logger,
-                cancel_event=cancel_event,
-            )
+            if self.uses_native_gpumd:
+                # PR #61 A.5/D.3: the native runtime is a job-level external
+                # process.  It gets its own runner; no ASE calculator is built
+                # and no ASE integrator ever touches this run.
+                runner = self._create_gpumd_runner(
+                    progress_callback=progress_callback,
+                    log_fn=run_logger,
+                    cancel_event=cancel_event,
+                )
+            else:
+                calculator = self._create_calculator()
+                runner = self._create_runner(
+                    calculator,
+                    progress_callback=progress_callback,
+                    log_fn=run_logger,
+                    cancel_event=cancel_event,
+                )
             try:
                 return runner.execute(atoms, started_at=started_at)
             except CancellationRequested as exc:
@@ -477,6 +573,104 @@ class CalculationEngine:
             except Exception as exc:
                 run_logger(f"Calculation failed: {exc}", "error")
                 raise
+
+    def _create_gpumd_runner(
+        self, progress_callback=None, log_fn=None, cancel_event=None
+    ):
+        """Build the native GPUMD runner for ``NEP_RUNTIME=gpumd``.
+
+        Imported lazily so a NEP-ASE (or any other) installation never needs
+        the native package on its import path.
+
+        The native path is a job-level external process (PR #61 A.5): one
+        ``gpumd`` process performs the whole simulation, so this runner is
+        handed an *identity* object rather than an ASE calculator.
+        """
+        from mliport.gpumd.runner import (  # noqa: PLC0415
+            NativeGPUMDRunner,
+            NEPGPUMDIdentity,
+        )
+
+        opts = self._effective_run_options()
+        calc_opts = self._effective_calculator_options()
+
+        def option(calc_type: str, key: str) -> Any:
+            return opts.get(key, BUILTIN_DEFAULTS[calc_type][key])
+
+        visible = None
+        if self.config.device != "cpu":
+            # The native path must run on the GPU the user (or the queue
+            # lease) asked for, and the run must record the UUID it used.
+            from mliport.devices import resolve_visible_device  # noqa: PLC0415
+
+            resolved_device = resolve_visible_device(self.config.device)
+            visible = None if resolved_device is None else resolved_device.uuid
+
+        identity = NEPGPUMDIdentity(
+            task=self.config.task,
+            model_path=str(self.config.model_path),
+            extra={
+                "nep_runtime": "gpumd",
+                "device_requested": self.config.device,
+                "per_call_subprocess": False,
+                "native_single_process": True,
+            },
+        )
+        common = dict(
+            engine=identity,
+            output_dir=self.config.output_dir,
+            gpumd_command=str(calc_opts["nep_gpumd_command"]),
+            nep_path=str(self.config.model_path),
+            task=self.config.task,
+            device=self.config.device,
+            cuda_visible_devices=visible,
+            verbose=False,
+            job_name=self.config.job_name,
+            log_fn=log_fn,
+            progress_callback=progress_callback,
+            cancel_event=cancel_event,
+            write_json=self.config.settings.get("write_json", True),
+            # ``--overwrite`` is the user's explicit permission to reuse the
+            # directory; the runner then moves the previous raw tree aside
+            # instead of appending to it.
+            allow_existing_native=bool(self.config.overwrite),
+            identity_extra={
+                "nep_runtime": "gpumd",
+                "device_requested": self.config.device,
+                "actual_device_uuid": visible,
+                "per_call_subprocess": False,
+                "native_single_process": True,
+            },
+        )
+        if self.config.calc_type == "sp":
+            return NativeGPUMDRunner(calc_type="sp", **common)
+        if self.config.calc_type == "opt":
+            return NativeGPUMDRunner(
+                calc_type="opt",
+                fmax=option("opt", "fmax"),
+                max_steps=option("opt", "max_steps"),
+                optimizer=option("opt", "optimizer"),
+                **common,
+            )
+        if self.config.calc_type == "md":
+            return NativeGPUMDRunner(
+                calc_type="md",
+                ensemble=option("md", "ensemble"),
+                temperature=option("md", "temperature"),
+                timestep_fs=option("md", "timestep"),
+                steps=option("md", "steps"),
+                thermostat=option("md", "thermostat"),
+                friction_per_fs=option("md", "friction"),
+                bussi_tau_fs=option("md", "bussi_tau"),
+                nhc_tdamp_fs=option("md", "nhc_tdamp"),
+                dump_interval=option("md", "save_interval"),
+                seed=opts.get("seed"),
+                **common,
+            )
+        raise ValueError(
+            f"calc_type={self.config.calc_type!r} is not handled by the native "
+            "GPUMD runner"
+        )
 
     def run_neb(
         self,
@@ -724,6 +918,7 @@ class CalculationEngine:
         progress_callback: ProgressCallback | None = None,
         log_fn: Any | None = None,
         started_at: float | None = None,
+        input_root: Path | None = None,
     ) -> dict[str, Any]:
         """Run batch calculation on multiple structure files.
 
@@ -732,6 +927,8 @@ class CalculationEngine:
             progress_callback: Optional callback for progress events.
             log_fn: Optional callback receiving live log messages.
             started_at: Monotonic timestamp when the user requested the run.
+            input_root: Directory that per-structure output directories mirror
+                (default: deepest common parent of ``files``).
 
         Returns:
             Batch summary dictionary.
@@ -742,7 +939,42 @@ class CalculationEngine:
                 progress_callback=progress_callback,
                 log_fn=log_fn,
                 started_at=started_at,
+                input_root=input_root,
             )
+
+    #: Calculator options that only affect resources, not results; they may
+    #: change between a batch and its resume.
+    _BATCH_RESOURCE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"torch_num_threads", "gpu_memory_growth", "gpu_memory_limit_mb"}
+    )
+
+    def _batch_run_identity(self) -> dict[str, Any]:
+        calc_opts = {
+            key: value
+            for key, value in self._effective_calculator_options().items()
+            if key not in self._BATCH_RESOURCE_KEYS
+        }
+        from mliport.model_record import hash_model_path  # noqa: PLC0415
+
+        model = Path(self.config.model_path).expanduser()
+        # A local checkpoint (file or directory) is identified by content, so
+        # replacing the weights behind the same path is detected on resume.
+        # A named foundation model resolved by the backend has no local path
+        # to hash and is recorded by name only.
+        if model.exists():
+            model_id = str(model.resolve())
+            model_sha256 = hash_model_path(model, error_class=ValueError)
+        else:
+            model_id = str(model)
+            model_sha256 = None
+        return {
+            "model_type": self.config.model_type,
+            "model_path": model_id,
+            "model_sha256": model_sha256,
+            "task": self.config.task,
+            "inference_mode": self.config.inference_mode,
+            "calculator_options": calc_opts,
+        }
 
     def _run_batch_claimed(
         self,
@@ -751,13 +983,16 @@ class CalculationEngine:
         progress_callback: ProgressCallback | None,
         log_fn: Any | None,
         started_at: float | None,
+        input_root: Path | None = None,
     ) -> dict[str, Any]:
         from mliport.runners.batch import BatchRunner  # noqa: PLC0415
 
         timing = RunTiming(
             started_at=time.perf_counter() if started_at is None else started_at
         )
-        with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
+        with LiveRunLogger(
+            self.run_log_path, callback=log_fn, append=self.config.resume
+        ) as run_logger:
             run_logger(f"Output directory: {self.output_dir.resolve()}")
             run_logger(f"Live log: {self.run_log_path}")
             run_logger(f"Follow live output: {follow_log_command(self.run_log_path)}")
@@ -778,9 +1013,30 @@ class CalculationEngine:
             timing.mark_compute_started()
 
             opts = self._effective_run_options()
+            sub_calc_type = opts.get("sub_calc_type", "sp")
+            opt_keys = ("optimizer", "fmax", "max_steps", "cell_opt", "fix_symmetry")
+            sub_kwargs: dict[str, Any] = {}
+            if sub_calc_type == "opt":
+                # Same single-source defaults as a standalone `opt` run.
+                sub_kwargs = {
+                    key: opts.get(key, BUILTIN_DEFAULTS["opt"][key]) for key in opt_keys
+                }
+                run_logger(
+                    "Batch optimization: "
+                    + ", ".join(f"{k}={v}" for k, v in sub_kwargs.items())
+                )
+            else:
+                given = sorted(key for key in opt_keys if key in opts)
+                if given:
+                    raise ValueError(
+                        f"Optimization options {given} only apply to batch "
+                        "--calc-type opt; refusing to ignore them."
+                    )
+            if self.config.resume:
+                run_logger("Resuming batch: finished structures will be reused.")
             runner = BatchRunner(
                 calculator,
-                calc_type=opts.get("sub_calc_type", "sp"),
+                calc_type=sub_calc_type,
                 output_dir=self.config.output_dir,
                 parallel=opts.get("parallel", False),
                 max_workers=opts.get("max_workers", 1),
@@ -793,9 +1049,12 @@ class CalculationEngine:
                 spin=opts.get("spin"),
                 progress_callback=progress_callback,
                 log_fn=run_logger,
+                resume=self.config.resume,
+                run_identity=self._batch_run_identity(),
+                **sub_kwargs,
             )
             try:
-                summary = runner.run_from_files(files)
+                summary = runner.run_from_files(files, input_root=input_root)
             except Exception as exc:
                 run_logger(f"Batch calculation failed: {exc}", "error")
                 raise

@@ -212,7 +212,8 @@ def test_batch_default_discovery_and_explicit_pattern(tmp_path, monkeypatch):
     runner = BatchRunner(_Wrapper(), output_dir=tmp_path / "out", verbose=False)
     seen = []
 
-    def fake_run(files):
+    def fake_run(files, input_root=None):
+        assert input_root == structures
         seen.append({path.name for path in files})
         return {"total": len(files), "success": len(files), "failed": 0}
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-mliport 用一套命令行、终端界面（TUI）和 Python API 运行四种机器学习势：MACE、DPA、GRACE 和 UMA。
+mliport 用一套命令行、终端界面（TUI）和 Python API 运行五种机器学习势：MACE、DPA、GRACE、UMA 和 NEP。
 准备好结构和模型文件，就可以做结构优化、分子动力学、NEB 势垒、slab 上吸附分子的构型搜索和轨迹分析。
 输出沿用 VASP 的文件格式：`OUTCAR`、`OSZICAR`、`CONTCAR`、`XDATCAR`。
 
@@ -11,9 +11,9 @@ POTCAR。模型对你的体系准不准，取决于你选的模型文件。
 
 主要功能：
 
-- **四个后端，用法一致。** 单点、结构优化（固定或可变晶胞）、NVE/NVT 分子动力学（Langevin、Bussi、
+- **各后端用法一致。** 单点、结构优化（固定或可变晶胞）、NVE/NVT 分子动力学（Langevin、Bussi、
   Nosé–Hoover 链）、NEB 和 CI-NEB、slab 吸附构型搜索、批量计算和任务队列。可以用命令行、INCAR 风格
-  的输入文件、TUI 或 Python 调用。
+  的输入文件、TUI 或 Python 调用。NEP 的原生 `gpumd` 运行时只支持单点、结构优化和 MD（见 [NEP](docs/backends/nep.zh.md)）。
 - **不做默认猜测。** 没有默认后端。选项拼错，或者用了别的后端的选项，程序会报错停下。
 - **完整的计算记录。** 每次运行都记录模型文件和它的 SHA-256、请求的设备和实际使用的设备、最终生效
   的配置以及 mliport 版本。
@@ -31,7 +31,7 @@ POTCAR。模型对你的体系准不准，取决于你选的模型文件。
 | 跑第一个计算 | [快速上手](docs/quickstart.zh.md) |
 | 在答案已知的体系上检验一个模型 | [测试体系](docs/test-systems.zh.md) |
 | 安装一个或多个后端（GPU 或 CPU） | [安装](docs/installation.zh.md) |
-| 了解 MACE、DPA、GRACE、UMA 是什么并选一个 | [后端](docs/backends/index.zh.md)、[模型](docs/models.zh.md) |
+| 了解 MACE、DPA、GRACE、UMA、NEP 是什么并选一个 | [后端](docs/backends/index.zh.md)、[模型](docs/models.zh.md) |
 | 通过 CLI、INCAR 风格文件或 `settings.ini` 设置选项 | [配置](docs/configuration.zh.md) |
 | 单点、弛豫、MD、NEB、构型搜索、批量、队列 | [工作流](docs/workflows/index.zh.md) |
 | MSD、扩散、电导率、RDF、谱、Arrhenius | [分析](docs/analysis/index.zh.md) |
@@ -54,6 +54,9 @@ cd mliport
 
 # 或者只用 CPU
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
+
+# NEP 默认不装，需要显式加上（可单独装，也可和其他后端一起装）
+./scripts/install_mliport.sh --engines nep --device cpu
 ```
 
 安装脚本会锁定各后端的上游版本，装好分析用的依赖，最后对每个后端运行一次 `mliport doctor`。四个后端
@@ -67,6 +70,13 @@ GPU 要用不同的安装包，见 [docs/installation.md](docs/installation.md)�
 | DPA | `.venv-dpa` | `bin/mliport-dpa` |
 | GRACE | `.venv-grace` | `bin/mliport-grace` |
 | UMA | `.venv` | `bin/mliport-uma` |
+| NEP | `.venv-nep` | `bin/mliport-nep` |
+
+NEP 不在默认后端列表里。安装器会在 `.venv-nep` 里装好锁定版本的 `calorine` 和 editable 的 mliport，这足够
+运行 CPU 的 ASE 运行时（`CPUNEP`，float64）。原生运行时和 `GPUNEP` 还需要 `gpumd` 可执行文件，安装器**不会**
+编译它（要用你的 CUDA toolkit 和匹配的 `-arch=sm_XX`）。在有 GPU 的机器上，`--device auto|cuda` 会让结尾的 `doctor` 要求 `gpumd`，
+编译好之前请用 `--device cpu`；编译方法和 `mliport doctor --engine nep` 见
+[docs/backends/nep.zh.md](docs/backends/nep.zh.md)。
 
 用哪个后端，就在哪个后端的环境里运行 mliport，或者用它的启动脚本：
 
@@ -89,6 +99,7 @@ mliport 不会自动下载模型。请从上游下载，再用 `--model` 传入�
 | DPA | `DPA-3.1-3M.pt` | [deepmodelingcommunity/DPA-3.1-3M](https://huggingface.co/deepmodelingcommunity/DPA-3.1-3M) |
 | GRACE | `GRACE-2L-OMAT-medium-base` | [AMS-ICAMS-RUB/grace-foundation-models](https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models) |
 | UMA | `uma-s-1p2.pt` | [facebook/UMA](https://huggingface.co/facebook/UMA) |
+| NEP | 你自己的 `nep.txt` | 针对你的元素和条件训练；mliport 不附带也不下载 |
 
 验证时用的模型哈希记录在 [`validation/science/model_manifest.json`](validation/science/model_manifest.json)。
 模型的许可证以上游为准，UMA 只能用于非商业研究。Hugging Face 镜像和 SOCKS 代理的设置见
@@ -119,6 +130,7 @@ mliport 不会自动下载模型。请从上游下载，再用 `--model` 传入�
 .venv-dpa/bin/mliport   sp LGPS.vasp --model DPA-3.1-3M.pt --model-type dpa --task bulk --head Omat24 --device cuda
 .venv-grace/bin/mliport sp LGPS.vasp --model GRACE-2L-OMAT-medium-base --model-type grace --task bulk --device cuda
 .venv/bin/mliport       sp LGPS.vasp --model uma-s-1p2.pt --model-type uma --task omat --device cuda
+.venv-nep/bin/mliport   sp LGPS.vasp --model nep.txt --model-type nep --nep-runtime ase --device cpu
 ```
 
 | 引擎 | `--model-type` | Task / head | 说明 |
@@ -127,6 +139,7 @@ mliport 不会自动下载模型。请从上游下载，再用 `--model` 传入�
 | DPA | `dpa` | `bulk`、`--head Omat24` | 多任务模型，必须指定 head |
 | GRACE | `grace` | `bulk` | 基于 TensorFlow，支持 CPU 和 GPU |
 | UMA | `uma`（也可写 `fairchem`） | `omat` | 分子用 `--task omol`；仅限非商业研究 |
+| NEP | `nep`，另需 `--nep-runtime ase\|gpumd` | `bulk`（仅周期性体系） | 运行时从不自动推断；`ase` 为 Calorine（`cpu` 为 float64，`cuda` 为 float32，每次调用起一个 `gpumd` 进程），`gpumd` 为每次运行一个原生进程（float32） |
 
 DPA 和 GRACE 的框架加载后就不能再换 GPU。没有设置 `CUDA_VISIBLE_DEVICES` 时，命令行会新开一个设好 GPU
 的进程来运行；在 Python 里调用时，请在导入这些框架之前设置 `CUDA_VISIBLE_DEVICES`。详见
@@ -225,7 +238,7 @@ result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device=
 
 ## 配置
 
-后端必须明确指定（`--model-type mace|dpa|grace|uma` 加 `--model`，或者用模型别名）。配置检查是严格的：
+后端必须明确指定（`--model-type mace|dpa|grace|uma|nep` 加 `--model`，或者用模型别名；`nep` 还需要 `--nep-runtime`）。配置检查是严格的：
 不认识的参数和别的后端的参数都会报错，试算时可以用 `--lenient-config` 降为警告。`mliport config` 用来查看
 设置；项目里的 `settings.ini` 可以定义别名，`--settings PATH` 指定的文件优先于用户和项目配置。每次运行都
 会写出 `resolved_config.json`，记录每个参数的取值和来源。
@@ -238,6 +251,11 @@ result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device=
 INCAR 风格输入只支持常用参数。API、命令行、INCAR 和 TUI 各自支持哪些参数，记录在
 `validation/science/capability_matrix.json` 里；标为 `no` 或 `partial` 的项在该入口无法设置，程序也不会
 自动换成别的设置。
+
+NEP 的限制：`nep.txt` 要你自己提供，mliport 无法判断它是否适合你的材料。原生 `gpumd` 运行时没有 CPU 路径，
+遇到 NEB、批量和 confsearch 会直接拒绝，不会改用 ASE 运行时；DFT-D3 会被拒绝；不支持 `qNEP`、`TNEP` 和
+`nep4-vdw` 模型；部分周期性边界会被拒绝。NEP 不在下面这份验证汇总的范围内：它在真实硬件上的证据是一台 V100
+配 GPUMD 5.9.1 和 CUDA 12.9，其他 GPU 和 toolkit 没有验证过。详见 [docs/backends/nep.zh.md](docs/backends/nep.zh.md)。
 
 模型精度由上游模型决定。短时间 MD 只用来检查流程能否跑通，不代表体系已经平衡。NEB 预检通过只说明力和
 能量自洽，不代表势垒准确。采样不足时，输运分析会报告 insufficient-sampling，不给出数值。
