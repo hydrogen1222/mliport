@@ -58,7 +58,7 @@ def read_nep_model_metadata(path: str | Path) -> dict[str, Any]:
             match = _LEGACY.fullmatch(tokens[0])
             if not versioned and match is None:
                 raise ValueError(
-                    f"Unrecognised or unsupported NEP model header {first.strip()!r}"
+                    f"Malformed NEP model header (unrecognised type) {first.strip()!r}"
                 )
             if versioned and (had_leading_blank or not first.startswith("nep ") or first.startswith("\ufeff")):
                 raise ValueError("Versioned NEP header must be the physical first line")
