@@ -51,6 +51,11 @@ def test_new_energy_nep_header_shared_between_ase_and_native(tmp_path):
     assert ase["max_neighbours_radial"] == 274
 
 
+def test_versioned_first_line_allows_inline_comment(tmp_path):
+    text = V1.replace("nep 2 Li S", "nep 2 Li S # model elements")
+    assert parse_nep_model(_file(tmp_path, text))["element_types"] == ["Li", "S"]
+
+
 def test_new_nep_typewise_cutoffs_and_89_element_order(tmp_path):
     symbols = (
         "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca "
