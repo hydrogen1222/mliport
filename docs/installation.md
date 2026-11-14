@@ -50,9 +50,15 @@ CUDA path and fails naming `gpumd` until one is on `PATH` or in
 build `gpumd` and re-run the installer, or install with `--device cpu` /
 `--skip-doctor` (and call `.venv-nep/bin/mliport` directly in the meantime).
 
-Re-running the installer while an environment already exists stops at its creation
-step and leaves that environment untouched; add `--clean` to delete and rebuild
-only the environments of the engines you name. Pass fewer engines if you only need some. `--dry-run` prints every step without
+Re-running the installer while an environment already exists is decided by an
+explicit contract before any step runs. A **compatible** environment — a real
+virtual environment of the requested Python that carries no other backend's
+packages — is reused and its pinned packages are re-resolved in place. Anything
+else is **refused**: a plain directory at that path, an interpreter that cannot
+report its version, a venv built with another Python, or a venv that already
+holds another backend's framework (for example `torch` inside `.venv-nep`).
+The refusal names the reason, changes nothing, and tells you to add `--clean`,
+which deletes and rebuilds only the environments of the engines you name. Pass fewer engines if you only need some. `--dry-run` prints every step without
 executing anything. Unless you give `--skip-doctor`, the installer runs
 `mliport doctor` in each environment when it finishes. The analysis, transport
 and electrolyte features come with the same install; there is no second step.
