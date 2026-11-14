@@ -108,8 +108,8 @@ def test_recommend_torch_pascal_uses_cu126() -> None:
 def test_recommend_torch_pascal_dpa_preserves_deepmd_abi_pin() -> None:
     rec = recommend_torch(6, 1, engine="dpa")
     assert rec.supported is True
-    assert rec.version == "2.10.0+cu126"
-    assert "torch==2.10.0+cu126" in "\n".join(rec.install_commands)
+    assert rec.version == "2.11.0+cu126"
+    assert "torch==2.11.0+cu126" in "\n".join(rec.install_commands)
 
 
 def test_recommend_torch_blackwell_uses_modern() -> None:
@@ -140,18 +140,18 @@ def test_engine_install_commands_pascal_mace_uses_cu126() -> None:
 
 
 def test_engine_install_commands_pascal_dpa_uses_cu126() -> None:
-    """Pascal DPA → torch 2.10.0+cu126."""
+    """Pascal DPA → torch 2.11.0+cu126 (DeepMD ABI pin)."""
     cmds = engine_install_commands([_gpu(6, 1)], "dpa")
     joined = "\n".join(cmds)
-    assert "torch==2.10.0+cu126" in joined
+    assert "torch==2.11.0+cu126" in joined
     assert "cu126" in joined
 
 
 def test_engine_install_commands_volta_dpa_uses_cu126() -> None:
-    """Volta (sm_70) DPA → torch 2.10.0+cu126."""
+    """Volta (sm_70) DPA → torch 2.11.0+cu126 (DeepMD ABI pin)."""
     cmds = engine_install_commands([_gpu(7, 0)], "dpa")
     joined = "\n".join(cmds)
-    assert "torch==2.10.0" in joined
+    assert "torch==2.11.0" in joined
     assert "cu126" in joined
 
 

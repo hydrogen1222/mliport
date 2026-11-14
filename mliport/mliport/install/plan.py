@@ -147,6 +147,16 @@ def _uv_pip(profile: SourceProfile, python: str, *args: str) -> list[str]:
 
 
 def _venv_step(backend: BackendSpec, python_version: str) -> InstallStep:
+    """The venv step.
+
+    ``--allow-existing`` only keeps ``uv`` from refusing a path that is already
+    there; it is **not** a compatibility decision, and on its own it would let
+    uv initialise a venv inside a foreign directory or silently replace a venv
+    with another Python version.  The decision is made beforehand by
+    :func:`mliport.install.venv_contract.inspect_target_venv` (called from
+    :mod:`mliport.install.cli`): a compatible environment is reused, an
+    incompatible one is refused with ``--clean`` and nothing is executed.
+    """
     return InstallStep(
         stage="venv",
         description=f"Create {backend.venv_name} for {backend.label}",

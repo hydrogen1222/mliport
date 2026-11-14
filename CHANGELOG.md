@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+Installer environment contract and CI repair:
+
+- An existing target environment is now inspected before any step runs. A
+  compatible venv (real virtual environment of the requested Python, carrying no
+  other backend's packages) is reused and its pinned packages are re-resolved in
+  place; a plain directory, an unreadable interpreter, another Python version or
+  a venv holding another backend's framework is refused with an actionable
+  `--clean` message and nothing is executed. `uv venv --allow-existing` is no
+  longer an unconditional pass: on its own it initialises a venv inside a
+  foreign directory and replaces a venv built with a different Python.
+- Update the DPA plan assertions to the pinned torch 2.11.0 (DeepMD ABI pin) and
+  add a regression that plans track the compatibility matrix, so a framework
+  bump can no longer leave main's CI red.
+
 DPA4 runtime compatibility:
 
 - Pin PyTorch 2.11.0 and upstream DeePMD commit
