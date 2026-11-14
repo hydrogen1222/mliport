@@ -50,6 +50,39 @@ smoke tests, consistency checks, produced-value checks, numerical and physical
 sanity checks such as benchmarks, and performance and transport analyses. Read
 a tier's scope in the report before you quote one of its numbers.
 
+## Checking one model on one device
+
+`scripts/validate_runtime.py` is the reusable callable check. It loads one
+checkpoint inside the backend's own environment, runs a single point, a
+shared-calculator repeat and central finite differences, and with `--full` a
+10-step NVE MD run and a five-image NEB. It writes one JSON report and changes
+nothing else.
+
+```bash
+.venv-mace/bin/python scripts/validate_runtime.py mace \
+  /models/mace-omat-0-medium.model report.json \
+  --device cpu --structure examples/structures/li10gep2s12_primitive.vasp \
+  --task bulk --full --raw-dir /tmp/probe-raw
+```
+
+- `--device` is required and takes `cpu` or `cuda:N`. A CPU run needs no GPU and
+  refuses a GPU placement; a CUDA run confirms the GPU UUID (recorded only as a
+  hash) and the ordinal, and records the peak memory.
+- `--structure` takes any ASE-readable file with 2 to 32 unconstrained atoms.
+  Without it the probe uses the built-in four-atom fcc Cu cell.
+- `--task` names the model task family and is required for `uma` (for example
+  `--task omat`); the other backends default to `bulk`.
+- The evidence id names the device type (`cpu-…` or `cuda-…`), not a host, and
+  the hardware block is written only for GPU runs.
+- `dpa` and `grace` must run in a process that has already isolated its
+  devices, as the CLI does when it restarts itself: start the probe with
+  `CUDA_VISIBLE_DEVICES=''` for `--device cpu` or with a single GPU UUID for
+  `--device cuda:N`. The probe refuses to start when that variable is unset
+  instead of letting the adapter fail later.
+
+The report schema is `mliport.runtime-validation/2`. Records from the earlier
+GPU-only probe stay on schema `/1` and keep their `v100-…` ids.
+
 ## Installer smoke evidence
 
 This table predates the workflow-level campaign above. It is kept because every
