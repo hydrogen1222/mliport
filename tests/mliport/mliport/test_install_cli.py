@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from mliport.install import cli
 from mliport.install.plan import InstallPlanError
+from mliport.install.venv_contract import VenvState, Verdict
+
+
+def _absent_venv(venv, **_kwargs) -> VenvState:
+    """Stub the existing-environment contract: nothing exists yet."""
+    return VenvState(path=Path(venv), verdict=Verdict.ABSENT)
 
 
 def test_executor_uses_managed_source_environment(monkeypatch):
@@ -14,7 +22,7 @@ def test_executor_uses_managed_source_environment(monkeypatch):
     monkeypatch.setenv("UV_INDEX_URL", "https://wrong.example/simple")
     monkeypatch.setenv("UV_FIND_LINKS", "https://wrong.example/wheels")
     monkeypatch.setattr(cli, "detect_gpus", lambda: None)
-    monkeypatch.setattr(cli, "_existing_venv_python_mismatch", lambda *_args: False)
+    monkeypatch.setattr(cli, "inspect_target_venv", _absent_venv)
     calls = []
 
     def execute(argv, **kwargs):
@@ -72,7 +80,7 @@ def test_china_source_interactive_selection_reaches_plan(monkeypatch, capsys) ->
     monkeypatch.setattr(cli, "detect_gpus", lambda: None)
     monkeypatch.setattr(cli, "_can_prompt_for_source", lambda: True)
     monkeypatch.setattr(cli, "_prompt_china_source", lambda: "china-ustc")
-    monkeypatch.setattr(cli, "_existing_venv_python_mismatch", lambda *_args: False)
+    monkeypatch.setattr(cli, "inspect_target_venv", _absent_venv)
 
     result = cli.main(
         [
@@ -104,7 +112,7 @@ def test_china_source_non_interactive_never_prompts(monkeypatch, capsys) -> None
         "_prompt_china_source",
         lambda: pytest.fail("non-interactive mode must not prompt"),
     )
-    monkeypatch.setattr(cli, "_existing_venv_python_mismatch", lambda *_args: False)
+    monkeypatch.setattr(cli, "inspect_target_venv", _absent_venv)
 
     result = cli.main(
         [
@@ -134,7 +142,7 @@ def test_china_source_non_terminal_input_never_prompts(monkeypatch) -> None:
         "_prompt_china_source",
         lambda: pytest.fail("non-terminal input must not prompt"),
     )
-    monkeypatch.setattr(cli, "_existing_venv_python_mismatch", lambda *_args: False)
+    monkeypatch.setattr(cli, "inspect_target_venv", _absent_venv)
 
     assert (
         cli.main(
@@ -235,3 +243,118 @@ def test_dpa_plan_installs_mpich_for_deepmd_torch_ops():
     joined = " ".join(arg for step in plan.steps for arg in step.argv)
     assert "deepmd-kit" in joined
     assert "mpich" in joined, joined
+
+
+def _stub_executor(monkeypatch) -> list:
+    from types import SimpleNamespace
+
+    calls: list = []
+
+    def execute(argv, **kwargs):
+        calls.append((argv, kwargs["env"]))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cli.subprocess, "run", execute)
+    monkeypatch.setattr(cli, "detect_gpus", lambda: None)
+    return calls
+
+
+def test_incompatible_existing_environment_is_refused_before_any_step(
+    monkeypatch, capsys
+) -> None:
+    """The contract runs first: nothing is executed for a refused venv."""
+    calls = _stub_executor(monkeypatch)
+    monkeypatch.setattr(
+        cli,
+        "inspect_target_venv",
+        lambda venv, **_kwargs: VenvState(
+            path=Path(venv),
+            verdict=Verdict.INCOMPATIBLE,
+            reason="not_a_venv",
+            detail=f"{venv} exists but is not a virtual environment (no pyvenv.cfg)",
+        ),
+    )
+
+    assert (
+        cli.main(
+            [
+                "--engines",
+                "nep",
+                "--device",
+                "cpu",
+                "--source",
+                "official",
+                "--skip-doctor",
+                "--non-interactive",
+            ]
+        )
+        == 2
+    )
+    assert calls == [], "no install step may run for a refused environment"
+    err = capsys.readouterr().err
+    assert "--clean" in err
+    assert "Nothing was changed" in err
+    assert ".venv-nep" in err
+
+
+def test_compatible_existing_environment_is_reused(monkeypatch, capsys) -> None:
+    calls = _stub_executor(monkeypatch)
+    monkeypatch.setattr(
+        cli,
+        "inspect_target_venv",
+        lambda venv, **_kwargs: VenvState(
+            path=Path(venv), verdict=Verdict.REUSE, python_version="3.12"
+        ),
+    )
+
+    assert (
+        cli.main(
+            [
+                "--engines",
+                "nep",
+                "--device",
+                "cpu",
+                "--source",
+                "official",
+                "--skip-doctor",
+                "--non-interactive",
+            ]
+        )
+        == 0
+    )
+    assert calls, "a reusable environment still gets its pinned packages resolved"
+    venv_calls = [argv for argv, _env in calls if argv[:2] == ["uv", "venv"]]
+    assert venv_calls and all("--allow-existing" in argv for argv in venv_calls)
+    assert "Reusing existing" in capsys.readouterr().out
+
+
+def test_clean_skips_the_contract_and_rebuilds(monkeypatch, capsys) -> None:
+    calls = _stub_executor(monkeypatch)
+
+    def explode(*_args, **_kwargs):  # pragma: no cover - must not be called
+        raise AssertionError("--clean must not inspect the existing environment")
+
+    monkeypatch.setattr(cli, "inspect_target_venv", explode)
+
+    assert (
+        cli.main(
+            [
+                "--engines",
+                "nep",
+                "--device",
+                "cpu",
+                "--source",
+                "official",
+                "--skip-doctor",
+                "--non-interactive",
+                "--clean",
+            ]
+        )
+        == 0
+    )
+    argv_list = [argv for argv, _env in calls]
+    assert argv_list[0][:2] == ["rm", "-rf"]
+    assert argv_list[0][-1] == ".venv-nep"
+    assert not any(
+        "Reusing existing" in line for line in capsys.readouterr().out.splitlines()
+    )

@@ -331,25 +331,89 @@ def test_nep_install_is_isolated_from_other_backends(workspace: Path) -> None:
         assert not (workspace / "bin" / f"mliport-{other}").exists()
 
 
-def test_plain_repeat_install_fails_closed_and_leaves_the_environment_alone(
-    workspace: Path,
-) -> None:
-    """Without ``--clean`` the venv step stops because ``.venv-nep`` exists.
+def test_compatible_repeat_install_reuses_the_environment(workspace: Path) -> None:
+    """A re-run on a compatible venv reuses it instead of failing or replacing it.
 
-    This is how every backend's plan behaves (``uv venv`` without
-    ``--allow-existing``); NEP is pinned to the same behaviour and, above all,
-    the working environment must be left untouched.
+    ``--allow-existing`` keeps ``uv`` from refusing the path, but reusing an
+    environment is only allowed because the installer first checked that it is a
+    real venv of the requested Python carrying no other backend's packages.
     """
-    marker = workspace / ".venv-nep" / "reinstall-marker"
+    marker = workspace / ".venv-nep" / "reuse-marker"
     marker.write_text("kept", encoding="utf-8")
     result = _install(
         workspace, "--device", "cpu", "--source", "official", log_name="05-repeat"
     )
-    assert result.returncode != 0
-    assert "already exists" in _output(result)
+    assert result.returncode == 0, _output(result)
+    assert "Reusing existing .venv-nep" in _output(result)
     assert marker.read_text(encoding="utf-8") == "kept"
     assert _is_executable_file(workspace / ".venv-nep" / "bin" / "mliport")
     assert _doctor(workspace, "cpu", env=_no_gpumd_env()).returncode == 0
+
+
+def test_incompatible_repeat_install_is_refused_and_changes_nothing(
+    workspace: Path,
+) -> None:
+    """Another backend's framework makes ``.venv-nep`` incompatible: fail closed.
+
+    ``uv venv --allow-existing`` would happily install into it anyway, mixing a
+    framework into the NEP environment.  The installer must refuse before any
+    step runs and leave the working environment untouched.
+    """
+    marker = workspace / ".venv-nep" / "incompatible-marker"
+    marker.write_text("kept", encoding="utf-8")
+    site_packages = sorted(workspace.glob(".venv-nep/lib/python*/site-packages"))[0]
+    planted = site_packages / "torch"
+    planted.mkdir()
+    try:
+        result = _install(
+            workspace,
+            "--device",
+            "cpu",
+            "--source",
+            "official",
+            log_name="05b-repeat-incompatible",
+        )
+        output = _output(result)
+        assert result.returncode != 0, output
+        assert "--clean" in output, output
+        assert "PyTorch" in output, output
+        assert "Nothing was changed" in output, output
+        # Refused before the first step: the environment still works.
+        assert marker.read_text(encoding="utf-8") == "kept"
+        assert _is_executable_file(workspace / ".venv-nep" / "bin" / "mliport")
+        assert _doctor(workspace, "cpu", env=_no_gpumd_env()).returncode == 0
+    finally:
+        shutil.rmtree(planted, ignore_errors=True)
+
+
+def test_plain_directory_at_the_environment_path_is_not_converted(
+    tmp_path: Path,
+) -> None:
+    """A non-venv directory is never initialised in place; --clean is required.
+
+    Runs in its own workspace: the shared ``.venv-nep`` is a real environment, so
+    the "path exists but is not a venv" case needs a directory of its own.
+    """
+    workspace = _copy_workspace(tmp_path / "repo-plain-dir")
+    bystander = workspace / ".venv-nep"
+    bystander.mkdir()
+    keep = bystander / "keep.txt"
+    keep.write_text("user data", encoding="utf-8")
+
+    result = _install(
+        workspace,
+        "--device",
+        "cpu",
+        "--source",
+        "official",
+        log_name="05c-repeat-non-venv",
+    )
+    output = _output(result)
+    assert result.returncode != 0, output
+    assert "--clean" in output, output
+    assert "pyvenv.cfg" in output, output
+    assert keep.read_text(encoding="utf-8") == "user data"
+    assert (bystander / "pyvenv.cfg").exists() is False, "path must stay a plain dir"
 
 
 def test_clean_reinstall_recreates_only_venv_nep(workspace: Path) -> None:

@@ -52,7 +52,7 @@ def test_arch_t1_t2_pascal_sm60_and_sm61_plan(cc, expected_arch):
 
     dpa = generate_plan([_gpu(*cc)], engines=["dpa"], device="cuda")
     dpa_joined = _joined(dpa)
-    assert "torch==2.10.0+cu126" in dpa_joined
+    assert "torch==2.11.0+cu126" in dpa_joined
     assert "mpich" in dpa_joined
 
     grace = generate_plan([_gpu(*cc)], engines=["grace"], device="cuda")
@@ -69,7 +69,7 @@ def test_arch_t3_volta_sm70_plan():
     assert plan.gpu_arch == "volta"
     joined = _joined(plan)
     assert "torch==2.8.0+cu126" in joined
-    assert "torch==2.10.0+cu126" in joined
+    assert "torch==2.11.0+cu126" in joined
 
 
 @pytest.mark.parametrize(
@@ -89,7 +89,7 @@ def test_modern_arches_use_cu128(cc, expected_arch):
     assert plan.gpu_arch == expected_arch
     joined = _joined(plan)
     assert "torch==2.8.0+cu128" in joined
-    assert "torch==2.10.0+cu128" in joined
+    assert "torch==2.11.0+cu128" in joined
 
 
 def test_grace_hopper_and_blackwell_are_experimental():
@@ -128,9 +128,9 @@ def test_arch_t6_cu126_wheels_use_exact_local_version():
         generate_plan([_gpu(6, 1)], engines=["mace", "dpa"], device="cuda")
     )
     assert "torch==2.8.0+cu126" in joined
-    assert "torch==2.10.0+cu126" in joined
+    assert "torch==2.11.0+cu126" in joined
     assert "torch==2.8.0 " not in joined
-    assert "torch==2.10.0 " not in joined
+    assert "torch==2.11.0 " not in joined
 
 
 def test_dependabot_framework_upgrades_require_manual_review():
@@ -185,3 +185,23 @@ def test_architecture_evidence_files_exist_and_are_consistent():
         assert entry["real_hardware_tested"] is False or (
             entry["architecture"] == "volta" and entry["backend"] in BACKENDS
         )
+
+
+def test_dpa_torch_pin_tracks_the_compatibility_matrix():
+    """A framework bump must update the matrix *and* the plan together.
+
+    Regression: DPA moved from torch 2.10.0 to 2.11.0 for the DeepMD ABI pin and
+    fourteen plan assertions kept expecting 2.10.0, so main's CI was red.  The
+    matrix value is pinned explicitly here as well, so bumping it without
+    re-auditing the CUDA channels and Python support fails here.
+    """
+    versions = {bp.framework_version for bp in BACKENDS["dpa"].arch_profiles.values()}
+    assert versions == {"2.11.0"}, versions
+
+    for cc, cuda_tag in (
+        ((6, 1), "cu126"),  # Pascal: sm60 fallback wheels
+        ((7, 0), "cu126"),  # Volta: sm70 wheels
+        ((8, 9), "cu128"),  # Ada: modern channel
+    ):
+        joined = _joined(generate_plan([_gpu(*cc)], engines=["dpa"], device="cuda"))
+        assert f"torch==2.11.0+{cuda_tag}" in joined, (cc, joined)

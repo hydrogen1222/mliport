@@ -23,8 +23,10 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from mliport.install.compatibility import BackendSpec
 from mliport.install.hardware import detect_gpus
 from mliport.install.plan import (
+    InstallPlan,
     InstallPlanError,
     generate_plan,
     render_plan_shell,
@@ -35,6 +37,12 @@ from mliport.install.sources import (
     resolve_source,
     source_environment,
     source_environment_summary,
+)
+from mliport.install.venv_contract import (
+    backend_for_venv,
+    incompatible_message,
+    inspect_target_venv,
+    reuse_message,
 )
 
 
@@ -177,28 +185,40 @@ def _prompt_china_source(
         print(f"[mliport] Invalid choice {answer!r}; enter 1-5.", file=sys.stderr)
 
 
-def _existing_venv_python_mismatch(venv: str, requested: str) -> bool:
-    """Return True if an existing venv uses a different Python version."""
-    py = Path(venv) / "bin" / "python"
-    if not py.is_file():
-        return False
-    try:
-        out = subprocess.run(
-            [
-                str(py),
-                "-c",
-                "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
+def _venv_steps(plan: InstallPlan) -> list[tuple[str, BackendSpec]]:
+    """``(venv path, backend)`` for every environment the plan creates."""
+    targets: list[tuple[str, BackendSpec]] = []
+    for step in plan.steps:
+        if step.stage != "venv":
+            continue
+        # The venv path is the last argument of `uv venv --python X <path>`.
+        try:
+            venv = step.argv[-1]
+        except IndexError:  # pragma: no cover - the plan always carries a path
+            continue
+        backend = backend_for_venv(venv)
+        if backend is not None:
+            targets.append((venv, backend))
+    return targets
+
+
+def _check_existing_venvs(plan: InstallPlan, python_version: str) -> int:
+    """Apply the existing-environment contract before any step runs.
+
+    Returns ``0`` when every target is absent or reusable, ``2`` when at least
+    one is incompatible (nothing is executed in that case).
+    """
+    refused = False
+    for venv, backend in _venv_steps(plan):
+        state = inspect_target_venv(
+            Path(venv), backend=backend, python_version=python_version
         )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    if out.returncode != 0:
-        return False
-    return out.stdout.strip() != requested
+        if state.refused:
+            print(f"[mliport] ERROR: {incompatible_message(state)}", file=sys.stderr)
+            refused = True
+        elif state.reusable:
+            print(f"[mliport] {reuse_message(state, backend=backend)}")
+    return 2 if refused else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -245,23 +265,12 @@ def main(argv: list[str] | None = None) -> int:
     for setting in source_environment_summary(src, env):
         print(f"[mliport] Effective custom source environment: {setting}")
 
-    # Existing-venv Python mismatch check (fail unless --clean).
+    # Existing-environment contract (fail closed unless --clean): a compatible
+    # venv is reused, an incompatible one is refused before any step runs.
     if not args.clean:
-        for step in plan.steps:
-            if step.stage != "venv":
-                continue
-            # The venv path is the last argument of `uv venv --python X <path>`.
-            try:
-                venv = step.argv[-1]
-            except IndexError:
-                continue
-            if _existing_venv_python_mismatch(venv, args.python):
-                print(
-                    f"[mliport] ERROR: existing {venv} uses a different Python than "
-                    f"{args.python}. Re-run with --clean to recreate it.",
-                    file=sys.stderr,
-                )
-                return 2
+        refused = _check_existing_venvs(plan, args.python)
+        if refused:
+            return refused
 
     engine_list = normalize_engine_args(args.engines)
 
