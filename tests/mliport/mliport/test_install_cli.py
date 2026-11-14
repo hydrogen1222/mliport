@@ -91,7 +91,7 @@ def test_china_source_interactive_selection_reaches_plan(monkeypatch, capsys) ->
     output = capsys.readouterr().out
     assert "Selected source: China: USTC" in output
     assert "Source   : china-ustc" in output
-    assert "torch==2.10.0+cpu" in output
+    assert "torch==2.11.0+cpu" in output
     assert "mirrors.aliyun.com/pytorch-wheels/cpu" in output
     assert "mirrors.ustc.edu.cn/pypi/simple" in output
 

@@ -275,7 +275,7 @@ def test_minima_directory_keeps_every_quench_result(tmp_path):
     failed = [f for f in frames if f.info["confsearch_status"] == "quench_failed"]
     assert "energy_eV" not in failed[0].info
     payload = json.loads((tmp_path / "minima" / "registry.json").read_text())
-    assert payload["schema"] == "mliport.confsearch-registry/1"
+    assert payload["schema"] == "mliport.confsearch-registry/2"
     assert results["diagnostics"]["registry"] == payload
 
 

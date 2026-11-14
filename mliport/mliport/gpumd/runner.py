@@ -434,6 +434,11 @@ class NativeGPUMDRunner(BaseRunner):
             {
                 "nep_model_format": self._nep_info["model_format"],
                 "nep_model_version": self._nep_info["model_version"],
+                "nep_format_version": self._nep_info["format_version"],
+                "nep_model_type": self._nep_info["model_type"],
+                "nep_cutoff_by_element_A": self._nep_info["cutoff_by_element_A"],
+                "nep_zbl": self._nep_info["zbl"],
+                "nep_energy_reference_eV": self._nep_info["energy_reference_eV"],
                 "nep_element_types": list(self._nep_info["element_types"]),
                 "nep_cutoffs": dict(self._nep_info["cutoffs"]),
             }

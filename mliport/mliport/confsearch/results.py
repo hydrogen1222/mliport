@@ -562,7 +562,7 @@ def build_results(
     output_dir = Path(output_dir)
     (output_dir / "diagnostics").mkdir(parents=True, exist_ok=True)
     _write_discovery_csv(output_dir / "diagnostics" / "discovery.csv", discovery)
-    _write_minima(output_dir, registry)
+    _write_minima(output_dir, registry, regions=regions)
 
     rankable_statuses = cs_status.rankable_statuses(options.cs_reaction_policy)
     quench_rankable = sorted(
@@ -859,19 +859,38 @@ def _finite_info(info: dict) -> dict:
     return cleaned
 
 
-def _write_minima(output_dir: Path, registry: MinimumRegistry) -> None:
+def _write_minima(
+    output_dir: Path,
+    registry: MinimumRegistry,
+    *,
+    regions: Regions | None = None,
+) -> None:
     """Write ``minima/all_minima.extxyz`` and ``minima/registry.json`` (spec 11.1).
 
     Every quench result is kept, whatever its status, so rejected, failed and
     ``reacted`` geometries can be inspected after the run.
+
+    The fixed-atom mask is attached from the run's own regions instead of
+    relying on the constraint the quench happened to leave on the atoms: a
+    checkpoint round trip rebuilds registry geometries from bare
+    numbers/positions/cell/PBC, so a resumed run would otherwise write the mask
+    only for the minima registered after the resume (AUD-007).  ASE derives the
+    extxyz ``move_mask`` from that constraint.
     """
+
     directory = output_dir / "minima"
     directory.mkdir(parents=True, exist_ok=True)
+    fixed = (
+        np.asarray(regions.fixed, dtype=int)
+        if regions is not None and len(regions.fixed)
+        else np.asarray([], dtype=int)
+    )
     frames: list[Atoms] = []
     for status in sorted(registry.status_classes()):
         for unique in sorted(registry.uniques(status), key=lambda item: item.unique_id):
             for member in sorted(unique.members, key=lambda item: item.record_id):
                 atoms = member.atoms.copy()
+                atoms.set_constraint(FixAtoms(indices=fixed) if fixed.size else None)
                 atoms.info.update(
                     _finite_info(
                         {

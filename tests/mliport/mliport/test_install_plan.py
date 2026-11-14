@@ -110,10 +110,29 @@ def test_p40_dpa_plan_pins_exact_legacy_torch_build() -> None:
         for step in plan.steps
         if step.stage == "pip" and any(arg.startswith("torch==") for arg in step.argv)
     )
-    assert "torch==2.10.0+cu126" in torch_step.argv
+    assert "torch==2.11.0+cu126" in torch_step.argv
     assert "--find-links" in torch_step.argv
     assert "cu126" in " ".join(torch_step.argv)
-    assert "torch==2.10.0" not in torch_step.argv
+    assert "torch==2.11.0" not in torch_step.argv
+
+
+def test_dpa_source_build_is_pinned_and_uses_selected_torch():
+    from mliport.install.compatibility import BACKENDS
+
+    backend = BACKENDS["dpa"]
+    plan = generate_plan([_gpu("V100", 7, 0)], ["dpa"], verify=False)
+    build = next(s for s in plan.steps if backend.requirement in s.argv)
+    assert "--no-build-isolation" in build.argv
+    assert build.env["DP_ENABLE_TENSORFLOW"] == "0"
+    assert build.env["DP_ENABLE_PYTORCH"] == "1"
+    assert build.env["SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DEEPMD_KIT"] == backend.version
+    build_index = plan.steps.index(build)
+    assert any("scikit-build-core>=1,<2" in s.argv for s in plan.steps[:build_index])
+    constraints = next(s for s in plan.steps if s.stage == "constraints")
+    assert f"deepmd-kit=={backend.version}" in " ".join(constraints.argv)
+    venv = next(s for s in plan.steps if s.stage == "venv")
+    assert "--allow-existing" in venv.argv
+    assert "--clear" not in venv.argv
 
 
 def test_4090_plan_modern() -> None:
@@ -122,7 +141,7 @@ def test_4090_plan_modern() -> None:
     argv = _all_argv(plan)
     assert "cu128" in argv
     assert "cu126" not in argv
-    assert "torch==2.10.0+cu128" in argv
+    assert "torch==2.11.0+cu128" in argv
     assert any("DPA" in w and "needs smoke test" in w for w in plan.warnings)
 
 
@@ -244,6 +263,12 @@ def test_offline_cpu_plan_has_no_urls() -> None:
         assert "https://" not in joined
     for step in _pip_cmds(plan):
         assert "--offline" in step.argv
+    from mliport.install.compatibility import BACKENDS
+
+    backend = BACKENDS["dpa"]
+    dpa = next(s for s in plan.steps if f"deepmd-kit=={backend.version}" in s.argv)
+    assert dpa.argv[dpa.argv.index("--find-links") + 1] == "packages"
+    assert "--no-build-isolation" not in dpa.argv
 
 
 def test_custom_source_no_overrides() -> None:
@@ -259,7 +284,7 @@ def test_custom_source_no_overrides() -> None:
 def test_custom_cpu_source_no_overrides() -> None:
     plan = generate_plan(None, ["dpa"], source="custom", device="cpu", verify=False)
     argv = _all_argv(plan)
-    assert "torch==2.10.0+cpu" in argv
+    assert "torch==2.11.0+cpu" in argv
     assert "--index-url" not in argv
     assert "--find-links" not in argv
 
@@ -301,8 +326,8 @@ def test_china_cpu_source_uses_selected_mirrors() -> None:
         device="cpu",
         verify=False,
     )
-    torch_step, backend_step = _pip_cmds(plan)
-    assert "torch==2.10.0+cpu" in torch_step.argv
+    torch_step, backend_step = _pip_cmds(plan)[0], _pip_cmds(plan)[-1]
+    assert "torch==2.11.0+cpu" in torch_step.argv
     assert "mirrors.aliyun.com/pytorch-wheels/cpu" in " ".join(torch_step.argv)
     assert "mirrors.ustc.edu.cn/pypi/simple" in " ".join(torch_step.argv)
     assert "mirrors.ustc.edu.cn/pypi/simple" in " ".join(backend_step.argv)

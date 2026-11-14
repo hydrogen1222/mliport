@@ -328,8 +328,59 @@ class SearchEngine:
         )
         self.store.write(data, self.resume_fingerprint)
 
+    def _validate_resume_structure(self) -> None:
+        """Refuse a structurally damaged checkpoint instead of resuming it.
+
+        A checkpoint that lost its unit index or its per-replica RNG states
+        would still "run": an out-of-range unit index makes the plan loop skip
+        every unit and report a truncated search as ``completed``, and a
+        missing RNG state silently restarts that replica's random stream,
+        breaking the bitwise resume contract (spec 7.5 / 11.2).  Both must fail
+        closed and leave the checkpoint on disk for inspection.
+        """
+        assert self.resume is not None
+        n_units = 1 + len(self.replicas) * int(self.options.cs_cycles)
+        if not 0 <= self.resume.unit_index <= n_units:
+            raise ConfsearchPreparationError(
+                f"Checkpoint unit index {self.resume.unit_index} is outside the "
+                f"planned 0..{n_units} units; refusing to resume"
+            )
+        expected = set(range(len(self.replicas)))
+        if not all(isinstance(entry, dict) for entry in self.resume.replicas):
+            raise ConfsearchPreparationError(
+                "Checkpoint replica entries are malformed; refusing to resume"
+            )
+        recorded = {int(entry.get("index", -1)) for entry in self.resume.replicas}
+        if recorded != expected:
+            raise ConfsearchPreparationError(
+                f"Checkpoint describes replicas {sorted(recorded)}, expected "
+                f"{sorted(expected)}; refusing to resume"
+            )
+        rng_states = self.resume.rng_states
+        entries = rng_states.get("replicas") if isinstance(rng_states, dict) else None
+        if not isinstance(entries, list) or not all(
+            isinstance(entry, dict) and "index" in entry for entry in entries
+        ):
+            raise ConfsearchPreparationError(
+                "Checkpoint has no usable per-replica RNG states; refusing to resume"
+            )
+        states = {int(entry["index"]): entry for entry in entries}
+        if set(states) != expected:
+            raise ConfsearchPreparationError(
+                f"Checkpoint RNG states cover replicas {sorted(states)}, expected "
+                f"{sorted(expected)}; refusing to resume"
+            )
+        for index in sorted(expected):
+            for stream in ("md", "mc"):
+                if not isinstance(states[index].get(stream), dict):
+                    raise ConfsearchPreparationError(
+                        f"Checkpoint RNG state for replica {index} has no "
+                        f"{stream!r} generator state; refusing to resume"
+                    )
+
     def _restore(self) -> None:
         assert self.resume is not None
+        self._validate_resume_structure()
         self.completed_units = int(self.resume.unit_index)
         self.stage = str(self.resume.stage)
         self.discovery = list(self.resume.discovery)

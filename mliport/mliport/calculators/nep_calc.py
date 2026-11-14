@@ -134,105 +134,30 @@ def _parse_cutoff_row(
 
 
 def parse_nep_model_header(path: str | Path) -> dict[str, Any]:
-    """Read the header of a ``nep.txt`` model file without importing calorine.
+    """Inspect either the legacy or GPUMD format-versioned NEP model header.
 
-    The native GPUMD side (``mliport.gpumd``) has no Calorine object to ask, yet
-    it must validate element compatibility before it launches a GPU process.
-    This helper is therefore deliberately stdlib-only, and it fails closed on
-    anything it cannot read as a NEP header: an unparsed header would let a
-    structure with unsupported elements reach the backend.
-
-    The first line has the form ``<version> <count> <symbol>...`` (for example
-    ``nep4 3 Ba Zr O``); the version token may carry a suffix such as
-    ``nep4_zbl``, in which case ``model_version`` is the ``nep4`` family and
-    ``model_token`` keeps the full token. The declared element count is
-    recorded for provenance but not enforced: the symbols themselves are what
-    the compatibility guard compares against, and a count that disagrees with
-    them means a corrupted model, which the backend rejects when it parses the
-    parameter block.
-
-    Args:
-        path: Path to a ``nep.txt`` file.
-
-    Returns:
-        A dictionary with ``element_types`` (chemical symbols in model order),
-        ``model_version`` (e.g. ``"nep4"``), ``model_token`` (the raw first
-        token), ``declared_element_count`` (the integer on the first line, or
-        ``None``), ``cutoff_radial``, ``cutoff_angular`` and the optional
-        ``max_neighbours_radial`` / ``max_neighbours_angular``. The cutoff
-        entries are ``None`` when the file has no ``cutoff`` row.
-
-    Raises:
-        ValueError: If the file cannot be read, is empty, or has a header that
-            is not a NEP header.
+    Reject unsupported energy/temperature/charge/dipole model families before
+    the Calorine calculator is constructed. The shared parser also serves the
+    native GPUMD path, avoiding divergent model-identity interpretations.
     """
-    model_file = Path(path)
-    try:
-        text = model_file.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ValueError(f"Cannot read NEP model file {model_file}: {exc}") from exc
-    except UnicodeDecodeError as exc:
-        raise ValueError(
-            f"NEP model file {model_file} is not valid UTF-8 text: {exc}"
-        ) from exc
+    from mliport.nep_model_format import read_nep_model_metadata  # noqa: PLC0415
 
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        raise ValueError(f"NEP model file {model_file} is empty.")
-
-    tokens = lines[0].split()
-    version_match = _NEP_VERSION_PATTERN.fullmatch(tokens[0])
-    if version_match is None:
-        raise ValueError(
-            f"Malformed NEP model header in {model_file}: first token "
-            f"{tokens[0]!r} is not a NEP model version (expected something "
-            "like 'nep4')."
-        )
-    body = tokens[1:]
-    declared_element_count: int | None = None
-    if body and body[0].isdigit():
-        declared_element_count = int(body[0])
-        body = body[1:]
-    if not body:
-        raise ValueError(
-            f"Malformed NEP model header in {model_file}: the first line lists "
-            "no element types."
-        )
-    for symbol in body:
-        if _ELEMENT_SYMBOL_PATTERN.fullmatch(symbol) is None:
-            raise ValueError(
-                f"Malformed NEP model header in {model_file}: {symbol!r} is not "
-                "a chemical element symbol."
-            )
-
-    cutoff_radial: float | None = None
-    cutoff_angular: float | None = None
-    max_neighbours_radial: float | None = None
-    max_neighbours_angular: float | None = None
-    # The cutoff row is the second row of a plain ``nep4`` model, but models
-    # with a ZBL row (``nep4_zbl``) put ``zbl`` there and ``cutoff`` one row
-    # later, so scan the header instead of pinning one line index.
-    for line in lines[:8]:
-        fields = line.split()
-        if fields[0].lower() != "cutoff":
-            continue
-        (
-            cutoff_radial,
-            cutoff_angular,
-            max_neighbours_radial,
-            max_neighbours_angular,
-        ) = _parse_cutoff_row(line)
-        break
-
+    data = read_nep_model_metadata(path)
+    version = data["legacy_model_version"]
     return {
-        "element_types": list(body),
-        "model_version": version_match.group(1).lower(),
-        "model_token": tokens[0],
-        "declared_element_count": declared_element_count,
-        "cutoff_radial": cutoff_radial,
-        "cutoff_angular": cutoff_angular,
-        "max_neighbours_radial": max_neighbours_radial,
-        "max_neighbours_angular": max_neighbours_angular,
+        "element_types": list(data["element_types"]),
+        "model_version": None if version is None else f"nep{version}",
+        "model_token": data["model_token"],
+        "format_version": data["format_version"],
+        "model_type": data["model_type"],
+        "declared_element_count": data["declared_element_count"],
+        "cutoff_radial": data["cutoff_radial"],
+        "cutoff_angular": data["cutoff_angular"],
+        "cutoff_by_element_A": data["cutoff_by_element_A"],
+        "max_neighbours_radial": data["max_neighbours_radial"],
+        "max_neighbours_angular": data["max_neighbours_angular"],
+        "zbl": data["zbl"],
+        "energy_reference_eV": data["energy_reference_eV"],
     }
 
 
@@ -572,6 +497,15 @@ class NEPCalculatorWrapper(BaseMLIPCalculator):
                 None if header is None else list(header["element_types"])
             ),
             "nep_model_version": None if header is None else header["model_version"],
+            "nep_format_version": None if header is None else header["format_version"],
+            "nep_model_type": None if header is None else header["model_type"],
+            "nep_cutoff_by_element_A": (
+                None if header is None else header["cutoff_by_element_A"]
+            ),
+            "nep_zbl": None if header is None else header["zbl"],
+            "nep_energy_reference_eV": (
+                None if header is None else header["energy_reference_eV"]
+            ),
             "nep_cutoff_radial": None if header is None else header["cutoff_radial"],
             "nep_cutoff_angular": None if header is None else header["cutoff_angular"],
             "per_call_subprocess": self._device != "cpu",

@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+DPA4 runtime compatibility:
+
+- Pin PyTorch 2.11.0 and upstream DeePMD commit
+  `0edeaef5617e9878edeb2346bf37bb6a035a4f51` for DPA4-Neo and the published
+  DPA4C checkpoints using `gaussian/fix`. Install the SO(3)/neighbor-list
+  dependencies, build against the selected torch ABI, and retain exact source
+  and package constraints. Existing matching Python environments are preserved
+  during installation; offline source-runtime installs use a local wheelhouse.
+- Record actual device and precision for both regular and exportable PyTorch
+  evaluators. Reject partial `.pt` loads and changed learned tensors, while
+  recording the pinned upstream's non-spin descriptor schema migration and
+  regenerated integer gather caches.
+- The legacy DPA-SSE checkpoint remains incompatible with the current network
+  layout after its metadata conversion; no weight reshaping or missing-weight
+  initialization is used to make it load.
+
+DPA checkpoint migration (#91):
+
+- Added explicit trust-gated offline conversion of legacy DPA-SSE training
+  `.pt` checkpoints whose NumPy scalar metadata is rejected by DeePMD's
+  `weights_only=True` loader. The converter does not patch upstream or change
+  global deserialization policy; it preserves float64 tensors exactly, removes
+  optimizer data and records input/output SHA-256 in a separate provenance file.
+  Only use it with verified trusted checkpoints; model predictions still require
+  scientific reference validation.
+
+NEP model-format compatibility (#90):
+
+- Recognize GPUMD format-version-1 energy NEP files such as NEP89 (first
+  line `nep 89 ...`, separate `format_version 1` and `model nep`). Both
+  runtime paths use the same strict header parser. Record format revision,
+  model family, ordered elements, cutoffs, ZBL, energy references and native
+  model SHA-256; refuse unsupported temperature, charge, dipole, spin and vdW
+  families rather than treating them as plain energy NEP.
+- Legacy `nep4` and `nep4_zbl` headers remain accepted. The parser checks
+  model metadata, not the numerical parameter block or real GPU inference.
+
+Confsearch checkpoint integrity (AUD-007, #83):
+
+- Fixed checkpoint/resume to preserve each individual minimum member's atomic
+  geometry and classification together with its energy/origin. Prior resumes
+  could export representative coordinates with a different member's energy.
+- Checkpoint schema and registry schema are now version 2; old schema-1
+  checkpoints are refused on resume because their per-member geometries cannot
+  be recovered. Existing artifacts remain untouched and need provenance
+  assessment if created after a resume. Added exact extxyz resume regressions.
+
 NEP installer and documentation integration (tracking #61):
 
 - **`--engines nep` now installs mliport into `.venv-nep`.** The NEP install step

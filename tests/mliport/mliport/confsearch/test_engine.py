@@ -427,9 +427,9 @@ def test_checkpoint_round_trip_restores_the_registry(tmp_path):
     assert data.registry["classes"]
     assert data.rng_states["replicas"]
     assert data.unit_index == 1 + 1 * 2  # start stage + two cycles
-    assert data.registry["schema"] == "mliport.confsearch-registry/1"
+    assert data.registry["schema"] == "mliport.confsearch-registry/2"
     assert (
-        results["diagnostics"]["registry"]["schema"] == "mliport.confsearch-registry/1"
+        results["diagnostics"]["registry"]["schema"] == "mliport.confsearch-registry/2"
     )
 
 

@@ -28,6 +28,7 @@ docs all derive their information from this single source of truth.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Literal
 
 from packaging.specifiers import SpecifierSet
@@ -42,6 +43,7 @@ SUPPORTED_PYTHON_VERSIONS: tuple[str, ...] = ("3.10", "3.11", "3.12", "3.13")
 FRAMEWORK_PYTHON = {
     ("torch", "2.8.0"): SpecifierSet(">=3.9,<3.14"),
     ("torch", "2.10.0"): SpecifierSet(">=3.10,<3.15"),
+    ("torch", "2.11.0"): SpecifierSet(">=3.10,<3.15"),
     ("tensorflow", "2.20.0"): SpecifierSet(">=3.9,<3.14"),
 }
 
@@ -183,7 +185,7 @@ _LEGACY_CUDA_CHANNELS = ("cu126",)
 # ---------------------------------------------------------------------------
 # For legacy GPUs (Maxwell/Pascal/Volta) the channel is always cu126.
 # For modern GPUs (Turing+) the channel depends on the torch version:
-#   torch 2.8.0 / 2.10.0 → cu128
+#   torch 2.8.0 / 2.10.0 / 2.11.0 → cu128
 # Other releases require an explicit wheel compatibility audit.
 # This table is the single central mapping; update it when a new torch
 # version changes its modern CUDA channel.
@@ -194,6 +196,7 @@ def _torch_modern_cuda(version: str) -> str:
     mapping = {
         "2.8.0": "cu128",
         "2.10.0": "cu128",
+        "2.11.0": "cu128",
     }
     if version not in mapping:
         raise ValueError(
@@ -278,9 +281,10 @@ class BackendArchProfile:
 class BackendSpec:
     """One MLIP engine backend.
 
-    ``distribution`` and ``version`` are the single source for the pinned
-    package requirement (``distribution==version``).  ``install_extra`` holds
-    only *additional* packages beyond the distribution itself.
+    ``distribution`` and ``version`` pin installed metadata. ``source_url``
+    optionally selects an immutable upstream commit when a released wheel
+    cannot load the requested checkpoints. ``install_extra`` holds additional
+    runtime packages; build requirements and environment stay explicit.
 
     Attributes:
         engine: Machine-readable key (``"uma"``, ``"mace"`` …).
@@ -295,6 +299,9 @@ class BackendSpec:
         install_extra: Extra pip packages installed alongside this backend
             (e.g. ``("e3nn==0.4.4",)`` for MACE).  The backend's own package
             (``distribution==version``) is appended automatically.
+        source_url: Optional Git URL ending in a full commit SHA.
+        build_packages: Dependencies installed before a non-isolated source build.
+        build_env: Explicit source-build policy, without replacing torch/TF pins.
     """
 
     engine: str
@@ -307,6 +314,9 @@ class BackendSpec:
     arch_profiles: dict[str, BackendArchProfile] = field(default_factory=dict)
     venv_name: str = ""
     install_extra: tuple[str, ...] = ()
+    source_url: str | None = None
+    build_packages: tuple[str, ...] = ()
+    build_env: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.venv_name:
@@ -316,10 +326,14 @@ class BackendSpec:
                 f"BackendSpec '{self.engine}' needs a non-empty distribution "
                 f"and version"
             )
+        if self.source_url and not re.search(r"@[0-9a-f]{40}$", self.source_url):
+            raise ValueError("Backend source must pin a full immutable Git commit")
 
     @property
     def requirement(self) -> str:
         """The pinned backend package requirement (``dist==version``)."""
+        if self.source_url:
+            return f"{self.distribution} @ {self.source_url}"
         return f"{self.distribution}=={self.version}"
 
     def install_packages(self) -> tuple[str, ...]:
@@ -452,60 +466,85 @@ BACKENDS: dict[str, BackendSpec] = {
         engine="dpa",
         label="DPA (DeepMD-kit)",
         distribution="deepmd-kit",
-        version="3.1.3",
+        version="3.2.1.dev63+g0edeaef56",
         framework="torch",
-        upstream_constraint="torch==2.10.0",
+        upstream_constraint="torch==2.11.0",
         requires_python=SpecifierSet(">=3.10"),
-        # deepmd.pt.cxx_op reads importlib metadata for the MPICH library that
-        # ships with the upstream `deepmd-kit[torch]` extra. Installing the
-        # bare distribution leaves the model loader unable to find it
-        # (`No package metadata was found for mpich`), so carry the extra's
-        # MPI package explicitly.  Kept as a range: mpich 5.x is the tested
-        # series, 6.x has not been validated with deepmd-kit 3.1.3.
-        install_extra=("mpich>=5.0,<6",),
+        # DPA4's SO(3) operations and the upstream neighbor-list path need
+        # the PyTorch extra's e3nn / vesin dependencies. Keep optional fused
+        # nvalchemi kernels out of the portable eager runtime. MPICH metadata
+        # is needed when importing the wheel's compiled PyTorch operators.
+        install_extra=(
+            "e3nn==0.6.0",
+            "vesin[torch]==0.6.2",
+            "vesin-torch==0.6.2",
+            "mpich>=5.0,<6",
+        ),
+        # The released 3.2.0 wheel rejects the gaussian/fix basis in the
+        # published DPA4C checkpoints. Use the upstream implementation of
+        # that basis, with an immutable source and metadata version.
+        source_url=(
+            "git+https://github.com/deepmodeling/deepmd-kit.git@"
+            "0edeaef5617e9878edeb2346bf37bb6a035a4f51"
+        ),
+        build_packages=(
+            "scikit-build-core>=1,<2",
+            "setuptools-scm>=8,<11",
+            "hatch-fancy-pypi-readme>=22.1,<26",
+            "dependency-groups>=1,<2",
+            "cmake>=3.24,<5",
+            "ninja>=1.11,<2",
+        ),
+        build_env={
+            "DP_ENABLE_TENSORFLOW": "0",
+            "DP_ENABLE_PYTORCH": "1",
+            "DP_VARIANT": "cpu",
+            "CMAKE_BUILD_PARALLEL_LEVEL": "4",
+            "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DEEPMD_KIT": "3.2.1.dev63+g0edeaef56",
+        },
         arch_profiles={
             "maxwell": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=False,
-                notes="Experimental. deepmd-kit 3.1.3 pins torch==2.10.0. "
+                notes="Experimental. The DPA4 runtime uses torch==2.11.0. "
                 "Maxwell via cu126; must be smoke-tested on real hardware.",
             ),
             "pascal": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=True,
                 notes="P40 installation exposed a CUDA-wheel selection bug; "
-                "torch 2.10.0+cu126 includes sm60 for sm61 compatibility and "
+                "torch 2.11.0+cu126 includes sm60 for sm61 compatibility and "
                 "must be pinned including the +cu126 local version. Runtime "
                 "model smoke retest is still required.",
             ),
             "volta": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=True,
                 notes="Architecture profile: V100 (sm_70). "
-                "torch 2.10.0+cu126 includes sm70 kernel.",
+                "torch 2.11.0+cu126 includes sm70 kernel.",
             ),
             "turing": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=True,
                 notes="Modern CUDA (cu128).",
             ),
             "ampere": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=True,
                 notes="Modern CUDA (cu128).",
             ),
             "ada": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=True,
                 notes="Architecture profile: RTX 4090 with modern CUDA (cu128).",
             ),
             "hopper": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=True,
                 notes="Modern CUDA (cu128).",
             ),
             "blackwell": BackendArchProfile(
-                framework_version="2.10.0",
+                framework_version="2.11.0",
                 upstream_supported=True,
                 notes="Modern CUDA (cu128).",
             ),

@@ -20,6 +20,7 @@ runtime is **never** installed via ``uv sync``/``uv sync --frozen``.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -149,7 +150,14 @@ def _venv_step(backend: BackendSpec, python_version: str) -> InstallStep:
     return InstallStep(
         stage="venv",
         description=f"Create {backend.venv_name} for {backend.label}",
-        argv=["uv", "venv", "--python", python_version, backend.venv_name],
+        argv=[
+            "uv",
+            "venv",
+            "--python",
+            python_version,
+            "--allow-existing",
+            backend.venv_name,
+        ],
     )
 
 
@@ -227,19 +235,50 @@ def _torch_steps(
     # ``analysis-all`` covers scipy/matplotlib (analysis), kinisi
     # (transport) and gemdat (electrolyte); textual is a core dependency, so
     # this is the complete user-facing feature set for each environment.
+    from_source = bool(backend.source_url) and not profile.offline
+    if from_source and backend.build_packages:
+        steps.append(
+            InstallStep(
+                stage="pip",
+                description=f"Install {backend.label} source-build requirements",
+                argv=(
+                    _uv_pip(profile, python, *backend.build_packages)
+                    + build_package_source_args(profile)
+                ),
+            )
+        )
     pkg_argv = _uv_pip(
         profile,
         python,
         "-e",
         "./mliport[analysis-all]",
-        *backend.install_packages(),
+        *(
+            backend.install_packages()
+            if not profile.offline or not backend.source_url
+            else (f"{backend.distribution}=={backend.version}", *backend.install_extra)
+        ),
     )
+    if from_source and backend.build_packages:
+        # Build against the exact architecture-specific torch installed above;
+        # isolation could download another CUDA/ABI variant or TensorFlow.
+        pkg_argv.append("--no-build-isolation")
+        cuda_root = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
+        if not cpu and cuda_root:
+            # Torch's CMake package still uses FindCUDA's legacy variable.
+            # Forward the user's explicit toolkit location to both finders.
+            for key in ("CUDA_TOOLKIT_ROOT_DIR", "CUDAToolkit_ROOT"):
+                pkg_argv.extend(["--config-setting", f"cmake.define.{key}={cuda_root}"])
     pkg_argv += build_package_source_args(profile)
+    if profile.offline and backend.source_url:
+        # Source snapshots have no PyPI release. Offline installs consume an
+        # explicitly prepared wheelhouse, without retaining a remote Git URL.
+        pkg_argv.extend(["--find-links", "packages"])
     steps.append(
         InstallStep(
             stage="pip",
             description=f"Install {backend.label} (pinned backend + editable mliport)",
             argv=pkg_argv,
+            env=dict(backend.build_env) if from_source else {},
         )
     )
     return steps
@@ -537,7 +576,7 @@ def generate_plan(
             if backend.framework == "torch":
                 framework_pin += "+cpu" if is_cpu else f"+{cuda_tag}"
             pins.append(framework_pin)
-        pins.extend([backend.requirement, *bp.extra_packages])
+        pins.extend([f"{backend.distribution}=={backend.version}", *bp.extra_packages])
         pins.extend(pkg for pkg in backend.install_packages()[1:] if "==" in pkg)
         constraint_path = f"{backend.venv_name}/mliport-constraints.txt"
         constraint_text = "\n".join(dict.fromkeys(pins)) + "\n"

@@ -62,6 +62,7 @@ def test_torch_channel_mapping() -> None:
 
     assert _torch_modern_cuda("2.8.0") == "cu128"
     assert _torch_modern_cuda("2.10.0") == "cu128"
+    assert _torch_modern_cuda("2.11.0") == "cu128"
 
 
 @pytest.mark.parametrize("version", ["2.8.1", "2.12.0", "2.13.1", "99.0.0", "invalid"])
@@ -98,7 +99,11 @@ def test_arch_profile_keys_exist() -> None:
 
 def test_backend_requirement_matches_distribution_version() -> None:
     for backend in BACKENDS.values():
-        assert backend.requirement == f"{backend.distribution}=={backend.version}"
+        assert backend.requirement == (
+            f"{backend.distribution} @ {backend.source_url}"
+            if backend.source_url
+            else f"{backend.distribution}=={backend.version}"
+        )
 
 
 def test_framework_version_nonempty() -> None:
@@ -171,3 +176,22 @@ def test_verified_platforms_match_real_hardware() -> None:
             assert all(
                 record["evidence_id"] is None for record in bp.workload_support.values()
             )
+
+
+def test_dpa4_runtime_installs_matching_torch_and_so3_dependencies():
+    """A DPA4 plan must carry architecture code and its optional runtime deps."""
+    backend = BACKENDS["dpa"]
+    assert backend.version == "3.2.1.dev63+g0edeaef56"
+    assert backend.source_url.endswith("0edeaef5617e9878edeb2346bf37bb6a035a4f51")
+    assert backend.upstream_constraint == "torch==2.11.0"
+    assert {p.framework_version for p in backend.arch_profiles.values()} == {"2.11.0"}
+    assert "e3nn==0.6.0" in backend.install_packages()
+    assert "vesin[torch]==0.6.2" in backend.install_packages()
+    assert "mpich>=5.0,<6" in backend.install_packages()
+
+
+def test_backend_source_refuses_moving_branches():
+    from dataclasses import replace
+
+    with pytest.raises(ValueError, match="immutable Git commit"):
+        replace(BACKENDS["dpa"], source_url="git+https://example.com/model.git@master")

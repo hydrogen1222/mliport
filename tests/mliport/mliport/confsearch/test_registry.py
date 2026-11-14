@@ -151,7 +151,7 @@ def test_registry_serializes_everything_the_exporter_needs():
     atoms = combine(slab, molecule, shift=(0.5, 0.5, 2.5))
     registry.register(_record(registry, atoms, energy=-10.0))
     payload = registry.to_dict()
-    assert payload["schema"] == "mliport.confsearch-registry/1"
+    assert payload["schema"] == "mliport.confsearch-registry/2"
     entry = payload["classes"]["valid"][0]
     assert entry["id"] == 1
     assert entry["hit_count"] == 1
