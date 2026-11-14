@@ -52,6 +52,22 @@ _DIPOLE_ONLY_MODEL_CLASSES = frozenset(
 _POLAR_MODEL_CLASSES = frozenset({"PolarMACE"})
 
 
+def _is_neural_network_module(model: Any) -> bool:
+    """True for a real ``torch.nn.Module`` (never for a mock or a mapping).
+
+    The attribute-shaped discriminators below (``atomic_multipoles_max_l``,
+    ``joint_embedding``) only mean something on a constructed MACE model.
+    Testing attributes on an arbitrary object — a ``MagicMock`` in a test, a
+    dict-like proxy in a plugin — reports every attribute as present and would
+    reject a legitimate energy model.
+    """
+    try:
+        import torch  # noqa: PLC0415
+    except ImportError:  # pragma: no cover - mace-torch always ships torch
+        return False
+    return isinstance(model, torch.nn.Module)
+
+
 def unsupported_mace_model_reason(model: Any) -> str | None:
     """Why ``model`` cannot serve as an mliport potential-energy model.
 
@@ -81,9 +97,11 @@ def unsupported_mace_model_reason(model: Any) -> str | None:
             "model_type='DipoleMACE' or 'DipolePolarizabilityMACE'); mliport only "
             "runs potential-energy models."
         )
-    if name in _POLAR_MODEL_CLASSES or (
-        hasattr(model, "atomic_multipoles_max_l") and hasattr(model, "charges_irreps")
-    ):
+    polar_attributes = _is_neural_network_module(model) and (
+        getattr(model, "atomic_multipoles_max_l", None) is not None
+        and getattr(model, "charges_irreps", None) is not None
+    )
+    if name in _POLAR_MODEL_CLASSES or polar_attributes:
         return (
             f"{name} is a polarizable-electrostatics model (MACE-POLAR). It needs "
             "the upstream mace_polar loader with MACECalculator("
@@ -91,8 +109,12 @@ def unsupported_mace_model_reason(model: Any) -> str | None:
             "mliport does not supply, so the stress and energy would be wrong."
         )
     embedding_specs = getattr(model, "embedding_specs", None)
-    if embedding_specs or hasattr(model, "joint_embedding"):
-        keys = sorted(str(key) for key in embedding_specs) if embedding_specs else []
+    has_joint_embedding = _is_neural_network_module(model) and hasattr(
+        model, "joint_embedding"
+    )
+    is_embedding_model = isinstance(embedding_specs, dict) and bool(embedding_specs)
+    if is_embedding_model or has_joint_embedding:
+        keys = sorted(str(key) for key in embedding_specs) if is_embedding_model else []
         return (
             f"{name} carries charge/spin joint embeddings (embedding_specs="
             f"{keys}). The MACE-OMOL family reads the total charge and spin from "
@@ -204,8 +226,21 @@ class MACECalculatorWrapper(BaseMLIPCalculator):
             # Fail closed on checkpoints that cannot serve as a potential-energy
             # model: a dipole/polarizability-only or polarizable-electrostatics
             # model, or one whose charge/spin embeddings mliport cannot feed.
+            # The gate is only meaningful if the loaded calculator exposes the
+            # models it built: a missing or non-list ``models`` attribute means
+            # mliport cannot inspect the checkpoint, and skipping the check would
+            # silently accept whatever class mace-torch constructed.
             loaded_models = getattr(calculator, "models", None)
-            for model in loaded_models if isinstance(loaded_models, list) else []:
+            if not isinstance(loaded_models, list) or not loaded_models:
+                self._calculator = None
+                raise ValueError(
+                    "Unsupported MACE calculator: the loaded calculator does not "
+                    "expose a non-empty 'models' list (got "
+                    f"{type(loaded_models).__name__}), so mliport cannot verify "
+                    "that the checkpoint is a potential-energy model. Refusing to "
+                    "run an uninspected model class."
+                )
+            for model in loaded_models:
                 reason = unsupported_mace_model_reason(model)
                 if reason is not None:
                     self._calculator = None

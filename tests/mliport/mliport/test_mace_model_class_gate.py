@@ -85,13 +85,16 @@ def test_polar_model_is_rejected_by_class_name():
 
 def test_polar_model_is_rejected_by_its_attributes_too():
     """A renamed class is still caught by the attributes PolarMACE sets."""
-    polar = _stub(
-        "ScaleShiftMACE",
-        atomic_multipoles_max_l=2,
-        charges_irreps="2x0e+2x1o",
-        heads=["Default"],
-    )
-    reason = unsupported_mace_model_reason(polar)
+    torch = pytest.importorskip("torch")
+
+    class ScaleShiftMACE(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.atomic_multipoles_max_l = 2
+            self.charges_irreps = "2x0e+2x1o"
+            self.heads = ["Default"]
+
+    reason = unsupported_mace_model_reason(ScaleShiftMACE())
     assert reason is not None
     assert "mace_polar" in reason
 
@@ -111,8 +114,23 @@ def test_charge_spin_embedding_model_is_rejected():
 
 
 def test_joint_embedding_without_specs_is_still_rejected():
-    omol = _stub("MACE", joint_embedding=object())
-    assert unsupported_mace_model_reason(omol) is not None
+    torch = pytest.importorskip("torch")
+
+    class MACE(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.joint_embedding = torch.nn.Identity()
+            self.heads = ["Default"]
+
+    assert unsupported_mace_model_reason(MACE()) is not None
+
+
+def test_objects_that_only_look_attribute_rich_are_not_rejected():
+    """A mock answers every attribute; that must not fake a polar/OMOL model."""
+    rich = _stub("ScaleShiftMACE", heads=["Default"])
+    # ``__getattr__`` that fabricates any attribute, like unittest.mock.
+    rich.__getattr__ = lambda name: object()
+    assert unsupported_mace_model_reason(rich) is None
 
 
 # ------------------------------------------------------- wired into the wrapper
@@ -157,3 +175,39 @@ def test_wrapper_still_loads_a_multihead_energy_model(tmp_path, monkeypatch):
     # An implicit head on a multihead model is still refused (unchanged rule).
     with pytest.raises(ValueError, match="poses multiple energy heads"):
         MACECalculatorWrapper(model, device="cpu").get_calculator()
+
+
+@pytest.mark.parametrize(
+    "models",
+    [None, "single", object(), []],
+    ids=["missing", "string", "object", "empty"],
+)
+def test_uninspectable_calculator_fails_closed(tmp_path, monkeypatch, models):
+    """A calculator without a models list cannot be inspected -> refuse.
+
+    Skipping the gate when ``calculator.models`` is absent would silently accept
+    whatever class mace-torch built (the defect this gate exists to prevent).
+    """
+    model = tmp_path / "model.model"
+    model.write_bytes(b"stub")
+    calculators = types.ModuleType("mace.calculators")
+
+    class FakeMACECalculator:
+        def __init__(self, **kwargs):
+            self.available_heads = ["Default"]
+            self.head = "Default"
+            self.r_max = 5.0
+            self.implemented_properties = ["energy", "forces", "stress"]
+            if models is not None:
+                self.models = models
+
+    calculators.MACECalculator = FakeMACECalculator
+    package = types.ModuleType("mace")
+    package.calculators = calculators
+    monkeypatch.setitem(sys.modules, "mace", package)
+    monkeypatch.setitem(sys.modules, "mace.calculators", calculators)
+
+    wrapper = MACECalculatorWrapper(model, device="cpu")
+    with pytest.raises(ValueError, match="does not expose a non-empty 'models' list"):
+        wrapper.get_calculator()
+    assert wrapper._calculator is None
