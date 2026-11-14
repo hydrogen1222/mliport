@@ -127,6 +127,12 @@ mliport does not reshape weights or initialize missing learned parameters.
   wrapper loads and validates the model again before exposing it.
 - **Precision** is defined by the model. mliport records the dtype the backend
   actually reports and never substitutes its own idea of it.
+- **Lossless dtype widening is recorded, not hidden.** The pinned deepmd-kit
+  3.2.1 builds the DPA-3.1 statistics tensors (`out_bias`, `out_std`,
+  `bias_atom_e`) as float64 while the distributed checkpoint stores them in
+  float32. Widening stores exactly the same values, so the load is allowed and
+  the change is listed in the run record's checkpoint migrations. Narrowing,
+  shape changes and value changes still stop the load.
 - **Stress** is reported only if the checkpoint and branch you loaded expose it.
 - **DPA needs per-process GPU isolation.** The CLI restarts a command with
   `CUDA_VISIBLE_DEVICES` when it is unset; from the Python API, set the variable
