@@ -173,6 +173,7 @@ class TestGenericWrappers:
         model = tmp_path / "mace.model"
         model.write_text("x")
         fake = MagicMock()
+        fake.models = [MagicMock()]
         fake.available_heads = ["default"]
         fake_cls = MagicMock(return_value=fake)
         module = MagicMock(MACECalculator=fake_cls)
@@ -191,9 +192,9 @@ class TestGenericWrappers:
         model = tmp_path / "multihead.model"
         model.write_bytes(b"placeholder")
         fake = MagicMock()
+        fake.models = [MagicMock()]
         fake.available_heads = ["PBE", "r2SCAN"]
         fake.implemented_properties = ["energy", "forces", "stress"]
-        fake.models = []
         monkeypatch.setitem(
             sys.modules,
             "mace.calculators",

@@ -1,7 +1,7 @@
 # mliport
 
-mliport runs machine-learned interatomic potentials — MACE, DPA, GRACE and
-UMA — from one command line, one terminal UI and one Python API. You hand it a
+mliport runs machine-learned interatomic potentials — MACE, DPA, GRACE, UMA
+and NEP — from one command line, one terminal UI and one Python API. You hand it a
 structure and a checkpoint; it relaxes the structure, runs molecular dynamics,
 finds a reaction barrier with NEB, searches low-energy configurations of an
 adsorbate on a slab, or analyzes a trajectory. Results come back
@@ -16,7 +16,7 @@ checkpoint you pick and the checks you run on it.
 
 ## What it does for you
 
-- **One workflow, four backends.** Single point, relaxation (fixed or variable
+- **One workflow, five backends.** Single point, relaxation (fixed or variable
   cell), NVE/NVT molecular dynamics, NEB and CI-NEB, configuration search,
   batch sweeps and a job queue behave the same whichever model sits underneath.
 - **No silent guessing.** There is no default backend. A misspelled option, or

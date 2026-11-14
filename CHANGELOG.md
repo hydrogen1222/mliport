@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+Model registry corrections:
+
+- Three model licenses in `validation/science/model_manifest.json` were wrong and
+  are corrected against the upstream cards read on 2026-11-14: MACE-OMAT-0 (both
+  dtype profiles) is ASL as the `mace-foundations` model table says, not
+  Apache-2.0; DPA-3.1-3M is CC-BY-4.0 per its Hugging Face card, not LGPL-2.1;
+  and the GRACE foundation models are under the Academic Software License (ASL)
+  per the `AMS-ICAMS-RUB/grace-foundation-models` card. Metadata only.
+- The docs count five backends, not four, and name the NEP adapter in the model
+  table.
+- `docs/models.md` gains a "Model support status" section: the `verified` /
+  `untested` / `needs_runtime_upgrade` / `unsupported` vocabulary, the note that
+  `verified` means "called correctly", not "accurate", and one row per pinned
+  profile, per model newly in scope and for NEP89. The archived `uma-s-1.pt` is
+  described in prose rather than given a row: `unsupported` means mliport
+  refuses a model, and nothing refuses that one.
+  A docs contract test keeps the table in step with the manifest.
+
+MACE model-class gate:
+
+- `MACECalculatorWrapper` now refuses checkpoints that are not potential-energy
+  models instead of evaluating them: dipole/polarizability-only models
+  (`AtomicDipolesMACE`, `AtomicDielectricMACE`, the MACE-MDP family),
+  MACE-POLAR polarizable electrostatics (`PolarMACE` from
+  `mace.modules.extensions`, which upstream loads through `mace_polar` with
+  `model_type="PolarMACE"`), and models with charge/spin joint embeddings
+  (`embedding_specs`/`joint_embedding`, the MACE-OMOL family, which reads total
+  charge and spin from `atoms.info`). The decision is taken from the loaded
+  model object, never from the file name, and the error names the reason and
+  the upstream loader.
+- The gate is only meaningful when the loaded calculator exposes the models it
+  built: a missing, empty or non-list `calculator.models` now stops the load
+  with an explicit message instead of silently skipping the check. The
+  attribute-shaped polar/OMOL discriminators are only applied to real
+  `torch.nn.Module` models, so a mock or a proxy that answers every attribute
+  cannot fake a polar checkpoint.
+- MACE-MH-1 is unaffected: it loads as `ScaleShiftMACE` with six heads and no
+  embedding block, and a test pins that.
+- `docs/backends/mace.md` (+ `.zh.md`) documents the gate.
+
 UMA runtime upgrade for UMA-S 1.2.1:
 
 - `fairchem-core` moves from 2.21.0 (torch 2.8.0) to the newest release whose
@@ -61,8 +101,6 @@ Callable-check probe on CPU and on any structure:
   and the probe says so with the exact command; the five-image NEB relaxes its
   endpoints instead of relying on the fixture's initial forces.
 - `docs/validation.md` (+ `.zh.md`) documents the usage.
-
-
 
 Installer environment contract and CI repair:
 

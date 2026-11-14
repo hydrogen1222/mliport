@@ -10,10 +10,10 @@ mliport 本身不包含模型。它通过适配器加载别人训练好的势函
 | 拒绝后端表达不了的选项 | 势函数本身有多准 |
 | 确认后端运行环境真的能跑 | 绝对能量标度与各种约定 |
 
-## 四个后端地位相同
+## 五个后端地位相同
 
-`mace`、`dpa`、`grace`、`uma` 四个后端地位相同，`fairchem` 是 `uma` 的别名。没有默认后端：
-如果命令行、模型别名和 profile 都没有指定后端，程序会报错停下。
+`mace`、`dpa`、`grace`、`uma`、`nep` 五个后端地位相同，`fairchem` 是 `uma` 的别名。没有默认
+后端：如果命令行、模型别名和 profile 都没有指定后端，程序会报错停下。
 
 | 后端 | 适配器 | 框架 | 常见模型文件 |
 |---|---|---|---|
@@ -21,10 +21,58 @@ mliport 本身不包含模型。它通过适配器加载别人训练好的势函
 | DPA | `deepmd-kit` | PyTorch | `.pt` / `.pth` |
 | GRACE | `tensorpotential` | TensorFlow | SavedModel 目录 |
 | UMA | `fairchem-core` | PyTorch | `.pt` |
+| NEP | `calorine`（ASE）/ 原生 `gpumd` | Python / GPUMD | `nep.txt` |
 
 各后端的模型介绍、固定 profile、精度、head 的含义和已知限制见各自页面：
 [MACE](backends/mace.md)、[DPA](backends/dpa.md)、[GRACE](backends/grace.md)、
-[UMA](backends/uma.md)。
+[UMA](backends/uma.md)、[NEP](backends/nep.md)。NEP 需要单独安装，并且必须显式指定
+`NEP_RUNTIME`；表里其余几行只要后端环境装好就能用。
+
+## 模型支持状态
+
+设备列里的 `verified` 只表示**mliport 能正确调用这个模型**：模型能加载，能量、力以及（模型
+文件里定义了的）应力都是有限值，几步 MD 和一个小 NEB 能跑完，记录下来的模型哈希、head、精度
+和设备与请求的一致。它不代表模型对你的体系算得准；势函数的精度是另一个问题，这张表回答不了。
+
+| 状态 | 含义 |
+|---|---|
+| `verified` | 在该设备上、在对应后端自己的环境里，全部可调用性检查都通过，并且留有证据。 |
+| `untested` | 适配器应该能加载，但还没有证据。 |
+| `needs_runtime_upgrade` | 必须先改动固定的运行环境版本，才能试着调用。 |
+| `unsupported` | 已知在该设备上加载不了或跑不起来，或者适配器无法表达模型实际计算的东西；mliport 会直接报错，而不是硬跑。 |
+
+| 标签 | 引擎 | 模型文件 | Head / task | 精度 | CPU | GPU | 证据 |
+|---|---|---|---|---|---|---|---|
+| `uma_omat` | uma | `uma-s-1p2.pt` | `omat` | 由模型决定 | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
+| `mace_omat` | mace | `mace-omat-0-medium.model` | 默认 | `float64` | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
+| `mace_omat_float32` | mace | `mace-omat-0-medium.model` | 默认 | `float32` | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
+| `dpa_omat` | dpa | `DPA-3.1-3M.pt` | `Omat24` | 由模型决定 | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
+| `grace_omat` | grace | `GRACE-2L-OMAT-medium-base` | 默认 | 由模型决定 | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
+| `grace_omat_fp64` | grace | `GRACE-2L-OMAT-medium-base-fp64` | 默认 | `float64` | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
+| `grace_3l_omat_large_ft_am` | grace | `GRACE-3L-OMAT-large-ft-AM` | 默认 | 由模型决定 | `untested` | `untested` | — |
+| `grace_2l_smax_omat_large` | grace | `GRACE-2L-SMAX-OMAT-large` | 默认 | 由模型决定 | `untested` | `untested` | — |
+| `dpa31_sse_pbe` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBE` | 由模型决定 | `untested` | `untested` | — |
+| `dpa31_sse_pbesol` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBESol` | 由模型决定 | `untested` | `untested` | — |
+| `dpa4_neo_omat` | dpa | `DPA4-Neo-OMat24-v20260805.pt` | 单任务（待核实） | 由模型决定 | `untested` | `untested` | — |
+| `dpa4_air_omat` | dpa | `DPA4-Air-OMat24-v20260805.pt` | 单任务（待核实） | 由模型决定 | `untested` | `untested` | — |
+| `dpa4_plus_omat` | dpa | `DPA4-Plus-OMat24-v20260805.pt` | 单任务（待核实） | 由模型决定 | `untested` | `untested` | — |
+| `mace_matpes_r2scan` | mace | `MACE-MATPES-r2SCAN-0` medium | 单 head（待核实） | `float64` | `untested` | `untested` | — |
+| `mace_mh1_omat_pbe` | mace | `MACE-MH-1` | `omat_pbe` | `float64` | `untested` | `untested` | — |
+| `mace_mh1_matpes_r2scan` | mace | `MACE-MH-1` | `matpes_r2scan` | `float64` | `untested` | `untested` | — |
+| `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | 由模型决定 | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
+| `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | 由模型决定 | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
+| `nep89_gpumd` | nep | NEP89 `nep.txt` | — | 由模型决定 | `unsupported` | `verified` | [运行时证据](https://github.com/hydrogen1222/mliport/pull/75) |
+
+有一行需要说明：NEP89 只在原生 GPU 运行时上验证过，因为 Calorine 的 ASE 运行时解析不了这种
+模型格式，所以 NEP89 在 CPU 上是 `unsupported`，而不只是没测。
+
+归档的 `uma-s-1.pt` 故意**不**放进这张表。它是上游归档版本，有已知的广延性缺陷；mliport 没有
+对它做过检查，也不推荐使用。它的状态不该写成 `unsupported`，因为 `unsupported` 的含义是
+mliport 会拒绝这个模型，而实际上没有任何东西拒绝它。
+
+固定 profile 的哈希、来源 URL 和许可证都在
+[模型清单](https://github.com/hydrogen1222/mliport/blob/main/validation/science/model_manifest.json)
+里；每个状态背后的可调用性检查见[验证](validation.md)。
 
 ## 如何公平地比较结果
 

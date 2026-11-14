@@ -70,6 +70,14 @@ when you compare numbers.
 
 - **Heads.** If a checkpoint offers several heads you must name one with
   `--head`; mliport will not pick for you. Single-head checkpoints need nothing.
+  MACE-MH-1 is an ordinary multi-head energy model and loads normally.
+- **Only energy models.** A checkpoint without a potential-energy head is
+  refused before it runs, because an energy from it would be fabricated:
+  dipole/polarizability-only models (the MACE-MDP family), MACE-POLAR
+  polarizable electrostatics (upstream loads those through `mace_polar`, not
+  the energy calculator), and models with charge/spin joint embeddings (the
+  MACE-OMOL family, which reads the charge and spin from `atoms.info`). The
+  error names the reason and the upstream loader.
 - **Precision is part of the identity.** The recorded dtype always comes from
   the backend, never from an assumption. Don't compare `float32` energies with
   `float64` ones without saying so.

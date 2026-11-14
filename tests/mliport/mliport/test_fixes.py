@@ -46,6 +46,7 @@ def test_mace_head_forwarded_as_singular_string(tmp_path, monkeypatch):
     def fake_mace_calculator(**kwargs):
         captured.update(kwargs)
         m = Mock()
+        m.models = [Mock()]
         m.implemented_properties = ["energy", "forces", "stress"]
         return m
 
