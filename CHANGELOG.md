@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+DPA-3.1 checkpoints load on the DPA4 runtime:
+
+- The pinned deepmd-kit 3.2.1 builds the three DPA-3.1 statistics tensors
+  (`atomic_model.out_bias`, `out_std`, `bias_atom_e`) as float64 while the
+  distributed checkpoint stores them in float32. Every one of the 351 tensors
+  keeps its shape and value, but the all-or-nothing tensor guard treated that
+  lossless widening as a changed model and refused DPA-3.1-3M on the runtime
+  that DPA4 needs -- so DPA-3.1 could only run on the older 3.1.3 environment.
+- The guard now accepts only a strictly wider floating type whose values are
+  bit-identical after the cast, and records the widening in the checkpoint
+  migrations. Narrowing, shape changes and value changes are still refused, and
+  `declared_model_precision` keeps reporting what the checkpoint stored.
+- `docs/backends/dpa.md` (+ `.zh.md`) documents the rule.
+
+
 Installer environment contract and CI repair:
 
 - An existing target environment is now inspected before any step runs. A
