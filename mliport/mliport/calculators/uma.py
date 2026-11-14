@@ -45,6 +45,25 @@ class UMACalculator(BaseMLIPCalculator):
     VALID_DEVICES: ClassVar[set[str]] = {"cpu", "cuda", "gpu"}
     VALID_INFERENCE_MODES: ClassVar[set[str]] = {"default", "turbo"}
 
+    #: mliport preset -> upstream fairchem-core preset.
+    #:
+    #: fairchem-core 2.22+ made ``default`` mean UMA Nitro (Ampere and newer,
+    #: reduced precision) and removed ``turbo``. mliport keeps its own two-name
+    #: vocabulary and maps it onto the upstream presets that reproduce the
+    #: numerical settings mliport has always documented:
+    #:
+    #: * ``default`` -> upstream ``batch``: tf32 off, compile off, merge_mole
+    #:   off, activation checkpointing on (exactly fairchem 2.21 ``default``);
+    #: * ``turbo``   -> upstream ``multigpu``: tf32 + compile + merge_mole
+    #:   (upstream calls this "turbo's former settings").
+    #:
+    #: Neither preset can select Nitro, and the settings object is checked for
+    #: ``nitro`` before the predictor is built.
+    INFERENCE_PRESETS: ClassVar[dict[str, str]] = {
+        "default": "batch",
+        "turbo": "multigpu",
+    }
+
     # Known UMA tasks (used when fairchem-core is not importable, e.g. in
     # lightweight parameter-validation tests).  When fairchem-core is installed
     # its UMATask enum is authoritative.
@@ -90,6 +109,10 @@ class UMACalculator(BaseMLIPCalculator):
         self._task = task.lower()
         self.device = device or "cpu"
         self._inference_mode = inference_mode.lower()
+        # Filled in by load_predictor(): the upstream preset that really ran and
+        # the numeric switches of its settings object.
+        self._effective_preset: str | None = None
+        self._effective_settings: object | None = None
         self.torch_num_threads = torch_num_threads
         self.activation_checkpointing = activation_checkpointing
 
@@ -259,11 +282,11 @@ class UMACalculator(BaseMLIPCalculator):
         """
         if self._predictor is None:
             self._check_gpu_compatibility()
-            # Start from the named preset ("default" / "turbo"), which sets
-            # external_graph_gen / internal_graph_gen_version to values that
-            # actually build a neighbor graph. Building a partial
-            # InferenceSettings by hand leaves those as None (checkpoint
-            # default) and breaks graph generation for some models.
+            # Start from a named upstream preset, which sets external_graph_gen /
+            # internal_graph_gen_version to values that actually build a
+            # neighbor graph. Building a partial InferenceSettings by hand
+            # leaves those as None (checkpoint default) and breaks graph
+            # generation for some models.
             from fairchem.core.units.mlip_unit import (  # noqa: PLC0415
                 load_predict_unit,
             )
@@ -271,7 +294,25 @@ class UMACalculator(BaseMLIPCalculator):
                 guess_inference_settings,
             )
 
-            settings = copy.deepcopy(guess_inference_settings(self.inference_mode))
+            preset = self.INFERENCE_PRESETS[self.inference_mode]
+            try:
+                settings = copy.deepcopy(guess_inference_settings(preset))
+            except (AssertionError, KeyError, ValueError) as exc:
+                raise RuntimeError(
+                    f"fairchem-core in this environment does not provide the "
+                    f"inference preset {preset!r} that mliport's "
+                    f"--inference-mode {self.inference_mode!r} maps to. "
+                    f"Upgrade to fairchem-core 2.25.0 (the pinned version) "
+                    f"instead of falling back to a preset that would change "
+                    f"precision. Upstream said: {exc}"
+                ) from exc
+            if getattr(settings, "nitro", False):
+                # Nitro is Ampere-and-newer only and changes numerical
+                # behaviour; mliport never selects it.
+                raise RuntimeError(
+                    f"fairchem-core preset {preset!r} enables UMA Nitro. "
+                    "mliport does not expose Nitro; pick a preset without it."
+                )
             if self.activation_checkpointing is not None:
                 settings.activation_checkpointing = self.activation_checkpointing
             if self.torch_num_threads is not None:
@@ -284,6 +325,8 @@ class UMACalculator(BaseMLIPCalculator):
             # (tf32, merge_mole) still apply.
             if settings.compile and not self._compile_supported():
                 settings.compile = False
+            self._effective_preset = preset
+            self._effective_settings = settings
             self._predictor = load_predict_unit(
                 path=self.model_path,
                 device=self._backend_device(),
@@ -366,6 +409,9 @@ class UMACalculator(BaseMLIPCalculator):
             "task": self.task,
             "device": self.device,
             "inference_mode": self.inference_mode,
+            "inference_preset": self._effective_preset,
+            "nitro_enabled": bool(getattr(self._effective_settings, "nitro", False)),
+            "tf32_enabled": bool(getattr(self._effective_settings, "tf32", False)),
             "direct_forces": getattr(self._predictor, "direct_forces", None),
             "compile_enabled": getattr(
                 getattr(self._predictor, "inference_settings", None), "compile", None

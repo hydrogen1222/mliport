@@ -24,7 +24,7 @@ Meta FAIR 的 UMA 模型通过上游的 `fairchem-core` 加载。`--model-type` 
 <!-- BEGIN GENERATED: environment -->
 | 环境 | Python | 运行时 |
 |---|---|---|
-| `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
+| `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.25.0` (torch 2.13.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines uma --device auto
@@ -56,6 +56,17 @@ Meta FAIR 的 UMA 模型通过上游的 `fairchem-core` 加载。`--model-type` 
 - **推理模式。** `--inference-mode` 可选 `default` 或 `turbo`。`turbo`（TF32 加 `torch.compile`）
   需要手动开启，MD 默认不用，以保证精度。`--activation-checkpointing` 可以用速度换显存。
 - **精度**由模型决定，mliport 只记录框架版本。
+- **固定的运行环境。** `fairchem-core==2.25.0` 配 torch 2.13.0。Volta（V100）继续用 `cu126`
+  的 wheel，Turing 及更新的卡用 `cu130`，因为 CUDA 13 的构建不再包含 Turing 以下的内核，并且
+  需要 580 或更新的 NVIDIA 驱动；`cu126` 的 wheel 在更老的驱动上也能用。
+  2.25.0 是能加载 `uma-s-1p2p1`（UMA-S 1.2.1）的固定版本。`uma_omat` 的 beta 科学验证是在
+  `fairchem-core==2.21.0` 和 torch 2.8.0 上做的，那批结论只对那套环境成立，不能直接套用到
+  这里；新环境有它自己的可调用性检查记录。
+- **不提供 Nitro。** fairchem-core 从 2.22 起把 UMA Nitro 当成上游的 `default` 预设，并取消了
+  `turbo`；Nitro 需要 Ampere 或更新的显卡，而且精度更低。mliport 保留自己的两个名字，把它们
+  映射到数值行为与本文档一直描述一致的上游预设：`default` 走上游 `batch`（不开 tf32、不编译、
+  不合并 MOLE），`turbo` 走上游 `multigpu`（上游称其为"turbo 原来的设置"：tf32、编译、合并
+  MOLE）。会启用 Nitro 的预设会被拒绝；实际使用的预设、tf32 开关和 Nitro 开关都会写进运行记录。
 - **NEB 和构型搜索**要求力等于能量的负梯度。这在运行时检查：模型声明 `direct_forces = true` 就
   拒绝，否则用有限差分在你的结构上实测（见 [NEB](../workflows/neb.md)）。
 - **应力**只有模型支持时才会输出。

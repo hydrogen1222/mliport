@@ -34,7 +34,7 @@ def _mock_4090_runtime(monkeypatch, arch_list, *, total_memory=24564 * 1024**2):
 
     _controlled_environment(
         monkeypatch,
-        **{"fairchem-core": "2.21.0", "torch": "2.8.0+cu128"},
+        **{"fairchem-core": "2.25.0", "torch": "2.13.0+cu130"},
     )
     monkeypatch.setattr(
         "mliport.doctor.detect_gpus",
@@ -45,8 +45,8 @@ def _mock_4090_runtime(monkeypatch, arch_list, *, total_memory=24564 * 1024**2):
         lambda engine, device, framework=None: {
             "ok": True,
             "framework": "torch",
-            "torch_version": "2.8.0+cu128",
-            "cuda_runtime": "12.8",
+            "torch_version": "2.13.0+cu130",
+            "cuda_runtime": "13.0",
             "cuda_available": True,
             "device_count": 1,
             "arch_list": arch_list,
@@ -300,7 +300,7 @@ def test_cuda_target_fails_when_framework_cannot_see_gpu(monkeypatch):
 def _unexpected_failures(checks: list[dict]) -> list[dict]:
     """Failures other than the documented interpreter-vs-installer-pin one.
 
-    The UMA installer pin (fairchem-core==2.21.0) requires Python >=3.11, so
+    The UMA installer pin (fairchem-core==2.25.0) requires Python >=3.11, so
     on a 3.10 interpreter doctor reports "UMA installer Python constraint"
     as fail by design. These tests exercise the GPU recommendation logic,
     not that constraint.
@@ -336,7 +336,7 @@ def test_doctor_reports_missing_4090_kernel_without_crashing(monkeypatch):
 
     assert runtime_gpu["status"] == "fail"
     assert "do not support sm_89" in runtime_gpu["detail"]
-    assert "torch 2.8.0+cu128" in runtime_gpu["detail"]
+    assert "torch 2.13.0+cu130" in runtime_gpu["detail"]
     unexpected = _unexpected_failures(checks)
     assert len(unexpected) == 1 and unexpected[0]["name"] == "Runtime GPU 0"
 

@@ -78,7 +78,7 @@ any scientific option for you.
 <!-- BEGIN GENERATED: backend-matrix -->
 | Backend | Environment | Python | Runtime stack |
 |---|---|---|---|
-| UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
+| UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.25.0` (torch 2.13.0) |
 | MACE | `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
 | DPA (DeepMD-kit) | `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit @ git+https://github.com/deepmodeling/deepmd-kit.git@0edeaef5617e9878edeb2346bf37bb6a035a4f51` (torch 2.11.0) |
 | NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (NumPy/ASE, resolved by the installer; gpumd built with CUDA Toolkit 12.9) |
@@ -165,6 +165,9 @@ through `uv`, which reads the same proxy variables.
 PyTorch and TensorFlow ship different CUDA builds for different GPU
 generations, and the installer picks the right one for yours: Maxwell, Pascal
 and Volta use the cu126 legacy channel, Turing and newer use cu128 or later.
+The CUDA 13 channel (`cu130`, which the UMA runtime uses from torch 2.13)
+requires an NVIDIA driver of 580 or newer, and it carries no kernels below
+Turing — Volta therefore stays on `cu126`, which works with older drivers.
 `mliport setup` prints the GPU it detected and the route it would take.
 
 <!-- BEGIN GENERATED: gpu-routes -->
@@ -189,7 +192,8 @@ claiming a verification.
 
 Pre-Turing GPUs depend on the CUDA 12.6 channel, and PyTorch stops publishing
 it from 2.15. In those environments keep the installer's pins and do not
-upgrade the framework.
+upgrade the framework; a CUDA 13 build is not an alternative there, because it
+has no kernels below Turing regardless of the driver.
 
 ## Offline machines
 

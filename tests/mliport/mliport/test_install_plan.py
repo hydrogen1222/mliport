@@ -13,7 +13,7 @@ from mliport.install.plan import (
 
 
 def test_backend_python_intersection_before_clean_plan():
-    with pytest.raises(InstallPlanError, match="fairchem-core==2.21.0"):
+    with pytest.raises(InstallPlanError, match="fairchem-core==2.25.0"):
         generate_plan(None, ["uma"], python_version="3.10", device="cpu", clean=True)
     for py in ("3.11", "3.12"):
         assert generate_plan(None, ["uma"], python_version=py, device="cpu").steps
@@ -64,13 +64,13 @@ def test_normalize_engines_empty_raises() -> None:
 
 
 def test_uma_explicit_install_v100() -> None:
-    """V100: UMA must use torch 2.8.0 + cu126 + fairchem-core, no uv sync."""
+    """V100: UMA must use torch 2.13.0 + cu126 + fairchem-core, no uv sync."""
     plan = generate_plan([_gpu("V100", 7, 0)], ["uma"], verify=False)
     argv = _all_argv(plan)
     assert "uv sync" not in argv
-    assert "torch==2.8.0" in argv
+    assert "torch==2.13.0" in argv
     assert "cu126" in argv
-    assert "fairchem-core==2.21.0" in argv
+    assert "fairchem-core==2.25.0" in argv
     assert "-e ./mliport" in argv
 
 
@@ -78,9 +78,9 @@ def test_uma_explicit_install_cpu() -> None:
     plan = generate_plan(None, ["uma"], device="cpu", verify=False)
     argv = _all_argv(plan)
     assert "uv sync" not in argv
-    assert "torch==2.8.0+cpu" in argv
+    assert "torch==2.13.0+cpu" in argv
     assert "https://download.pytorch.org/whl/cpu" in argv
-    assert "fairchem-core==2.21.0" in argv
+    assert "fairchem-core==2.25.0" in argv
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +136,17 @@ def test_dpa_source_build_is_pinned_and_uses_selected_torch():
 
 
 def test_4090_plan_modern() -> None:
-    """Ada (sm_89) → torch engines use cu128 (modern)."""
+    """Ada (sm_89) → each engine keeps its own modern channel.
+
+    UMA is on torch 2.13.0, whose default PyPI build is CUDA 13.0 (cu130);
+    MACE stays on cu128 and DPA on cu128. No engine falls back to cu126.
+    """
     plan = generate_plan([_gpu("RTX 4090", 8, 9)], ["uma", "mace", "dpa"], verify=False)
     argv = _all_argv(plan)
-    assert "cu128" in argv
-    assert "cu126" not in argv
+    assert "torch==2.13.0+cu130" in argv
+    assert "torch==2.8.0+cu128" in argv
     assert "torch==2.11.0+cu128" in argv
+    assert "cu126" not in argv
     assert any("DPA" in w and "needs smoke test" in w for w in plan.warnings)
 
 

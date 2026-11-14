@@ -42,6 +42,32 @@ MACE model-class gate:
   embedding block, and a test pins that.
 - `docs/backends/mace.md` (+ `.zh.md`) documents the gate.
 
+UMA runtime upgrade for UMA-S 1.2.1:
+
+- `fairchem-core` moves from 2.21.0 (torch 2.8.0) to the newest release whose
+  torch pin still has a CUDA 12.6 wheel for Volta: 2.25.0 on torch 2.13.0
+  (`torch~=2.13.0`, Python >=3.11,<3.15). Volta stays on `cu126`; Turing and
+  newer use `cu130`, the CUDA version of the default PyPI torch 2.13.0 build,
+  because CUDA 13 has no kernels below Turing.
+- `FRAMEWORK_PYTHON` gains torch 2.13.0 and `_torch_modern_cuda` maps it to
+  `cu130`, so an unknown version still fails closed until audited.
+- The install docs and the UMA backend page are regenerated from the registry.
+- UMA Nitro is not exposed. fairchem-core 2.22+ redefined the upstream
+  `default` preset as UMA Nitro and removed `turbo`, so mliport now maps its own
+  two names onto the presets that keep the documented numbers: `default` ->
+  upstream `batch` (tf32 off, no compile, no merged MOLE) and `turbo` ->
+  upstream `multigpu` (upstream's "turbo's former settings"). A preset that
+  would enable Nitro is refused, a missing preset fails closed with an upgrade
+  message, and the effective preset, its tf32 flag and its Nitro flag are
+  recorded in the model identity. Regression tests pin the mapping.
+- `docs/backends/uma.md` (+ `.zh.md`) records that the beta scientific
+  validation of `uma_omat` ran on fairchem-core 2.21.0 and does not carry over
+  to this runtime.
+- `docs/installation.md` (+ `.zh.md`) and the UMA page state the driver
+  requirement: the CUDA 13 `cu130` wheels used on Turing and newer need an
+  NVIDIA driver of 580 or newer, while Volta stays on `cu126` and keeps working
+  with older drivers.
+
 DPA-3.1 checkpoints load on the DPA4 runtime:
 
 - The pinned deepmd-kit 3.2.1 builds the three DPA-3.1 statistics tensors

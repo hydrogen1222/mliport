@@ -65,7 +65,7 @@ Python 版本符合要求、且不含其他后端的软件包）会被复用，�
 <!-- BEGIN GENERATED: backend-matrix -->
 | 后端 | 环境 | Python | 运行时 |
 |---|---|---|---|
-| UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
+| UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.25.0` (torch 2.13.0) |
 | MACE | `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
 | DPA (DeepMD-kit) | `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit @ git+https://github.com/deepmodeling/deepmd-kit.git@0edeaef5617e9878edeb2346bf37bb6a035a4f51` (torch 2.11.0) |
 | NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1`（NumPy/ASE 由安装器解析；gpumd 需用 CUDA Toolkit 12.9 编译） |
@@ -138,8 +138,10 @@ mliport 不负责下载模型。请用上游工具下载模型文件，再用 `-
 ## GPU 架构
 
 PyTorch 和 TensorFlow 针对不同代的 GPU 提供不同的 CUDA 版本，安装脚本会自动选择：
-Maxwell、Pascal、Volta 用 cu126，Turing 及更新的用 cu128 或更高。`mliport setup` 会打印检测
-到的 GPU 和准备采用的安装方案。
+Maxwell、Pascal、Volta 用 cu126，Turing 及更新的用 cu128 或更高。CUDA 13 频道（`cu130`，
+UMA 运行时从 torch 2.13 起使用）需要 **580 或更新**的 NVIDIA 驱动，而且该构建不包含 Turing
+以下的内核，所以 Volta 继续留在 `cu126`，老驱动也能用。`mliport setup` 会打印检测到的 GPU
+和准备采用的安装方案。
 
 <!-- BEGIN GENERATED: gpu-routes -->
 | 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
@@ -159,7 +161,7 @@ Maxwell、Pascal、Volta 用 cu126，Turing 及更新的用 cu128 或更高。`m
 `mliport doctor` 会对检测到的 GPU 打印这个分类。
 
 Turing 之前的 GPU 依赖 CUDA 12.6 版本，而 PyTorch 从 2.15 起不再提供。这类机器上请保持安装
-脚本装的版本，不要升级框架。
+脚本装的版本，不要升级框架；CUDA 13 的构建在这里也帮不上忙，因为它不包含 Turing 以下的内核。
 
 ## 离线机器
 
