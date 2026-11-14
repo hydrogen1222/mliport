@@ -44,6 +44,34 @@ commit 和这个模型有效。
 验证分为 T1 到 T8 几个级别，依次是后端和工作流的冒烟测试、一致性检查、输出数值检查、基准测试
 等数值和物理合理性检查，以及性能和输运分析。引用某一级的数字之前，先看报告里写的适用范围。
 
+## 在单个设备上检查一个模型
+
+`scripts/validate_runtime.py` 是可复用的可调用性检查工具。它在对应后端自己的环境里加载一个
+模型，做单点、共享计算器重复计算和中心差分力检验；加 `--full` 时再跑 10 步 NVE 分子动力学
+和一个五个 image 的 NEB。它只写一份 JSON 报告，不改动别的东西。
+
+```bash
+.venv-mace/bin/python scripts/validate_runtime.py mace \
+  /models/mace-omat-0-medium.model report.json \
+  --device cpu --structure examples/structures/li10gep2s12_primitive.vasp \
+  --task bulk --full --raw-dir /tmp/probe-raw
+```
+
+- `--device` 必填，取值是 `cpu` 或 `cuda:N`。CPU 运行不需要 GPU，如果实际跑到了 GPU 上会
+  报错；CUDA 运行会确认 GPU UUID（只记录哈希）和序号，并记录显存峰值。
+- `--structure` 可以是任何 ASE 能读的文件，原子数 2 到 32，且不能带约束。不填时用内置的
+  4 原子 fcc Cu 晶胞。
+- `--task` 指定模型的 task 家族，`uma` 必须显式给出（例如 `--task omat`），其余后端默认
+  `bulk`。
+- 证据编号里写的是设备类型（`cpu-…` 或 `cuda-…`），不是某台机器；只有在 GPU 上运行才会
+  写入硬件信息。
+- `dpa` 和 `grace` 必须在已经隔离过设备的进程里运行（命令行会自动重启进程做到这一点）：用
+  `--device cpu` 时先把 `CUDA_VISIBLE_DEVICES` 设成空字符串，用 `--device cuda:N` 时设成单个 GPU
+  的 UUID。没有设置这个变量时，检查工具会直接拒绝启动，而不是等到后面由适配器报错。
+
+报告格式是 `mliport.runtime-validation/2`。更早那版只能在 GPU 上跑的检查写出的记录仍然是
+`/1`，编号也保留 `v100-…` 的前缀。
+
 ## 安装冒烟证据
 
 这张表比上面的工作流验证更早。保留它是因为每个"通过"都有对应的运行记录可以查看。
