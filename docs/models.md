@@ -71,10 +71,14 @@ is a separate question that this table does not answer.
 | `nep89_gpumd` | nep | NEP89 `nep.txt` | — | model-defined | `unsupported` | `verified` | [runtime evidence](https://github.com/hydrogen1222/mliport/pull/75) |
 | `uma_s_1pt` | uma | `uma-s-1.pt` | `omat` | model-defined | `unsupported` | `unsupported` | upstream extensivity bug |
 
-Two rows deserve a note. NEP89 is verified only on the native GPU runtime: the
-Calorine ASE runtime cannot parse that model format, so NEP89 on CPU is
-`unsupported` rather than merely untested. The archived `uma-s-1.pt` has a known
-extensivity bug upstream, so mliport does not claim it on either device.
+One row deserves a note: NEP89 is verified only on the native GPU runtime,
+because the Calorine ASE runtime cannot parse that model format, so NEP89 on
+CPU is `unsupported` rather than merely untested.
+
+The archived `uma-s-1.pt` is deliberately **not** in this table. It is an
+archived upstream release with a known extensivity bug; mliport has not checked
+it and does not recommend it, and `unsupported` would be the wrong word because
+`unsupported` means mliport refuses the model — nothing refuses this one.
 
 The hex hashes, source URLs and licenses of the pinned profiles live in the
 [model manifest](https://github.com/hydrogen1222/mliport/blob/main/validation/science/model_manifest.json);

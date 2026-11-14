@@ -64,9 +64,12 @@ mliport 本身不包含模型。它通过适配器加载别人训练好的势函
 | `nep89_gpumd` | nep | NEP89 `nep.txt` | — | 由模型决定 | `unsupported` | `verified` | [运行时证据](https://github.com/hydrogen1222/mliport/pull/75) |
 | `uma_s_1pt` | uma | `uma-s-1.pt` | `omat` | 由模型决定 | `unsupported` | `unsupported` | 上游已知的广延性缺陷 |
 
-有两行需要说明。NEP89 只在原生 GPU 运行时上验证过：Calorine 的 ASE 运行时解析不了这种模型
-格式，所以 NEP89 在 CPU 上是 `unsupported`，而不只是没测。归档的 `uma-s-1.pt` 上游有已知的
-广延性缺陷，因此 mliport 在两种设备上都不宣称支持它。
+有一行需要说明：NEP89 只在原生 GPU 运行时上验证过，因为 Calorine 的 ASE 运行时解析不了这种
+模型格式，所以 NEP89 在 CPU 上是 `unsupported`，而不只是没测。
+
+归档的 `uma-s-1.pt` 故意**不**放进这张表。它是上游归档版本，有已知的广延性缺陷；mliport 没有
+对它做过检查，也不推荐使用。它的状态不该写成 `unsupported`，因为 `unsupported` 的含义是
+mliport 会拒绝这个模型，而实际上没有任何东西拒绝它。
 
 固定 profile 的哈希、来源 URL 和许可证都在
 [模型清单](https://github.com/hydrogen1222/mliport/blob/main/validation/science/model_manifest.json)

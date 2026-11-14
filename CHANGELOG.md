@@ -15,7 +15,9 @@ Model registry corrections:
 - `docs/models.md` gains a "Model support status" section: the `verified` /
   `untested` / `needs_runtime_upgrade` / `unsupported` vocabulary, the note that
   `verified` means "called correctly", not "accurate", and one row per pinned
-  profile, per model newly in scope and for NEP89 and the archived `uma-s-1.pt`.
+  profile, per model newly in scope and for NEP89. The archived `uma-s-1.pt` is
+  described in prose rather than given a row: `unsupported` means mliport
+  refuses a model, and nothing refuses that one.
   A docs contract test keeps the table in step with the manifest.
 
 DPA-3.1 checkpoints load on the DPA4 runtime:
