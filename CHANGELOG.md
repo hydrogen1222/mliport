@@ -24,6 +24,41 @@ UMA runtime upgrade for UMA-S 1.2.1:
   validation of `uma_omat` ran on fairchem-core 2.21.0 and does not carry over
   to this runtime.
 
+DPA-3.1 checkpoints load on the DPA4 runtime:
+
+- The pinned deepmd-kit 3.2.1 builds the three DPA-3.1 statistics tensors
+  (`atomic_model.out_bias`, `out_std`, `bias_atom_e`) as float64 while the
+  distributed checkpoint stores them in float32. Every one of the 351 tensors
+  keeps its shape and value, but the all-or-nothing tensor guard treated that
+  lossless widening as a changed model and refused DPA-3.1-3M on the runtime
+  that DPA4 needs -- so DPA-3.1 could only run on the older 3.1.3 environment.
+- The guard now accepts only a strictly wider floating type whose values are
+  bit-identical after the cast, and records the widening in the checkpoint
+  migrations. Narrowing, shape changes and value changes are still refused, and
+  `declared_model_precision` keeps reporting what the checkpoint stored.
+- `docs/backends/dpa.md` (+ `.zh.md`) documents the rule.
+
+Callable-check probe on CPU and on any structure:
+
+- `scripts/validate_runtime.py` could not run at all: it imported `_hash_model`
+  from `mliport.neb.workflow`, which no longer exists. It also hard-coded
+  `cuda:0`, UMA's `omat` task, a Cu cell and a `v100-` evidence prefix, so it
+  could not check a CPU run or another structure.
+- The probe now takes a required `--device cpu|cuda:N`, an optional
+  `--structure` (any ASE-readable file with 2-32 unconstrained atoms) and
+  `--task` (required for `uma`, `bulk` otherwise). A CPU run needs no GPU UUID
+  and rejects a GPU placement; a CUDA run keeps the UUID and ordinal
+  confirmation. The evidence id names the device type, the hardware block is
+  written only for GPU runs, and the report schema is
+  `mliport.runtime-validation/2`.
+- Follow-ups found on real backends: the GPU-only GRACE memory cap is no longer
+  sent on CPU runs; `dpa` and `grace` refuse to start without
+  `CUDA_VISIBLE_DEVICES` (the CLI restarts itself, a standalone probe cannot)
+  and the probe says so with the exact command; the five-image NEB relaxes its
+  endpoints instead of relying on the fixture's initial forces.
+- `docs/validation.md` (+ `.zh.md`) documents the usage.
+
+
 
 Installer environment contract and CI repair:
 
