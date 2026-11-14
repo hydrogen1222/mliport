@@ -20,6 +20,28 @@ Model registry corrections:
   refuses a model, and nothing refuses that one.
   A docs contract test keeps the table in step with the manifest.
 
+MACE model-class gate:
+
+- `MACECalculatorWrapper` now refuses checkpoints that are not potential-energy
+  models instead of evaluating them: dipole/polarizability-only models
+  (`AtomicDipolesMACE`, `AtomicDielectricMACE`, the MACE-MDP family),
+  MACE-POLAR polarizable electrostatics (`PolarMACE` from
+  `mace.modules.extensions`, which upstream loads through `mace_polar` with
+  `model_type="PolarMACE"`), and models with charge/spin joint embeddings
+  (`embedding_specs`/`joint_embedding`, the MACE-OMOL family, which reads total
+  charge and spin from `atoms.info`). The decision is taken from the loaded
+  model object, never from the file name, and the error names the reason and
+  the upstream loader.
+- The gate is only meaningful when the loaded calculator exposes the models it
+  built: a missing, empty or non-list `calculator.models` now stops the load
+  with an explicit message instead of silently skipping the check. The
+  attribute-shaped polar/OMOL discriminators are only applied to real
+  `torch.nn.Module` models, so a mock or a proxy that answers every attribute
+  cannot fake a polar checkpoint.
+- MACE-MH-1 is unaffected: it loads as `ScaleShiftMACE` with six heads and no
+  embedding block, and a test pins that.
+- `docs/backends/mace.md` (+ `.zh.md`) documents the gate.
+
 DPA-3.1 checkpoints load on the DPA4 runtime:
 
 - The pinned deepmd-kit 3.2.1 builds the three DPA-3.1 statistics tensors
