@@ -50,25 +50,42 @@ is a separate question that this table does not answer.
 
 | Label | Engine | Artifact | Head / task | dtype | CPU | GPU | Evidence |
 |---|---|---|---|---|---|---|---|
-| `uma_omat` | uma | `uma-s-1p2.pt` | `omat` | model-defined | `untested` | `verified` | [beta campaign](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `mace_omat` | mace | `mace-omat-0-medium.model` | default | `float64` | `untested` | `verified` | [beta campaign](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `mace_omat_float32` | mace | `mace-omat-0-medium.model` | default | `float32` | `untested` | `verified` | [beta campaign](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `dpa_omat` | dpa | `DPA-3.1-3M.pt` | `Omat24` | model-defined | `untested` | `verified` | [beta campaign](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `grace_omat` | grace | `GRACE-2L-OMAT-medium-base` | default | model-defined | `untested` | `verified` | [beta campaign](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `grace_omat_fp64` | grace | `GRACE-2L-OMAT-medium-base-fp64` | default | `float64` | `untested` | `verified` | [beta campaign](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `grace_3l_omat_large_ft_am` | grace | `GRACE-3L-OMAT-large-ft-AM` | default | model-defined | `untested` | `untested` | — |
-| `grace_2l_smax_omat_large` | grace | `GRACE-2L-SMAX-OMAT-large` | default | model-defined | `untested` | `untested` | — |
-| `dpa31_sse_pbe` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBE` | model-defined | `untested` | `untested` | — |
-| `dpa31_sse_pbesol` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBESol` | model-defined | `untested` | `untested` | — |
-| `dpa4_neo_omat` | dpa | `DPA4-Neo-OMat24-v20260805.pt` | single task (to verify) | model-defined | `untested` | `untested` | — |
-| `dpa4_air_omat` | dpa | `DPA4-Air-OMat24-v20260805.pt` | single task (to verify) | model-defined | `untested` | `untested` | — |
-| `dpa4_plus_omat` | dpa | `DPA4-Plus-OMat24-v20260805.pt` | single task (to verify) | model-defined | `untested` | `untested` | — |
-| `mace_matpes_r2scan` | mace | `MACE-MATPES-r2SCAN-0` medium | single head (to verify) | `float64` | `untested` | `untested` | — |
-| `mace_mh1_omat_pbe` | mace | `MACE-MH-1` | `omat_pbe` | `float64` | `untested` | `untested` | — |
-| `mace_mh1_matpes_r2scan` | mace | `MACE-MH-1` | `matpes_r2scan` | `float64` | `untested` | `untested` | — |
-| `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | model-defined | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
-| `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | model-defined | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
-| `nep89_gpumd` | nep | NEP89 `nep.txt` | — | model-defined | `unsupported` | `verified` | [runtime evidence](https://github.com/hydrogen1222/mliport/pull/75) |
+| `uma_omat` | uma | `uma-s-1p2.pt` | `omat` | model-defined | `verified` | `verified` | [re-check record](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6880031494) |
+| `mace_omat` | mace | `mace-omat-0-medium.model` | default | `float64` | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_omat_float32` | mace | `mace-omat-0-medium.model` | default | `float32` | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa_omat` | dpa | `DPA-3.1-3M.pt` | `Omat24` | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_omat` | grace | `GRACE-2L-OMAT-medium-base` | default | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_omat_fp64` | grace | `GRACE-2L-OMAT-medium-base-fp64` | default | `float64` | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_3l_omat_large_ft_am` | grace | `GRACE-3L-OMAT-large-ft-AM` | default | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_2l_smax_omat_large` | grace | `GRACE-2L-SMAX-OMAT-large` | default | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa31_sse_pbe` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBE` | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa31_sse_pbesol` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBESol` | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa4_neo_omat` | dpa | `DPA4-Neo-OMat24-v20260805.pt` | single task | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa4_air_omat` | dpa | `DPA4-Air-OMat24-v20260805.pt` | single task | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa4_plus_omat` | dpa | `DPA4-Plus-OMat24-v20260805.pt` | single task | model-defined | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_matpes_r2scan` | mace | `MACE-MATPES-r2SCAN-0` medium | single head (`default`) | `float64` | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_mh1_omat_pbe` | mace | `MACE-MH-1` | `omat_pbe` | `float64` | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_mh1_matpes_r2scan` | mace | `MACE-MH-1` | `matpes_r2scan` | `float64` | `verified` | `verified` | [runs](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841), [CPU–GPU deltas](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | model-defined | `verified` | `verified` | [UMA record](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
+| `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | model-defined | `verified` | `verified` | SP, forces and MD verified; NEB refused by the gradient preflight — [UMA record](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
+| `nep89_gpumd` | nep | NEP89 `nep.txt` | — | model-defined | `unsupported` | `verified` | [native GPU runtime evidence](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6689717878) |
+
+The checks behind these cells ran on 2026-11-14 on one Tesla
+V100-SXM2-16GB (driver 580.173.02), in the environments the installer builds:
+mace-torch 0.3.16 on torch 2.8.0, deepmd-kit 3.2.1.dev63 on torch 2.11.0,
+tensorpotential 0.6.0 on TensorFlow 2.20.0, fairchem-core 2.25.0 on torch
+2.13.0. Every `verified` model loaded, gave finite energy, forces and stress on
+the 50-atom `li10gep2s12_primitive.vasp` cell, matched its recorded identity and
+completed the bounded probe (shared calculator, central-difference forces, 10
+NVE steps, a five-image NEB) on both devices. Across all profiles the largest
+CPU–GPU difference on that cell was **6.1e-7 eV/atom** and **7.5e-6 eV/Å**, both
+from `mace_omat_float32`; the float64 models agree at the 1e-14 level. The UMA
+runs record `inference_preset: batch` with `nitro_enabled: false`, and
+`--inference-mode turbo` records `multigpu` with `nitro_enabled: false`. One
+exception is stated in the table: the r²SCAN fine-tune is refused by the NEB
+gradient preflight, because its energy scale does not resolve the derivative in
+float32. Records, hashes, deltas and verbatim failures are in
+[pull request #75](https://github.com/hydrogen1222/mliport/pull/75).
 
 One row deserves a note: NEP89 is verified only on the native GPU runtime,
 because the Calorine ASE runtime cannot parse that model format, so NEP89 on

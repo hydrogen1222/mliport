@@ -43,25 +43,37 @@ mliport 本身不包含模型。它通过适配器加载别人训练好的势函
 
 | 标签 | 引擎 | 模型文件 | Head / task | 精度 | CPU | GPU | 证据 |
 |---|---|---|---|---|---|---|---|
-| `uma_omat` | uma | `uma-s-1p2.pt` | `omat` | 由模型决定 | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `mace_omat` | mace | `mace-omat-0-medium.model` | 默认 | `float64` | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `mace_omat_float32` | mace | `mace-omat-0-medium.model` | 默认 | `float32` | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `dpa_omat` | dpa | `DPA-3.1-3M.pt` | `Omat24` | 由模型决定 | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `grace_omat` | grace | `GRACE-2L-OMAT-medium-base` | 默认 | 由模型决定 | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `grace_omat_fp64` | grace | `GRACE-2L-OMAT-medium-base-fp64` | 默认 | `float64` | `untested` | `verified` | [beta 验证](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md) |
-| `grace_3l_omat_large_ft_am` | grace | `GRACE-3L-OMAT-large-ft-AM` | 默认 | 由模型决定 | `untested` | `untested` | — |
-| `grace_2l_smax_omat_large` | grace | `GRACE-2L-SMAX-OMAT-large` | 默认 | 由模型决定 | `untested` | `untested` | — |
-| `dpa31_sse_pbe` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBE` | 由模型决定 | `untested` | `untested` | — |
-| `dpa31_sse_pbesol` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBESol` | 由模型决定 | `untested` | `untested` | — |
-| `dpa4_neo_omat` | dpa | `DPA4-Neo-OMat24-v20260805.pt` | 单任务（待核实） | 由模型决定 | `untested` | `untested` | — |
-| `dpa4_air_omat` | dpa | `DPA4-Air-OMat24-v20260805.pt` | 单任务（待核实） | 由模型决定 | `untested` | `untested` | — |
-| `dpa4_plus_omat` | dpa | `DPA4-Plus-OMat24-v20260805.pt` | 单任务（待核实） | 由模型决定 | `untested` | `untested` | — |
-| `mace_matpes_r2scan` | mace | `MACE-MATPES-r2SCAN-0` medium | 单 head（待核实） | `float64` | `untested` | `untested` | — |
-| `mace_mh1_omat_pbe` | mace | `MACE-MH-1` | `omat_pbe` | `float64` | `untested` | `untested` | — |
-| `mace_mh1_matpes_r2scan` | mace | `MACE-MH-1` | `matpes_r2scan` | `float64` | `untested` | `untested` | — |
-| `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | 由模型决定 | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
-| `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | 由模型决定 | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
-| `nep89_gpumd` | nep | NEP89 `nep.txt` | — | 由模型决定 | `unsupported` | `verified` | [运行时证据](https://github.com/hydrogen1222/mliport/pull/75) |
+| `uma_omat` | uma | `uma-s-1p2.pt` | `omat` | 由模型决定 | `verified` | `verified` | [复检记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6880031494) |
+| `mace_omat` | mace | `mace-omat-0-medium.model` | 默认 | `float64` | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_omat_float32` | mace | `mace-omat-0-medium.model` | 默认 | `float32` | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa_omat` | dpa | `DPA-3.1-3M.pt` | `Omat24` | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_omat` | grace | `GRACE-2L-OMAT-medium-base` | 默认 | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_omat_fp64` | grace | `GRACE-2L-OMAT-medium-base-fp64` | 默认 | `float64` | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_3l_omat_large_ft_am` | grace | `GRACE-3L-OMAT-large-ft-AM` | 默认 | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `grace_2l_smax_omat_large` | grace | `GRACE-2L-SMAX-OMAT-large` | 默认 | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa31_sse_pbe` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBE` | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa31_sse_pbesol` | dpa | `DPA-3.1-3M.pt` | `Domains_SSE_PBESol` | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa4_neo_omat` | dpa | `DPA4-Neo-OMat24-v20260805.pt` | 单任务 | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa4_air_omat` | dpa | `DPA4-Air-OMat24-v20260805.pt` | 单任务 | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `dpa4_plus_omat` | dpa | `DPA4-Plus-OMat24-v20260805.pt` | 单任务 | 由模型决定 | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_matpes_r2scan` | mace | `MACE-MATPES-r2SCAN-0` medium | 单 head（`default`） | `float64` | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_mh1_omat_pbe` | mace | `MACE-MH-1` | `omat_pbe` | `float64` | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `mace_mh1_matpes_r2scan` | mace | `MACE-MH-1` | `matpes_r2scan` | `float64` | `verified` | `verified` | [运行记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6877006841)、[CPU–GPU 差值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878720684) |
+| `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | 由模型决定 | `verified` | `verified` | [UMA 记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
+| `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | 由模型决定 | `verified` | `verified` | 单点、力与 MD 已验证；NEB 被梯度预检拒绝 — [UMA 记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
+| `nep89_gpumd` | nep | NEP89 `nep.txt` | — | 由模型决定 | `unsupported` | `verified` | [原生 GPU 运行时证据](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6689717878) |
+
+这些状态背后的检查是 2026-11-14 在一张 Tesla V100-SXM2-16GB（驱动 580.173.02）上、用安装器
+建出来的环境跑出来的：mace-torch 0.3.16 配 torch 2.8.0、deepmd-kit 3.2.1.dev63 配 torch
+2.11.0、tensorpotential 0.6.0 配 TensorFlow 2.20.0、fairchem-core 2.25.0 配 torch 2.13.0。
+每个 `verified` 模型都成功加载，在 50 原子的 `li10gep2s12_primitive.vasp` 晶胞上给出有限的能量、
+力和应力，记录的身份与实际一致，并且在两种设备上都跑完了有界的可调用性检查（共享计算器、中心
+差分力、10 步 NVE、五个 image 的 NEB）。所有 profile 里，CPU 与 GPU 在该晶胞上的最大差别是
+**6.1e-7 eV/atom** 和 **7.5e-6 eV/Å**，都来自 `mace_omat_float32`；float64 模型在 1e-14 量级
+一致。UMA 的运行记录里是 `inference_preset: batch`、`nitro_enabled: false`，而
+`--inference-mode turbo` 记录的是 `multigpu` 且 `nitro_enabled: false`。表中的一行是例外：
+r²SCAN 微调版被 NEB 的梯度预检拒绝，因为它的能量标度在 float32 下分辨不出导数。记录、哈希、
+差值和原样保留的报错见 [pull request #75](https://github.com/hydrogen1222/mliport/pull/75)。
 
 有一行需要说明：NEP89 只在原生 GPU 运行时上验证过，因为 Calorine 的 ASE 运行时解析不了这种
 模型格式，所以 NEP89 在 CPU 上是 `unsupported`，而不只是没测。
