@@ -98,10 +98,10 @@ def test_recommend_torch_kepler_unsupported() -> None:
 
 
 def test_recommend_torch_pascal_uses_cu126() -> None:
-    """Pascal (sm_61) → torch 2.8.0+cu126 via legacy channel."""
+    """Pascal (sm_61) → torch 2.13.0+cu126 via legacy channel (UMA default)."""
     rec = recommend_torch(6, 1)
     assert rec.supported is True
-    assert "2.8.0" in rec.version
+    assert "2.13.0" in rec.version
     assert "cu126" in rec.version
 
 
@@ -113,11 +113,11 @@ def test_recommend_torch_pascal_dpa_preserves_deepmd_abi_pin() -> None:
 
 
 def test_recommend_torch_blackwell_uses_modern() -> None:
-    """Blackwell (sm_100) → torch 2.8.0+cu128 via modern channel."""
+    """Blackwell (sm_100) → torch 2.13.0+cu130 via modern channel."""
     rec = recommend_torch(10, 0)
     assert rec.supported is True
-    assert "2.8.0" in rec.version
-    assert "cu128" in rec.version
+    assert "2.13.0" in rec.version
+    assert "cu130" in rec.version
 
 
 def _gpu(cc_major: int, cc_minor: int) -> GpuInfo:
@@ -184,7 +184,7 @@ def test_engine_install_commands_uma_explicit() -> None:
     cmds = engine_install_commands(None, "uma")
     joined = "\n".join(cmds)
     assert "uv sync" not in joined
-    assert "fairchem-core==2.21.0" in joined
+    assert "fairchem-core==2.25.0" in joined
     assert (
         "-e './mliport[analysis-all]'" in joined
         or "-e ./mliport[analysis-all]" in joined
@@ -196,5 +196,5 @@ def test_engine_install_commands_maxwell_experimental() -> None:
     cmds = engine_install_commands([_gpu(5, 2)], "uma")
     joined = "\n".join(cmds)
     # Should still produce explicit UMA install (torch + fairchem-core).
-    assert "fairchem-core==2.21.0" in joined
-    assert "torch==2.8.0" in joined
+    assert "fairchem-core==2.25.0" in joined
+    assert "torch==2.13.0" in joined

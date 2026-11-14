@@ -43,11 +43,11 @@ def _joined(plan) -> str:
 @pytest.mark.parametrize("cc, expected_arch", [((6, 0), "pascal"), ((6, 1), "pascal")])
 def test_arch_t1_t2_pascal_sm60_and_sm61_plan(cc, expected_arch):
     """ARCH-T1/T2: Pascal sm60 and sm61 both plan the cu126 legacy route."""
-    for engine in ("mace", "uma"):
+    for engine, torch_version in (("mace", "2.8.0"), ("uma", "2.13.0")):
         plan = generate_plan([_gpu(*cc)], engines=[engine], device="cuda")
         assert plan.gpu_arch == expected_arch
         joined = _joined(plan)
-        assert "torch==2.8.0+cu126" in joined, engine
+        assert f"torch=={torch_version}+cu126" in joined, engine
         assert any("needs smoke test" in w for w in plan.warnings), engine
 
     dpa = generate_plan([_gpu(*cc)], engines=["dpa"], device="cuda")
@@ -70,6 +70,7 @@ def test_arch_t3_volta_sm70_plan():
     joined = _joined(plan)
     assert "torch==2.8.0+cu126" in joined
     assert "torch==2.11.0+cu126" in joined
+    assert "torch==2.13.0+cu126" in joined
 
 
 @pytest.mark.parametrize(
@@ -90,6 +91,7 @@ def test_modern_arches_use_cu128(cc, expected_arch):
     joined = _joined(plan)
     assert "torch==2.8.0+cu128" in joined
     assert "torch==2.11.0+cu128" in joined
+    assert "torch==2.13.0+cu130" in joined
 
 
 def test_grace_hopper_and_blackwell_are_experimental():

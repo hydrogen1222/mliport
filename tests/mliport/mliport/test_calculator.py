@@ -148,3 +148,146 @@ class TestGpuIndex:
             calc = UMACalculator(model_path="fake.pt", device="cuda:3")
             assert calc._compile_supported() is False
         fake_cuda.get_device_capability.assert_called_once_with(3)
+
+
+class TestNoImplicitAccelerationPresets:
+    """UMA Nitro is Ampere+ only, so mliport must never select it.
+
+    Spec #61 (model-support §6.4): fairchem-core 2.24.0 added a Nitro inference
+    path that cannot run on Volta. mliport exposes exactly two presets and
+    records the effective one; nothing can silently pick a third.
+    """
+
+    def test_only_the_two_supported_presets_exist(self):
+        modes = set(UMACalculator.VALID_INFERENCE_MODES)
+        assert modes == {"default", "turbo"}
+        assert "nitro" not in modes
+
+    def test_presets_map_to_upstream_presets_without_nitro(self):
+        """default -> batch and turbo -> multigpu reproduce the old numbers."""
+        mapping = dict(UMACalculator.INFERENCE_PRESETS)
+        assert mapping == {"default": "batch", "turbo": "multigpu"}
+
+    def test_nitro_is_rejected_by_the_calculator(self):
+        with (
+            patch.object(Path, "exists", return_value=True),
+            pytest.raises(ValueError, match="Invalid inference mode"),
+        ):
+            UMACalculator(model_path="fake.pt", inference_mode="nitro")
+
+    def test_nitro_is_rejected_by_the_configuration_schema(self, tmp_path):
+        from mliport.config import resolve_config
+
+        model = tmp_path / "uma.pt"
+        model.write_bytes(b"stub")
+        with pytest.raises(ValueError):
+            resolve_config(
+                calc_type="sp",
+                cli={
+                    "model_type": "uma",
+                    "model_path": str(model),
+                    "device": "cpu",
+                    "inference_mode": "nitro",
+                },
+            )
+
+    def test_the_effective_preset_is_recorded(self):
+        """Provenance must say which preset ran, not just that one was allowed."""
+        from mliport.config import resolve_config
+
+        resolved = resolve_config(
+            calc_type="sp",
+            cli={
+                "model_type": "uma",
+                "model_path": "uma.pt",
+                "device": "cpu",
+                "inference_mode": "turbo",
+            },
+        )
+        assert resolved.inference_mode == "turbo"
+        assert str(resolved.sources["inference_mode"].value) == "turbo"
+
+
+class _FakeSettings:
+    def __init__(self, **kwargs):
+        self.tf32 = kwargs.get("tf32", False)
+        self.compile = kwargs.get("compile", False)
+        self.nitro = kwargs.get("nitro", False)
+        self.activation_checkpointing = True
+        self.torch_num_threads = None
+
+
+def _install_fake_fairchem(monkeypatch, guess):
+    """Register stub fairchem modules so load_predictor() runs without weights."""
+    modules = {}
+    for name in (
+        "fairchem",
+        "fairchem.core",
+        "fairchem.core.units",
+        "fairchem.core.units.mlip_unit",
+        "fairchem.core.units.mlip_unit.api",
+        "fairchem.core.units.mlip_unit.api.inference",
+    ):
+        modules[name] = types.ModuleType(name)
+
+    recorded = {}
+
+    def load_predict_unit(path=None, device=None, inference_settings=None):
+        recorded["settings"] = inference_settings
+        return types.SimpleNamespace(model=None, direct_forces=False)
+
+    modules["fairchem.core.units.mlip_unit"].load_predict_unit = load_predict_unit
+    modules[
+        "fairchem.core.units.mlip_unit.api.inference"
+    ].guess_inference_settings = guess
+    modules["fairchem.core.units"].mlip_unit = modules["fairchem.core.units.mlip_unit"]
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    return recorded
+
+
+class TestInferencePresetMapping:
+    """The upstream preset that really runs is chosen by mliport, not upstream."""
+
+    def test_default_maps_to_the_upstream_batch_preset(self, monkeypatch):
+        recorded = _install_fake_fairchem(
+            monkeypatch, lambda name: _FakeSettings() if name == "batch" else None
+        )
+        with patch.object(Path, "exists", return_value=True):
+            calc = UMACalculator(model_path="fake.pt", device="cpu")
+            calc.load_predictor()
+        assert calc._effective_preset == "batch"
+        assert recorded["settings"].nitro is False
+
+    def test_turbo_maps_to_the_upstream_multigpu_preset(self, monkeypatch):
+        recorded = _install_fake_fairchem(
+            monkeypatch,
+            lambda name: _FakeSettings(tf32=True, compile=True)
+            if name == "multigpu"
+            else None,
+        )
+        with patch.object(Path, "exists", return_value=True):
+            calc = UMACalculator(
+                model_path="fake.pt", device="cpu", inference_mode="turbo"
+            )
+            calc.load_predictor()
+        assert calc._effective_preset == "multigpu"
+        assert recorded["settings"].tf32 is True
+        assert recorded["settings"].nitro is False
+
+    def test_a_preset_that_turns_nitro_on_is_refused(self, monkeypatch):
+        _install_fake_fairchem(monkeypatch, lambda name: _FakeSettings(nitro=True))
+        with patch.object(Path, "exists", return_value=True):
+            calc = UMACalculator(model_path="fake.pt", device="cpu")
+            with pytest.raises(RuntimeError, match="Nitro"):
+                calc.load_predictor()
+
+    def test_a_missing_upstream_preset_fails_closed(self, monkeypatch):
+        def guess(name):
+            raise ValueError("inference_settings='batch' is not a preset")
+
+        _install_fake_fairchem(monkeypatch, guess)
+        with patch.object(Path, "exists", return_value=True):
+            calc = UMACalculator(model_path="fake.pt", device="cpu")
+            with pytest.raises(RuntimeError, match="fairchem-core 2.25.0"):
+                calc.load_predictor()

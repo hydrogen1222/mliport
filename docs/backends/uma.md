@@ -32,7 +32,7 @@ either works as `--model-type`.
 <!-- BEGIN GENERATED: environment -->
 | Environment | Python | Runtime stack |
 |---|---|---|
-| `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.21.0` (torch 2.8.0) |
+| `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.25.0` (torch 2.13.0) |
 
 ```bash
 ./scripts/install_mliport.sh --engines uma --device auto
@@ -70,6 +70,21 @@ license is non-commercial research only; see [Citations](../citations.md).
   trades speed for GPU memory.
 - **Precision** is defined by the model; mliport reports the framework version
   rather than pretending to control the weights.
+- **Runtime pin.** `fairchem-core==2.25.0` on torch 2.13.0. Volta (V100) stays on
+  the `cu126` wheels, Turing and newer use `cu130`, because the CUDA 13 builds
+  carry no kernel below Turing. 2.25.0 is the pinned release that loads
+  `uma-s-1p2p1` (UMA-S 1.2.1). The beta scientific validation of `uma_omat` ran
+  on `fairchem-core==2.21.0` with torch 2.8.0; it describes that runtime and is
+  not carried over to this one, which has its own callable check.
+- **No Nitro.** fairchem-core 2.22 and later made UMA Nitro the upstream
+  `default` preset and removed `turbo`; Nitro needs Ampere or newer and runs at
+  reduced precision. mliport keeps its own two names and maps them onto
+  upstream presets that carry the numbers it has always documented:
+  `default` runs upstream `batch` (tf32 off, no compile, no merged MOLE) and
+  `turbo` runs upstream `multigpu` (upstream calls this "turbo's former
+  settings": tf32, compile, merged MOLE). A preset that would enable Nitro is
+  refused, and the preset that really ran, its tf32 flag and its Nitro flag are
+  written to the run record.
 - **NEB and configuration search** need forces that are the gradient of the
   energy. mliport decides this at run time, not from this page: a predictor that
   reports `direct_forces = true` is refused, otherwise a finite-difference

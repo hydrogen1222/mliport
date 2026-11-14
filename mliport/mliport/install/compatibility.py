@@ -44,6 +44,7 @@ FRAMEWORK_PYTHON = {
     ("torch", "2.8.0"): SpecifierSet(">=3.9,<3.14"),
     ("torch", "2.10.0"): SpecifierSet(">=3.10,<3.15"),
     ("torch", "2.11.0"): SpecifierSet(">=3.10,<3.15"),
+    ("torch", "2.13.0"): SpecifierSet(">=3.10,<3.15"),
     ("tensorflow", "2.20.0"): SpecifierSet(">=3.9,<3.14"),
 }
 
@@ -186,6 +187,11 @@ _LEGACY_CUDA_CHANNELS = ("cu126",)
 # For legacy GPUs (Maxwell/Pascal/Volta) the channel is always cu126.
 # For modern GPUs (Turing+) the channel depends on the torch version:
 #   torch 2.8.0 / 2.10.0 / 2.11.0 → cu128
+#   torch 2.13.0                  → cu130
+# The modern channel tracks the CUDA version of the default PyPI wheel: 2.13.0
+# is built against CUDA 13.0 (``cuda-toolkit==13.0.3`` in its metadata), and
+# CUDA 13 has no kernels below Turing. Legacy parts stay on cu126, the last
+# channel that carries sm_50/60/70 kernels.
 # Other releases require an explicit wheel compatibility audit.
 # This table is the single central mapping; update it when a new torch
 # version changes its modern CUDA channel.
@@ -197,6 +203,7 @@ def _torch_modern_cuda(version: str) -> str:
         "2.8.0": "cu128",
         "2.10.0": "cu128",
         "2.11.0": "cu128",
+        "2.13.0": "cu130",
     }
     if version not in mapping:
         raise ValueError(
@@ -354,54 +361,56 @@ BACKENDS: dict[str, BackendSpec] = {
         engine="uma",
         label="UMA (FAIRChem)",
         distribution="fairchem-core",
-        version="2.21.0",
+        version="2.25.0",
         framework="torch",
-        upstream_constraint="torch~=2.8.0",
-        requires_python=SpecifierSet(">=3.11,<3.14"),
+        upstream_constraint="torch~=2.13.0",
+        requires_python=SpecifierSet(">=3.11,<3.15"),
         venv_name=".venv",
         arch_profiles={
             "maxwell": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=False,
-                notes="Experimental. fairchem-core 2.21.0 → torch~=2.8.0. "
+                notes="Experimental. fairchem-core 2.25.0 → torch~=2.13.0. "
                 "Maxwell via cu126 legacy channel; upstream does not test this GPU.",
             ),
             "pascal": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=True,
-                notes="torch 2.8.0+cu126 includes sm60 kernel. "
-                "fairchem-core 2.21.0 constraint torch~=2.8.0 satisfied.",
+                notes="torch 2.13.0+cu126 includes sm_60 kernel. "
+                "fairchem-core 2.25.0 constraint torch~=2.13.0 satisfied.",
             ),
             "volta": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=True,
                 notes="Architecture profile: V100 (sm_70). "
-                "torch 2.8.0+cu126 includes sm70 kernel.",
+                "torch 2.13.0+cu126 is the last CUDA-12.6 build with sm70 kernels; "
+                "torch 2.15 drops cu126 wheels entirely.",
             ),
             "turing": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=True,
-                notes="Modern CUDA (cu128) for Turing+.",
+                notes="Modern CUDA (cu130) for Turing+; CUDA 13 has no kernels "
+                "below Turing.",
             ),
             "ampere": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=True,
-                notes="Modern CUDA (cu128) for Ampere.",
+                notes="Modern CUDA (cu130) for Ampere.",
             ),
             "ada": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=True,
-                notes="Architecture profile: RTX 4090. Modern CUDA (cu128) for Ada.",
+                notes="Architecture profile: RTX 4090. Modern CUDA (cu130) for Ada.",
             ),
             "hopper": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=True,
-                notes="Modern CUDA (cu128) for Hopper.",
+                notes="Modern CUDA (cu130) for Hopper.",
             ),
             "blackwell": BackendArchProfile(
-                framework_version="2.8.0",
+                framework_version="2.13.0",
                 upstream_supported=True,
-                notes="Modern CUDA (cu128) for Blackwell.",
+                notes="Modern CUDA (cu130) for Blackwell.",
             ),
         },
     ),

@@ -177,6 +177,12 @@ def build_model_record(
         ),
         "compile_enabled": info.get("compile_enabled"),
         "direct_forces": info.get("direct_forces"),
+        # The upstream preset that really ran (UMA maps mliport's
+        # default/turbo onto named fairchem presets), plus the numeric switches
+        # of that preset. None means the backend has no such notion.
+        "inference_preset": info.get("inference_preset"),
+        "nitro_enabled": info.get("nitro_enabled"),
+        "tf32_enabled": info.get("tf32_enabled"),
         "model_path": str(Path(resolved.model_path).expanduser().resolve()),
         "model_sha256": hash_model_path(resolved.model_path, error_class=error_class),
         "model_alias": model_alias,
