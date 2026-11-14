@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+Model support status:
+
+- `docs/models.md` (+ `.zh.md`) now carries the measured status of the pinned
+  profiles and of the models added to scope: 18 profiles are `verified` on both
+  CPU and GPU after the bounded callable check (load, finite energy/force/stress
+  on the 50-atom LGPS cell, shared calculator, central-difference forces, 10 NVE
+  steps, five-image NEB). Across all of them the largest CPU-vs-GPU difference
+  was 6.1e-7 eV/atom and 7.5e-6 eV/angstrom (`mace_omat_float32`).
+- UMA: `uma_omat`, `uma_s_1p2p1_omat` and `uma_s_1p2p1_ft_r2scan_omat` verified
+  on both devices (`inference_preset: batch`, `nitro_enabled: false`; the r2SCAN
+  fine-tune is refused by the NEB gradient preflight, which the table states).
+  `uma_omat` needed the artifact re-downloaded first: the earlier copy had the
+  right size but failed the zip CRC, and the re-uploaded file matches the pinned
+  manifest hash `ba5c0d912efa...`.
+- Every Evidence cell links the specific #75 comment that holds the record.
+
 Model registry corrections:
 
 - Three model licenses in `validation/science/model_manifest.json` were wrong and
