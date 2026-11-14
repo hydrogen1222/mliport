@@ -98,3 +98,67 @@ def test_only_documented_nonspin_descriptor_version_migration_is_allowed(
         assert wrapper._checkpoint_migrations == [
             "upstream unbridged descriptor version 1.1 -> 1.3"
         ]
+
+
+def test_lossless_stat_widening_is_recorded_not_refused(tmp_path):
+    """deepmd 3.2 builds the fp32 DPA-3.1 statistics tensors as float64.
+
+    The stored values are bit-identical after widening (float32 -> float64 is
+    exact), so refusing the model would reject a checkpoint the runtime loaded
+    correctly. The widening is recorded as a migration because it changes the
+    precision the run computes in.
+    """
+    model = torch.nn.Linear(2, 1, bias=False, dtype=torch.float64)
+    model.weight.data[:] = torch.tensor([[0.25, -0.5]], dtype=torch.float64)
+    state = {
+        "model.Default.weight": torch.tensor([[0.25, -0.5]], dtype=torch.float32),
+        "_extra_state": {"model_params": {"type": "standard"}},
+    }
+    path = tmp_path / "model.pt"
+    torch.save({"model": state}, path)
+    calculator = SimpleNamespace(
+        dp=SimpleNamespace(deep_eval=SimpleNamespace(_dpmodel=model))
+    )
+    wrapper = DPACalculatorWrapper(path)
+    wrapper._validate_pt_checkpoint(calculator)
+    assert wrapper._checkpoint_tensors_verified
+    assert len(wrapper._checkpoint_migrations) == 1
+    assert "widened 1 tensor(s) float32->float64" in wrapper._checkpoint_migrations[0]
+    assert "model.Default.weight" not in wrapper._checkpoint_migrations[0]
+
+
+@pytest.mark.parametrize(
+    "source,loaded,reason",
+    [
+        (torch.ones(3, dtype=torch.float32), torch.ones(3, dtype=torch.float64), None),
+        (
+            torch.ones(3, dtype=torch.float64),
+            torch.ones(3, dtype=torch.float32),
+            "dtype",
+        ),
+        (
+            torch.ones(3, dtype=torch.float32),
+            torch.zeros(3, dtype=torch.float32),
+            "changed",
+        ),
+        (
+            torch.ones(3, dtype=torch.float32),
+            torch.ones(4, dtype=torch.float32),
+            "shape",
+        ),
+        (
+            torch.ones(3, dtype=torch.int64),
+            torch.ones(3, dtype=torch.int32),
+            "dtype",
+        ),
+    ],
+)
+def test_tensor_load_verdict(source, loaded, reason):
+    from mliport.calculators.dpa_calc import tensor_load_verdict
+
+    if reason is None:
+        note = tensor_load_verdict("t", source, loaded)
+        assert note and "float32->float64" in note
+        return
+    with pytest.raises(RuntimeError, match=reason):
+        tensor_load_verdict("t", source, loaded)

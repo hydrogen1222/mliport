@@ -24,6 +24,58 @@ if TYPE_CHECKING:
     from ase.calculators.calculator import Calculator
 
 
+def tensor_load_verdict(name: str, source, loaded) -> str | None:
+    """Compare one checkpoint tensor with the tensor the runtime constructed.
+
+    Returns ``None`` when they are identical, the migration note when the
+    runtime only widened the dtype losslessly, and raises ``RuntimeError`` for
+    anything else.
+
+    Only *safe* widening (for example float32 -> float64) is accepted, because
+    it cannot change a stored value. Narrowing, shape changes and value changes
+    are refused: they mean the runtime is not loading the checkpoint that was
+    written, and the resulting numbers would silently belong to a different
+    model.
+    """
+    import torch  # noqa: PLC0415
+
+    if source.shape != loaded.shape:
+        raise RuntimeError(
+            f"DPA checkpoint tensor changed shape during loading: {name} "
+            f"{tuple(source.shape)} -> {tuple(loaded.shape)}. Use the upstream "
+            "implementation that produced this checkpoint."
+        )
+    if source.dtype == loaded.dtype:
+        if not torch.equal(source, loaded):
+            raise RuntimeError(
+                f"DPA checkpoint tensor changed during loading: {name}; "
+                "refusing changed values, shapes or dtype."
+            )
+        return None
+    # Only a strictly wider floating type is a lossless load. torch.can_cast
+    # also allows float64 -> float32, which would drop precision, so the width
+    # order is spelled out here instead of delegated.
+    widths = {
+        torch.float16: 1,
+        torch.bfloat16: 1,
+        torch.float32: 2,
+        torch.float64: 3,
+    }
+    wider = (
+        source.dtype in widths
+        and loaded.dtype in widths
+        and widths[loaded.dtype] > widths[source.dtype]
+        and torch.equal(source.to(loaded.dtype), loaded)
+    )
+    if not wider:
+        raise RuntimeError(
+            f"DPA checkpoint tensor changed dtype during loading: {name} "
+            f"{source.dtype} -> {loaded.dtype}; only a lossless widening with "
+            "identical values is accepted."
+        )
+    return f"upstream loaded {name} as {str(source.dtype).removeprefix('torch.')}->{str(loaded.dtype).removeprefix('torch.')}"
+
+
 class DPACalculatorWrapper(BaseMLIPCalculator):
     """Wrapper for DeepMD-kit DPA ASE calculators."""
 
@@ -249,6 +301,7 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
                 f"partial load. Missing tensors: {missing}; unused tensors: {unused}. "
                 "Use the upstream implementation that produced this checkpoint."
             )
+        widened: dict[str, list[str]] = {}
         for name, source in expected.items():
             loaded = actual[name]
             # Upstream SeZM's documented unbridged, non-spin 1.1/1.2 -> 1.3
@@ -270,15 +323,18 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
                     f"upstream unbridged descriptor version {float(source)} -> 1.3"
                 )
                 continue
-            if (
-                source.dtype != loaded.dtype
-                or source.shape != loaded.shape
-                or not torch.equal(source, loaded.detach().cpu())
-            ):
-                raise RuntimeError(
-                    f"DPA checkpoint tensor changed during loading: {name}; "
-                    "refusing changed values, shapes or dtype."
-                )
+            note = tensor_load_verdict(name, source, loaded.detach().cpu())
+            if note is not None:
+                widened.setdefault(note.rsplit(" ", 1)[-1], []).append(name)
+        for dtype_change, names in sorted(widened.items()):
+            # A lossless widening keeps every stored value bit-identical; it is
+            # recorded as a migration, never ignored, because it changes the
+            # precision the run actually computes in.
+            self._checkpoint_migrations.append(
+                f"upstream widened {len(names)} tensor(s) "
+                f"{dtype_change} while loading ({', '.join(sorted(names)[:4])}"
+                f"{', …' if len(names) > 4 else ''})"
+            )
         self._checkpoint_tensors_verified = True
 
     def _apply_device_env(self) -> None:
