@@ -69,7 +69,6 @@ is a separate question that this table does not answer.
 | `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | model-defined | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
 | `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | model-defined | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
 | `nep89_gpumd` | nep | NEP89 `nep.txt` | — | model-defined | `unsupported` | `verified` | [runtime evidence](https://github.com/hydrogen1222/mliport/pull/75) |
-| `uma_s_1pt` | uma | `uma-s-1.pt` | `omat` | model-defined | `unsupported` | `unsupported` | upstream extensivity bug |
 
 One row deserves a note: NEP89 is verified only on the native GPU runtime,
 because the Calorine ASE runtime cannot parse that model format, so NEP89 on

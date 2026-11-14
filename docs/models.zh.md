@@ -62,7 +62,6 @@ mliport 本身不包含模型。它通过适配器加载别人训练好的势函
 | `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | 由模型决定 | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
 | `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | 由模型决定 | `needs_runtime_upgrade` | `needs_runtime_upgrade` | — |
 | `nep89_gpumd` | nep | NEP89 `nep.txt` | — | 由模型决定 | `unsupported` | `verified` | [运行时证据](https://github.com/hydrogen1222/mliport/pull/75) |
-| `uma_s_1pt` | uma | `uma-s-1.pt` | `omat` | 由模型决定 | `unsupported` | `unsupported` | 上游已知的广延性缺陷 |
 
 有一行需要说明：NEP89 只在原生 GPU 运行时上验证过，因为 Calorine 的 ASE 运行时解析不了这种
 模型格式，所以 NEP89 在 CPU 上是 `unsupported`，而不只是没测。
