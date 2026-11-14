@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+Model registry corrections:
+
+- Three model licenses in `validation/science/model_manifest.json` were wrong and
+  are corrected against the upstream cards read on 2026-11-14: MACE-OMAT-0 (both
+  dtype profiles) is ASL as the `mace-foundations` model table says, not
+  Apache-2.0; DPA-3.1-3M is CC-BY-4.0 per its Hugging Face card, not LGPL-2.1;
+  and the GRACE foundation models are under the Academic Software License (ASL)
+  per the `AMS-ICAMS-RUB/grace-foundation-models` card. Metadata only.
+- The docs count five backends, not four, and name the NEP adapter in the model
+  table.
+- `docs/models.md` gains a "Model support status" section: the `verified` /
+  `untested` / `needs_runtime_upgrade` / `unsupported` vocabulary, the note that
+  `verified` means "called correctly", not "accurate", and one row per pinned
+  profile, per model newly in scope and for NEP89 and the archived `uma-s-1.pt`.
+  A docs contract test keeps the table in step with the manifest.
+
 Installer environment contract and CI repair:
 
 - An existing target environment is now inspected before any step runs. A

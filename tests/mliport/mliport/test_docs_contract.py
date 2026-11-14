@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -293,6 +294,56 @@ def test_generated_docs_are_in_sync():
         if current != render():
             stale.append(str(path.relative_to(REPO)))
     assert not stale, f"stale generated docs: {stale}"
+
+
+MODEL_STATUS_VOCABULARY = (
+    "verified",
+    "untested",
+    "needs_runtime_upgrade",
+    "unsupported",
+)
+
+
+def _model_support_rows(text: str) -> dict[str, tuple[str, str]]:
+    """Rows of the model support table: label -> (cpu status, gpu status).
+
+    The table is the one with eight columns starting with a backticked label;
+    a row is only accepted when both device cells use the shared vocabulary,
+    so a new status cannot be invented in prose.
+    """
+    rows: dict[str, tuple[str, str]] = {}
+    for line in text.splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 8:
+            continue
+        label = cells[0].strip("`")
+        rows[label] = (cells[5].strip("`"), cells[6].strip("`"))
+    return rows
+
+
+def test_model_support_table_covers_the_manifest_profiles():
+    manifest = json.loads(
+        (REPO / "validation" / "science" / "model_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    profiles = set(manifest["profiles"])
+    for path in (DOCS / "models.md", _zh("models")):
+        text = path.read_text(encoding="utf-8")
+        rows = _model_support_rows(text)
+        assert profiles <= set(
+            rows
+        ), f"{path}: missing profiles {sorted(profiles - set(rows))}"
+        unknown = {
+            label: statuses
+            for label, statuses in rows.items()
+            if any(status not in MODEL_STATUS_VOCABULARY for status in statuses)
+        }
+        assert not unknown, f"{path}: status outside the vocabulary {unknown}"
+        for status in MODEL_STATUS_VOCABULARY:
+            assert f"`{status}`" in text, f"{path}: {status} is not defined"
 
 
 def test_backend_pages_match_the_registry():

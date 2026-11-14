@@ -24,7 +24,7 @@
       "dtype": "float64",
       "model_sha256": "d4b14be9afa294eebdbe31a0280b26a0fa29715771e978cbfd3ca24e0d90307a",
       "source_url": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_omat_0 (asset mace-omat-0-medium.model, 79463999 bytes)",
-      "license": "Apache-2.0 (MACE foundation models)",
+      "license": "ASL (as stated in the mace-foundations model table)",
       "notes": "float64 is the primary MACE profile; the float32 profile below is a separate identity and never mixed with float64 results."
     },
     "mace_omat_float32": {
@@ -36,7 +36,7 @@
       "dtype": "float32",
       "model_sha256": "d4b14be9afa294eebdbe31a0280b26a0fa29715771e978cbfd3ca24e0d90307a",
       "source_url": "https://github.com/ACEsuit/mace-foundations/releases/tag/mace_omat_0 (asset mace-omat-0-medium.model, 79463999 bytes)",
-      "license": "Apache-2.0 (MACE foundation models)",
+      "license": "ASL (as stated in the mace-foundations model table)",
       "notes": "Same artifact as mace_omat; default_dtype=float32 only."
     },
     "dpa_omat": {
@@ -48,7 +48,7 @@
       "dtype": "upstream/model-defined",
       "model_sha256": "86dd3a804d78ca5d203ebf98747e8f16dff9713ba8950097ceb760b161e19907",
       "source_url": "https://huggingface.co/deepmodelingcommunity/DPA-3.1-3M (artifact DPA-3.1-3M.pt, 47176032 bytes)",
-      "license": "LGPL-2.1 (deepmd-kit ecosystem model distribution)",
+      "license": "CC-BY-4.0 (deepmodelingcommunity/DPA-3.1-3M model card)",
       "notes": "Multitask checkpoint; branch list read from the artifact itself via 'dp --pt show <model> model-branch' (32 branches incl. Omat24). Head recorded here and passed through the mliport DPA wrapper; fail-closed for multi-task PESs."
     },
     "grace_omat": {
@@ -67,7 +67,7 @@
         "metadata.json": "cec1de4200aec61566e573dd07005efbadeab4897bd717b83c6aff67c8797ae1"
       },
       "source_url": "https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models (checkpoints/GRACE-2L-OMAT-medium-base-checkpoint.tar.gz)",
-      "license": "see AMS-ICAMS-RUB/grace-foundation-models model card",
+      "license": "Academic Software License (ASL), per the AMS-ICAMS-RUB/grace-foundation-models model card",
       "notes": "Official exported SavedModel (the format tensorpotential TPCalculator loads). Downloaded via tensorpotential grace_models download from https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models. The raw checkpoint tarball (sha256 7d4246d2...0862 for base / 763b7e56...d0aa for fp64) shares the same upstream release lineage; hashes here pin the loaded artifact files.",
       "upstream_model_dir": "GRACE-2L-OMAT-medium-base"
     },
@@ -87,7 +87,7 @@
         "metadata.json": "cec1de4200aec61566e573dd07005efbadeab4897bd717b83c6aff67c8797ae1"
       },
       "source_url": "https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models (checkpoints/GRACE-2L-OMAT-medium-base-fp64-checkpoint.tar.gz)",
-      "license": "see AMS-ICAMS-RUB/grace-foundation-models model card",
+      "license": "Academic Software License (ASL), per the AMS-ICAMS-RUB/grace-foundation-models model card",
       "notes": "Official exported SavedModel (the format tensorpotential TPCalculator loads). Downloaded via tensorpotential grace_models download from https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models. The raw checkpoint tarball (sha256 7d4246d2...0862 for base / 763b7e56...d0aa for fp64) shares the same upstream release lineage; hashes here pin the loaded artifact files.",
       "upstream_model_dir": "GRACE-2L-OMAT-medium-base-fp64"
     }
