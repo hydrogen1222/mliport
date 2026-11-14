@@ -38,6 +38,70 @@ if TYPE_CHECKING:
 # Dtype values accepted by MACE's MACECalculator.
 _VALID_DTYPES = {"float32", "float64"}
 
+#: mace-torch 0.3.16 model classes that have no potential-energy head.
+#: ``AtomicDipolesMACE`` and ``AtomicDielectricMACE`` (mace/modules/models.py)
+#: predict dipoles and polarizabilities; the MACE-MDP family is built from them.
+#: A single-point energy, force or stress from one of these would be fabricated.
+_DIPOLE_ONLY_MODEL_CLASSES = frozenset(
+    {"AtomicDipolesMACE", "AtomicDielectricMACE", "DipolePolarizabilityMACE"}
+)
+
+#: ``PolarMACE`` (mace/modules/extensions.py) is the polarizable-electrostatics
+#: model MACE-POLAR-1 ships; upstream loads it through ``mace_polar`` with
+#: ``MACECalculator(model_type="PolarMACE")`` and extra charge/density inputs.
+_POLAR_MODEL_CLASSES = frozenset({"PolarMACE"})
+
+
+def unsupported_mace_model_reason(model: Any) -> str | None:
+    """Why ``model`` cannot serve as an mliport potential-energy model.
+
+    The decision is made from the *loaded model object* -- its class name and
+    the attributes mace-torch 0.3.16 sets on it -- never from the file name.
+    Returns ``None`` for an ordinary energy model (``MACE`` /
+    ``ScaleShiftMACE``, including the multihead MACE-MH-1).
+
+    Discriminators, from the pinned mace-torch 0.3.16 source:
+
+    * dipole/polarizability only: ``AtomicDipolesMACE`` / ``AtomicDielectricMACE``
+      (``mace/modules/models.py``); they forward ``dipole``/
+      ``polarizability``, not ``energy``.
+    * polarizable electrostatics: ``PolarMACE``
+      (``mace/modules/extensions.py``), which also carries
+      ``atomic_multipoles_max_l`` and ``charges_irreps``.
+    * charge/spin embeddings: any model built with ``embedding_specs`` gets a
+      ``joint_embedding`` block (``mace/modules/models.py``); the MACE-OMOL
+      family reads the total charge and spin from ``atoms.info``.
+    """
+    name = type(model).__name__
+    if name in _DIPOLE_ONLY_MODEL_CLASSES:
+        return (
+            f"{name} is a dipole/polarizability model without a potential-energy "
+            "head (the MACE-MDP family). An energy, force or stress from it would "
+            "be fabricated. Upstream loads it with MACECalculator("
+            "model_type='DipoleMACE' or 'DipolePolarizabilityMACE'); mliport only "
+            "runs potential-energy models."
+        )
+    if name in _POLAR_MODEL_CLASSES or (
+        hasattr(model, "atomic_multipoles_max_l") and hasattr(model, "charges_irreps")
+    ):
+        return (
+            f"{name} is a polarizable-electrostatics model (MACE-POLAR). It needs "
+            "the upstream mace_polar loader with MACECalculator("
+            "model_type='PolarMACE') and external charge/density inputs that "
+            "mliport does not supply, so the stress and energy would be wrong."
+        )
+    embedding_specs = getattr(model, "embedding_specs", None)
+    if embedding_specs or hasattr(model, "joint_embedding"):
+        keys = sorted(str(key) for key in embedding_specs) if embedding_specs else []
+        return (
+            f"{name} carries charge/spin joint embeddings (embedding_specs="
+            f"{keys}). The MACE-OMOL family reads the total charge and spin from "
+            "atoms.info; mliport does not propagate them, so the potential would "
+            "silently describe a different charge state. Load it with the "
+            "upstream MACE-OMOL tooling instead of a plain MACE energy model."
+        )
+    return None
+
 
 class MACECalculatorWrapper(BaseMLIPCalculator):
     """Wrapper for MACE ASE calculators."""
@@ -137,6 +201,15 @@ class MACECalculatorWrapper(BaseMLIPCalculator):
             if self._head is not None:
                 kwargs["head"] = self._head
             calculator = MACECalculator(**kwargs)
+            # Fail closed on checkpoints that cannot serve as a potential-energy
+            # model: a dipole/polarizability-only or polarizable-electrostatics
+            # model, or one whose charge/spin embeddings mliport cannot feed.
+            loaded_models = getattr(calculator, "models", None)
+            for model in loaded_models if isinstance(loaded_models, list) else []:
+                reason = unsupported_mace_model_reason(model)
+                if reason is not None:
+                    self._calculator = None
+                    raise ValueError(f"Unsupported MACE model: {reason}")
             raw_heads = getattr(calculator, "available_heads", None)
             if isinstance(raw_heads, str):
                 available_heads = [raw_heads]

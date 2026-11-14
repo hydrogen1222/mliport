@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+MACE model-class gate:
+
+- `MACECalculatorWrapper` now refuses checkpoints that are not potential-energy
+  models instead of evaluating them: dipole/polarizability-only models
+  (`AtomicDipolesMACE`, `AtomicDielectricMACE`, the MACE-MDP family),
+  MACE-POLAR polarizable electrostatics (`PolarMACE` from
+  `mace.modules.extensions`, which upstream loads through `mace_polar` with
+  `model_type="PolarMACE"`), and models with charge/spin joint embeddings
+  (`embedding_specs`/`joint_embedding`, the MACE-OMOL family, which reads total
+  charge and spin from `atoms.info`). The decision is taken from the loaded
+  model object, never from the file name, and the error names the reason and
+  the upstream loader.
+- MACE-MH-1 is unaffected: it loads as `ScaleShiftMACE` with six heads and no
+  embedding block, and a test pins that.
+- `docs/backends/mace.md` (+ `.zh.md`) documents the gate.
+
+
 Installer environment contract and CI repair:
 
 - An existing target environment is now inspected before any step runs. A
