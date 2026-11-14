@@ -138,8 +138,10 @@ mliport 不负责下载模型。请用上游工具下载模型文件，再用 `-
 ## GPU 架构
 
 PyTorch 和 TensorFlow 针对不同代的 GPU 提供不同的 CUDA 版本，安装脚本会自动选择：
-Maxwell、Pascal、Volta 用 cu126，Turing 及更新的用 cu128 或更高。`mliport setup` 会打印检测
-到的 GPU 和准备采用的安装方案。
+Maxwell、Pascal、Volta 用 cu126，Turing 及更新的用 cu128 或更高。CUDA 13 频道（`cu130`，
+UMA 运行时从 torch 2.13 起使用）需要 **580 或更新**的 NVIDIA 驱动，而且该构建不包含 Turing
+以下的内核，所以 Volta 继续留在 `cu126`，老驱动也能用。`mliport setup` 会打印检测到的 GPU
+和准备采用的安装方案。
 
 <!-- BEGIN GENERATED: gpu-routes -->
 | 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
@@ -159,7 +161,7 @@ Maxwell、Pascal、Volta 用 cu126，Turing 及更新的用 cu128 或更高。`m
 `mliport doctor` 会对检测到的 GPU 打印这个分类。
 
 Turing 之前的 GPU 依赖 CUDA 12.6 版本，而 PyTorch 从 2.15 起不再提供。这类机器上请保持安装
-脚本装的版本，不要升级框架。
+脚本装的版本，不要升级框架；CUDA 13 的构建在这里也帮不上忙，因为它不包含 Turing 以下的内核。
 
 ## 离线机器
 

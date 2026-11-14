@@ -72,7 +72,8 @@ license is non-commercial research only; see [Citations](../citations.md).
   rather than pretending to control the weights.
 - **Runtime pin.** `fairchem-core==2.25.0` on torch 2.13.0. Volta (V100) stays on
   the `cu126` wheels, Turing and newer use `cu130`, because the CUDA 13 builds
-  carry no kernel below Turing. 2.25.0 is the pinned release that loads
+  carry no kernel below Turing and need an NVIDIA driver of 580 or newer; the
+  `cu126` wheels work with older drivers. 2.25.0 is the pinned release that loads
   `uma-s-1p2p1` (UMA-S 1.2.1). The beta scientific validation of `uma_omat` ran
   on `fairchem-core==2.21.0` with torch 2.8.0; it describes that runtime and is
   not carried over to this one, which has its own callable check.

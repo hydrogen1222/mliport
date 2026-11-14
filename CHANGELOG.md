@@ -23,6 +23,10 @@ UMA runtime upgrade for UMA-S 1.2.1:
 - `docs/backends/uma.md` (+ `.zh.md`) records that the beta scientific
   validation of `uma_omat` ran on fairchem-core 2.21.0 and does not carry over
   to this runtime.
+- `docs/installation.md` (+ `.zh.md`) and the UMA page state the driver
+  requirement: the CUDA 13 `cu130` wheels used on Turing and newer need an
+  NVIDIA driver of 580 or newer, while Volta stays on `cu126` and keeps working
+  with older drivers.
 
 DPA-3.1 checkpoints load on the DPA4 runtime:
 

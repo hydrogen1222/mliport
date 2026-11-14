@@ -57,7 +57,8 @@ Meta FAIR 的 UMA 模型通过上游的 `fairchem-core` 加载。`--model-type` 
   需要手动开启，MD 默认不用，以保证精度。`--activation-checkpointing` 可以用速度换显存。
 - **精度**由模型决定，mliport 只记录框架版本。
 - **固定的运行环境。** `fairchem-core==2.25.0` 配 torch 2.13.0。Volta（V100）继续用 `cu126`
-  的 wheel，Turing 及更新的卡用 `cu130`，因为 CUDA 13 的构建不再包含 Turing 以下的内核。
+  的 wheel，Turing 及更新的卡用 `cu130`，因为 CUDA 13 的构建不再包含 Turing 以下的内核，并且
+  需要 580 或更新的 NVIDIA 驱动；`cu126` 的 wheel 在更老的驱动上也能用。
   2.25.0 是能加载 `uma-s-1p2p1`（UMA-S 1.2.1）的固定版本。`uma_omat` 的 beta 科学验证是在
   `fairchem-core==2.21.0` 和 torch 2.8.0 上做的，那批结论只对那套环境成立，不能直接套用到
   这里；新环境有它自己的可调用性检查记录。
