@@ -123,10 +123,19 @@ def test_validate_accepts_supported_optimizers() -> None:
 
 
 def test_validate_ensemble_error_message_quotes_value() -> None:
-    cfg = IncarConfig.from_string("MD_ENSEMBLE = NPT\n")
+    cfg = IncarConfig.from_string("MD_ENSEMBLE = NPH\n")
     errors = cfg.validate()
     assert len(errors) == 1
-    assert "Invalid MD_ENSEMBLE 'npt'. " in errors[0], errors[0]
+    assert "Invalid MD_ENSEMBLE 'nph'. " in errors[0], errors[0]
+    assert "Must be one of: nve, npt, nvt" in errors[0], errors[0]
+
+
+def test_validate_accepts_npt_ensemble_and_its_keys() -> None:
+    cfg = IncarConfig.from_string(
+        "CALC_TYPE = MD\nMD_ENSEMBLE = NPT\nPRESSURE_GPA = 0.5\n"
+        "NPT_TDAMP = 50\nNPT_PDAMP = 500\nNPT_TCHAIN = 3\n"
+    )
+    assert cfg.validate() == []
 
 
 def test_validate_md_thermostat_names() -> None:
@@ -171,6 +180,6 @@ def test_validate_invalid_dtype() -> None:
 
 
 def test_validate_multiple_errors_collected() -> None:
-    cfg = IncarConfig.from_string("CALC_TYPE = PHONON\nMD_ENSEMBLE = NPT\n")
+    cfg = IncarConfig.from_string("CALC_TYPE = PHONON\nMD_ENSEMBLE = NPH\n")
     errors = cfg.validate()
     assert len(errors) == 2

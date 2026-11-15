@@ -278,6 +278,13 @@ class IncarConfig(dict):
             "NHC_TCHAIN": "Molecular Dynamics",
             "NHC_TLOOP": "Molecular Dynamics",
             "COM_POLICY": "Molecular Dynamics",
+            "PRESSURE_GPA": "Molecular Dynamics",
+            "NPT_TDAMP": "Molecular Dynamics",
+            "NPT_PDAMP": "Molecular Dynamics",
+            "NPT_TCHAIN": "Molecular Dynamics",
+            "NPT_PCHAIN": "Molecular Dynamics",
+            "NPT_TLOOP": "Molecular Dynamics",
+            "NPT_PLOOP": "Molecular Dynamics",
         }
 
         current_category = None
@@ -427,7 +434,7 @@ class IncarConfig(dict):
                     f"Must be one of: {', '.join(valid_optimizers)}"
                 )
 
-        valid_md_ensembles = {"nve", "nvt"}
+        valid_md_ensembles = ("nve", "npt", "nvt")
         if "MD_ENSEMBLE" in self:
             ensemble = self.get_str("MD_ENSEMBLE").lower()
             if ensemble not in valid_md_ensembles:

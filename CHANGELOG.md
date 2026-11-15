@@ -463,6 +463,43 @@ Review fixes (scientific correctness, data safety, robustness):
 - **CI.** pytest failures and ruff findings are emitted as GitHub
   annotations.
 
+Isotropic NPT molecular dynamics (ASE backends):
+
+- `mliport md --ensemble NPT` runs ASE's isotropic Martyna-Tobias-Klein
+  integrator on the UMA, MACE, GRACE and DPA ASE runtimes, with
+  `--pressure-gpa` (positive is compressive), `--npt-tdamp`, `--npt-pdamp`,
+  `--npt-tchain`, `--npt-pchain`, `--npt-tloop` and `--npt-ploop`. The same
+  options are available from INCAR-style files, `settings.ini`, the Python
+  API, the queue and the TUI. NEP/GPUMD, constraints, partial PBC, zero
+  temperature and models without stress are refused with an explicit error.
+- The trajectory is variable-cell: `vasp/XDATCAR` is not written (the reason
+  is logged), `raw/trajectory.traj` keeps every frame's cell and momenta,
+  `raw/md.csv` records volume and total pressure, and the run is marked
+  not transport-eligible. `docs/workflows/md.md` (+ `.zh.md`) and
+  `docs/outputs.md` (+ `.zh.md`) describe the workflow and its limits.
+- Fix: an INCAR file with `MD_ENSEMBLE = NPT` was rejected by the INCAR
+  validation in `mliport run` ("Invalid MD_ENSEMBLE"), and two tests
+  asserted that rejection. NPT now passes validation, the invalid-value
+  tests use a genuinely invalid ensemble, and a test covers the INCAR path.
+- The beta validation matrix no longer lists NPT as unsupported: NPT was added
+  after the campaign, so it is "not run in this campaign" (and the limitations
+  list says so) rather than "do not claim".
+- The `docs/workflows/md.md` option table says pre-relaxation is off by default
+  for NPT as well as NVE, matching the CLI.
+
+Repository hygiene:
+
+- `mliport/pyproject.toml` no longer carries its own `[tool.ruff]` section.
+  It made ruff use only its default rules for `mliport/mliport/**`, so the
+  repository rule set (bugbear, simplify, perflint, ruff-specific, ...) was
+  applied to the tests alone. One configuration now governs everything; the
+  findings it surfaced were fixed (import order, `ClassVar` annotations,
+  explicit `zip(strict=False)` / `subprocess.run(check=False)`, small
+  behavior-neutral rewrites). Rule families whose fixes are not
+  behavior-neutral stay ignored, each with a reason in `pyproject.toml`.
+- `test_json_writer.py` and `test_dpa_checkpoint_conversion.py` skip, instead
+  of failing at collection, when torch is not installed.
+
 ## 2.0.0b4
 
 Repository freeze / state isolation / compatibility audit beta:

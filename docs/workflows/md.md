@@ -27,6 +27,8 @@ mliport md structure.cif --model model.pt --model-type mace \
   --no-pre-relax --output runs/npt-800K
 ```
 
+In INCAR-style files and `settings.ini` the same options are `ENSEMBLE` (or `MD_ENSEMBLE`) `= NPT`, `PRESSURE_GPA` (alias `PRESSURE`), `NPT_TDAMP`, `NPT_PDAMP`, `NPT_TCHAIN`, `NPT_PCHAIN`, `NPT_TLOOP` and `NPT_PLOOP`; the NPT-only keys are rejected unless the ensemble is NPT.
+
 The parameters `--npt-tchain`/`--npt-pchain` default to 3 and `--npt-tloop`/`--npt-ploop` to 1. Times are in fs. **Positive pressure is compressive (GPa)**; the conversion to ASE eV/Å³ is recorded. Thermostat and barostat damping are not equilibration time guarantees. The NPT run uses 3D PBC, a finite positive-volume cell, and model **stress**. It rejects all atomic/COM constraints, partial PBC, zero T, and unsupported backends (including NEP/GPUMD). Automatic COM handling zeroes initial COM momentum once; the recorded MTK thermostat set point accounts for the 3 missing kinetic degrees of freedom.
 
 Standard XDATCAR represents fixed-cell MD only: NPT disables XDATCAR with a logged reason, while `raw/trajectory.traj` preserves each frame's cell and momenta. The `md.csv` file records instantaneous **total** pressure including the kinetic term, and volume per saved frame. NPT trajectory metadata is marked variable-cell / transport-ineligible: do **not** calculate conventional fixed-cell MSD, Einstein–Helfand conductivity or diffusion from it. For solid electrolytes, equilibrate volume/cell at the target T and pressure, extract the *equilibrated-window mean cell* with an independent statistical check, then start a **separate** fixed-cell NVT/NVE run. The last NPT frame is not automatically an average cell. NPT frame restarts do not preserve hidden MTK chain/barostat state and are not exact trajectory continuation. Near a phase transition or an anisotropic crystal, an isotropic cell-only barostat may be insufficient.
@@ -48,7 +50,7 @@ Standard XDATCAR represents fixed-cell MD only: NPT disables XDATCAR with a logg
 | `--save-interval` | write a frame every N steps (default 10) |
 | `--seed` | random seed; generated and recorded when omitted |
 | `--velocity-policy`, `--com-policy` | how velocities and the center-of-mass motion are handled |
-| `--pre-relax`, `--pre-relax-steps`, `--pre-relax-fmax` | a short positions-only relaxation before MD (default on for NVT, off for NVE; 50 steps, 0.1 eV/Å) |
+| `--pre-relax`, `--pre-relax-steps`, `--pre-relax-fmax` | a short positions-only relaxation before MD (default on for NVT, off for NVE and NPT; 50 steps, 0.1 eV/Å) |
 | `--fmax-abort` | abort when a force exceeds this many eV/Å (default 20) |
 | `--write-outcar`, `--write-xdatcar`, `--write-trajectory` | which outputs to write |
 

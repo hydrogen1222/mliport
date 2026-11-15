@@ -50,6 +50,12 @@ run.log
 configurational against total stress. An ASE trajectory from any run can be turned
 into a standard XDATCAR with `mliport convert-xdatcar`.
 
+**NPT runs** change the cell, which a standard XDATCAR cannot represent, so
+`vasp/XDATCAR` is not written (the reason is logged). `raw/trajectory.traj`
+keeps the cell and momenta of every frame, `raw/md.csv` adds the volume and the
+total pressure (kinetic term included), and the manifest marks the trajectory
+variable-cell and not transport-eligible. See [MD](workflows/md.md).
+
 **XDATCAR PBC limitation:** standard VASP XDATCAR cannot encode the ASE
 `pbc` mask. For a non-3D-periodic MD input, the export warns that the mask
 is lost, while `artifacts.json` records the original `trajectory.pbc` array.

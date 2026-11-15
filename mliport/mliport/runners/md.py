@@ -10,6 +10,8 @@ Molecular dynamics runner.
 Runs MD simulations using ASE's integrators:
 - NVT ensemble (Langevin, Bussi/CSVR, or Nose-Hoover-chain dynamics)
 - NVE ensemble (Velocity Verlet)
+- NPT ensemble (isotropic Martyna-Tobias-Klein, ASE ``IsotropicMTKNPT``;
+  variable-cell, ASE-backed engines only)
 
 Outputs trajectories in multiple formats.
 """
@@ -76,8 +78,9 @@ __all__ = ["ForceSafetyAbort", "MDRunner"]
 class MDRunner(BaseRunner):
     """Run molecular dynamics simulations.
 
-    Supports NVT (Langevin, Bussi/CSVR, or Nose-Hoover chain) and NVE
-    (Velocity Verlet) ensembles.
+    Supports NVT (Langevin, Bussi/CSVR, or Nose-Hoover chain), NVE
+    (Velocity Verlet) and isotropic MTK NPT ensembles. NPT changes the cell, so
+    its trajectory is marked variable-cell and is not transport-eligible.
     Can optionally reduce large initial atomic forces with a positions-only
     pre-relaxation before MD.
 

@@ -278,6 +278,7 @@ Benchmark provenance: warmup stop `fixed_count:5` x10; warmup stop `stability:la
 - Physical transport conclusions (Arrhenius) need longer trajectories
   than the beta budget; stage-2 results are exploratory and honestly
   classified.
-- No NPT, no electronic structure, no model uncertainty unless a
+- Isotropic MTK NPT (ASE backends) was added after this campaign and is
+  not covered by it; no electronic structure, no model uncertainty unless a
   backend implements and audits it.
 - V100 validation does not prove every GPU architecture.

@@ -106,6 +106,23 @@ def test_npt_only_options_are_rejected_outside_npt(tmp_path, key, value):
         )
 
 
+def test_incar_file_path_accepts_npt_and_its_keys(tmp_path):
+    """`mliport run` validates the INCAR before resolving it; NPT must pass both."""
+    from mliport.config.incar import IncarConfig
+
+    incar = IncarConfig.from_string(
+        "CALC_TYPE = MD\nMODEL_TYPE = mace\n"
+        f"MODEL_PATH = {tmp_path / 'unused.model'}\n"
+        "MD_ENSEMBLE = NPT\nPRESSURE_GPA = 0.5\nNPT_TDAMP = 50\nNPT_PDAMP = 500\n"
+    )
+    assert incar.validate() == []
+    resolved = resolve_config(calc_type="md", incar=dict(incar.items()))
+    assert resolved.run_options["ensemble"] == "NPT"
+    assert resolved.run_options["pressure_gpa"] == 0.5
+    assert resolved.run_options["npt_tdamp"] == 50.0
+    assert resolved.run_options["npt_pdamp"] == 500.0
+
+
 def test_fairchem_alias_is_accepted_for_npt(tmp_path):
     resolved = resolve_config(
         calc_type="md",
