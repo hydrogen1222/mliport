@@ -854,8 +854,12 @@ _SPECS: list[OptionSpec] = [
         description=(
             "Output directory for the calculation. Used when the command line "
             "does not pass --output; the resolved config is written into the "
-            "final job directory."
+            "final job directory. Relative values resolve against the file that "
+            "declares them (the INCAR folder for an INCAR), and `mliport run` "
+            "defaults to <INCAR folder>/results when neither --output nor "
+            "OUTPUT_DIR is given."
         ),
+        is_path=True,
     ),
     OptionSpec(
         "job_name",

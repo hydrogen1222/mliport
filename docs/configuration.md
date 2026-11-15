@@ -126,6 +126,28 @@ mliport template sp --engine mace --output INCAR.mace
 mliport template sp --output INCAR.neutral   # backend-neutral, MODEL_TYPE=REQUIRED
 ```
 
+### A task folder
+
+The intended daily use is one folder per task: an `INCAR.mliport` next to the
+structure file (`POSCAR`, `CONTCAR`, `structure.cif` or `structure.xyz`). Then
+`mliport run` needs no arguments at all:
+
+```bash
+cd LiDS-on-LPSC
+mliport run
+```
+
+`mliport run` writes into `results/` in the folder that holds the INCAR. That
+default is a `run`-only convenience: `--output` and `OUTPUT_DIR` still win, a
+relative `OUTPUT_DIR` is resolved against the INCAR folder rather than the
+current directory, and `OUTPUT_DIR = .` restores the previous behaviour of
+writing into the current directory. A `results/` directory that already holds a
+run is refused, as before, until you pass `--overwrite`.
+
+`CALC_TYPE = CONFSEARCH` is accepted by `mliport run` and takes exactly the
+same path as `mliport confsearch run`. `CALC_TYPE = BATCH` is not: use
+`mliport batch`, which needs its own input directory.
+
 ## Options that belong to one backend
 
 | Option | Backend | What it does |

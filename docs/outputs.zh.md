@@ -27,6 +27,10 @@ run.log                 运行的实时日志
 运行期间输出目录会被锁定。如果目录里已经有结果（之前的计算，或者 VASP 自己的 `OUTCAR`、
 `CONTCAR`），程序会拒绝写入，确定要覆盖时加 `--overwrite`。
 
+`mliport run` 默认写进 INCAR 所在文件夹下的 `results/`（见[配置](configuration.md)里的
+“任务文件夹”）；`--output` 或 `OUTPUT_DIR` 仍然可以指定别的目录。其他子命令在不指定的情况下
+照旧写进当前目录。
+
 ## 分子动力学
 
 MD 的完整原始数据和 VASP 格式的导出文件分开存放：
