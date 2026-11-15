@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+`models/` directory convention (tracking: #61):
+
+- A `MODEL_PATH` that is a file name (no path separator) is looked up next to
+  the declaring file first and then in `<MLIPORT_ROOT>/models/<name>` and
+  `<MLIPORT_ROOT>/models/*/<name>` (one level of subdirectories). Two matches
+  are an error instead of an arbitrary pick, because a different checkpoint is
+  a different model identity. Values that contain a path separator keep exactly
+  their previous meaning and are never redirected into `models/`. A bare name
+  that cannot be found now fails before the run starts, with every searched
+  location and the files `models/` does contain, instead of failing later at
+  model load.
+- `MLIPORT_ROOT` is taken from the environment, else from the parent of an
+  installer-created `.venv-<engine>` prefix; with no root a bare file name is
+  refused with instructions rather than resolved against a guess. The generated
+  `bin/mliport-<engine>` launchers export it (POSIX and Windows).
+- `mliport doctor` reports the resolved checkout root, the `models/` directory
+  and the model files it holds.
+- The resolved absolute model path is what `resolved_config.json` records, as
+  before - only the lookup that produced it is new.
+- `docs/configuration.md` (+ `.zh.md`) documents the convention, the lookup
+  order, the fail-closed cases and the new environment variable.
+- `models/` stays git-ignored and the repository hygiene policy still refuses
+  tracked weights.
+
 DPA-SSE support through a DPA-2 legacy runtime:
 
 - DPA has a second, explicitly selected environment. `.venv-dpa-legacy` (install

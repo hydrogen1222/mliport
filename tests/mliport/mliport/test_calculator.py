@@ -199,7 +199,7 @@ class TestNoImplicitAccelerationPresets:
             calc_type="sp",
             cli={
                 "model_type": "uma",
-                "model_path": "uma.pt",
+                "model_path": "./uma.pt",
                 "device": "cpu",
                 "inference_mode": "turbo",
             },

@@ -502,8 +502,10 @@ def test_config_show() -> None:
             os.chdir(d)
             # the backend contract is fail-closed: no implicit UMA
             assert main(["config", "show"]) == 1
+            # A bare MODEL_PATH file name is a models/ lookup (#61 R2), so the
+            # settings file uses an explicit path here.
             Path("settings.ini").write_text(
-                "[md]\nMODEL_TYPE = UMA\nMODEL_PATH = model.pt\nTASK = omat\n",
+                "[md]\nMODEL_TYPE = UMA\nMODEL_PATH = ./model.pt\nTASK = omat\n",
                 encoding="utf-8",
             )
             rc = main(["config", "show"])
@@ -771,7 +773,7 @@ def test_run_incar_calculation_neb_uses_endpoint_paths(
     incar.write_text(
         "CALCULATION = NEB\n"
         "MODEL_TYPE = UMA\n"
-        "MODEL_PATH = model.pt\n"
+        "MODEL_PATH = ./model.pt\n"
         "TASK = omat\n"
         "NEB_INITIAL = POSCAR\n"
         "NEB_FINAL = final.vasp\n"

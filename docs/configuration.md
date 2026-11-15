@@ -177,6 +177,44 @@ the JSON output and a `Dispersion:` line in the OUTCAR-style header. The
 `torch-dftd` package needs PyTorch, which the MACE, DPA and UMA environments
 already have.
 
+## Model files: `models/`
+
+Model weights are not part of mliport and never committed. Keep them in the
+`models/` directory at the root of the mliport checkout - it is in
+`.gitignore` - and refer to a checkpoint by its file name:
+
+```text
+MODEL_TYPE = MACE
+MODEL_PATH = mace-omat-0-medium.model
+```
+
+A `MODEL_PATH` without any path separator is a *file name*, and mliport looks
+it up in this order:
+
+1. a file of that name next to the INCAR (this is what an explicit path
+   already did),
+2. `<MLIPORT_ROOT>/models/<name>`,
+3. `<MLIPORT_ROOT>/models/*/<name>`, exactly one level of subdirectories.
+
+Two files with that name in step 3 are an error rather than a coin flip: a
+different checkpoint is a different model identity, so the choice has to be
+made by you. A value that contains a path separator is a path and nothing else;
+it is resolved against the file that declares it and is never redirected into
+`models/`.
+
+`MLIPORT_ROOT` is the mliport checkout itself. It comes from the
+`MLIPORT_ROOT` environment variable; when that is unset, mliport accepts the
+parent of `sys.prefix` if the interpreter runs from an installer-created
+`.venv-<engine>` environment, whose `bin/mliport-<engine>` launcher exports it
+for you. Without a root, a bare file name is refused with instructions instead
+of being resolved against a guess. When a model cannot be found, the error
+names every location that was searched and lists the files `models/` does
+contain.
+
+`mliport doctor` reports the root it would use, the `models/` directory and the
+model files in it. The absolute path that was resolved is what
+`resolved_config.json` records for every run.
+
 ## Scientific defaults
 
 Defaults for temperature, timestep, step counts, thermostat, optimizer, `fmax`,
@@ -206,6 +244,7 @@ that quietly lacks them.
 | Variable | Effect |
 |---|---|
 | `MLIPORT_SETTINGS` | explicit `settings.ini` path |
+| `MLIPORT_ROOT` | mliport checkout root; where a bare `MODEL_PATH` file name is looked up in `models/` |
 | `MLIPORT_JOBS_DIR` | queue and job registry directory |
 | `MLIPORT_CANCEL_GRACE_SECONDS` | grace period when cancelling a job |
 | `MLIPORT_LEASED_GPU_UUID` | the single GPU leased to a queue worker |

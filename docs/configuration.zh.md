@@ -159,6 +159,34 @@ mliport opt slab.vasp --model model.model --model-type mace --task bulk --d3
 是否加了 D3 会记录下来：JSON 结果的模型信息里有 `dispersion` 字段，OUTCAR 文件头里有一行
 `Dispersion:`。`torch-dftd` 依赖 PyTorch，MACE、DPA 和 UMA 的环境里都已经有了。
 
+## 模型文件：`models/`
+
+模型权重不属于 mliport，也不会进仓库。把权重放在 mliport 仓库根目录的 `models/` 下（这个
+目录已在 `.gitignore` 里），在 `MODEL_PATH` 里只写文件名即可：
+
+```text
+MODEL_TYPE = MACE
+MODEL_PATH = mace-omat-0-medium.model
+```
+
+不含路径分隔符的 `MODEL_PATH` 按文件名处理，查找顺序是：
+
+1. INCAR 旁边的同名文件（显式路径本来就是这么解析的），
+2. `<MLIPORT_ROOT>/models/<文件名>`，
+3. `<MLIPORT_ROOT>/models/*/<文件名>`，只找一层子目录。
+
+第 3 步如果撞到两个同名文件，程序报错而不是替你挑一个：不同的 checkpoint 是不同的模型身份，
+这个选择必须由人来做。含路径分隔符的值就是路径，相对声明它的文件解析，不会再去 `models/` 里找。
+
+`MLIPORT_ROOT` 就是 mliport 仓库根目录。它取自环境变量 `MLIPORT_ROOT`；没有设置时，如果当前
+解释器跑在安装器创建的 `.venv-<engine>` 环境里，就取 `sys.prefix` 的父目录——安装器生成的
+`bin/mliport-<engine>` 启动脚本会替你导出这个变量。确定不了根目录时，只写文件名的取值会直接
+报错并说明怎么设置，不会去猜。找不到模型时，错误信息会列出所有搜索过的位置，以及 `models/`
+里现有的文件。
+
+`mliport doctor` 会打印它使用的根目录、`models/` 路径和其中的模型文件清单。每次运行实际
+解析出的绝对模型路径都记录在 `resolved_config.json` 里。
+
 ## 科学参数的默认值
 
 温度、步长、步数、恒温器、优化器、`fmax`、NEB 参数等都有内置默认值，按计算类型区分，每次
@@ -185,6 +213,7 @@ NEB 的必需输出不能关闭，关闭会报错。
 | 变量 | 作用 |
 |---|---|
 | `MLIPORT_SETTINGS` | 明确指定 `settings.ini` 路径 |
+| `MLIPORT_ROOT` | mliport 仓库根目录；只写文件名的 `MODEL_PATH` 在其中的 `models/` 下查找 |
 | `MLIPORT_JOBS_DIR` | 队列与作业注册表目录 |
 | `MLIPORT_CANCEL_GRACE_SECONDS` | 取消作业时的宽限时间 |
 | `MLIPORT_LEASED_GPU_UUID` | 分配给队列 worker 的 GPU |

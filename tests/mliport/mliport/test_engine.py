@@ -68,7 +68,7 @@ class TestEngineConfig:
         from mliport.engine import EngineConfig
 
         resolved = resolve_config(
-            calc_type="md", cli={"model_type": "uma", "model_path": "model.pt"}
+            calc_type="md", cli={"model_type": "uma", "model_path": "./model.pt"}
         )
         config = EngineConfig.from_resolved(resolved)
         assert config.run_options["fmax_abort"] == 20.0
@@ -78,7 +78,7 @@ class TestEngineConfig:
         from mliport.engine import EngineConfig
 
         resolved = resolve_config(
-            calc_type="neb", cli={"model_type": "uma", "model_path": "model.pt"}
+            calc_type="neb", cli={"model_type": "uma", "model_path": "./model.pt"}
         )
         config = EngineConfig.from_resolved(resolved)
         assert config.run_options["fmax_abort"] == 20.0
@@ -92,7 +92,7 @@ class TestEngineConfig:
             calc_type="sp",
             cli={
                 "model_type": model_type,
-                "model_path": "model.pt",
+                "model_path": "./model.pt",
                 "torch_num_threads": 3,
             },
         )
@@ -107,7 +107,7 @@ class TestEngineConfig:
             calc_type="sp",
             cli={
                 "model_type": "uma",
-                "model_path": "model.pt",
+                "model_path": "./model.pt",
                 "activation_checkpointing": False,
             },
         )
@@ -271,7 +271,7 @@ class TestCalculationEngineSetup:
 
         resolved = resolve_config(
             calc_type="md",
-            cli={"model_type": model_type, "model_path": "model"},
+            cli={"model_type": model_type, "model_path": "./model"},
         )
         runner = CalculationEngine.from_config(
             EngineConfig.from_resolved(resolved)

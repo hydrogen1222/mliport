@@ -243,13 +243,28 @@ def _resolve_declared_paths(sources: dict[str, ResolvedValue], schema: Schema) -
         spec = schema.resolve(key)
         if spec is None or not spec.is_path or not resolved.value:
             continue
-        path = Path(str(resolved.value)).expanduser()
-        if not path.is_absolute():
-            if resolved.base_dir is None:
-                raise ValueError(f"Path option {key!r} has no source base directory")
-            path = Path(resolved.base_dir) / path
+        if spec.name == "model_path":
+            # The `models/` convention (#61 R2) owns MODEL_PATH: a bare file
+            # name is looked up in the checkout's models/ directory, while a
+            # real path keeps the plain resolution below unchanged.
+            from mliport.model_lookup import (  # noqa: PLC0415
+                resolve_model_reference,
+            )
+
+            path = resolve_model_reference(
+                str(resolved.value), base_dir=resolved.base_dir
+            )
+        else:
+            path = Path(str(resolved.value)).expanduser()
+            if not path.is_absolute():
+                if resolved.base_dir is None:
+                    raise ValueError(
+                        f"Path option {key!r} has no source base directory"
+                    )
+                path = Path(resolved.base_dir) / path
+            path = path.resolve()
         sources[key] = ResolvedValue(
-            str(path.resolve()),
+            str(path),
             resolved.source,
             base_dir=resolved.base_dir,
             location=resolved.location,

@@ -57,7 +57,7 @@ def test_pi01_resolver_requires_an_explicit_backend():
         resolve_config(calc_type="sp")
     explicit = resolve_config(
         calc_type="sp",
-        cli={"model_type": "mace", "task": "bulk", "model_path": "m.model"},
+        cli={"model_type": "mace", "task": "bulk", "model_path": "./m.model"},
     )
     assert explicit.model_type == "mace"
 

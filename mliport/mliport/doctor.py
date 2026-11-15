@@ -704,6 +704,69 @@ def _runtime_gpu_vram_mib(
     return None
 
 
+def _model_directory_checks() -> list[dict[str, Any]]:
+    """Report the checkout root and the ``models/`` directory (#61 R2.6).
+
+    A name-only ``MODEL_PATH`` is looked up in ``<MLIPORT_ROOT>/models``, so a
+    user who cannot find a model needs to see which root and which files
+    mliport would actually use.
+    """
+    from mliport.model_lookup import (  # noqa: PLC0415
+        MLIPORT_ROOT_ENV,
+        describe_models_directory,
+        mliport_root,
+        models_dir,
+    )
+
+    try:
+        root = mliport_root()
+    except ValueError as exc:
+        return [
+            {
+                "name": "MLIPORT_ROOT",
+                "value": "invalid",
+                "status": "fail",
+                "detail": str(exc),
+            }
+        ]
+    if root is None:
+        return [
+            {
+                "name": "MLIPORT_ROOT",
+                "value": "not determined",
+                "status": "warn",
+                "detail": (
+                    f"{MLIPORT_ROOT_ENV} is not set and this Python is not an "
+                    "installer-created .venv-<engine> environment, so a bare "
+                    "MODEL_PATH file name cannot be resolved. Set "
+                    f"{MLIPORT_ROOT_ENV} to the mliport checkout, or pass a "
+                    "model path."
+                ),
+            },
+            {
+                "name": "models/",
+                "value": "not searched",
+                "status": "warn",
+                "detail": "No checkout root, so there is no models/ directory.",
+            },
+        ]
+    directory = models_dir(root)
+    return [
+        {
+            "name": "MLIPORT_ROOT",
+            "value": str(root),
+            "status": "ok",
+            "detail": "Repository root that owns models/.",
+        },
+        {
+            "name": "models/",
+            "value": str(directory),
+            "status": "ok" if directory.is_dir() else "warn",
+            "detail": "\n".join(describe_models_directory(root)),
+        },
+    ]
+
+
 def run_diagnostics(
     model_path: str | Path | None = None,
     *,
@@ -755,6 +818,7 @@ def run_diagnostics(
                 "detail": str(exc),
             }
         )
+    checks.extend(_model_directory_checks())
     target_engine = str(engine).strip().lower()
     if target_engine == "fairchem":
         target_engine = "uma"

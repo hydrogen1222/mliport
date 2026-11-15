@@ -31,7 +31,7 @@ def test_resolver_unknown_key_is_fatal_by_default():
             calc_type="sp",
             cli={
                 "model_type": "mace",
-                "model_path": "m.model",
+                "model_path": "./m.model",
                 "task": "bulk",
                 "not_a_real_key": 1,
             },
@@ -44,7 +44,7 @@ def test_resolver_lenient_opt_in_warns_instead_of_failing():
             calc_type="sp",
             cli={
                 "model_type": "mace",
-                "model_path": "m.model",
+                "model_path": "./m.model",
                 "task": "bulk",
                 "not_a_real_key": 1,
                 "strict_config": False,
@@ -60,7 +60,7 @@ def test_resolver_cross_backend_option_is_fatal_by_default():
             calc_type="sp",
             cli={
                 "model_type": "dpa",
-                "model_path": "m.pt",
+                "model_path": "./m.pt",
                 "task": "bulk",
                 "head": "Omat24",
                 "default_dtype": "float32",

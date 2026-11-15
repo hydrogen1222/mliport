@@ -76,7 +76,7 @@ class _FakeBackend(BaseMLIPCalculator):
         return True
 
     def info(self):
-        return {"model_type": "mace", "model_path": "m.model", "task": "bulk"}
+        return {"model_type": "mace", "model_path": "./m.model", "task": "bulk"}
 
 
 @pytest.fixture()
@@ -300,7 +300,7 @@ def test_resolver_routes_d3_to_calculator_options():
         calc_type="opt",
         cli={
             "model_type": "mace",
-            "model_path": "m.model",
+            "model_path": "./m.model",
             "d3": True,
             "d3_damping": "bj",
         },
@@ -356,7 +356,7 @@ def test_neb_refuses_d3():
     resolved = ResolvedConfig(
         calc_type="neb",
         model_type="mace",
-        model_path="m.model",
+        model_path="./m.model",
         task="bulk",
         device="cpu",
         inference_mode="default",
