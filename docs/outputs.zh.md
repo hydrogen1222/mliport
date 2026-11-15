@@ -45,6 +45,8 @@ run.log
 `forces_applied_eV_A`（施加约束之后的力），以及构型应力和总应力。任何 ASE 轨迹都可以用
 `mliport convert-xdatcar` 转成标准的 XDATCAR。
 
+**NPT 运行**会改变晶胞，标准 XDATCAR 无法表示，所以不写 `vasp/XDATCAR`（原因会记入日志）。`raw/trajectory.traj` 保留每一帧的晶胞和动量，`raw/md.csv` 增加体积和总压强（含动能项），清单里把该轨迹标为变胞、不可用于输运分析。详见 [MD](workflows/md.md)。
+
 **XDATCAR 的 PBC 限制：** 标准 VASP XDATCAR 不保存 ASE 的 `pbc` 掩码。
 非三维周期性 MD 导出时会给出信息丢失警告，原始掩码另存在 `artifacts.json`
 的 `trajectory.pbc` 中。加载与该清单匹配的 Mliport `vasp/XDATCAR` 时，

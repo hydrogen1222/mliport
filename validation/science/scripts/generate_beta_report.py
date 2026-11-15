@@ -539,7 +539,7 @@ def build_coverage_table(tiers: dict[str, list]) -> list[dict[str, str]]:
             row(t6, "t6_langevin__", "t6_bussi__", "t6_nhc__"),
             "Langevin/Bussi/NHC",
         ),
-        ("NPT MD", "unsupported", [], "do not claim"),
+        ("NPT MD", "native (added after campaign)", [], "not run in this campaign"),
         (
             "RDF/MSD/VACF/density",
             "native analysis",
@@ -2478,7 +2478,8 @@ def md_limitations() -> str:
 - Physical transport conclusions (Arrhenius) need longer trajectories
   than the beta budget; stage-2 results are exploratory and honestly
   classified.
-- No NPT, no electronic structure, no model uncertainty unless a
+- Isotropic MTK NPT (ASE backends) was added after this campaign and is
+  not covered by it; no electronic structure, no model uncertainty unless a
   backend implements and audits it.
 - V100 validation does not prove every GPU architecture.
 """

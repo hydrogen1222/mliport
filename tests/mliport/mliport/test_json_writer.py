@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 
-import torch
+import pytest
 
 from mliport.writers.json_writer import NumpyEncoder
 
 
 def test_numpy_encoder_serializes_torch_tensors():
+    torch = pytest.importorskip("torch")
     payload = {
         "scalar": torch.tensor(5.0, device="cpu"),
         "vector": torch.tensor([1, 2], device="cpu"),

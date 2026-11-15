@@ -17,9 +17,8 @@ from typing import TYPE_CHECKING
 from ase.io import write
 
 if TYPE_CHECKING:
-    from ase import Atoms
-
     import numpy as np
+    from ase import Atoms
 
 
 class ContcarWriter:
@@ -58,7 +57,7 @@ class ContcarWriter:
 
         # Prepend comment if not using ASE's default
         if comment:
-            with open(output_path, "r", encoding="utf-8") as f:
+            with open(output_path, encoding="utf-8") as f:
                 content = f.read()
 
             lines = content.split("\n")
@@ -72,7 +71,7 @@ class ContcarWriter:
         atoms: Atoms,
         output_path: Path | str,
         energy: float | None = None,
-        forces: "np.ndarray" | None = None,
+        forces: np.ndarray | None = None,
     ) -> None:
         """Write structure with energy and forces in comment.
 

@@ -31,8 +31,9 @@ from typing import TYPE_CHECKING
 from mliport.base_calculator import BaseMLIPCalculator
 
 if TYPE_CHECKING:
-    from ase.calculators.calculator import Calculator
     from typing import Any
+
+    from ase.calculators.calculator import Calculator
 
 
 # Dtype values accepted by MACE's MACECalculator.

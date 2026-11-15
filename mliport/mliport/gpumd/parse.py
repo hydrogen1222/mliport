@@ -206,11 +206,10 @@ def _parse_vector(value: str, count: int, *, name: str) -> np.ndarray:
         raise GPUMDParseError(
             f"header {name!r}: expected {count} values, got {len(tokens)}"
         )
-    values = np.array(
+    return np.array(
         [_finite(token, context=f"header {name!r}") for token in tokens],
         dtype=float,
     )
-    return values
 
 
 def _parse_lattice(header: dict[str, str]) -> np.ndarray | None:

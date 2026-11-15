@@ -1121,9 +1121,9 @@
     },
     {
       "workflow": "NPT MD",
-      "mliport_status": "unsupported",
+      "mliport_status": "native (added after campaign)",
       "beta_status": "not_run",
-      "evidence": "do not claim"
+      "evidence": "not run in this campaign"
     },
     {
       "workflow": "RDF/MSD/VACF/density",

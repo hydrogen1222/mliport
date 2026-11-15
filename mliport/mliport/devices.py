@@ -349,6 +349,7 @@ def tensorflow_output_identity(outputs, requested: str) -> dict:
         return unknown
     import re
     import subprocess
+
     import tensorflow as tf
     from tensorflow.python.client import device_lib
 

@@ -15,7 +15,7 @@ Each wrapper adapts a backend (UMA/MACE/DPA/GRACE) ASE Calculator to the
 from __future__ import annotations
 
 from mliport.base_calculator import BaseMLIPCalculator
-from mliport.calculators.factory import CalculatorFactory, SUPPORTED_TYPES
+from mliport.calculators.factory import SUPPORTED_TYPES, CalculatorFactory
 
 # All four backend wrappers are exported symmetrically; they are loaded
 # lazily so importing this package never imports a backend framework.

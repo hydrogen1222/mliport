@@ -13,30 +13,22 @@ imports so it can run *before* any MLIP backend is installed.
 
 from __future__ import annotations
 
+from mliport.install.compatibility import (
+    ARCH_PROFILES,
+    BACKENDS,
+    CUDA_CHANNELS,
+    ArchProfile,
+    BackendArchProfile,
+    BackendSpec,
+    CudaChannel,
+    effective_cuda_channel,
+    select_cuda_channel,
+)
 from mliport.install.hardware import (
     GpuInfo,
     cc_arch_name,
     classify_gpu,
     detect_gpus,
-)
-from mliport.install.compatibility import (
-    ArchProfile,
-    BackendArchProfile,
-    BackendSpec,
-    CudaChannel,
-    ARCH_PROFILES,
-    BACKENDS,
-    CUDA_CHANNELS,
-    effective_cuda_channel,
-    select_cuda_channel,
-)
-from mliport.install.sources import (
-    SourceProfile,
-    SOURCE_PROFILES,
-    resolve_source,
-    build_package_source_args,
-    build_torch_source_args,
-    build_offline_args,
 )
 from mliport.install.plan import (
     InstallPlan,
@@ -47,6 +39,14 @@ from mliport.install.plan import (
     plan_to_json,
     render_plan_shell,
     validate_python_version,
+)
+from mliport.install.sources import (
+    SOURCE_PROFILES,
+    SourceProfile,
+    build_offline_args,
+    build_package_source_args,
+    build_torch_source_args,
+    resolve_source,
 )
 
 __all__ = [

@@ -252,7 +252,7 @@ def model_type_choices() -> tuple[str, ...]:
     Single source shared by the CLI, the INCAR writer, the schema and the
     queue command builder so a backend is never added to one entry point only.
     """
-    return SUPPORTED_BACKENDS + ("fairchem",)
+    return (*SUPPORTED_BACKENDS, "fairchem")
 
 
 __all__ = [

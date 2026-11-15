@@ -10,6 +10,8 @@ Molecular dynamics runner.
 Runs MD simulations using ASE's integrators:
 - NVT ensemble (Langevin, Bussi/CSVR, or Nose-Hoover-chain dynamics)
 - NVE ensemble (Velocity Verlet)
+- NPT ensemble (isotropic Martyna-Tobias-Klein, ASE ``IsotropicMTKNPT``;
+  variable-cell, ASE-backed engines only)
 
 Outputs trajectories in multiple formats.
 """
@@ -25,7 +27,7 @@ import time
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 from ase import units
@@ -58,14 +60,15 @@ from mliport.runners.safety import (
     validate_safe_point,
 )
 from mliport.writers.contcar import ContcarWriter
+from mliport.writers.json_writer import JsonWriter
 from mliport.writers.outcar import MDOutcarWriter
 from mliport.writers.xdatcar import XdatcarWriter
-from mliport.writers.json_writer import JsonWriter
 
 if TYPE_CHECKING:
     from typing import Any
 
     from ase import Atoms
+
     from mliport.protocols import ProgressCallback
 
 
@@ -75,8 +78,9 @@ __all__ = ["ForceSafetyAbort", "MDRunner"]
 class MDRunner(BaseRunner):
     """Run molecular dynamics simulations.
 
-    Supports NVT (Langevin, Bussi/CSVR, or Nose-Hoover chain) and NVE
-    (Velocity Verlet) ensembles.
+    Supports NVT (Langevin, Bussi/CSVR, or Nose-Hoover chain), NVE
+    (Velocity Verlet) and isotropic MTK NPT ensembles. NPT changes the cell, so
+    its trajectory is marked variable-cell and is not transport-eligible.
     Can optionally reduce large initial atomic forces with a positions-only
     pre-relaxation before MD.
 
@@ -92,21 +96,21 @@ class MDRunner(BaseRunner):
         >>> print(f"Final temperature: {results['temperature']:.1f} K")
     """
 
-    VALID_ENSEMBLES = {"nvt", "nve", "npt"}
-    VALID_THERMOSTATS = {"langevin", "bussi", "nhc"}
-    VALID_COM_POLICIES = {"none", "initialize_only", "constraint", "auto"}
+    VALID_ENSEMBLES: ClassVar = {"nvt", "nve", "npt"}
+    VALID_THERMOSTATS: ClassVar = {"langevin", "bussi", "nhc"}
+    VALID_COM_POLICIES: ClassVar = {"none", "initialize_only", "constraint", "auto"}
     # This matrix is deliberately conservative. These combinations are backed
     # by ASE's public constraint-aware paths and local known-answer tests. An
     # unknown or compound constraint must be validated independently before it
     # can be added here.
-    CONSTRAINT_CAPABILITIES = {
+    CONSTRAINT_CAPABILITIES: ClassVar = {
         "nve": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "npt": frozenset(),
         "langevin": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "bussi": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "nhc": frozenset(),
     }
-    COM_POLICY_CAPABILITIES = {
+    COM_POLICY_CAPABILITIES: ClassVar = {
         "nve": frozenset({"none", "constraint"}),
         "npt": frozenset({"none", "initialize_only"}),
         "langevin": frozenset({"none", "initialize_only", "constraint"}),

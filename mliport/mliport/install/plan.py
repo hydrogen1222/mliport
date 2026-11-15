@@ -31,15 +31,15 @@ if TYPE_CHECKING:
 from mliport.install.compatibility import (
     ALL_BACKENDS,
     BACKENDS,
-    lookup_backend,
     FRAMEWORK_PYTHON,
     PROJECT_REQUIRES_PYTHON,
     SUPPORTED_PYTHON_VERSIONS,
     BackendSpec,
     effective_cuda_channel,
     get_backend_arch_profile,
+    lookup_backend,
 )
-from mliport.install.hardware import GpuInfo, classify_gpu, _pick_oldest
+from mliport.install.hardware import GpuInfo, _pick_oldest, classify_gpu
 from mliport.install.sources import (
     SourceProfile,
     build_package_source_args,

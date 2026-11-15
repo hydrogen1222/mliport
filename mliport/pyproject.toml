@@ -81,7 +81,3 @@ namespaces = false
 # Packaged read-only data (GPU architecture table) ships inside the wheel.
 [tool.setuptools.package-data]
 mliport = ["data/compatibility/*.json"]
-
-[tool.ruff]
-line-length = 88
-target-version = "py310"

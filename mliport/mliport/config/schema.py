@@ -76,16 +76,22 @@ class OptionSpec:
                 f"Option '{self.name}' must be one of "
                 f"{', '.join(repr(c) for c in self.choices)}, got {value!r}"
             )
-        if self.minimum is not None and isinstance(value, (int, float)):
-            if value < self.minimum:
-                errors.append(
-                    f"Option '{self.name}'={value} is below minimum {self.minimum}"
-                )
-        if self.maximum is not None and isinstance(value, (int, float)):
-            if value > self.maximum:
-                errors.append(
-                    f"Option '{self.name}'={value} is above maximum {self.maximum}"
-                )
+        if (
+            self.minimum is not None
+            and isinstance(value, (int, float))
+            and value < self.minimum
+        ):
+            errors.append(
+                f"Option '{self.name}'={value} is below minimum {self.minimum}"
+            )
+        if (
+            self.maximum is not None
+            and isinstance(value, (int, float))
+            and value > self.maximum
+        ):
+            errors.append(
+                f"Option '{self.name}'={value} is above maximum {self.maximum}"
+            )
         return errors
 
 

@@ -8,11 +8,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 from ase.constraints import FixAtoms
@@ -332,7 +333,7 @@ class ConfigScreen(Screen):
                 yield Button("🚀 Run", variant="success", id="run-btn")
 
     # UMA-specific tasks vs generic bulk/molecule for other engines
-    UMA_TASKS = [
+    UMA_TASKS: ClassVar = [
         ("Inorganic Materials (omat)", "omat"),
         ("Molecules (omol)", "omol"),
         ("Catalysis OC20 (oc20)", "oc20"),
@@ -340,7 +341,7 @@ class ConfigScreen(Screen):
         ("MOFs (odac)", "odac"),
         ("Molecular Crystals (omc)", "omc"),
     ]
-    GENERIC_TASKS = [
+    GENERIC_TASKS: ClassVar = [
         ("Bulk / Periodic (bulk)", "bulk"),
         ("Molecule (molecule)", "molecule"),
     ]
@@ -1003,10 +1004,9 @@ class ConfigScreen(Screen):
         # double-count dispersion, so the D3 controls are hidden for NEP and
         # the request is rejected instead of being applied silently.
         for selector in ("#d3-row",):
-            try:
+            # NEB forms do not render the D3 row.
+            with contextlib.suppress(Exception):
                 self.query_one(selector).display = not is_nep
-            except Exception:  # noqa: BLE001 - NEB forms do not render D3
-                pass
         for selector in (
             "#grace-memory-limit-label",
             "#grace-memory-limit-input",

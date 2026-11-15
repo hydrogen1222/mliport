@@ -39,7 +39,6 @@ class TrajectoryWriter:
 
     def __init__(self):
         """Initialize trajectory writer."""
-        pass
 
     def write(
         self,

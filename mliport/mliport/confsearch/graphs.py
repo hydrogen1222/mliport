@@ -18,8 +18,8 @@ from ase.neighborlist import neighbor_list
 from mliport.confsearch import status as cs_status
 from mliport.confsearch.errors import ConfsearchInternalError
 from mliport.confsearch.geometry import (
-    mic_distance_matrix,
     mic_displacements,
+    mic_distance_matrix,
     minimum_distance,
     self_image_distance,
     vacuum_gap,
@@ -244,14 +244,13 @@ def classify_minimum(
     """Classify one converged quench (spec sections 8.2-8.4)."""
     fixed = np.asarray(regions.fixed, dtype=int)
     current_positions = np.asarray(atoms.get_positions(), dtype=float)
-    if fixed.size:
-        if not np.array_equal(
-            current_positions[fixed], reference.start_positions[fixed]
-        ):
-            raise ConfsearchInternalError(
-                "A fixed atom moved during the search; this is an internal error, "
-                "not a scientific outcome (spec section 8.2 rule 1)"
-            )
+    if fixed.size and not np.array_equal(
+        current_positions[fixed], reference.start_positions[fixed]
+    ):
+        raise ConfsearchInternalError(
+            "A fixed atom moved during the search; this is an internal error, "
+            "not a scientific outcome (spec section 8.2 rule 1)"
+        )
 
     adsorbate = np.asarray(regions.adsorbate, dtype=int)
     slab = np.asarray(regions.slab, dtype=int)
@@ -284,7 +283,7 @@ def classify_minimum(
     radii = covalent_radii[np.asarray(atoms.numbers, dtype=int)]
     symbols = atoms.get_chemical_symbols()
     bond_records: list[tuple[int, int, str, str, float, float]] = []
-    adsorbate_set = set(int(index) for index in adsorbate)
+    adsorbate_set = {int(index) for index in adsorbate}
     for first, second in sorted(cross.bonds):
         a, b = (first, second) if first in adsorbate_set else (second, first)
         delta = (current_positions[b] - current_positions[a])[None, :]

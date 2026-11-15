@@ -49,8 +49,6 @@ ALLOWED_FILES = {
     # negative assertions: these tests check the retired strings are absent
     "tests/test_productization_invariants.py",
     "tests/test_release_bridge.py",
-    # P0 recovery record: documents the strings that were investigated
-    "validation/science/reports/MAIN_RECOVERY_20260913.md",
 }
 
 #: The only old-name substring allowed in otherwise-clean files: links to the

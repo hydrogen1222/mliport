@@ -27,8 +27,8 @@ docs all derive their information from this single source of truth.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Literal
 
 from packaging.specifiers import SpecifierSet

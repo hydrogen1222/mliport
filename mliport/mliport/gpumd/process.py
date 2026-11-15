@@ -13,6 +13,7 @@ raw output remains complete and a GPU process cannot survive the run.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
@@ -158,10 +159,8 @@ def _signal_process(process: subprocess.Popen[str], sig: int) -> None:
             return
         except (OSError, ProcessLookupError):
             pass
-    try:
+    with contextlib.suppress(OSError, ProcessLookupError):
         process.send_signal(sig)
-    except (OSError, ProcessLookupError):
-        pass
 
 
 def _stop_process(

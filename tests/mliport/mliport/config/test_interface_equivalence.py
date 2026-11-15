@@ -11,8 +11,7 @@ import pytest
 from mliport.api import _build_api_cli
 from mliport.backend_selection import NO_BACKEND_SELECTED_MESSAGE
 from mliport.cli import _build_cli_opts, create_parser
-from mliport.config import IncarConfig
-from mliport.config import resolve_config as _resolve_config
+from mliport.config import IncarConfig, resolve_config as _resolve_config
 from mliport.queue import parse_task_file
 
 

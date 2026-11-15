@@ -130,7 +130,7 @@ def _parse_string(spec: str, *, label: str) -> tuple[int, ...]:
 
 def format_index_spec(indices: Iterable[int]) -> str:
     """Render indices as a compressed ``"a,b-c"`` specification."""
-    ordered = sorted(set(int(index) for index in indices))
+    ordered = sorted({int(index) for index in indices})
     if not ordered:
         return ""
     parts: list[str] = []

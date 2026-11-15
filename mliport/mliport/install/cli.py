@@ -294,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=cwd,
             env=step_env,
             shell=False,
+            check=False,
         )
         if r.returncode != 0:
             print(

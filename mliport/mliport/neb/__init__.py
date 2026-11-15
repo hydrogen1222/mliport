@@ -1,8 +1,10 @@
 """Fixed-cell NEB/CI-NEB core."""
 
+from __future__ import annotations
+
 from mliport.neb.prepare import (
-    EndpointDisplacement,
     BandInput,
+    EndpointDisplacement,
     prepare_band,
     prepare_endpoint_geometry,
     validate_band_images,

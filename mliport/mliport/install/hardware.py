@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-from mliport.install.compatibility import classify_gpu
 from mliport.devices import VisibleGpu, visible_gpus
+from mliport.install.compatibility import classify_gpu
 
 # Minimum VRAM (MiB) to comfortably run the UMA-s model (~1.1 GB) on small
 # systems. Below this we warn (still allowed).
@@ -106,8 +106,8 @@ def detect_gpus() -> list[GpuInfo] | None:
     import csv as _csv
     import io as _io
 
-    for parts in _csv.reader(_io.StringIO(result.stdout)):
-        parts = [p.strip() for p in parts]
+    for row in _csv.reader(_io.StringIO(result.stdout)):
+        parts = [p.strip() for p in row]
         if not parts or all(p == "" for p in parts):
             continue
         if len(parts) != 6:

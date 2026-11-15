@@ -12,11 +12,11 @@ calculations with a make menuconfig-like experience.
 
 from __future__ import annotations
 
+from mliport.tui.analysis_screen import AnalysisScreen
 from mliport.tui.app import MliportApp
 from mliport.tui.config_screen import ConfigScreen
 from mliport.tui.main_screen import MainScreen, TemplateScreen
 from mliport.tui.run_screen import RunScreen
-from mliport.tui.analysis_screen import AnalysisScreen
 
 __all__ = [
     "AnalysisScreen",

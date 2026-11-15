@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
+from itertools import pairwise
 
 import numpy as np
 from ase import Atoms
@@ -180,7 +181,7 @@ def _validate_adjacent_periodic_segments(images: Iterable[Atoms]) -> None:
         return
     cell = np.asarray(image_list[0].cell.array, dtype=float)
     pbc = np.asarray(image_list[0].pbc, dtype=bool)
-    for index, (left, right) in enumerate(zip(image_list, image_list[1:])):
+    for index, (left, right) in enumerate(pairwise(image_list)):
         raw = np.asarray(right.positions - left.positions, dtype=float)
         mic, _ = find_mic(raw, cell=cell, pbc=pbc)
         if not np.allclose(raw, mic, rtol=0.0, atol=1.0e-8):

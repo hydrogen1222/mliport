@@ -293,7 +293,7 @@ class _NeighborListCache:
 
         mu_i = self._atomic_mu_i[ind_i].astype(np.int32, copy=False)
         mu_j = self._atomic_mu_i[ind_j].astype(np.int32, copy=False)
-        data = {
+        return {
             constants.ATOMIC_MU_I: self._atomic_mu_i.astype(np.int32),
             constants.BOND_VECTOR: vectors,
             constants.BOND_MU_I: mu_i,
@@ -304,7 +304,6 @@ class _NeighborListCache:
             constants.N_STRUCTURES_BATCH_REAL: np.array(1, dtype=np.int32),
             constants.N_NEIGHBORS_REAL: np.array(len(ind_i), dtype=np.int32),
         }
-        return data
 
     def _filter(self, ase_atoms: Atoms, displacement: np.ndarray) -> dict[str, Any]:
         """Filter cached periodic images at the exact model cutoff."""

@@ -4,6 +4,8 @@ Optional backends such as kinisi and GEMDAT are intentionally not imported at
 package import time.
 """
 
+from __future__ import annotations
+
 from mliport.analysis.dataset import TrajectoryDataset
 from mliport.analysis.validation import (
     AnalysisError,
