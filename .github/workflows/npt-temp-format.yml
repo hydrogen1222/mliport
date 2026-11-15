@@ -1,0 +1,28 @@
+name: temporary NPT formatting (remove after use)
+on:
+  push:
+    branches:
+      - feat/ase-isotropic-mtk-npt
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ase-isotropic-mtk-npt
+          persist-credentials: true
+      - uses: astral-sh/setup-uv@v7
+      - name: Apply repository-pinned formatter to changed files
+        run: |
+          uvx ruff@0.5.1 format \
+            mliport/mliport/writers/json_writer.py \
+            tests/mliport/mliport/test_interface_equivalence.py \
+            tests/mliport/mliport/test_md_npt.py
+          if ! git diff --quiet; then
+            git -c user.name="github-actions[bot]" \
+                -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+                commit -am "style(md): format NPT follow-up fixes"
+            git push origin HEAD:feat/ase-isotropic-mtk-npt
+          fi
