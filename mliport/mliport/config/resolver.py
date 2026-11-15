@@ -522,6 +522,27 @@ def resolve_config(
         sources["inference_mode"] = ResolvedValue(
             "default", f"built-in defaults ({model_type}: not applicable)"
         )
+    if model_type == "dpa":
+        # DPA has two environments, not two code paths: the value names the one
+        # the user is running in, and a mismatch with the installed deepmd-kit
+        # is refused by the adapter instead of being silently corrected.
+        runtime_source = sources.get("dpa_runtime")
+        runtime = (
+            str(runtime_source.value if runtime_source is not None else "current")
+            .strip()
+            .lower()
+        )
+        if runtime not in {"current", "legacy"}:
+            raise ValueError(
+                f"DPA_RUNTIME={runtime!r} is invalid; choose 'current' or "
+                "'legacy'. mliport never falls back between the two."
+            )
+        sources["dpa_runtime"] = ResolvedValue(
+            runtime,
+            runtime_source.source
+            if runtime_source is not None
+            else "built-in defaults",
+        )
     settings_path = str(settings.path) if settings and settings.path else None
 
     # ---- Split calculator vs run options. ----

@@ -325,6 +325,22 @@ _SPECS: list[OptionSpec] = [
     # for every other engine instead of recording a switch that never executes.
     # D3 is deliberately absent from the NEP option set: the factory rejects a
     # NEP + D3 combination rather than silently double-counting dispersion.
+    # DPA has two *environments*: the pinned DPA-4-capable runtime and a
+    # pre-release DPA-2 runtime for legacy checkpoints such as DPA-SSE
+    # (#61 DPA-SSE spec §5). The option names the environment the user is
+    # running in; mliport never switches between them by itself.
+    OptionSpec(
+        "dpa_runtime",
+        str,
+        frozenset({"calculator.dpa"}),
+        aliases={"DPA_RUNTIME"},
+        choices=("current", "legacy"),
+        description=(
+            "DPA runtime environment: 'current' (pinned DPA-4-capable "
+            "deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, "
+            "for DPA-2 checkpoints such as DPA-SSE). No automatic fallback."
+        ),
+    ),
     OptionSpec(
         "nep_runtime",
         str,

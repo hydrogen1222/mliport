@@ -62,6 +62,7 @@ mliport 本身不包含模型。它通过适配器加载别人训练好的势函
 | `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | 由模型决定 | `verified` | `verified` | [UMA 记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
 | `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | 由模型决定 | `verified` | `verified` | 单点、力与 MD 已验证；NEB 被梯度预检拒绝 — [UMA 记录](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
 | `nep89_gpumd` | nep | NEP89 `nep.txt` | — | 由模型决定 | `unsupported` | `verified` | [原生 GPU 运行时证据](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6689717878) |
+| `dpa_sse` | dpa | `SSE-VASP-dpa2.pt`（转换后） | `Default`（DPA-2） | float64 | `verified` | `verified` | 旧运行时，`DPA_RUNTIME=legacy` — [可调用性检查](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6888508331)、[参考值](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6888125522) |
 
 这些状态背后的检查是 2026-11-14 在一张 Tesla V100-SXM2-16GB（驱动 580.173.02）上、用安装器
 建出来的环境跑出来的：mace-torch 0.3.16 配 torch 2.8.0、deepmd-kit 3.2.1.dev63 配 torch

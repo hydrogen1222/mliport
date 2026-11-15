@@ -90,6 +90,7 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "neighbor_skin": ("--neighbor-skin",),
     "default_dtype": ("--dtype",),
     "head": ("--head",),
+    "dpa_runtime": ("--dpa-runtime",),
     "nep_runtime": ("--nep-runtime",),
     "nep_gpumd_command": ("--gpumd-command",),
     "d3": ("--d3", "--no-d3"),

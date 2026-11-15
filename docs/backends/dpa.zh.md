@@ -101,6 +101,49 @@ NumPy 标量转换为 Python 标量，并通过 `weights_only=True` 重新读取
 解决此问题；在匹配的旧版实现通过验证前，该文件仍不受支持。mliport 不重排权重，
 也不初始化缺失的训练参数来强行运行它。
 
+## DPA-SSE 与 DPA-2 旧运行时
+
+AIS Square 上的 `SSE-VASP-dpa2.pt`
+（[模型页面](https://www.aissquare.com/models/detail?pageType=models&name=SSE-VASP-dpa2)）
+是一个 DPA-2 检查点，用硫化物电解质数据训练：15 种元素、41 个体系，其中 26 个是硫属化合物，
+标签来自 VASP PAW / **PBEsol**。它就是 DPA-SSE 论文的模型
+（[arXiv 2406.18263](https://arxiv.org/abs/2406.18263)、
+[npj Comput. Mater. 2025](https://doi.org/10.1038/s41524-025-01764-6)）。
+权重许可证是 LGPL-3.0；背后的数据集
+（[AIS Square 条目](https://www.aissquare.com/datasets/detail?pageType=datasets&name=Solid_State_Electrolyte&id=217)）
+是 CC BY 4.0。
+
+固定运行时无法还原这个检查点：deepmd-kit 3.0.0b4 改了 repformer 的布局，3.2.1 会把
+`linear1.matrix` 建成 640x128、`proj_g1g2.matrix` 建成 32x128，而文件里是 800x128 和 128x32。
+mliport 不会为了"让它能加载"去改形状、改名或重新初始化权重，所以 DPA 有第二个环境，必须显式选择：
+
+```bash
+./scripts/install_mliport.sh --engines dpa-legacy --device auto
+DPA_RUNTIME=legacy ./bin/mliport-dpa-legacy sp structure.vasp \
+  --model SSE-VASP-dpa2-inference.pt --model-type dpa --task bulk
+```
+
+- `.venv-dpa-legacy` 固定 `deepmd-kit==3.0.0b3`（上游预发布版，也是网络布局与该检查点匹配的
+  最新版本），配 `torch==2.3.1`（GPU 机器上是 `+cu121`，仍然带 Volta 的 sm_70 内核）和
+  Python 3.10 到 3.12。
+- `DPA_RUNTIME` 默认是 `current`，两个方向都不会自动回退。旧环境会拒绝 DPA-3、DPA4 和 DPA4C
+  检查点并告诉你该用哪个运行时；当前环境则会拒绝旧版 deepmd-kit。
+- 安全加载：旧运行时只接受能用 `torch.load(weights_only=True)` 加载的检查点。发布出去的是
+  **训练**检查点，里面带 NumPy 标量，所以要用现有的可信转换脚本处理一次：
+
+```bash
+.venv-dpa-legacy/bin/python scripts/convert_dpa_checkpoint.py \
+  SSE-VASP-dpa2.pt SSE-VASP-dpa2-inference.pt --i-trust-this-file
+```
+
+  这个转换不改任何张量；旧运行时宁可拒绝原始文件，也不去反序列化任意对象。
+- 溯源记录里会写 `dpa_runtime`、deepmd-kit 版本和 torch 版本，因为两个环境不能互换。
+
+!!! warning "type_map 有 118 个元素不等于训练覆盖"
+    DPA-2 会把整个周期表写进 `type_map`；DPA-SSE 只训练了硫化物电解质化学里的 15 种元素
+    （Li、S、P、Ge、Sn、Si、Ga、Sb、As、Cl、Br、I 等）。其余元素——包括 C 和 H，也就是 LiDS
+    这类有机吸附分子——都属于外推，任何科学使用之前都必须用你自己的参考数据检验。
+
 ## 需要知道的事
 
 - **多任务模型必须写 head，否则报错。** 没有默认分支。

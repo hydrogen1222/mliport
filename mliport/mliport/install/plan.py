@@ -29,7 +29,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from mliport.install.compatibility import (
+    ALL_BACKENDS,
     BACKENDS,
+    lookup_backend,
     FRAMEWORK_PYTHON,
     PROJECT_REQUIRES_PYTHON,
     SUPPORTED_PYTHON_VERSIONS,
@@ -49,7 +51,7 @@ from mliport.install.sources import (
 
 
 # Known engine keys (for normalization).
-_ENGINE_KEYS = set(BACKENDS)
+_ENGINE_KEYS = set(ALL_BACKENDS)
 
 
 class InstallPlanError(Exception):
@@ -426,7 +428,8 @@ def generate_plan(
         raise InstallPlanError(str(exc)) from exc
     engine_list = normalize_engines(engines)
     for engine in engine_list:
-        backend = BACKENDS[engine]
+        backend = lookup_backend(engine)
+        assert backend is not None
         constraints = [
             ("mliport", PROJECT_REQUIRES_PYTHON),
             (backend.requirement, backend.requires_python),
@@ -512,7 +515,8 @@ def generate_plan(
 
     # ---- Build steps per engine ----
     for engine in engine_list:
-        backend = BACKENDS[engine]
+        backend = lookup_backend(engine)
+        assert backend is not None
         if clean:
             plan.steps.append(_clean_step(backend))
         plan.steps.append(_venv_step(backend, py_ver))

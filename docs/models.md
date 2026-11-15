@@ -69,6 +69,7 @@ is a separate question that this table does not answer.
 | `uma_s_1p2p1_omat` | uma | `uma-s-1p2p1.pt` | `omat` | model-defined | `verified` | `verified` | [UMA record](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
 | `uma_s_1p2p1_ft_r2scan_omat` | uma | `uma-s-1p2p1-ft-r2scan.pt` | `omat` | model-defined | `verified` | `verified` | SP, forces and MD verified; NEB refused by the gradient preflight — [UMA record](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6878717708) |
 | `nep89_gpumd` | nep | NEP89 `nep.txt` | — | model-defined | `unsupported` | `verified` | [native GPU runtime evidence](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6689717878) |
+| `dpa_sse` | dpa | `SSE-VASP-dpa2.pt` (converted) | `Default` (DPA-2) | float64 | `verified` | `verified` | legacy runtime, `DPA_RUNTIME=legacy` — [callable check](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6888508331), [reference values](https://github.com/hydrogen1222/mliport/pull/75#issuecomment-6888125522) |
 
 The checks behind these cells ran on 2026-11-14 on one Tesla
 V100-SXM2-16GB (driver 580.173.02), in the environments the installer builds:
