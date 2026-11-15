@@ -33,7 +33,7 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from ase.constraints import FixAtoms, FixCartesian, FixCom
 from ase.md.bussi import Bussi
 from ase.md.langevin import Langevin
-from ase.md.nose_hoover_chain import NoseHooverChainNVT
+from ase.md.nose_hoover_chain import IsotropicMTKNPT, NoseHooverChainNVT
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary
 from ase.md.verlet import VelocityVerlet
 from ase.optimize import FIRE
@@ -92,7 +92,7 @@ class MDRunner(BaseRunner):
         >>> print(f"Final temperature: {results['temperature']:.1f} K")
     """
 
-    VALID_ENSEMBLES = {"nvt", "nve"}
+    VALID_ENSEMBLES = {"nvt", "nve", "npt"}
     VALID_THERMOSTATS = {"langevin", "bussi", "nhc"}
     VALID_COM_POLICIES = {"none", "initialize_only", "constraint", "auto"}
     # This matrix is deliberately conservative. These combinations are backed
@@ -101,12 +101,14 @@ class MDRunner(BaseRunner):
     # can be added here.
     CONSTRAINT_CAPABILITIES = {
         "nve": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
+        "npt": frozenset(),
         "langevin": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "bussi": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "nhc": frozenset(),
     }
     COM_POLICY_CAPABILITIES = {
         "nve": frozenset({"none", "constraint"}),
+        "npt": frozenset({"none", "initialize_only"}),
         "langevin": frozenset({"none", "initialize_only", "constraint"}),
         "bussi": frozenset({"none", "constraint"}),
         # NHC cannot use a FixCom projector (ASE NHC keeps private 3N state),
@@ -117,7 +119,7 @@ class MDRunner(BaseRunner):
     }
     #: Integrators that conserve total momentum exactly, so a zeroed initial
     #: COM momentum removes three degrees of freedom for the whole run.
-    MOMENTUM_CONSERVING_INTEGRATORS = frozenset({"nhc"})
+    MOMENTUM_CONSERVING_INTEGRATORS = frozenset({"nhc", "npt"})
     # Every MD step is retained in run.log independently of trajectory saving.
     # LiveRunLogger coalesces the actual filesystem flushes and suppresses these
     # high-frequency records from UI callbacks.
@@ -133,6 +135,13 @@ class MDRunner(BaseRunner):
         steps: int = 1000,
         equilibration_steps: int = 0,
         thermostat: str = "LANGEVIN",
+        pressure_gpa: float = 0.0,
+        npt_tdamp: float = 100.0,
+        npt_pdamp: float = 1000.0,
+        npt_tchain: int = 3,
+        npt_pchain: int = 3,
+        npt_tloop: int = 1,
+        npt_ploop: int = 1,
         friction: float = 0.001,
         bussi_tau: float = 1000.0,
         nhc_tdamp: float = 100.0,
@@ -169,12 +178,15 @@ class MDRunner(BaseRunner):
 
         Args:
             calculator: UMA calculator wrapper
-            ensemble: MD ensemble (NVT or NVE)
+            ensemble: MD ensemble (NVT, NVE, or isotropic NPT)
             temperature: Temperature in Kelvin
             timestep: Time step in femtoseconds
             steps: Number of production MD steps
             equilibration_steps: Same-ensemble MD steps before production
             thermostat: NVT thermostat (LANGEVIN, BUSSI, or NHC)
+            pressure_gpa: NPT external pressure in GPa (+ compressive)
+            npt_tdamp: MTK thermostat damping in fs
+            npt_pdamp: MTK barostat damping in fs
             friction: Langevin friction coefficient (1/fs)
             bussi_tau: Bussi/CSVR coupling time in femtoseconds
             nhc_tdamp: Nose-Hoover-chain damping time in femtoseconds
@@ -227,6 +239,13 @@ class MDRunner(BaseRunner):
             )
 
         temperature_value = _finite_float(temperature, name="temperature")
+        pressure_gpa_value = _finite_float(pressure_gpa, name="pressure_gpa")
+        npt_tdamp_fs = _finite_float(npt_tdamp, name="npt_tdamp")
+        npt_pdamp_fs = _finite_float(npt_pdamp, name="npt_pdamp")
+        npt_tchain_value = _strict_integer(npt_tchain, name="npt_tchain")
+        npt_pchain_value = _strict_integer(npt_pchain, name="npt_pchain")
+        npt_tloop_value = _strict_integer(npt_tloop, name="npt_tloop")
+        npt_ploop_value = _strict_integer(npt_ploop, name="npt_ploop")
         timestep_fs = _finite_float(timestep, name="timestep")
         friction_fs = _finite_float(friction, name="friction")
         bussi_tau_fs = _finite_float(bussi_tau, name="bussi_tau")
@@ -261,6 +280,27 @@ class MDRunner(BaseRunner):
             raise ValueError("fmax_abort must be > 0 eV/Angstrom")
         if seed_value is not None and seed_value < 0:
             raise ValueError("seed must be >= 0")
+
+        if ensemble_value == "npt":
+            if temperature_value <= 0:
+                raise ValueError("MTK NPT temperature must be > 0 K")
+            if npt_tdamp_fs <= 0 or npt_pdamp_fs <= 0:
+                raise ValueError("MTK NPT tdamp and pdamp must be > 0 fs")
+            if (
+                min(
+                    npt_tchain_value, npt_pchain_value, npt_tloop_value, npt_ploop_value
+                )
+                < 1
+            ):
+                raise ValueError("MTK NPT chain lengths and substeps must be >= 1")
+            if not write_trajectory:
+                raise ValueError(
+                    "NPT requires lossless variable-cell ASE trajectory output"
+                )
+            if thermostat_value != "langevin":
+                raise ValueError(
+                    "NPT uses MTK thermostat, not a selectable NVT thermostat"
+                )
 
         if ensemble_value == "nvt":
             if thermostat_value not in self.VALID_THERMOSTATS:
@@ -306,6 +346,18 @@ class MDRunner(BaseRunner):
         )
         self.ensemble = ensemble_value
         self.temperature = temperature_value
+        self.pressure_gpa = pressure_gpa_value
+        self.npt_tdamp = npt_tdamp_fs * units.fs
+        self.npt_pdamp = npt_pdamp_fs * units.fs
+        self.npt_tchain = npt_tchain_value
+        self.npt_pchain = npt_pchain_value
+        self.npt_tloop = npt_tloop_value
+        self.npt_ploop = npt_ploop_value
+        self.xdatcar_disabled_reason = (
+            "variable-cell NPT cannot be represented by standard fixed-cell XDATCAR"
+            if ensemble_value == "npt" and write_xdatcar
+            else None
+        )
         self.timestep = timestep_fs * units.fs  # Convert to ASE units
         self.steps = steps_value
         self.equilibration_steps = equilibration_steps_value
@@ -320,7 +372,7 @@ class MDRunner(BaseRunner):
         self.write_outcar = write_outcar
         self.write_forces = write_forces
         self.write_stress = write_stress
-        self.write_xdatcar = write_xdatcar
+        self.write_xdatcar = write_xdatcar and ensemble_value != "npt"
         self.write_trajectory = write_trajectory
         self.write_json = write_json
         # The PBC mask is not encoded in standard XDATCAR. Capture the
@@ -365,7 +417,11 @@ class MDRunner(BaseRunner):
             )
 
     def _integrator_key(self) -> str:
-        return "nve" if self.ensemble == "nve" else self.thermostat
+        return (
+            "nve"
+            if self.ensemble == "nve"
+            else ("npt" if self.ensemble == "npt" else self.thermostat)
+        )
 
     @staticmethod
     def _constraint_kind(constraint: object) -> str | None:
@@ -435,6 +491,10 @@ class MDRunner(BaseRunner):
 
         constraint = constraints[0]
         kind = self._constraint_kind(constraint)
+        if integrator == "npt":
+            raise ValueError(
+                f"MTK NPT does not support ASE constraints ({type(constraint).__name__})"
+            )
         if integrator == "nhc":
             raise ValueError(
                 f"NHC with constraint {type(constraint).__name__} is unsupported: "
@@ -462,7 +522,7 @@ class MDRunner(BaseRunner):
             effective = "none"
         elif self.com_policy == "initialize_only":
             if constraints:
-                if self._integrator_key() == "nhc":
+                if self._integrator_key() in {"nhc", "npt"}:
                     raise ValueError(
                         f"NHC with constraint {type(constraints[0]).__name__} is "
                         "unsupported: ASE NHC maintains private thermostat state."
@@ -492,7 +552,7 @@ class MDRunner(BaseRunner):
                 atoms.set_constraint(FixCom())
             effective = "constraint"
         else:  # auto
-            if self._integrator_key() == "nhc" and not constraints:
+            if self._integrator_key() in {"nhc", "npt"} and not constraints:
                 # A FixCom projector is unsupported for ASE NHC, but leaving
                 # the Maxwell-Boltzmann COM momentum in place makes the whole
                 # cell drift ballistically and contaminates every MSD-based
@@ -522,6 +582,34 @@ class MDRunner(BaseRunner):
         self._validate_constraint_capability(atoms)
         self.md_degrees_of_freedom = self._degrees_of_freedom(atoms)
         self.constraint_types = tuple(type(item).__name__ for item in atoms.constraints)
+
+    def _validate_npt_state(
+        self, atoms: Atoms, *, context: str, check_stress: bool = False
+    ) -> None:
+        """Reject invalid MTK NPT geometry, constraints or stress before use."""
+        if self.ensemble != "npt":
+            return
+        if not bool(np.asarray(atoms.pbc, dtype=bool).all()):
+            raise ValueError(f"{context}: NPT requires full 3D PBC")
+        if atoms.constraints:
+            raise ValueError(
+                f"{context}: MTK NPT does not support ASE constraints "
+                f"({', '.join(type(c).__name__ for c in atoms.constraints)})"
+            )
+        cell = np.asarray(atoms.cell.array, dtype=float)
+        if cell.shape != (3, 3) or not np.isfinite(cell).all():
+            raise ValueError(f"{context}: NPT requires a finite 3x3 cell")
+        volume = float(np.linalg.det(cell))
+        if not math.isfinite(volume) or volume <= 1e-12:
+            raise ValueError(f"{context}: NPT requires a positive nonsingular cell")
+        if check_stress:
+            if not bool(getattr(self.calculator, "has_stress", False)):
+                raise ValueError(f"{context}: NPT calculator must implement stress")
+            stress = np.asarray(
+                atoms.get_stress(voigt=True, include_ideal_gas=True), dtype=float
+            )
+            if stress.shape != (6,) or not np.isfinite(stress).all():
+                raise ValueError(f"{context}: NPT requires finite six-component stress")
 
     def _stress_observables(self, atoms: Atoms) -> dict[str, Any]:
         """Return explicitly named 3D-bulk stress and pressure observables.
@@ -680,9 +768,17 @@ class MDRunner(BaseRunner):
                 "timestep_fs": timestep_fs,
                 "save_interval_steps": self.save_interval,
                 "saved_interval_fs": timestep_fs * self.save_interval,
-                "positions_convention": "unwrapped",
-                "positions": "unwrapped Cartesian in trajectory.traj; "
-                "unwrapped direct in XDATCAR",
+                "positions_convention": (
+                    "unknown" if self.ensemble == "npt" else "unwrapped"
+                ),
+                "positions": (
+                    "variable-cell Cartesian coordinates (not fixed-cell MSD eligible)"
+                    if self.ensemble == "npt"
+                    else "unwrapped Cartesian in trajectory.traj; unwrapped direct in XDATCAR"
+                ),
+                "ensemble": self.ensemble.upper(),
+                "variable_cell": self.ensemble == "npt",
+                "transport_eligible": self.ensemble != "npt",
                 "equilibration_steps": self.equilibration_steps,
                 "production_steps": self.steps,
                 "total_steps": self.total_steps,
@@ -848,6 +944,28 @@ class MDRunner(BaseRunner):
         else:
             self._validate_constraint_capability(atoms)
             self._degrees_of_freedom(atoms)
+        if self.ensemble == "npt":
+            self._validate_npt_state(
+                atoms, context="MTK NPT integrator", check_stress=True
+            )
+            set_temperature = self._nhc_set_temperature(atoms)
+            self.log(
+                f"Setting up isotropic MTK NPT (P={self.pressure_gpa:g} GPa; "
+                f"tdamp={self.npt_tdamp / units.fs:g} fs; "
+                f"pdamp={self.npt_pdamp / units.fs:g} fs)"
+            )
+            return IsotropicMTKNPT(
+                atoms,
+                timestep=self.timestep,
+                temperature_K=set_temperature,
+                pressure_au=self.pressure_gpa * units.GPa,
+                tdamp=self.npt_tdamp,
+                pdamp=self.npt_pdamp,
+                tchain=self.npt_tchain,
+                pchain=self.npt_pchain,
+                tloop=self.npt_tloop,
+                ploop=self.npt_ploop,
+            )
         if self.ensemble == "nve":
             self.log("Setting up NVE (Velocity Verlet)")
             return VelocityVerlet(atoms, timestep=self.timestep)
@@ -931,7 +1049,11 @@ class MDRunner(BaseRunner):
         """Return canonical MD settings, including only the active coupling."""
         provenance: dict[str, Any] = {
             "ensemble": self.ensemble.upper(),
-            "thermostat": self.thermostat.upper() if self.ensemble == "nvt" else None,
+            "thermostat": (
+                self.thermostat.upper()
+                if self.ensemble == "nvt"
+                else ("MTK" if self.ensemble == "npt" else None)
+            ),
             "temperature": self.temperature,
             "timestep": float(self.timestep / units.fs),
             "steps": self.steps,
@@ -959,6 +1081,30 @@ class MDRunner(BaseRunner):
                 "fmax_abort": "maximum per-atom norm of forces_raw_eV_A",
             },
         }
+        if self.ensemble == "npt":
+            provenance.update(
+                {
+                    "npt_algorithm": "isotropic_mtk",
+                    "target_pressure_GPa": self.pressure_gpa,
+                    "target_pressure_eV_A3": self.pressure_gpa * units.GPa,
+                    "npt_tdamp_fs": self.npt_tdamp / units.fs,
+                    "npt_pdamp_fs": self.npt_pdamp / units.fs,
+                    "npt_tchain": self.npt_tchain,
+                    "npt_pchain": self.npt_pchain,
+                    "npt_tloop": self.npt_tloop,
+                    "npt_ploop": self.npt_ploop,
+                    "com_momentum_conserved_zero": self._com_momentum_removed(),
+                    "xdatcar_disabled_reason": self.xdatcar_disabled_reason,
+                    "variable_cell": True,
+                    "transport_eligible": False,
+                }
+            )
+            if self._com_momentum_removed() and self.md_degrees_of_freedom:
+                provenance["npt_set_temperature_K"] = (
+                    self.temperature
+                    * self.md_degrees_of_freedom
+                    / (self.md_degrees_of_freedom + 3)
+                )
         if self.ensemble == "nvt" and self.thermostat == "langevin":
             friction_fs = float(self.friction * units.fs)
             provenance.update(
@@ -1003,6 +1149,14 @@ class MDRunner(BaseRunner):
             "Pre-relaxed": self.pre_relax,
             "Pre-relaxation status": self.pre_relax_status,
         }
+        if self.ensemble == "npt":
+            settings.update(
+                {
+                    "Target pressure (GPa)": self.pressure_gpa,
+                    "MTK thermostat damping (fs)": self.npt_tdamp / units.fs,
+                    "MTK barostat damping (fs)": self.npt_pdamp / units.fs,
+                }
+            )
         if "friction_fs^-1" in provenance:
             settings["Friction (1/fs)"] = provenance["friction_fs^-1"]
             settings["Approx. velocity damping time (ps)"] = provenance[
@@ -1164,6 +1318,7 @@ class MDRunner(BaseRunner):
         # policy may add FixCom; pre-relaxation must see exactly the user's
         # original positional constraints.
         atoms = atoms.copy()
+        self._validate_npt_state(atoms, context="MD input")
         self._validate_atomic_state(atoms, context="MD input atoms")
         atoms = self._prepare_atoms(atoms)
         self._validate_atomic_state(atoms, context="prepared MD atoms")
@@ -1183,7 +1338,11 @@ class MDRunner(BaseRunner):
         self.log(f"Ensemble:         {self.ensemble.upper()}")
         self.log(
             "Thermostat:       "
-            + (self.thermostat.upper() if self.ensemble == "nvt" else "none")
+            + (
+                self.thermostat.upper()
+                if self.ensemble == "nvt"
+                else ("MTK" if self.ensemble == "npt" else "none")
+            )
         )
         self.log(f"Temperature:      {self.temperature} K")
         self.log(f"Time step:        {self.timestep / units.fs} fs")
@@ -1198,10 +1357,17 @@ class MDRunner(BaseRunner):
             f"{log_step_unit} (buffered disk flush)"
         )
         self.log(f"Pre-relaxation:   {'Yes' if self.pre_relax else 'No'}")
+        if self.xdatcar_disabled_reason:
+            self.log(f"XDATCAR disabled: {self.xdatcar_disabled_reason}")
 
         # Setup calculator
         calc = self._get_calculator()
         atoms.calc = calc
+        self._validate_npt_state(
+            atoms,
+            context="MD calculator preflight",
+            check_stress=self.ensemble == "npt",
+        )
 
         # NEW: Pre-relaxation step
         if self.pre_relax:
@@ -1216,6 +1382,11 @@ class MDRunner(BaseRunner):
 
         # Initialize a thermal velocity distribution for both NVT and NVE.
         self._initialize_velocities(atoms)
+        self._validate_npt_state(
+            atoms,
+            context="MD initialized state",
+            check_stress=self.ensemble == "npt",
+        )
 
         # Validate the first model-evaluated state before an ASE integrator can
         # project forces internally and before any formal MD artifact is
@@ -1235,7 +1406,7 @@ class MDRunner(BaseRunner):
 
         # Setup integrator. Thermostat settings stay in MDRunner and are never
         # forwarded to the backend calculator.
-        if self.ensemble == "nvt":
+        if self.ensemble in {"nvt", "npt"}:
             self.log(
                 "Note: under NVT the total energy E = PE + KE is NOT conserved "
                 "(the thermostat exchanges heat); monitor T instead."
@@ -1302,6 +1473,9 @@ class MDRunner(BaseRunner):
             pe = float(atoms.get_potential_energy())
             forces_raw, forces_applied = self._force_views(
                 atoms, pe, context=f"MD step {step}"
+            )
+            self._validate_npt_state(
+                atoms, context=f"MD step {step}", check_stress=self.ensemble == "npt"
             )
             ke, temp, total_e = self._validate_md_safe_point(
                 atoms,
@@ -1601,7 +1775,12 @@ class MDRunner(BaseRunner):
                 "save_interval": self.save_interval,
                 "ensemble": self.ensemble.upper(),
                 "thermostat": (
-                    self.thermostat.upper() if self.ensemble == "nvt" else None
+                    self.thermostat.upper()
+                    if self.ensemble == "nvt"
+                    else ("MTK" if self.ensemble == "npt" else None)
+                ),
+                "target_pressure_GPa": (
+                    self.pressure_gpa if self.ensemble == "npt" else None
                 ),
                 "target_temperature": self.temperature,
                 "seed": self.seed,

@@ -206,6 +206,19 @@ class RunScreen(Screen):
                 value = self.app.get_config(key)
                 if value is not None:
                     options[key] = value
+            if str(options.get("ensemble", "NVT")).upper() == "NPT":
+                for key in (
+                    "pressure_gpa",
+                    "npt_tdamp",
+                    "npt_pdamp",
+                    "npt_tchain",
+                    "npt_pchain",
+                    "npt_tloop",
+                    "npt_ploop",
+                ):
+                    value = self.app.get_config(key)
+                    if value is not None:
+                        options[key] = value
             if str(options.get("ensemble", "NVT")).upper() == "NVT":
                 thermostat = str(self.app.get_config("thermostat", "LANGEVIN")).upper()
                 options["thermostat"] = thermostat

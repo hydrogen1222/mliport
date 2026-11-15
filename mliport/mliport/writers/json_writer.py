@@ -275,6 +275,28 @@ class JsonWriter:
                 },
                 "force_contract": provenance.get("force_contract"),
             }
+            npt_provenance_keys = (
+                "npt_algorithm",
+                "target_pressure_GPa",
+                "target_pressure_eV_A3",
+                "npt_tdamp_fs",
+                "npt_pdamp_fs",
+                "npt_tchain",
+                "npt_pchain",
+                "npt_tloop",
+                "npt_ploop",
+                "npt_set_temperature_K",
+                "com_momentum_conserved_zero",
+                "xdatcar_disabled_reason",
+                "variable_cell",
+                "transport_eligible",
+            )
+            npt_provenance = {
+                key: provenance[key] for key in npt_provenance_keys if key in provenance
+            }
+            if npt_provenance:
+                md_data["npt"] = npt_provenance
+                md_data["target_pressure_GPa"] = results.get("target_pressure_GPa")
             for key in (
                 "friction_fs^-1",
                 "approx_velocity_damping_time_ps",

@@ -1,6 +1,6 @@
 # 分子动力学
 
-`mliport md` 用选定的后端跑 NVE 或 NVT 动力学，生成的轨迹可以直接交给[分析](../analysis/index.md)工具。
+`mliport md` 用选定的后端跑 NVE、NVT 或 NPT 动力学，生成的轨迹可以直接交给[分析](../analysis/index.md)工具。
 
 ```bash
 .venv-mace/bin/mliport md structure.cif \
@@ -13,11 +13,27 @@
 需要一个周期性结构、一个模型，并指定后端。对分子做 MD 要用分子 task（`omol` / `molecule`），并设好
 电荷和自旋。
 
+## 各向同性 NPT 晶胞平衡（仅 ASE）
+
+UMA/MACE/GRACE/DPA 的 `--ensemble NPT` 使用 ASE 的 **Martyna–Tobias–Klein (MTK)** 恒温恒压积分器，并非 Langevin/Bussi/NHC：
+
+```bash
+mliport md structure.cif --model model.pt --model-type mace \
+  --ensemble NPT --temp 800 --pressure-gpa 0 \
+  --npt-tdamp 100 --npt-pdamp 1000 \
+  --timestep 0.5 --steps 50000 --save-interval 10 \
+  --no-pre-relax --output runs/npt-800K
+```
+
+`--npt-tchain`、`--npt-pchain` 默认均为 3，`--npt-tloop`、`--npt-ploop` 默认均为 1。阻尼时间单位为 fs；**外压正值代表压缩（GPa）**，程序转换为 ASE 的 eV/Å³，并记录配置。NPT 不支持约束、分子/表面（非三维 PBC）、零温度或不提供应力的模型，也不支持 NEP/原生 GPUMD。自动质心策略只在初始化时清除一次总动量，不添加 ASE FixCom；MTK 的恒温设定点考虑减少的三个动能自由度。
+
+标准 XDATCAR 只适用于定胞轨迹。NPT 会记录原因并禁用 XDATCAR；`raw/trajectory.traj` 保留逐帧晶胞和动量；`md.csv` 保存体积和**包含动能项的总压强**。NPT 可变胞轨迹明确标记为**不可直接用已有定胞 MSD/EH/输运分析计算扩散系数**。推荐在目标温度、压强下充分平衡，统计已平衡时间窗的**平均晶胞**并检查收敛，然后用该晶胞**另起一次**定胞 NVT/NVE 生产模拟；NPT 最后一帧并不等于平均晶胞。当前保存帧不能恢复 MTK 恒温链与压强耦合内部状态，所以从该帧重启并不等价于严格续算。对各向异性晶体或相变，只有各向同性体积控制可能不足。
+
 ## 常用选项
 
 | 选项 | 含义 |
 |---|---|
-| `--ensemble` | `NVT`（默认）或 `NVE` |
+| `--ensemble` | `NVT`（默认）、`NVE` 或 `NPT` |
 | `--temp` | 目标温度，单位 K（默认 300） |
 | `--timestep` | 积分步长，单位 fs（默认 1.0） |
 | `--steps` | 采样阶段的步数（默认 1000） |

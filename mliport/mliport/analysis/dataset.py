@@ -911,9 +911,23 @@ class TrajectoryDataset:
         if phases is None:
             phases = np.full(nframes, "production", dtype="U16")
 
+        # Variable-cell Cartesian trajectories cannot be interpreted using
+        # the existing fixed-cell MSD/unwrapping contract, even if a caller
+        # requests an explicit coordinate convention.
+        variable_cell = (
+            trajectory_meta.get("variable_cell") is True
+            or str(run_options.get("ensemble", "")).upper() == "NPT"
+        )
+        if variable_cell and positions_convention is not None:
+            raise ValueError(
+                "NPT variable-cell trajectories are not eligible for fixed-cell "
+                "MSD/transport; position-convention overrides are not supported"
+            )
         value = str(trajectory_meta.get("positions_convention", "")).lower()
         legacy = str(trajectory_meta.get("positions", "")).lower()
-        if value in {"wrapped", "unwrapped"}:
+        if variable_cell:
+            declared_convention: PositionsConvention = "unknown"
+        elif value in {"wrapped", "unwrapped"}:
             declared_convention: PositionsConvention = value  # type: ignore[assignment]
         elif "unwrapped" in legacy:
             declared_convention = "unwrapped"

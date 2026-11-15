@@ -194,6 +194,14 @@ class CalculationEngine:
             )
         if self.config.model_type == "nep":
             self._validate_nep_selection()
+        if (
+            self.config.calc_type == "md"
+            and str(self._effective_run_options().get("ensemble", "NVT")).upper()
+            == "NPT"
+            and canonical_model_type(self.config.model_type)
+            not in {"uma", "mace", "grace", "dpa"}
+        ):
+            raise ValueError("NPT supports UMA/MACE/GRACE/DPA ASE runtimes only")
         # Validate option keys against the central schema (plan section 10).
         # In strict mode unknown / mistyped keys raise; otherwise they warn,
         # preserving the historical non-fatal behaviour.
@@ -464,6 +472,13 @@ class CalculationEngine:
                 steps=option("md", "steps"),
                 equilibration_steps=option("md", "equilibration_steps"),
                 thermostat=option("md", "thermostat"),
+                pressure_gpa=option("md", "pressure_gpa"),
+                npt_tdamp=option("md", "npt_tdamp"),
+                npt_pdamp=option("md", "npt_pdamp"),
+                npt_tchain=option("md", "npt_tchain"),
+                npt_pchain=option("md", "npt_pchain"),
+                npt_tloop=option("md", "npt_tloop"),
+                npt_ploop=option("md", "npt_ploop"),
                 friction=option("md", "friction"),
                 bussi_tau=option("md", "bussi_tau"),
                 nhc_tdamp=option("md", "nhc_tdamp"),
@@ -476,7 +491,7 @@ class CalculationEngine:
                 # explosions). An explicit user setting always wins.
                 pre_relax=opts.get(
                     "pre_relax",
-                    str(option("md", "ensemble")).upper() != "NVE",
+                    str(option("md", "ensemble")).upper() == "NVT",
                 ),
                 pre_relax_steps=option("md", "pre_relax_steps"),
                 pre_relax_fmax=option("md", "pre_relax_fmax"),

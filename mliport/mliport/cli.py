@@ -596,7 +596,7 @@ Examples:
     md_parser = subparsers.add_parser(
         "md",
         help="Molecular dynamics",
-        description="Run MD simulation (NVT or NVE ensemble)",
+        description="Run MD simulation (NVT, NVE or isotropic MTK NPT)",
     )
     md_parser.add_argument(
         "structure",
@@ -632,7 +632,7 @@ Examples:
         "--ensemble",
         type=str,
         default=None,
-        choices=["NVT", "NVE"],
+        choices=["NVT", "NVE", "NPT"],
         help="MD ensemble (default: NVT).",
     )
     md_parser.add_argument(
@@ -641,6 +641,31 @@ Examples:
         default=None,
         help="Temperature in Kelvin (default: 300).",
     )
+    md_parser.add_argument(
+        "--pressure-gpa",
+        type=float,
+        default=None,
+        help="NPT target pressure in GPa (+ compression, default 0).",
+    )
+    md_parser.add_argument(
+        "--npt-tdamp",
+        type=float,
+        default=None,
+        help="NPT MTK thermostat damping in fs (default 100).",
+    )
+    md_parser.add_argument(
+        "--npt-pdamp",
+        type=float,
+        default=None,
+        help="NPT MTK barostat damping in fs (default 1000).",
+    )
+    for key in ("npt-tchain", "npt-pchain", "npt-tloop", "npt-ploop"):
+        md_parser.add_argument(
+            f"--{key}",
+            type=int,
+            default=None,
+            help="NPT MTK chain length or integration substeps.",
+        )
     md_parser.add_argument(
         "--timestep",
         type=float,
@@ -708,7 +733,7 @@ Examples:
         "--pre-relax",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Pre-relax the structure before MD (default: enabled for NVT, disabled for NVE).",
+        help="Pre-relax before MD (default: on NVT, off NVE/NPT).",
     )
     md_parser.add_argument(
         "--pre-relax-steps",
@@ -2051,6 +2076,13 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             opts["temperature"] = args.temp
         for key in (
             "ensemble",
+            "pressure_gpa",
+            "npt_tdamp",
+            "npt_pdamp",
+            "npt_tchain",
+            "npt_pchain",
+            "npt_tloop",
+            "npt_ploop",
             "timestep",
             "steps",
             "equilibration_steps",

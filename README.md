@@ -15,7 +15,7 @@ your chemistry depends on the checkpoint you choose.
 What you get:
 
 - **The same workflow on every backend.** Single point, fixed- and variable-cell
-  relaxation, NVE/NVT MD (Langevin, Bussi, Nosé–Hoover chain), NEB and CI-NEB,
+  relaxation, NVE/NVT MD (Langevin, Bussi, Nosé–Hoover chain), and ASE-only isotropic MTK NPT (UMA/MACE/GRACE/DPA), NEB and CI-NEB,
   MD-based configuration search for an adsorbate on a slab, batch sweeps and a job
   queue, from the CLI, an INCAR-style file, the TUI or Python. NEP's native `gpumd`
   runtime covers only single point, relaxation and MD (see
@@ -176,11 +176,11 @@ cell with the ions.
   --fmax 0.05 --max-steps 200 --cell-opt --device cuda --output runs/lgps-opt
 ```
 
-**Molecular dynamics.** `--ensemble` is `NVE` or `NVT`, `--thermostat` is `LANGEVIN`,
+**Molecular dynamics.** `--ensemble` is `NVE`, `NVT`, or (ASE UMA/MACE/GRACE/DPA only) isotropic `NPT`. With NVT, `--thermostat` is `LANGEVIN`,
 `BUSSI` or `NHC`. A run can continue from a saved frame that has velocities with
 `--velocity-policy preserve --no-pre-relax`. With NHC the default `--com-policy auto`
 zeroes the center-of-mass momentum once, so the cell does not drift and bias
-MSD-based transport.
+MSD-based transport. For NPT use `--pressure-gpa`, `--npt-tdamp`, and `--npt-pdamp`; the variable-cell trajectory is not qualified for direct fixed-cell MSD. See [MD workflow](docs/workflows/md.md).
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \

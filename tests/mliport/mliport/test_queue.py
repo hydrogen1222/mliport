@@ -109,6 +109,34 @@ def test_build_command_md_options() -> None:
     assert "--seed" in cmd and "42" in cmd
 
 
+def test_build_command_npt_options_are_forwarded() -> None:
+    options = {
+        "ensemble": "NPT",
+        "pressure_gpa": 1.5,
+        "npt_tdamp": 80.0,
+        "npt_pdamp": 600.0,
+        "npt_tchain": 4,
+        "npt_pchain": 3,
+        "npt_tloop": 2,
+        "npt_ploop": 1,
+    }
+    cmd = build_mliport_command(
+        "md", "s.cif", "m.pt", model_type="mace", options=options
+    )
+    for key, value in options.items():
+        flag = {
+            "ensemble": "--ensemble",
+            "pressure_gpa": "--pressure-gpa",
+            "npt_tdamp": "--npt-tdamp",
+            "npt_pdamp": "--npt-pdamp",
+            "npt_tchain": "--npt-tchain",
+            "npt_pchain": "--npt-pchain",
+            "npt_tloop": "--npt-tloop",
+            "npt_ploop": "--npt-ploop",
+        }[key]
+        assert cmd[cmd.index(flag) + 1] == str(value)
+
+
 def test_build_command_neb_uses_two_endpoints_and_serial_job_flags() -> None:
     cmd = build_mliport_command(
         "neb",
