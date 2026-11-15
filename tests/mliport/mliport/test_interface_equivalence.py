@@ -106,6 +106,28 @@ def _md_options() -> dict[str, object]:
     }
 
 
+def _npt_options() -> dict[str, object]:
+    return {
+        "ensemble": "NPT",
+        "temperature": 500,
+        "pressure_gpa": 1.5,
+        "npt_tdamp": 80.0,
+        "npt_pdamp": 600.0,
+        "npt_tchain": 4,
+        "npt_pchain": 3,
+        "npt_tloop": 2,
+        "npt_ploop": 1,
+        "timestep": 1.0,
+        "steps": 40,
+        "save_interval": 10,
+        "seed": 20260911,
+        "com_policy": "none",
+        "pre_relax": False,
+        "default_dtype": "float32",
+        "head": "small",
+    }
+
+
 def _opt_options() -> dict[str, object]:
     return {
         "fmax": 0.05,
@@ -149,6 +171,13 @@ def _identity_cli(calc_type: str, structure: Path, model: Path) -> list[str]:
 
 _FLAG_BY_KEY = {
     "ensemble": "--ensemble",
+    "pressure_gpa": "--pressure-gpa",
+    "npt_tdamp": "--npt-tdamp",
+    "npt_pdamp": "--npt-pdamp",
+    "npt_tchain": "--npt-tchain",
+    "npt_pchain": "--npt-pchain",
+    "npt_tloop": "--npt-tloop",
+    "npt_ploop": "--npt-ploop",
     "temperature": "--temp",
     "timestep": "--timestep",
     "steps": "--steps",
@@ -400,6 +429,26 @@ def test_request_resolution_is_interface_independent(
         assert Path(engine.model_path).name == "model.pt"
 
 
+def test_npt_request_resolution_is_interface_independent(tmp_path: Path) -> None:
+    """NPT pressure/barostat settings survive CLI, API, INCAR and queue."""
+    options = _npt_options()
+    engines = {
+        "cli": _resolve_via_cli(tmp_path, "md", options),
+        "api": _resolve_via_api(tmp_path, "md", options),
+        "incar": _resolve_via_incar(tmp_path, "md", options),
+        "queue": _resolve_via_queue(tmp_path, "md", options),
+    }
+    reference = _identity_projection(engines["cli"])
+    for name, engine in engines.items():
+        assert _identity_projection(engine) == reference, name
+    assert reference["run_options"]["ensemble"] == "NPT"
+    for key, value in options.items():
+        if key in {"default_dtype", "head"}:
+            assert reference["calculator_options"][key] == value
+        else:
+            assert reference["run_options"][key] == value
+
+
 def test_resolved_option_bags_carry_all_request_parameters(
     tmp_path: Path,
 ) -> None:
@@ -434,8 +483,13 @@ def test_neb_mapping_and_checkpoint_policy_resolve_identically(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "options", [_md_options(), _npt_options()], ids=["nvt", "npt"]
+)
 @pytest.mark.asyncio()
-async def test_tui_md_command_resolves_like_api_request(tmp_path: Path) -> None:
+async def test_tui_md_command_resolves_like_api_request(
+    tmp_path: Path, options: dict[str, object]
+) -> None:
     """A TUI-built MD argv parses through the CLI resolver to the same typed
     request the API produces for the same logical configuration."""
     from mliport.api import _api_resolve_full
@@ -444,7 +498,6 @@ async def test_tui_md_command_resolves_like_api_request(tmp_path: Path) -> None:
 
     structure = _make_structure(tmp_path)
     model = _make_model(tmp_path)
-    options = _md_options()
     output_dir = str(tmp_path / "tui-out")
 
     app = MliportApp()
