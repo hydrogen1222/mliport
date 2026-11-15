@@ -286,12 +286,21 @@ class MDRunner(BaseRunner):
                 raise ValueError("MTK NPT temperature must be > 0 K")
             if npt_tdamp_fs <= 0 or npt_pdamp_fs <= 0:
                 raise ValueError("MTK NPT tdamp and pdamp must be > 0 fs")
-            if min(npt_tchain_value, npt_pchain_value, npt_tloop_value, npt_ploop_value) < 1:
+            if (
+                min(
+                    npt_tchain_value, npt_pchain_value, npt_tloop_value, npt_ploop_value
+                )
+                < 1
+            ):
                 raise ValueError("MTK NPT chain lengths and substeps must be >= 1")
             if not write_trajectory:
-                raise ValueError("NPT requires lossless variable-cell ASE trajectory output")
+                raise ValueError(
+                    "NPT requires lossless variable-cell ASE trajectory output"
+                )
             if thermostat_value != "langevin":
-                raise ValueError("NPT uses MTK thermostat, not a selectable NVT thermostat")
+                raise ValueError(
+                    "NPT uses MTK thermostat, not a selectable NVT thermostat"
+                )
 
         if ensemble_value == "nvt":
             if thermostat_value not in self.VALID_THERMOSTATS:
@@ -346,7 +355,8 @@ class MDRunner(BaseRunner):
         self.npt_ploop = npt_ploop_value
         self.xdatcar_disabled_reason = (
             "variable-cell NPT cannot be represented by standard fixed-cell XDATCAR"
-            if ensemble_value == "npt" and write_xdatcar else None
+            if ensemble_value == "npt" and write_xdatcar
+            else None
         )
         self.timestep = timestep_fs * units.fs  # Convert to ASE units
         self.steps = steps_value
@@ -408,7 +418,8 @@ class MDRunner(BaseRunner):
 
     def _integrator_key(self) -> str:
         return (
-            "nve" if self.ensemble == "nve"
+            "nve"
+            if self.ensemble == "nve"
             else ("npt" if self.ensemble == "npt" else self.thermostat)
         )
 
@@ -944,11 +955,16 @@ class MDRunner(BaseRunner):
                 f"pdamp={self.npt_pdamp / units.fs:g} fs)"
             )
             return IsotropicMTKNPT(
-                atoms, timestep=self.timestep, temperature_K=set_temperature,
+                atoms,
+                timestep=self.timestep,
+                temperature_K=set_temperature,
                 pressure_au=self.pressure_gpa * units.GPa,
-                tdamp=self.npt_tdamp, pdamp=self.npt_pdamp,
-                tchain=self.npt_tchain, pchain=self.npt_pchain,
-                tloop=self.npt_tloop, ploop=self.npt_ploop,
+                tdamp=self.npt_tdamp,
+                pdamp=self.npt_pdamp,
+                tchain=self.npt_tchain,
+                pchain=self.npt_pchain,
+                tloop=self.npt_tloop,
+                ploop=self.npt_ploop,
             )
         if self.ensemble == "nve":
             self.log("Setting up NVE (Velocity Verlet)")
@@ -1034,7 +1050,8 @@ class MDRunner(BaseRunner):
         provenance: dict[str, Any] = {
             "ensemble": self.ensemble.upper(),
             "thermostat": (
-                self.thermostat.upper() if self.ensemble == "nvt"
+                self.thermostat.upper()
+                if self.ensemble == "nvt"
                 else ("MTK" if self.ensemble == "npt" else None)
             ),
             "temperature": self.temperature,
@@ -1065,24 +1082,27 @@ class MDRunner(BaseRunner):
             },
         }
         if self.ensemble == "npt":
-            provenance.update({
-                "npt_algorithm": "isotropic_mtk",
-                "target_pressure_GPa": self.pressure_gpa,
-                "target_pressure_eV_A3": self.pressure_gpa * units.GPa,
-                "npt_tdamp_fs": self.npt_tdamp / units.fs,
-                "npt_pdamp_fs": self.npt_pdamp / units.fs,
-                "npt_tchain": self.npt_tchain,
-                "npt_pchain": self.npt_pchain,
-                "npt_tloop": self.npt_tloop,
-                "npt_ploop": self.npt_ploop,
-                "com_momentum_conserved_zero": self._com_momentum_removed(),
-                "xdatcar_disabled_reason": self.xdatcar_disabled_reason,
-                "variable_cell": True,
-                "transport_eligible": False,
-            })
+            provenance.update(
+                {
+                    "npt_algorithm": "isotropic_mtk",
+                    "target_pressure_GPa": self.pressure_gpa,
+                    "target_pressure_eV_A3": self.pressure_gpa * units.GPa,
+                    "npt_tdamp_fs": self.npt_tdamp / units.fs,
+                    "npt_pdamp_fs": self.npt_pdamp / units.fs,
+                    "npt_tchain": self.npt_tchain,
+                    "npt_pchain": self.npt_pchain,
+                    "npt_tloop": self.npt_tloop,
+                    "npt_ploop": self.npt_ploop,
+                    "com_momentum_conserved_zero": self._com_momentum_removed(),
+                    "xdatcar_disabled_reason": self.xdatcar_disabled_reason,
+                    "variable_cell": True,
+                    "transport_eligible": False,
+                }
+            )
             if self._com_momentum_removed() and self.md_degrees_of_freedom:
                 provenance["npt_set_temperature_K"] = (
-                    self.temperature * self.md_degrees_of_freedom
+                    self.temperature
+                    * self.md_degrees_of_freedom
                     / (self.md_degrees_of_freedom + 3)
                 )
         if self.ensemble == "nvt" and self.thermostat == "langevin":
@@ -1130,11 +1150,13 @@ class MDRunner(BaseRunner):
             "Pre-relaxation status": self.pre_relax_status,
         }
         if self.ensemble == "npt":
-            settings.update({
-                "Target pressure (GPa)": self.pressure_gpa,
-                "MTK thermostat damping (fs)": self.npt_tdamp / units.fs,
-                "MTK barostat damping (fs)": self.npt_pdamp / units.fs,
-            })
+            settings.update(
+                {
+                    "Target pressure (GPa)": self.pressure_gpa,
+                    "MTK thermostat damping (fs)": self.npt_tdamp / units.fs,
+                    "MTK barostat damping (fs)": self.npt_pdamp / units.fs,
+                }
+            )
         if "friction_fs^-1" in provenance:
             settings["Friction (1/fs)"] = provenance["friction_fs^-1"]
             settings["Approx. velocity damping time (ps)"] = provenance[
@@ -1317,7 +1339,8 @@ class MDRunner(BaseRunner):
         self.log(
             "Thermostat:       "
             + (
-                self.thermostat.upper() if self.ensemble == "nvt"
+                self.thermostat.upper()
+                if self.ensemble == "nvt"
                 else ("MTK" if self.ensemble == "npt" else "none")
             )
         )
@@ -1341,7 +1364,8 @@ class MDRunner(BaseRunner):
         calc = self._get_calculator()
         atoms.calc = calc
         self._validate_npt_state(
-            atoms, context="MD calculator preflight",
+            atoms,
+            context="MD calculator preflight",
             check_stress=self.ensemble == "npt",
         )
 
@@ -1359,7 +1383,8 @@ class MDRunner(BaseRunner):
         # Initialize a thermal velocity distribution for both NVT and NVE.
         self._initialize_velocities(atoms)
         self._validate_npt_state(
-            atoms, context="MD initialized state",
+            atoms,
+            context="MD initialized state",
             check_stress=self.ensemble == "npt",
         )
 
@@ -1750,7 +1775,8 @@ class MDRunner(BaseRunner):
                 "save_interval": self.save_interval,
                 "ensemble": self.ensemble.upper(),
                 "thermostat": (
-                    self.thermostat.upper() if self.ensemble == "nvt"
+                    self.thermostat.upper()
+                    if self.ensemble == "nvt"
                     else ("MTK" if self.ensemble == "npt" else None)
                 ),
                 "target_pressure_GPa": (

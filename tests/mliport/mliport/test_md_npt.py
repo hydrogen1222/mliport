@@ -59,12 +59,21 @@ def structure():
 
 def runner(wrapper, output_dir, **kwargs):
     args = {
-        "ensemble": "NPT", "temperature": 300, "pressure_gpa": 1.5,
-        "npt_tdamp": 20.0, "npt_pdamp": 40.0,
-        "timestep": 0.5, "steps": 24, "equilibration_steps": 4,
-        "save_interval": 2, "seed": 42, "pre_relax": False,
-        "output_dir": output_dir, "verbose": False,
-        "write_outcar": False, "write_json": False,
+        "ensemble": "NPT",
+        "temperature": 300,
+        "pressure_gpa": 1.5,
+        "npt_tdamp": 20.0,
+        "npt_pdamp": 40.0,
+        "timestep": 0.5,
+        "steps": 24,
+        "equilibration_steps": 4,
+        "save_interval": 2,
+        "seed": 42,
+        "pre_relax": False,
+        "output_dir": output_dir,
+        "verbose": False,
+        "write_outcar": False,
+        "write_json": False,
     }
     args.update(kwargs)
     return MDRunner(wrapper, **args)
@@ -72,19 +81,35 @@ def runner(wrapper, output_dir, **kwargs):
 
 def test_schema_npt_parameters():
     assert get_schema().resolve("ENSEMBLE").coerce("NPT") == "NPT"
-    for name in ("pressure_gpa", "npt_tdamp", "npt_pdamp",
-                 "npt_tchain", "npt_pchain", "npt_tloop", "npt_ploop"):
+    for name in (
+        "pressure_gpa",
+        "npt_tdamp",
+        "npt_pdamp",
+        "npt_tchain",
+        "npt_pchain",
+        "npt_tloop",
+        "npt_ploop",
+    ):
         assert get_schema().resolve(name) is not None
         assert name in BUILTIN_DEFAULTS["md"]
 
 
-@pytest.mark.parametrize(("key", "value"), [
-    ("temperature", 0), ("npt_tdamp", 0), ("npt_pdamp", -1),
-    ("pressure_gpa", float("nan")), ("pressure_gpa", float("inf")),
-    ("npt_tchain", 0), ("npt_pchain", 0),
-    ("npt_tloop", 0), ("npt_ploop", 0),
-    ("write_trajectory", False), ("thermostat", "NHC"),
-])
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("temperature", 0),
+        ("npt_tdamp", 0),
+        ("npt_pdamp", -1),
+        ("pressure_gpa", float("nan")),
+        ("pressure_gpa", float("inf")),
+        ("npt_tchain", 0),
+        ("npt_pchain", 0),
+        ("npt_tloop", 0),
+        ("npt_ploop", 0),
+        ("write_trajectory", False),
+        ("thermostat", "NHC"),
+    ],
+)
 def test_bad_npt_parameter_fails_before_load(tmp_path, key, value):
     wrapper = Wrapper()
     with pytest.raises(ValueError):
@@ -174,14 +199,20 @@ def test_npt_variable_cell_io_and_transport_gate(tmp_path):
     assert manifest["trajectory"]["transport_eligible"] is False
     assert manifest["trajectory"]["positions_convention"] == "unknown"
     assert "xdatcar" not in manifest["artifacts"]
-    assert result["md_provenance"]["target_pressure_eV_A3"] == pytest.approx(1.5 * units.GPa)
+    assert result["md_provenance"]["target_pressure_eV_A3"] == pytest.approx(
+        1.5 * units.GPa
+    )
 
 
 @pytest.mark.parametrize("ensemble", ["NVE", "NVT"])
 def test_legacy_fixed_cell_exports_unchanged(tmp_path, ensemble):
     result = runner(
-        Wrapper(), tmp_path, ensemble=ensemble, steps=2,
-        equilibration_steps=0, write_xdatcar=True,
+        Wrapper(),
+        tmp_path,
+        ensemble=ensemble,
+        steps=2,
+        equilibration_steps=0,
+        write_xdatcar=True,
     ).run(structure())
     assert result["ensemble"] == ensemble
     assert (tmp_path / "vasp" / "XDATCAR").exists()

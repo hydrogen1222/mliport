@@ -642,20 +642,28 @@ Examples:
         help="Temperature in Kelvin (default: 300).",
     )
     md_parser.add_argument(
-        "--pressure-gpa", type=float, default=None,
+        "--pressure-gpa",
+        type=float,
+        default=None,
         help="NPT target pressure in GPa (+ compression, default 0).",
     )
     md_parser.add_argument(
-        "--npt-tdamp", type=float, default=None,
+        "--npt-tdamp",
+        type=float,
+        default=None,
         help="NPT MTK thermostat damping in fs (default 100).",
     )
     md_parser.add_argument(
-        "--npt-pdamp", type=float, default=None,
+        "--npt-pdamp",
+        type=float,
+        default=None,
         help="NPT MTK barostat damping in fs (default 1000).",
     )
     for key in ("npt-tchain", "npt-pchain", "npt-tloop", "npt-ploop"):
         md_parser.add_argument(
-            f"--{key}", type=int, default=None,
+            f"--{key}",
+            type=int,
+            default=None,
             help="NPT MTK chain length or integration substeps.",
         )
     md_parser.add_argument(

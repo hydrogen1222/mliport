@@ -431,7 +431,9 @@ class ConfigScreen(Screen):
                 id="temp-input",
             )
 
-            yield Label("NPT target pressure (GPa, + compression):", id="npt-pressure-label")
+            yield Label(
+                "NPT target pressure (GPa, + compression):", id="npt-pressure-label"
+            )
             yield Input(
                 value=str(self.app.get_config("pressure_gpa", 0.0)),
                 id="npt-pressure-input",
@@ -1060,9 +1062,12 @@ class ConfigScreen(Screen):
         is_nvt = pressed is None or pressed.id == "nvt"
         is_npt = pressed is not None and pressed.id == "npt"
         for selector in (
-            "#npt-pressure-label", "#npt-pressure-input",
-            "#npt-tdamp-label", "#npt-tdamp-input",
-            "#npt-pdamp-label", "#npt-pdamp-input",
+            "#npt-pressure-label",
+            "#npt-pressure-input",
+            "#npt-tdamp-label",
+            "#npt-tdamp-input",
+            "#npt-pdamp-label",
+            "#npt-pdamp-input",
         ):
             widget = self.query_one(selector)
             widget.display = is_npt
@@ -1609,7 +1614,9 @@ class ConfigScreen(Screen):
             self.app.update_config("temperature", temp)
             if self.app.get_config("ensemble") == "NPT":
                 if self._current_model_type() not in {"uma", "mace", "grace", "dpa"}:
-                    self.notify("NPT supports only UMA/MACE/GRACE/DPA", severity="error")
+                    self.notify(
+                        "NPT supports only UMA/MACE/GRACE/DPA", severity="error"
+                    )
                     return
                 if temp <= 0:
                     self.notify("MTK NPT requires temperature > 0 K", severity="error")
@@ -1624,7 +1631,9 @@ class ConfigScreen(Screen):
                     except ValueError:
                         self.notify(f"{key} must be numeric", severity="error")
                         return
-                    if not math.isfinite(value) or (key != "pressure_gpa" and value <= 0):
+                    if not math.isfinite(value) or (
+                        key != "pressure_gpa" and value <= 0
+                    ):
                         self.notify(f"{key} must be finite and valid", severity="error")
                         return
                     self.app.update_config(key, value)
@@ -1814,8 +1823,7 @@ class ConfigScreen(Screen):
             com_policy = str(com_select.value)
             ensemble = str(self.app.get_config("ensemble", "NVT")).upper()
             if (
-                (thermostat == "NHC" and ensemble == "NVT")
-                or ensemble == "NPT"
+                (thermostat == "NHC" and ensemble == "NVT") or ensemble == "NPT"
             ) and com_policy == "constraint":
                 self.notify(
                     "NHC/NPT cannot use FixCom; use Auto "

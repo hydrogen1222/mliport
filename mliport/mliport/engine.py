@@ -196,7 +196,8 @@ class CalculationEngine:
             self._validate_nep_selection()
         if (
             self.config.calc_type == "md"
-            and str(self._effective_run_options().get("ensemble", "NVT")).upper() == "NPT"
+            and str(self._effective_run_options().get("ensemble", "NVT")).upper()
+            == "NPT"
             and self.config.model_type not in {"uma", "mace", "grace", "dpa"}
         ):
             raise ValueError("NPT supports UMA/MACE/GRACE/DPA ASE runtimes only")
