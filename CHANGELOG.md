@@ -16,6 +16,12 @@ TUI new-task wizard (tracking: #61, R5):
   configuration screens (SP/OPT/MD/NEB/CONFSEARCH), jobs, analysis and the
   template generator, which now also accepts `confsearch` instead of silently
   writing an SP template.
+- The wizard leaves `TASK` (and `HEAD` where the backend has an active one) as
+  `REQUIRED` placeholders and reports them, because the UMA task family and the
+  other backends' `bulk`/`molecule` semantic are model decisions that a
+  one-click run must not inherit from a template default.
+- A model picked from a `models/` subdirectory (`uma/s1.pt`) is written as the
+  absolute path inside `models/`, not as a working-directory-relative path.
 - The task-folder logic lives in `mliport/task_folder.py` (no Textual import),
   so it is unit-tested without a terminal: template reuse, suffix
   normalization, byte-identical copies, refusal to overwrite an existing task,

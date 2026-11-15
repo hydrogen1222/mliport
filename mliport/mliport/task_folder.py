@@ -77,19 +77,65 @@ def structure_target_name(source: str | Path) -> str:
     return target
 
 
+def _model_reference_for_task_folder(model_path: str | Path) -> str:
+    """The ``MODEL_PATH`` value to write for the model the user picked.
+
+    A bare name stays a name, so the ``models/`` convention (#61 R2) resolves
+    it at run time. Anything else must exist now, and is recorded absolutely so
+    the task folder does not depend on the directory the wizard ran in. A
+    ``models``-relative entry such as ``uma/s1.pt`` (what the picker lists) is
+    resolved inside ``models/`` instead of against the working directory.
+    """
+    from mliport.model_lookup import (  # noqa: PLC0415
+        is_file_name,
+        mliport_root,
+        models_dir,
+    )
+
+    raw = str(model_path).strip()
+    if not raw:
+        raise TaskFolderError("A model file (MODEL_PATH) is required.")
+    if is_file_name(raw):
+        return raw
+    candidate = Path(raw).expanduser()
+    if candidate.exists():
+        return str(candidate.resolve())
+    root = mliport_root()
+    if root is not None:
+        in_models = models_dir(root) / raw
+        if in_models.exists():
+            return str(in_models.resolve())
+        raise TaskFolderError(
+            f"Model {raw!r} was not found: neither {candidate.resolve()} nor "
+            f"{in_models} exists."
+        )
+    raise TaskFolderError(
+        f"Model {raw!r} was not found at {candidate.resolve()}, and no mliport "
+        "root is known, so models/ cannot be searched. Pass the model path, or "
+        "set MLIPORT_ROOT."
+    )
+
+
 def incar_text_for(
     calc_type: str,
     *,
     model_type: str,
     model_path: str | Path,
+    task: str | None = None,
+    head: str | None = None,
 ) -> str:
     """The template for ``calc_type`` with the chosen model filled in.
 
     The rest of the file is the generated template, byte for byte: the wizard
     must not maintain a second description of the options (spec R5.2).
+
+    ``TASK`` (and ``HEAD`` where the backend has an active one) is written as a
+    ``REQUIRED`` placeholder unless the caller supplies it: the task family of
+    UMA and the PBC semantic of the other backends are model decisions that the
+    wizard must not silently inherit from a template default (AGENTS.md rule 3,
+    "never silently change model task/head").
     """
     from mliport.config.defaults import build_incar_default  # noqa: PLC0415
-    from mliport.model_lookup import is_file_name  # noqa: PLC0415
 
     calc = str(calc_type).strip().lower()
     if calc not in TASK_CALC_TYPES:
@@ -100,17 +146,7 @@ def incar_text_for(
     engine = str(model_type).strip().lower()
     if not engine:
         raise TaskFolderError("A model backend (MODEL_TYPE) is required.")
-    raw_model = str(model_path).strip()
-    if not raw_model:
-        raise TaskFolderError("A model file (MODEL_PATH) is required.")
-    # A bare file name keeps the models/ convention working (#61 R2); anything
-    # else is recorded as an absolute path so the folder does not depend on the
-    # directory the wizard was started from.
-    resolved_model = (
-        raw_model
-        if is_file_name(raw_model)
-        else str(Path(raw_model).expanduser().resolve())
-    )
+    resolved_model = _model_reference_for_task_folder(model_path)
 
     text = build_incar_default(calc, engine=engine)
     lines: list[str] = []
@@ -125,6 +161,12 @@ def incar_text_for(
         if stripped.startswith("MODEL_PATH"):
             lines.append(f"MODEL_PATH = {resolved_model}")
             seen_model_path = True
+            continue
+        if stripped.startswith("TASK") and "=" in stripped:
+            lines.append(f"TASK = {task.strip() if task else 'REQUIRED'}")
+            continue
+        if stripped.startswith("HEAD") and "=" in stripped:
+            lines.append(f"HEAD = {head.strip() if head else 'REQUIRED'}")
             continue
         lines.append(line)
     if not (seen_model_type and seen_model_path):

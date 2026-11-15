@@ -281,7 +281,11 @@ that quietly lacks them.
 calculation type, a structure file and a model - the backend first, then a file
 from `models/` - and it writes a task folder with `INCAR.mliport` and a
 byte-for-byte copy of the structure, then prints `cd <folder> && mliport run`.
-"Create & Run" executes `mliport run` itself, not a second run path.
+"Create & Run" executes `mliport run` itself, not a second run path. The wizard
+leaves `TASK` (and `HEAD` for a multi-branch checkpoint) as `REQUIRED`
+placeholders: the UMA task family and the other backends' `bulk`/`molecule`
+semantic are model decisions, so it says what is still to fill in instead of
+running with a template default.
 
 Everything else stays available under "Advanced": the manual configuration
 screens for SP, OPT, MD, NEB and CONFSEARCH, the template generator (which uses

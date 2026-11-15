@@ -87,14 +87,20 @@ def test_create_task_folder_writes_incar_and_a_byte_identical_structure(
     assert "CALC_TYPE = SP" in text
     assert "MODEL_TYPE = MACE" in text
     assert f"MODEL_PATH = {model.resolve()}" in text
-    assert "REQUIRED" not in text
+    # Only the task decision is left to the user (never a model or a structure).
+    assert remaining_placeholders(text) == ["TASK"]
     assert folder.command == f"cd {folder.path} && mliport run"
 
 
 def test_the_written_incar_passes_the_same_validation_as_mliport_run(
     tmp_path: Path,
 ) -> None:
-    """The wizard must not be able to emit an INCAR that `run` rejects."""
+    """The wizard cannot emit an INCAR that `run` rejects once filled in.
+
+    The wizard deliberately leaves `TASK` (and `HEAD`) for the user: the UMA
+    task family and the other backends' PBC semantic are model decisions, not
+    template defaults that a one-click run may inherit silently.
+    """
     structure = _write_structure(tmp_path, "POSCAR")
     model = _write_model(tmp_path)
     folder = create_task_folder(
@@ -106,9 +112,19 @@ def test_the_written_incar_passes_the_same_validation_as_mliport_run(
     )
 
     config = IncarConfig.from_file(folder.incar)
+    # Unfilled, the run must fail closed on the placeholder rather than guess.
+    assert remaining_placeholders(folder.incar.read_text(encoding="utf-8")) == ["TASK"]
+    assert config.validate() != []
+
+    filled = folder.incar.read_text(encoding="utf-8").replace(
+        "TASK = REQUIRED", "TASK = omat"
+    )
+    folder.incar.write_text(filled, encoding="utf-8")
+    config = IncarConfig.from_file(folder.incar)
     assert config.validate() == []
     resolved = resolve_config(calc_type="md", incar=config)
     assert resolved.model_type == "uma"
+    assert resolved.task == "omat"
     assert resolved.model_path == str(model.resolve())
 
 
@@ -116,20 +132,55 @@ def test_a_models_file_name_stays_a_name_so_the_models_lookup_applies() -> None:
     """The wizard must not turn `models/x.model` into a CWD-relative path."""
     text = incar_text_for("sp", model_type="mace", model_path="mace.model")
     assert "MODEL_PATH = mace.model" in text
-    assert remaining_placeholders(text) == []
+    assert remaining_placeholders(text) == ["TASK"]
 
 
 def test_unfilled_placeholders_are_reported(tmp_path: Path) -> None:
-    """NEB and confsearch need more than a structure and a model."""
+    """A created INCAR says exactly what the user still has to decide."""
     neb = incar_text_for("neb", model_type="mace", model_path="mace.model")
-    assert remaining_placeholders(neb) == []
+    assert remaining_placeholders(neb) == ["NEB_FINAL", "NEB_INITIAL", "TASK"]
     confsearch = incar_text_for(
         "confsearch", model_type="mace", model_path="mace.model"
     )
     assert remaining_placeholders(confsearch) == [
         "CS_ADSORBATE_INDICES",
         "CS_STARTS",
+        "TASK",
     ]
+    # DPA has a model branch as well as a task.
+    dpa = incar_text_for("sp", model_type="dpa", model_path="dpa.pt")
+    assert remaining_placeholders(dpa) == ["HEAD", "TASK"]
+
+
+def test_a_task_or_head_supplied_by_the_caller_is_written(tmp_path: Path) -> None:
+    text = incar_text_for(
+        "sp", model_type="dpa", model_path="dpa.pt", task="bulk", head="Omat24"
+    )
+    assert "TASK = bulk" in text
+    assert "HEAD = Omat24" in text
+    assert remaining_placeholders(text) == []
+
+
+def test_a_models_subdirectory_entry_is_resolved_inside_models(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The picker lists `uma/s1.pt`; that must not become a CWD-relative path."""
+    from mliport.model_lookup import MLIPORT_ROOT_ENV
+
+    root = tmp_path / "checkout"
+    (root / "models" / "uma").mkdir(parents=True)
+    model = root / "models" / "uma" / "s1.pt"
+    model.write_text("w", encoding="utf-8")
+    monkeypatch.setenv(MLIPORT_ROOT_ENV, str(root))
+    monkeypatch.chdir(tmp_path)
+
+    text = incar_text_for("sp", model_type="uma", model_path="uma/s1.pt")
+    assert f"MODEL_PATH = {model.resolve()}" in text
+
+
+def test_a_separator_value_that_exists_nowhere_fails_closed(tmp_path) -> None:
+    with pytest.raises(TaskFolderError, match="was not found"):
+        incar_text_for("sp", model_type="mace", model_path=str(tmp_path / "nope.pt"))
 
 
 def test_the_incar_body_is_the_shared_template(tmp_path: Path) -> None:

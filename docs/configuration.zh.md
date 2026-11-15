@@ -244,7 +244,9 @@ NEB 的必需输出不能关闭，关闭会报错。
 `mliport tui` 打开后先是“新建任务”向导，因为这是最常见的用法：选计算类型、结构文件和模型
 （先选后端，再从 `models/` 的文件清单里选），它会建好一个任务文件夹，里面有 `INCAR.mliport`
 和结构文件的逐字节副本，并提示 `cd <文件夹> && mliport run`。“创建并运行”走的就是
-`mliport run` 本身，不是另一套运行逻辑。
+`mliport run` 本身，不是另一套运行逻辑。向导会把 `TASK`（多分支 checkpoint 还有 `HEAD`）留成
+`REQUIRED` 占位符：UMA 的任务族和其他后端的 `bulk`/`molecule` 语义属于模型层面的决定，所以它
+只提示还差什么，不会用模板默认值直接开跑。
 
 其余功能都在“高级”里：SP、OPT、MD、NEB、CONFSEARCH 的手工配置页、模板生成（和
 `mliport template` 用同一个生成器）、后台作业和结果分析。它们提供同样的配置项，同样要求先选定
