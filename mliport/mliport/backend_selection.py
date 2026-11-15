@@ -39,7 +39,10 @@ CALCULATOR_OPTION_KEYS: dict[str, frozenset[str]] = {
     )
     | DISPERSION_OPTION_KEYS,
     "mace": frozenset({"default_dtype", "head"}) | DISPERSION_OPTION_KEYS,
-    "dpa": frozenset({"head"}) | DISPERSION_OPTION_KEYS,
+    # ``dpa_runtime`` names the *environment* (current DPA-4-capable runtime or
+    # the DPA-2 pre-release runtime for legacy checkpoints such as DPA-SSE).
+    # Like NEP's runtime it is an explicit user decision, never inferred.
+    "dpa": frozenset({"head", "dpa_runtime"}) | DISPERSION_OPTION_KEYS,
     "grace": frozenset(
         {
             "cpu_threads",

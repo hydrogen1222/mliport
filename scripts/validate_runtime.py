@@ -88,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dtype", choices=["float32", "float64"], default="float64")
     parser.add_argument("--head")
+    parser.add_argument(
+        "--dpa-runtime",
+        dest="dpa_runtime",
+        choices=["current", "legacy"],
+        help="DPA environment: 'current' (default) or 'legacy' (.venv-dpa-legacy)",
+    )
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument(
         "--full", action="store_true", help="Also run 10 MD steps and a five-image NEB"
@@ -160,6 +166,8 @@ def device_identity(requested: str, info: dict) -> dict:
         "model_precision": info.get("model_precision"),
         "active_head": info.get("active_head"),
         "inference_mode": info.get("inference_mode"),
+        "dpa_runtime": info.get("dpa_runtime"),
+        "deepmd_version": info.get("deepmd_version"),
     }
     if requested == "cpu":
         if actual_type != "cpu":
@@ -277,7 +285,10 @@ def main(argv: list[str] | None = None) -> None:
     kwargs = {
         "uma": {"inference_mode": "default"},
         "mace": {"default_dtype": args.dtype, "head": args.head},
-        "dpa": {"head": args.head},
+        "dpa": {
+            "head": args.head,
+            **({"dpa_runtime": args.dpa_runtime} if args.dpa_runtime else {}),
+        },
         "grace": {
             "neighbor_cache": not args.no_cache,
             # A GPU memory cap is refused on a CPU device by the GRACE adapter.

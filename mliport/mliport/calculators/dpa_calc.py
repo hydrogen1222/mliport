@@ -76,6 +76,74 @@ def tensor_load_verdict(name: str, source, loaded) -> str | None:
     return f"upstream loaded {name} as {str(source.dtype).removeprefix('torch.')}->{str(loaded.dtype).removeprefix('torch.')}"
 
 
+#: Accepted values of ``DPA_RUNTIME``. ``current`` is the pinned DPA-4-capable
+#: deepmd-kit in ``.venv-dpa``; ``legacy`` is the pre-release DPA-2 runtime in
+#: ``.venv-dpa-legacy`` that reconstructs older DPA-2 checkpoints (DPA-SSE).
+DPA_RUNTIMES: tuple[str, ...] = ("current", "legacy")
+
+#: The one deepmd-kit release the legacy environment pins. 3.0.0b0 is too old
+#: (it does not know ``use_tebd_bias``) and 3.0.0b4 already changed the
+#: repformer layout, so only b3 reconstructs a DPA-SSE checkpoint unmodified.
+_LEGACY_DEEPMD_RELEASE = "3.0.0b3"
+
+#: Descriptor types the legacy runtime can reconstruct exactly. Anything else
+#: (DPA-3 ``sezm``/``dpa3``, DPA4 ``dpa4``, DPA4C ``dpa4c``) belongs to the
+#: current runtime.
+_LEGACY_DESCRIPTOR_TYPES = frozenset({"dpa2"})
+
+
+def installed_deepmd_version() -> str | None:
+    """Installed ``deepmd-kit`` version, or ``None`` when it cannot be read."""
+    from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
+
+    try:
+        return version("deepmd-kit")
+    except PackageNotFoundError:
+        return None
+
+
+def dpa_runtime_problems(runtime: str, deepmd_version: str | None) -> list[str]:
+    """Why ``runtime`` cannot run in an environment with ``deepmd_version``.
+
+    This is the whole runtime switch: mliport never falls back from one
+    environment to the other, so a mismatch is an error, not a hint.
+    """
+    if runtime not in DPA_RUNTIMES:
+        return [
+            f"Unknown DPA_RUNTIME {runtime!r}; choose from "
+            f"{', '.join(DPA_RUNTIMES)}."
+        ]
+    if deepmd_version is None:
+        if runtime == "legacy":
+            return [
+                "DPA_RUNTIME=legacy needs the DPA-2 pre-release environment "
+                f"(.venv-dpa-legacy, deepmd-kit =={_LEGACY_DEEPMD_RELEASE}), but "
+                "deepmd-kit is not installed here. Install it with "
+                "`./scripts/install_mliport.sh --engines dpa-legacy`."
+            ]
+        # The current runtime reports the missing package itself, in the same
+        # actionable wording the rest of mliport uses; do not pre-empt it.
+        return []
+    legacy_env = deepmd_version.split("+", 1)[0] == _LEGACY_DEEPMD_RELEASE
+    if runtime == "legacy" and not legacy_env:
+        return [
+            f"DPA_RUNTIME=legacy needs the DPA-2 pre-release environment "
+            f"(.venv-dpa-legacy, deepmd-kit =={_LEGACY_DEEPMD_RELEASE}), but this "
+            f"environment has deepmd-kit {deepmd_version}. Only "
+            f"{_LEGACY_DEEPMD_RELEASE} is verified. Install it with "
+            "`./scripts/install_mliport.sh --engines dpa-legacy` and run "
+            "`./bin/mliport-dpa-legacy ...`; mliport does not fall back."
+        ]
+    if runtime == "current" and legacy_env:
+        return [
+            f"This environment has the legacy deepmd-kit {deepmd_version}, "
+            "which cannot load DPA-3/DPA4 checkpoints. Set DPA_RUNTIME=legacy "
+            "explicitly if the checkpoint is a DPA-2 model, or run in "
+            "`.venv-dpa` for the current runtime."
+        ]
+    return []
+
+
 class DPACalculatorWrapper(BaseMLIPCalculator):
     """Wrapper for DeepMD-kit DPA ASE calculators."""
 
@@ -85,6 +153,7 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
         device: str = "cpu",
         task: str = "bulk",
         head: str | None = None,
+        dpa_runtime: str = "current",
     ):
         """
         Initialize DPA calculator wrapper.
@@ -95,11 +164,20 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
             device: Device for calculation (``cpu`` or ``cuda``).
             task: PBC hint (``bulk`` or ``molecule``); not consumed by DPA.
             head: Optional branch/head for a multi-task DeepMD model.
+            dpa_runtime: ``current`` (pinned DPA-4-capable runtime, default) or
+                ``legacy`` (the DPA-2 pre-release environment for checkpoints
+                such as DPA-SSE). Never inferred and never switched silently.
         """
         self.model_path = Path(model_path)
         self._device = device
         self._task = str(task).strip().lower()
         self._head = str(head).strip() if head is not None else None
+        self._dpa_runtime = str(dpa_runtime).strip().lower()
+        if self._dpa_runtime not in DPA_RUNTIMES:
+            raise ValueError(
+                f"Invalid DPA runtime {dpa_runtime!r}. "
+                f"Choose from: {', '.join(DPA_RUNTIMES)}"
+            )
         self._active_head: str | None = None
         self._available_heads: list[str] = []
         self._model_precision: list[str] = []
@@ -125,6 +203,17 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
         """Return the cached DPA ASE calculator (lazy import)."""
         if self._calculator is None:
             self._apply_device_env()
+            problems = dpa_runtime_problems(
+                self._dpa_runtime, installed_deepmd_version()
+            )
+            if problems:
+                raise RuntimeError("\n".join(problems))
+            if self._dpa_runtime == "legacy":
+                # The legacy loader calls torch.load without weights_only on an
+                # older torch. Refuse an un-converted training checkpoint here
+                # instead of letting it unpickle arbitrary objects.
+                self._require_safe_checkpoint()
+                self._require_legacy_compatible_definition()
             if self.model_path.suffix.lower() == ".pb":
                 try:
                     import tensorflow  # noqa: F401, PLC0415
@@ -152,6 +241,20 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
             try:
                 self._inspect_loaded_model(calculator)
                 self._validate_pt_checkpoint(calculator)
+                if (
+                    self._dpa_runtime == "legacy"
+                    and not self._checkpoint_tensors_verified
+                ):
+                    # In the legacy environment this verification is the only
+                    # guard against a partial or reshaped load (spec §5.3), so a
+                    # silently skipped check is a failure, not a warning.
+                    raise RuntimeError(
+                        "The legacy DPA runtime refuses to run without tensor "
+                        "verification: the loader did not expose an inspectable "
+                        "torch model, so the checkpoint could not be compared "
+                        "with the network that was built. Run it with "
+                        "DPA_RUNTIME=current if the current runtime supports it."
+                    )
             except BaseException:
                 self._active_head = None
                 self._available_heads = []
@@ -163,6 +266,68 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
             # turn a retry into access to an unvalidated task/head.
             self._calculator = calculator
         return self._calculator
+
+    def _require_safe_checkpoint(self) -> None:
+        """Refuse a checkpoint that only loads with unsafe unpickling.
+
+        ``SSE-VASP-dpa2.pt`` as distributed by AIS Square is a *training*
+        checkpoint carrying NumPy scalars; deepmd-kit 3.0.0b3 runs on a torch
+        whose ``torch.load`` defaults to ``weights_only=False``, so it would
+        silently unpickle it. The legacy runtime only ever loads the
+        trust-gated conversion produced by ``scripts/convert_dpa_checkpoint.py``.
+        """
+        if self.model_path.suffix.lower() != ".pt":
+            raise ValueError(
+                "The legacy DPA runtime only loads '.pt' checkpoints produced by "
+                "scripts/convert_dpa_checkpoint.py; got "
+                f"{self.model_path.name!r}. Convert the trusted file first, or "
+                "use DPA_RUNTIME=current for a checkpoint the current runtime "
+                "can read."
+            )
+        try:
+            import torch  # noqa: PLC0415
+
+            torch.load(self.model_path, map_location="cpu", weights_only=True)
+        except Exception as exc:
+            raise RuntimeError(
+                "Refusing to load this DPA checkpoint in the legacy runtime: it "
+                "does not load with torch.load(weights_only=True), so loading it "
+                "would unpickle arbitrary objects. Convert the trusted file "
+                "once with scripts/convert_dpa_checkpoint.py "
+                "(--i-trust-this-file) and pass the converted file instead. "
+                f"Underlying error: {type(exc).__name__}: {exc}"
+            ) from exc
+
+    def _require_legacy_compatible_definition(self) -> None:
+        """Refuse DPA-3/DPA4/DPA4C checkpoints in the DPA-2 legacy runtime."""
+        import torch  # noqa: PLC0415
+
+        payload = torch.load(self.model_path, map_location="cpu", weights_only=True)
+        state = payload.get("model", payload) if isinstance(payload, dict) else payload
+        if not isinstance(state, dict):
+            raise ValueError(
+                "The legacy DPA runtime cannot read this checkpoint's model "
+                "definition, so it cannot verify that the network is DPA-2. "
+                "Convert it with scripts/convert_dpa_checkpoint.py or run it "
+                "with DPA_RUNTIME=current."
+            )
+        extra = state.get("_extra_state")
+        definition = extra.get("model_params", {}) if isinstance(extra, dict) else {}
+        descriptor = (
+            definition.get("descriptor", {}) if isinstance(definition, dict) else {}
+        )
+        descriptor_type = (
+            descriptor.get("type") if isinstance(descriptor, dict) else None
+        )
+        if descriptor_type in _LEGACY_DESCRIPTOR_TYPES:
+            return
+        raise ValueError(
+            "DPA_RUNTIME=legacy can only reconstruct DPA-2 checkpoints; this "
+            f"checkpoint declares descriptor type {descriptor_type!r}. Run it "
+            "with the current runtime instead (`.venv-dpa`, DPA_RUNTIME=current); "
+            "the legacy environment cannot represent DPA-3, DPA4 or DPA4C "
+            "models."
+        )
 
     def _inspect_loaded_model(self, calculator: Calculator) -> None:
         """Resolve the active DeepMD branch and fail closed for multi-task PESs."""
@@ -416,6 +581,8 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
         return {
             **identity,
             "model_type": "dpa",
+            "dpa_runtime": self._dpa_runtime,
+            "deepmd_version": installed_deepmd_version(),
             "backend_profile": (
                 "dpa-tensorflow-legacy"
                 if self.model_path.suffix.lower() == ".pb"

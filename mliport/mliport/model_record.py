@@ -180,6 +180,10 @@ def build_model_record(
         # The upstream preset that really ran (UMA maps mliport's
         # default/turbo onto named fairchem presets), plus the numeric switches
         # of that preset. None means the backend has no such notion.
+        # DPA runs in one of two *environments*; which one produced a number is
+        # part of the model identity (they carry different deepmd-kit versions).
+        "dpa_runtime": info.get("dpa_runtime"),
+        "checkpoint_tensors_verified": info.get("checkpoint_tensors_verified"),
         "inference_preset": info.get("inference_preset"),
         "nitro_enabled": info.get("nitro_enabled"),
         "tf32_enabled": info.get("tf32_enabled"),

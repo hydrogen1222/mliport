@@ -12,7 +12,7 @@ import os
 import stat
 from pathlib import Path
 
-from .compatibility import BACKENDS, BackendSpec
+from .compatibility import ALL_BACKENDS, BackendSpec
 
 LAUNCHER_DIR = "bin"
 
@@ -68,11 +68,12 @@ def create_launchers(engines: list[str], base_dir: str | Path) -> list[Path]:
     created: list[Path] = []
     for engine in engines:
         key = str(engine).strip().lower()
-        if key not in BACKENDS:
+        if key not in ALL_BACKENDS:
             raise ValueError(
-                f"Unknown engine {engine!r}; choose from {', '.join(BACKENDS)}"
+                f"Unknown engine {engine!r}; choose from: "
+                f"{', '.join(sorted(ALL_BACKENDS))}"
             )
-        created.append(create_launcher(BACKENDS[key], base_dir))
+        created.append(create_launcher(ALL_BACKENDS[key], base_dir))
     return created
 
 

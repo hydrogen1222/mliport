@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+DPA-SSE support through a DPA-2 legacy runtime:
+
+- DPA has a second, explicitly selected environment. `.venv-dpa-legacy` (install
+  target `dpa-legacy`) pins `deepmd-kit==3.0.0b3` - an upstream pre-release, and
+  the newest release whose repformer layout reconstructs DPA-2 checkpoints - with
+  `torch==2.3.1` (`+cu121`, which still ships Volta sm_70 kernels) and Python
+  3.10-3.12. The pinned DPA runtime rebuilt `SSE-VASP-dpa2.pt` with 24 reshaped
+  tensors, and mliport does not reshape, re-key or re-initialise weights; the two
+  conversion routes fail as well (frozen `.pth`: unknown `charge_spin` argument;
+  `convert-backend`: `KeyError: 'g1_out_mlp'`), so the mismatch is an environment
+  boundary, not an adapter bug.
+- `DPA_RUNTIME=legacy|current` (default `current`, `--dpa-runtime`, INCAR
+  `DPA_RUNTIME`, settings, API, queue): no automatic fallback in either
+  direction. The legacy environment refuses DPA-3/DPA4/DPA4C checkpoints and
+  names the runtime to use; the current environment refuses the legacy
+  deepmd-kit. The legacy runtime only accepts a checkpoint that loads with
+  `torch.load(weights_only=True)`, so the distributed training checkpoint must go
+  through the existing trust-gated `scripts/convert_dpa_checkpoint.py`.
+- Provenance records `dpa_runtime` and the deepmd-kit version next to the model
+  identity. On a torch without `device_properties().uuid` (2.3.1) the GPU UUID is
+  taken from the single-entry `CUDA_VISIBLE_DEVICES` the isolation contract
+  requires, and `actual_device_uuid_source` says so instead of implying a
+  runtime check.
+- `docs/backends/dpa.md` (+ `.zh.md`) documents DPA-SSE, its PBEsol sulfide
+  chemistry, the legacy route and the warning that a 118-element `type_map` is
+  not training coverage; the model-support table gains the `dpa_sse` row.
+- Evidence: mliport reproduces the deepmd-kit 3.0.0b3 references exactly
+  (|dE| = 0, max |dF| <= 8e-16 eV/A, max |dvirial| <= 1.1e-14 eV on four
+  structures) and passes the callable probe on CPU and V100.
+
 Model support status:
 
 - `docs/models.md` (+ `.zh.md`) now carries the measured status of the pinned

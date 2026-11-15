@@ -198,6 +198,7 @@ class CalculatorFactory:
                 device=device,
                 task=normalized_task,
                 head=kwargs.get("head"),
+                dpa_runtime=kwargs.get("dpa_runtime", "current"),
             )
         elif m_type == "grace":
             from mliport.calculators.grace_calc import GRACECalculatorWrapper  # noqa: PLC0415

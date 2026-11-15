@@ -44,6 +44,9 @@ FRAMEWORK_PYTHON = {
     ("torch", "2.8.0"): SpecifierSet(">=3.9,<3.14"),
     ("torch", "2.10.0"): SpecifierSet(">=3.10,<3.15"),
     ("torch", "2.11.0"): SpecifierSet(">=3.10,<3.15"),
+    # torch 2.3.1 is the last release with a wheel the deepmd-kit 3.0.0b3
+    # pre-release was compiled against; it publishes cp38-cp312 only.
+    ("torch", "2.3.1"): SpecifierSet(">=3.8,<3.13"),
     ("torch", "2.13.0"): SpecifierSet(">=3.10,<3.15"),
     ("tensorflow", "2.20.0"): SpecifierSet(">=3.9,<3.14"),
 }
@@ -694,9 +697,66 @@ BACKENDS: dict[str, BackendSpec] = {
 }
 
 
+#: Backends that are alternative *environments* for an existing model type
+#: rather than a model type of their own. They are installable targets
+#: (``--engines dpa-legacy``) but never appear in ``--model-type``.
+LEGACY_BACKENDS: dict[str, BackendSpec] = {
+    # ── DPA-2 checkpoints that only the pre-release DPA-2 runtime loads ──
+    # DPA-SSE (SSE-VASP-dpa2.pt) is a DPA-2 checkpoint whose repformer layout
+    # changed in deepmd-kit 3.0.0b4: the released runtime builds
+    # ``linear1.matrix`` as 640x128 and ``proj_g1g2.matrix`` as 32x128, the
+    # checkpoint stores 800x128 and 128x32. 3.0.0b3 is the newest release that
+    # reconstructs the checkpoint with 226/226 tensors matched by name and
+    # shape, so this environment pins it exactly (#61 DPA-SSE spec §5).
+    "dpa-legacy": BackendSpec(
+        engine="dpa-legacy",
+        label="DPA (DeepMD-kit, DPA-2 pre-release runtime)",
+        distribution="deepmd-kit",
+        version="3.0.0b3",
+        framework="torch",
+        upstream_constraint="torch==2.3.1",
+        requires_python=SpecifierSet(">=3.10,<3.13"),
+        venv_name=".venv-dpa-legacy",
+        arch_profiles={
+            arch: BackendArchProfile(
+                framework_version="2.3.1",
+                # torch 2.3.1 has cu121 (sm_50..sm_90) and cu118 only; there is
+                # no cu126/cu128 wheel for it, so every architecture uses cu121.
+                cuda_channel="cu121",
+                # torch 2.3.1+cu121 carries kernels up to sm_90: Blackwell
+                # (sm_100/sm_120) has no build for this runtime at all.
+                upstream_supported=arch not in {"maxwell", "blackwell"},
+                notes=(
+                    "torch 2.3.1+cu121; this is the exact build the deepmd-kit "
+                    "3.0.0b3 wheel was compiled against."
+                ),
+            )
+            for arch in (
+                "maxwell",
+                "pascal",
+                "volta",
+                "turing",
+                "ampere",
+                "ada",
+                "hopper",
+                "blackwell",
+            )
+        },
+    ),
+}
+
+#: Every installable engine, model-type backends first.
+ALL_BACKENDS: dict[str, BackendSpec] = {**BACKENDS, **LEGACY_BACKENDS}
+
+
+def lookup_backend(engine: str) -> BackendSpec | None:
+    """Return the installable backend spec for ``engine`` (model or legacy)."""
+    return ALL_BACKENDS.get(str(engine).strip().lower())
+
+
 def get_backend_arch_profile(engine: str, arch_name: str) -> BackendArchProfile | None:
     """Look up the backend×arch profile entry."""
-    backend = BACKENDS.get(engine)
+    backend = lookup_backend(engine)
     if backend is None:
         return None
     return backend.arch_profiles.get(arch_name)
@@ -734,7 +794,9 @@ def python_versions_for(engine: str) -> tuple[str, ...]:
     framework wheel's Python range.  The result is the authoritative list the
     installer enforces and the docs render.
     """
-    backend = BACKENDS[engine]
+    backend = lookup_backend(engine)
+    if backend is None:
+        raise KeyError(engine)
     constraint = PROJECT_REQUIRES_PYTHON & backend.requires_python
     for version in framework_versions(backend):
         key = (backend.framework, version)
@@ -752,7 +814,9 @@ def runtime_stack_text(engine: str, lang: str = "en") -> str:
     the **CUDA Toolkit** the separately built ``gpumd`` binary targets.  Those
     two must never be rendered as one "numpy 12.9".
     """
-    backend = BACKENDS[engine]
+    backend = lookup_backend(engine)
+    if backend is None:
+        raise KeyError(engine)
     versions = "/".join(framework_versions(backend))
     if backend.framework == "numpy":
         if lang == "zh":
@@ -785,7 +849,10 @@ def backend_environment_rows(lang: str = "en") -> list[dict[str, str]]:
 
 
 __all__ = [
+    "ALL_BACKENDS",
     "BACKENDS",
+    "LEGACY_BACKENDS",
+    "lookup_backend",
     "FRAMEWORK_PYTHON",
     "PROJECT_REQUIRES_PYTHON",
     "SUPPORTED_PYTHON_VERSIONS",

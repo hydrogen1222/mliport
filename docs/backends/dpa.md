@@ -119,6 +119,60 @@ runtime (for example a `(800, 128)` matrix where the current network expects
 It remains unsupported until a matching legacy implementation is validated;
 mliport does not reshape weights or initialize missing learned parameters.
 
+## DPA-SSE and the DPA-2 legacy runtime
+
+`SSE-VASP-dpa2.pt` from AIS Square
+([model page](https://www.aissquare.com/models/detail?pageType=models&name=SSE-VASP-dpa2))
+is a DPA-2 checkpoint trained on sulfide electrolytes: 15 elements, 41 systems,
+26 of them chalcogenides, labelled with VASP PAW / **PBEsol**. It is the model
+of the DPA-SSE paper
+([arXiv 2406.18263](https://arxiv.org/abs/2406.18263),
+[npj Comput. Mater. 2025](https://doi.org/10.1038/s41524-025-01764-6)).
+The weights are LGPL-3.0; the dataset behind them
+([AIS Square entry](https://www.aissquare.com/datasets/detail?pageType=datasets&name=Solid_State_Electrolyte&id=217))
+is CC BY 4.0.
+
+The pinned runtime cannot reconstruct that checkpoint. deepmd-kit 3.0.0b4
+changed the repformer layout, so 3.2.1 builds `linear1.matrix` as 640x128 and
+`proj_g1g2.matrix` as 32x128 where the file stores 800x128 and 128x32. mliport
+does not reshape, re-key or re-initialise weights to make a checkpoint fit, so
+DPA has a second environment that has to be selected explicitly:
+
+```bash
+./scripts/install_mliport.sh --engines dpa-legacy --device auto
+DPA_RUNTIME=legacy ./bin/mliport-dpa-legacy sp structure.vasp \
+  --model SSE-VASP-dpa2-inference.pt --model-type dpa --task bulk
+```
+
+- `.venv-dpa-legacy` pins `deepmd-kit==3.0.0b3` — an upstream pre-release, and
+  the newest release whose network layout matches the checkpoint — with
+  `torch==2.3.1` (`+cu121` on a GPU host, which still ships sm_70 for Volta) and
+  Python 3.10 to 3.12.
+- `DPA_RUNTIME` is `current` by default and never falls back in either
+  direction. The legacy environment refuses DPA-3, DPA4 and DPA4C checkpoints
+  and names the runtime to use instead; the current environment refuses the
+  legacy deepmd-kit.
+- Safe loading: the legacy runtime only accepts a checkpoint that loads with
+  `torch.load(weights_only=True)`. The distributed file is a *training*
+  checkpoint carrying NumPy scalars, so convert the trusted file once:
+
+```bash
+.venv-dpa-legacy/bin/python scripts/convert_dpa_checkpoint.py \
+  SSE-VASP-dpa2.pt SSE-VASP-dpa2-inference.pt --i-trust-this-file
+```
+
+  The conversion changes no tensor; the legacy runtime refuses the original
+  instead of unpickling arbitrary objects.
+- Provenance records `dpa_runtime`, the deepmd-kit version and the torch
+  version, because the two environments are not interchangeable.
+
+!!! warning "A 118-element type_map is not training coverage"
+    DPA-2 serialises the full periodic table into `type_map`; DPA-SSE was trained
+    on 15 elements of sulfide-electrolyte chemistry (Li, S, P, Ge, Sn, Si, Ga,
+    Sb, As, Cl, Br, I and companions). Everything else - including C and H, so an
+    organic adsorbate such as LiDS - is extrapolation and must be validated
+    against your own reference before any scientific use.
+
 ## Things to know
 
 - **Leaving out the head on a multi-task checkpoint is a fatal configuration

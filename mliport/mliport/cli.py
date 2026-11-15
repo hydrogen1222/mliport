@@ -240,6 +240,19 @@ Examples:
             help="UMA inference mode (default: task-specific; turbo is rejected for other engines).",
         )
         p.add_argument(
+            "--dpa-runtime",
+            dest="dpa_runtime",
+            type=str,
+            default=None,
+            choices=["current", "legacy"],
+            help=(
+                "DPA runtime environment: 'current' (pinned DPA-4-capable "
+                "deepmd-kit, default) or 'legacy' (.venv-dpa-legacy with "
+                "deepmd-kit 3.0.0b3 for DPA-2 checkpoints such as DPA-SSE). "
+                "mliport never falls back between them."
+            ),
+        )
+        p.add_argument(
             "--nep-runtime",
             dest="nep_runtime",
             type=str,
@@ -1786,7 +1799,7 @@ Examples:
     )
     doctor_parser.add_argument(
         "--engine",
-        choices=["auto", *model_type_choices()],
+        choices=["auto", *model_type_choices(), "dpa-legacy"],
         default="auto",
         help=(
             "Engine to runtime-check. auto (default) performs a side-effect-free "
@@ -1823,6 +1836,18 @@ Examples:
         type=str,
         default=None,
         help="Optional structure for a real energy/force single-point smoke test.",
+    )
+    doctor_parser.add_argument(
+        "--dpa-runtime",
+        dest="dpa_runtime",
+        type=str,
+        default=None,
+        choices=["current", "legacy"],
+        help=(
+            "DPA environment for the model probe: 'current' (pinned "
+            "DPA-4-capable runtime) or 'legacy' (DPA-2 pre-release runtime for "
+            "checkpoints such as DPA-SSE). `--engine dpa-legacy` implies it."
+        ),
     )
     doctor_parser.add_argument(
         "--dtype",
@@ -1998,6 +2023,7 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
         "neighbor_skin",
         "default_dtype",
         "head",
+        "dpa_runtime",
         "nep_runtime",
         "nep_gpumd_command",
         "d3",
@@ -3382,6 +3408,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         head=args.head,
         structure_path=args.structure,
         default_dtype=args.default_dtype,
+        dpa_runtime=getattr(args, "dpa_runtime", None),
     )
     if getattr(args, "json", False):
         payload = {

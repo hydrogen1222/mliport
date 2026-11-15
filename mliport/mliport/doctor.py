@@ -26,7 +26,10 @@ from packaging.requirements import Requirement
 
 from mliport.gpu_compat import arch_supports_device
 from mliport.gpu_setup import TorchRecommendation, recommend_torch
-from mliport.install.compatibility import BACKENDS, PROJECT_REQUIRES_PYTHON
+from mliport.install.compatibility import (
+    PROJECT_REQUIRES_PYTHON,
+    lookup_backend,
+)
 from mliport.install.hardware import (
     MIN_VRAM_MIB_WARN,
     GpuInfo,
@@ -64,6 +67,20 @@ _ENGINE_SPECS: dict[str, dict[str, str]] = {
         "module": "tensorpotential.calculator",
         "framework": "tensorflow",
         "install": "Install tensorpotential in the dedicated .venv-grace environment.",
+    },
+    # DPA has two environments (#61 DPA-SSE spec §5). ``dpa-legacy`` checks the
+    # same module and framework as ``dpa`` but against the pre-release pins.
+    "dpa-legacy": {
+        "label": "DPA (DPA-2 pre-release runtime)",
+        "distribution": "deepmd-kit",
+        "module": "deepmd.calculator",
+        "framework": "torch",
+        "install": (
+            "Install the DPA-2 pre-release environment with "
+            "`./scripts/install_mliport.sh --engines dpa-legacy` "
+            "(.venv-dpa-legacy); it is the only environment that reconstructs "
+            "DPA-2 checkpoints such as DPA-SSE."
+        ),
     },
     # NEP has two execution runtimes.  Calorine supplies the ASE calculator
     # (CPUNEP float64 / GPUNEP float32-per-subprocess); the native runtime needs
@@ -391,11 +408,18 @@ def _model_probe(
     head: str | None = None,
     structure_path: Path | None = None,
     default_dtype: str = "float64",
+    dpa_runtime: str | None = None,
 ) -> dict[str, Any]:
     """Load a selected model and optionally evaluate one structure in a child."""
     probe_device = "cuda" if device.startswith("cuda") else device
+    # ``dpa-legacy`` is an environment, not a model type: the calculator is a
+    # DPA calculator either way, and the runtime flag says which environment.
+    probe_engine = "dpa" if engine == "dpa-legacy" else engine
+    runtime = dpa_runtime or ("legacy" if engine == "dpa-legacy" else None)
     request = {
         "engine": engine,
+        "probe_engine": probe_engine,
+        "dpa_runtime": runtime,
         "device": probe_device,
         "model_path": str(model_path.resolve()),
         "task": task,
@@ -423,8 +447,10 @@ try:
         options["head"] = request["head"]
     if request["engine"] == "mace":
         options["default_dtype"] = request["default_dtype"]
+    if request["probe_engine"] == "dpa" and request["dpa_runtime"]:
+        options["dpa_runtime"] = request["dpa_runtime"]
     wrapper = CalculatorFactory.create(
-        request["engine"],
+        request["probe_engine"],
         request["model_path"],
         device=request["device"],
         task=request["task"],
@@ -440,6 +466,8 @@ try:
         active_head=info.get("active_head"),
         available_heads=info.get("available_heads", []),
         model_precision=info.get("model_precision", info.get("default_dtype")),
+        dpa_runtime=info.get("dpa_runtime"),
+        deepmd_version=info.get("deepmd_version"),
     )
     if request["structure_path"] is not None:
         atoms = read(request["structure_path"], index=-1)
@@ -604,12 +632,19 @@ def _gpu_architecture_evidence(
                 break
     except (OSError, ValueError, KeyError, TypeError):
         classification = None
-    if classification is None and engine in {"mace", "dpa", "grace", "uma", "nep"}:
+    audit_engine = "dpa" if engine == "dpa-legacy" else engine
+    if classification is None and audit_engine in {
+        "mace",
+        "dpa",
+        "grace",
+        "uma",
+        "nep",
+    }:
         from mliport.install.compatibility import (  # noqa: PLC0415
             get_backend_arch_profile,
         )
 
-        profile = get_backend_arch_profile(engine, arch.name)
+        profile = get_backend_arch_profile(audit_engine, arch.name)
         classification = (
             "experimental"
             if profile and not profile.upstream_supported
@@ -678,6 +713,7 @@ def run_diagnostics(
     head: str | None = None,
     structure_path: str | Path | None = None,
     default_dtype: str = "float64",
+    dpa_runtime: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Run inventory checks and, when selected, one engine runtime probe.
 
@@ -689,6 +725,8 @@ def run_diagnostics(
         head: Optional MACE head or DPA branch.
         structure_path: Optional structure for a real energy/force smoke test.
         default_dtype: MACE dtype used for the model probe.
+        dpa_runtime: ``current``/``legacy`` for DPA probes; ``dpa-legacy``
+            selects ``legacy`` automatically.
 
     Returns:
         Tuple of (results list, number of failures).
@@ -721,7 +759,9 @@ def run_diagnostics(
     if target_engine == "fairchem":
         target_engine = "uma"
     if target_engine != "auto" and target_engine not in _ENGINE_SPECS:
-        raise ValueError("engine must be auto, uma, mace, dpa, grace, or nep")
+        raise ValueError(
+            "engine must be auto, uma, mace, dpa, dpa-legacy, grace, or nep"
+        )
     requested_device = _normalize_device(device)
     if default_dtype not in {"float32", "float64"}:
         raise ValueError("default_dtype must be float32 or float64")
@@ -864,7 +904,8 @@ def run_diagnostics(
         installed_versions[engine_name] = version
         selected = engine_name == target_engine
         if selected:
-            backend = BACKENDS[engine_name]
+            backend = lookup_backend(engine_name)
+            assert backend is not None
             compatible = (
                 py_ver in PROJECT_REQUIRES_PYTHON and py_ver in backend.requires_python
             )
@@ -908,12 +949,21 @@ def run_diagnostics(
                 }
             )
 
-    installed_labels = [
-        _ENGINE_SPECS[name]["label"]
+    # ``dpa`` and ``dpa-legacy`` are two environments for the *same*
+    # distribution; seeing deepmd-kit once is not a multi-engine environment.
+    installed_labels = list(
+        dict.fromkeys(
+            _ENGINE_SPECS[name]["label"]
+            for name, version in installed_versions.items()
+            if version is not None
+        )
+    )
+    installed_distributions = {
+        _ENGINE_SPECS[name]["distribution"]
         for name, version in installed_versions.items()
         if version is not None
-    ]
-    if len(installed_labels) > 1:
+    }
+    if len(installed_distributions) > 1:
         checks.append(
             {
                 "name": "Environment isolation",
@@ -1357,9 +1407,14 @@ def run_diagnostics(
                 head=head,
                 structure_path=structure,
                 default_dtype=default_dtype,
+                dpa_runtime=dpa_runtime,
             )
             if probe.get("ok"):
                 details: list[str] = [f"task={probe.get('task', task)}"]
+                if probe.get("dpa_runtime"):
+                    details.append(f"dpa_runtime={probe['dpa_runtime']}")
+                if probe.get("deepmd_version"):
+                    details.append(f"deepmd-kit={probe['deepmd_version']}")
                 if probe.get("active_head") is not None:
                     details.append(f"active_head={probe['active_head']}")
                 if probe.get("model_precision"):

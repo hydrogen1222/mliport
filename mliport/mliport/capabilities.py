@@ -23,6 +23,8 @@ IDENTITY_KEYS = (
     "head_effective",
     "dtype_effective",
     "inference_mode",
+    "dpa_runtime",
+    "checkpoint_tensors_verified",
     "compile_enabled",
     "actual_device_type",
 )
