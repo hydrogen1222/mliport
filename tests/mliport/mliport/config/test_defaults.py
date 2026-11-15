@@ -130,8 +130,11 @@ def test_build_incar_default_md() -> None:
 def test_build_incar_default_neb() -> None:
     text = build_incar_default("neb")
     assert "CALCULATION = NEB" in text
-    assert "NEB_INITIAL = initial.vasp" in text
-    assert "NEB_FINAL = final.vasp" in text
+    # The endpoints are values only the user can supply: the template writes
+    # the fail-closed REQUIRED placeholder (spec R3.2), so `mliport run` can
+    # never NEB a structure the user did not choose.
+    assert "NEB_INITIAL = REQUIRED" in text
+    assert "NEB_FINAL = REQUIRED" in text
     assert "NEB_IMAGES = 7" in text
     assert "DEVICE = cpu" in text
     assert "WRITE_STRESS" not in text

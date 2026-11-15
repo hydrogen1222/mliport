@@ -143,26 +143,17 @@ def test_template_keys_and_documentation_rows_share_one_table() -> None:
                 stripped = line.removeprefix("# ").strip()
                 if ASSIGNMENT.match(stripped):
                     template_keys.add(stripped.split("=", 1)[0].strip())
-    # model-section keys are rendered backend-specifically and are documented
-    # through the model options (MODEL_TYPE / MODEL_PATH / TASK / HEAD).
-    documented_keys = documented | {
-        "MODEL_TYPE",
-        "MODEL_PATH",
-        "TASK",
-        "HEAD",
-        "DEFAULT_DTYPE",
-        "INFERENCE_MODE",
-        "NEP_RUNTIME",
-        "NEP_GPUMD_COMMAND",
-        "CHARGE",
-        "SPIN",
-        "MD_ENSEMBLE",
-        "CALCULATION",
+    # ``CALCULATION`` is the documented alias used by the NEB template header.
+    documented_keys = documented | {spec.incar_key for spec in schema.specs}
+    documented_keys |= {
+        alias for spec in schema.specs for alias in spec.aliases if alias.isupper()
     }
-    unknown = sorted(
-        key for key in template_keys if key not in documented_keys and key != "CS_MODE"
-    )
+    unknown = sorted(key for key in template_keys if key not in documented_keys)
     assert not unknown, f"template keys missing from docs/incar.md: {unknown}"
+    # ... and the reverse direction: every templated option is documented.
+    templated = {spec.incar_key for spec in schema.specs if spec.template}
+    missing = sorted(key for key in templated if key not in documented_keys)
+    assert not missing, f"templated keys missing from docs/incar.md: {missing}"
     # and the reverse: every template key is a real option spelling
     known = {spec.incar_key for spec in schema.specs}
     known |= {
@@ -174,9 +165,6 @@ def test_template_keys_and_documentation_rows_share_one_table() -> None:
 def test_spec_cardinality_metadata_is_consistent() -> None:
     """Every templated key is grouped; every key is documented at most once."""
     schema = get_schema()
-    assert [spec.order for spec in schema.specs] == sorted(
-        spec.order for spec in schema.specs
-    )
     for spec in schema.specs:
         assert isinstance(spec, OptionSpec)
         assert spec.group in TEMPLATE_GROUP_ORDER

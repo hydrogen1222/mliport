@@ -29,6 +29,15 @@ Generated INCAR templates and key reference from one option table (tracking:
 - `docs/quickstart.md` (+ `.zh.md`) gains a "task folder" section next to the
   existing command-line walkthrough, which is unchanged.
 
+- The NEB template writes `NEB_INITIAL = REQUIRED` / `NEB_FINAL = REQUIRED`
+  instead of the plausible-looking `initial.vasp` / `final.vasp`, so a task
+  folder cannot look complete while pointing at structures that do not exist.
+- The model section's `MODEL_PATH` / `MODEL_TYPE` comments now come from the
+  option table instead of the stale "path relative to settings.ini" wording.
+- The generated key reference covers the batch keys and no longer prints the
+  internal "mode B" sentinel as an `CS_MODE = MODE_B` condition; example-only
+  values are marked as examples rather than as required.
+
 Tests: `tests/mliport/mliport/config/test_incar_templates.py` pins the template
 structure (one section each, fixed order, one comment per key, only the
 selected thermostat, the commented NPT example, per-calc-type key sets) and

@@ -173,7 +173,7 @@ def render_neb_capability_table(lang: str) -> str:
 
 
 #: Calculation types that get their own key-reference section.
-INCAAR_CALC_TYPES = ("sp", "opt", "md", "neb", "confsearch")
+INCAR_CALC_TYPES = ("sp", "opt", "md", "neb", "confsearch")
 
 #: Scopes that are valid for every calculation type.
 _COMMON_SCOPES = frozenset({"general", "output", "meta", "safety", "resources"})
@@ -197,8 +197,11 @@ def _incar_key_row(spec, calc_type: str | None) -> list[str]:
     default = _incar_default_text(spec, calc_type)
     allowed = _incar_allowed_text(spec)
     applies = ""
-    if spec.applies_when:
-        applies = ", ".join(
+    # ``example_condition_line is False`` marks an internal "always commented"
+    # sentinel rather than a real condition (the mode-B confsearch example);
+    # printing it would document a value the validator rejects.
+    if spec.applies_when and spec.example_condition_line:
+        applies = "; ".join(
             f"`{key.upper()} = {value}`" for key, value in spec.applies_when
         )
     if spec.condition_calc_types and calc_type not in spec.condition_calc_types:
@@ -220,6 +223,8 @@ def _incar_key_row(spec, calc_type: str | None) -> list[str]:
 
 
 def _incar_default_text(spec, calc_type: str | None) -> str:
+    if spec.placeholder and spec.example_when_inactive:
+        return f"`{spec.placeholder}` (example)"
     if spec.placeholder:
         return f"required (`{spec.placeholder}`)"
     if spec.template_value is not None:
@@ -283,7 +288,7 @@ def render_incar_keys(lang: str, calc_type: str | None = None) -> str:
         group_specs = [spec for spec in specs if spec.group == group]
         if not group_specs:
             continue
-        heading = _INCAR_GROUP_HEADING[lang].format(group=group)
+        heading = _incar_group_heading(group, lang)
         lines.append(f"**{heading}**")
         lines.append("")
         lines.append(_row(_INCAR_HEADER[lang]))
@@ -294,17 +299,34 @@ def render_incar_keys(lang: str, calc_type: str | None = None) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-_INCAR_GROUP_HEADING = {
-    "en": "{group}",
-    "zh": "{group}",
+#: Section names are metadata of the option table, so the Chinese page
+#: translates them here rather than inside the generated blocks.
+_INCAR_GROUP_NAMES_ZH = {
+    "Calculation": "计算类型",
+    "Model": "模型",
+    "Device and resources": "设备与资源",
+    "Optimization": "结构优化",
+    "Molecular dynamics": "分子动力学",
+    "NEB": "NEB",
+    "Configuration search": "构型搜索",
+    "Output": "输出控制",
+    "Batch": "批量计算",
+    "General": "通用",
 }
+
+
+def _incar_group_heading(group: str, lang: str) -> str:
+    """Section heading of one generated INCAR table."""
+    if lang == "zh":
+        return _INCAR_GROUP_NAMES_ZH.get(group, group)
+    return group
 
 
 def _blocks_for(page: str, lang: str) -> dict[str, str]:
     """The generated blocks a page must contain (empty for hand-only pages)."""
     if page == "incar":
         blocks = {"incar-common": render_incar_keys(lang)}
-        for calc_type in INCAAR_CALC_TYPES:
+        for calc_type in (*INCAR_CALC_TYPES, "batch"):
             blocks[f"incar-{calc_type}"] = render_incar_keys(lang, calc_type)
         return blocks
     if page == "installation":

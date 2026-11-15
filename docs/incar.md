@@ -402,8 +402,8 @@ switches that would silently drop a mandatory record.
 
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
-| `NEB_INITIAL` | str | required (`initial.vasp`) | - | Initial endpoint structure for NEB. | - | - |
-| `NEB_FINAL` | str | required (`final.vasp`) | - | Final endpoint structure for NEB. | - | - |
+| `NEB_INITIAL` | str | required (`REQUIRED`) | - | Initial endpoint structure for NEB. | - | - |
+| `NEB_FINAL` | str | required (`REQUIRED`) | - | Final endpoint structure for NEB. | - | - |
 | `NEB_IMAGES` | int | `7` | `1..` | Number of intermediate images; endpoints are additional. | - | `IMAGES` |
 | `CLIMB` | bool | `.FALSE.` | - | Run a second climbing-image NEB stage. | - | `NEB_CLIMB` |
 | `NEB_METHOD` | str | `improvedtangent` | `improvedtangent` | ASE NEB tangent method. | - | - |
@@ -504,9 +504,9 @@ executes it through the same code path as `mliport confsearch run`.
 | `CS_MODE` | str | `adsorbate` | `adsorbate` | Search mode; v1 accepts only 'adsorbate' (bulk_mobile, melt_quench, interface, multi_adsorbate are rejected) | - | - |
 | `CS_STARTS` | str | required (`REQUIRED`) | - | Mode A: start structures (files or directories), one independent replica each; needs cs_adsorbate_indices | - | - |
 | `CS_ADSORBATE_INDICES` | str | required (`REQUIRED`) | - | Mode A: 0-based adsorbate atom indices such as 300-341 or 0,5,7-9; must be one connected covalent molecule | - | - |
-| `CS_SLAB` | str | required (`slab.vasp`) | - | Mode B: slab structure file, exactly one frame; conformers from cs_molecule are placed above it | `CS_MODE = MODE_B` | - |
-| `CS_MOLECULE` | str | required (`molecule.xyz`) | - | Mode B: molecule conformer file; one conformer is drawn at random for each placed start | `CS_MODE = MODE_B` | - |
-| `CS_N_STARTS` | int | `10` | `1..` | Mode B: number of placed start structures to build, each becoming one independent replica; minimum 1 | `CS_MODE = MODE_B` | - |
+| `CS_SLAB` | str | `slab.vasp` (example) | - | Mode B: slab structure file, exactly one frame; conformers from cs_molecule are placed above it | - | - |
+| `CS_MOLECULE` | str | `molecule.xyz` (example) | - | Mode B: molecule conformer file; one conformer is drawn at random for each placed start | - | - |
+| `CS_N_STARTS` | int | `10` | `1..` | Mode B: number of placed start structures to build, each becoming one independent replica; minimum 1 | - | - |
 | `CS_FIX_BELOW` | float | - | - | Extend the input FixAtoms to slab atoms within this height in Angstrom of the lowest slab atom; unset = off | - | - |
 | `CS_MD_MOBILE` | str | `adsorbate` | `adsorbate`, `adsorbate_and_top`, `all_free` | Which atoms are mobile in MD: adsorbate (default), adsorbate_and_top or all_free (every atom not fixed) | - | - |
 | `CS_TOP_DEPTH` | float | `2.0` | - | Depth in Angstrom below the slab top of the extra mobile atoms in cs_md_mobile=adsorbate_and_top; default 2.0 | - | - |
@@ -561,6 +561,98 @@ executes it through the same code path as `mliport confsearch run`.
 | `OUTPUT_FORMAT` | str | `VASP` | - | Output format (VASP). | - | - |
 | `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
 | `JOB_NAME` | str | - | - | Optional job name. | - | - |
+
+**General**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `STRICT_CONFIG` | bool | `.TRUE.` | - | Treat unknown configuration keys as errors. | - | - |
+
+<!-- END GENERATED -->
+
+## Batch
+
+`mliport batch` sweeps a directory of structures instead of one INCAR run, so
+these keys are read from `settings.ini` or the command line; an `INCAR.mliport`
+whose `CALC_TYPE = BATCH` is refused by `mliport run` with a pointer to the
+batch subcommand.
+
+<!-- BEGIN GENERATED: incar-batch -->
+**Calculation**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
+
+**Model**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
+| `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
+| `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
+| `HEAD` | str | - | - | MACE or DeepMD model head/branch (multi-task models). | - | - |
+| `ACTIVATION_CHECKPOINTING` | bool | `-` | - | GPU memory saving (UMA, overrides inference_mode preset). | - | - |
+| `GPU_MEMORY_GROWTH` | bool | - | - | GRACE TensorFlow allocator grows on demand instead of claiming the whole visible GPU. | - | - |
+| `GPU_MEMORY_LIMIT_MB` | int | - | `1..` | Hard GRACE TensorFlow logical-device memory limit in MiB. | - | - |
+| `NEIGHBOR_CACHE` | bool | - | - | GRACE verlet-style neighbor-list cache (extended cutoff + exact re-filter). The complete periodic-image multiset matches a fresh search; pair ordering may differ. Default: True. | - | - |
+| `NEIGHBOR_SKIN` | float | - | `1e-12..` | GRACE neighbor-cache skin in Å: the cached neighbor list is rebuilt when any atom moves more than skin/2. Larger values rebuild less often but filter longer lists. | - | - |
+| `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
+| `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
+| `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
+| `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
+| `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
+| `CHARGE` | int | - | `-100..100` | Total molecular charge stored in atoms.info. | - | - |
+| `SPIN` | int | - | `0..100` | Molecular spin metadata; UMA omol uses spin multiplicity (2S+1). | - | `SPIN_MULTIPLICITY` |
+
+**Device and resources**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
+| `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
+
+**Optimization**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `OPT_ALGO` | str | - | `FIRE`, `BFGS`, `LBFGS` | Geometry optimization algorithm. | - | - |
+| `FMAX` | float | - | `0.0..` | Force convergence threshold in eV/Angstrom. | - | - |
+| `MAX_STEPS` | int | - | `0..` | Maximum optimization steps. | - | - |
+| `CELL_OPT` | bool | - | - | Optimize cell parameters (requires stress support). | - | - |
+| `FIX_SYMMETRY` | bool | - | - | Preserve crystal symmetry during optimization. | - | - |
+
+**Molecular dynamics**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `FMAX_ABORT` | float | - | `0.0..` | MD force-safety abort threshold in eV/Angstrom. | - | - |
+| `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
+
+**Output**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `WRITE_RESOLVED_CONFIG` | bool | `.TRUE.` | - | Write resolved_config.json before a calculation. | - | - |
+| `WRITE_FORCES` | bool | `.TRUE.` | - | Write forces to OUTCAR. | - | - |
+| `WRITE_OUTCAR` | bool | - | - | Write the VASP-like OUTCAR interoperability view. | - | - |
+| `WRITE_XDATCAR` | bool | - | - | Write the VASP XDATCAR interoperability trajectory. | - | - |
+| `WRITE_STRESS` | bool | `.TRUE.` | - | Write stress to OUTCAR. | - | - |
+| `WRITE_TRAJECTORY` | bool | - | - | Write ASE trajectory. | - | - |
+| `WRITE_JSON` | bool | - | - | Write JSON results. | - | - |
+| `OUTPUT_FORMAT` | str | `VASP` | - | Output format (VASP). | - | - |
+| `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
+| `JOB_NAME` | str | - | - | Optional job name. | - | - |
+
+**Batch**
+
+| Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
+|---|---|---|---|---|---|---|
+| `SUB_CALC_TYPE` | str | - | `sp`, `opt` | Sub-calculation type for a sweep batch (sp/opt). | - | - |
+| `PATTERN` | str | - | - | Glob pattern for batch structure discovery. | - | - |
 
 **General**
 

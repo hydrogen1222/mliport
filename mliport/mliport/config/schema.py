@@ -1628,8 +1628,8 @@ _TEMPLATE_CONDITIONS: dict[str, dict[str, Any]] = {
     "write_forces": {"template_value": True},
     "write_stress": {"template_value": True},
     "output_format": {"template_value": "VASP"},
-    "neb_initial": {"placeholder": "initial.vasp"},
-    "neb_final": {"placeholder": "final.vasp"},
+    "neb_initial": {"placeholder": "REQUIRED"},
+    "neb_final": {"placeholder": "REQUIRED"},
     # Thermostat-specific keys: only the selected thermostat is written.
     "friction": {
         "applies_when": (("thermostat", "LANGEVIN"),),

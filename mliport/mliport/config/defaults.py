@@ -226,8 +226,8 @@ def _neutral_model_section() -> list[str]:
     """Backend-neutral model section: no implicit UMA (task book 5.2/5.3)."""
     return [
         "# No MLIP backend is selected by default. Choose one explicitly:",
-        "MODEL_TYPE = REQUIRED",
-        "MODEL_PATH = REQUIRED",
+        f"MODEL_TYPE = REQUIRED{_model_comment('model_type')}",
+        f"MODEL_PATH = REQUIRED{_model_comment('model_path')}",
         "#",
         "# Backend examples (fairchem is an alias for uma):",
         "#   MODEL_TYPE = UMA    TASK = omat    # UMA task family: omat/omol/...",
@@ -239,15 +239,29 @@ def _neutral_model_section() -> list[str]:
     ]
 
 
+def _model_comment(key: str) -> str:
+    """The one-line meaning of a model key, from the shared option table."""
+    from mliport.config.schema import get_schema  # noqa: PLC0415
+
+    spec = get_schema().resolve(key)
+    if spec is None or not spec.description:  # pragma: no cover - table invariant
+        return ""
+    return f"  # {spec.description}"
+
+
 def _engine_model_section(engine: str, calc_type: str) -> list[str]:
-    """Engine-specific model fields (only what that backend really needs)."""
+    """Engine-specific model fields (only what that backend really needs).
+
+    The keys are the ones the option table declares for the model section; the
+    backend-specific *values* (UMA's task family, DPA's branch, NEP's runtime)
+    are the part that genuinely depends on the engine. Explanations come from
+    the table, so they cannot drift from `docs/incar.md`.
+    """
     from mliport.backend_selection import is_uma  # noqa: PLC0415
 
     normalized = str(engine).strip().lower()
     lines = [f"MODEL_TYPE = {'UMA' if is_uma(normalized) else normalized.upper()}"]
-    lines.append(
-        "MODEL_PATH = REQUIRED  # absolute path or path relative to settings.ini"
-    )
+    lines.append(f"MODEL_PATH = REQUIRED{_model_comment('model_path')}")
     if is_uma(normalized):
         lines.append("TASK = omat")
         lines.append("# Molecular tasks only: CHARGE = 0")

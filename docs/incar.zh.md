@@ -10,19 +10,20 @@ mliport 在 `INCAR.mliport` 里接受的全部键、含义、默认值和允许�
 profile、模型别名、INCAR、`settings.ini`、内置默认值；分层规则和任务文件夹用法见
 [配置](configuration.md)。
 
+表格里的“含义”一列直接来自代码里的选项表（英文），所以保持英文原文，避免与实现脱节；分类标题已翻译。
 单位就是每行里写的：飞秒（fs）、皮秒（ps）、埃、电子伏（eV）、开尔文和吉帕（GPa）。能量是
 MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 
 ## 所有计算类型通用的键
 
 <!-- BEGIN GENERATED: incar-common -->
-**Calculation**
+**计算类型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
 
-**Model**
+**模型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -44,21 +45,21 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
 
-**Device and resources**
+**设备与资源**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
 | `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
 
-**Molecular dynamics**
+**分子动力学**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `FMAX_ABORT` | float | - | `0.0..` | MD force-safety abort threshold in eV/Angstrom. | - | - |
 | `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
 
-**Output**
+**输出控制**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -73,7 +74,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
 | `JOB_NAME` | str | - | - | Optional job name. | - | - |
 
-**General**
+**通用**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -86,13 +87,13 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 `CALC_TYPE = SP` 计算一个结构的能量、力和应力。输出控制键在结构优化和 MD 里同样适用。
 
 <!-- BEGIN GENERATED: incar-sp -->
-**Calculation**
+**计算类型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
 
-**Model**
+**模型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -116,21 +117,21 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `CHARGE` | int | - | `-100..100` | Total molecular charge stored in atoms.info. | - | - |
 | `SPIN` | int | - | `0..100` | Molecular spin metadata; UMA omol uses spin multiplicity (2S+1). | - | `SPIN_MULTIPLICITY` |
 
-**Device and resources**
+**设备与资源**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
 | `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
 
-**Molecular dynamics**
+**分子动力学**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `FMAX_ABORT` | float | - | `0.0..` | MD force-safety abort threshold in eV/Angstrom. | - | - |
 | `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
 
-**Output**
+**输出控制**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -145,7 +146,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
 | `JOB_NAME` | str | - | - | Optional job name. | - | - |
 
-**General**
+**通用**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -158,13 +159,13 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 `CALC_TYPE = OPT` 做结构优化，晶胞可以一起放开。
 
 <!-- BEGIN GENERATED: incar-opt -->
-**Calculation**
+**计算类型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
 
-**Model**
+**模型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -188,14 +189,14 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `CHARGE` | int | - | `-100..100` | Total molecular charge stored in atoms.info. | - | - |
 | `SPIN` | int | - | `0..100` | Molecular spin metadata; UMA omol uses spin multiplicity (2S+1). | - | `SPIN_MULTIPLICITY` |
 
-**Device and resources**
+**设备与资源**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
 | `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
 
-**Optimization**
+**结构优化**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -205,14 +206,14 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `CELL_OPT` | bool | `.FALSE.` | - | Optimize cell parameters (requires stress support). | - | - |
 | `FIX_SYMMETRY` | bool | `.FALSE.` | - | Preserve crystal symmetry during optimization. | - | - |
 
-**Molecular dynamics**
+**分子动力学**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `FMAX_ABORT` | float | - | `0.0..` | MD force-safety abort threshold in eV/Angstrom. | - | - |
 | `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
 
-**Output**
+**输出控制**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -227,7 +228,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
 | `JOB_NAME` | str | - | - | Optional job name. | - | - |
 
-**General**
+**通用**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -241,13 +242,13 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 
 <!-- BEGIN GENERATED: incar-md -->
-**Calculation**
+**计算类型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
 
-**Model**
+**模型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -271,14 +272,14 @@ NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 | `CHARGE` | int | - | `-100..100` | Total molecular charge stored in atoms.info. | - | - |
 | `SPIN` | int | - | `0..100` | Molecular spin metadata; UMA omol uses spin multiplicity (2S+1). | - | `SPIN_MULTIPLICITY` |
 
-**Device and resources**
+**设备与资源**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
 | `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
 
-**Molecular dynamics**
+**分子动力学**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -310,7 +311,7 @@ NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 | `COM_POLICY` | str | `auto` | `auto`, `none`, `initialize_only`, `constraint` | Explicit center-of-mass policy for MD. | - | - |
 | `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
 
-**Output**
+**输出控制**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -325,7 +326,7 @@ NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 | `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
 | `JOB_NAME` | str | - | - | Optional job name. | - | - |
 
-**General**
+**通用**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -339,13 +340,13 @@ NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直接拒绝。
 
 <!-- BEGIN GENERATED: incar-neb -->
-**Calculation**
+**计算类型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
 
-**Model**
+**模型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -369,21 +370,21 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `CHARGE` | int | - | `-100..100` | Total molecular charge stored in atoms.info. | - | - |
 | `SPIN` | int | - | `0..100` | Molecular spin metadata; UMA omol uses spin multiplicity (2S+1). | - | `SPIN_MULTIPLICITY` |
 
-**Device and resources**
+**设备与资源**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
 | `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
 
-**Optimization**
+**结构优化**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `FMAX` | float | `0.03` | `0.0..` | Force convergence threshold in eV/Angstrom. | - | - |
 | `MAX_STEPS` | int | `1000` | `0..` | Maximum optimization steps. | - | - |
 
-**Molecular dynamics**
+**分子动力学**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -394,8 +395,8 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
-| `NEB_INITIAL` | str | required (`initial.vasp`) | - | Initial endpoint structure for NEB. | - | - |
-| `NEB_FINAL` | str | required (`final.vasp`) | - | Final endpoint structure for NEB. | - | - |
+| `NEB_INITIAL` | str | required (`REQUIRED`) | - | Initial endpoint structure for NEB. | - | - |
+| `NEB_FINAL` | str | required (`REQUIRED`) | - | Final endpoint structure for NEB. | - | - |
 | `NEB_IMAGES` | int | `7` | `1..` | Number of intermediate images; endpoints are additional. | - | `IMAGES` |
 | `CLIMB` | bool | `.FALSE.` | - | Run a second climbing-image NEB stage. | - | `NEB_CLIMB` |
 | `NEB_METHOD` | str | `improvedtangent` | `improvedtangent` | ASE NEB tangent method. | - | - |
@@ -414,7 +415,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `NEB_MIN_DISTANCE` | float | `0.5` | `1e-12..` | Minimum allowed interatomic distance in Angstrom. | - | - |
 | `NEB_CHECKPOINT_INTERVAL` | int | `10` | `1..` | Trusted optimizer-state interval between full-band checkpoints. | - | - |
 
-**Output**
+**输出控制**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -429,7 +430,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
 | `JOB_NAME` | str | - | - | Optional job name. | - | - |
 
-**General**
+**通用**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -443,13 +444,13 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 `mliport confsearch run` 完全相同的代码路径。
 
 <!-- BEGIN GENERATED: incar-confsearch -->
-**Calculation**
+**计算类型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
 
-**Model**
+**模型**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -473,14 +474,14 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `CHARGE` | int | - | `-100..100` | Total molecular charge stored in atoms.info. | - | - |
 | `SPIN` | int | - | `0..100` | Molecular spin metadata; UMA omol uses spin multiplicity (2S+1). | - | `SPIN_MULTIPLICITY` |
 
-**Device and resources**
+**设备与资源**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
 | `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
 
-**Molecular dynamics**
+**分子动力学**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -489,16 +490,16 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `FRICTION` | float | `0.01` | `0.0..` | Langevin friction coefficient (1/fs). | - | - |
 | `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
 
-**Configuration search**
+**构型搜索**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `CS_MODE` | str | `adsorbate` | `adsorbate` | Search mode; v1 accepts only 'adsorbate' (bulk_mobile, melt_quench, interface, multi_adsorbate are rejected) | - | - |
 | `CS_STARTS` | str | required (`REQUIRED`) | - | Mode A: start structures (files or directories), one independent replica each; needs cs_adsorbate_indices | - | - |
 | `CS_ADSORBATE_INDICES` | str | required (`REQUIRED`) | - | Mode A: 0-based adsorbate atom indices such as 300-341 or 0,5,7-9; must be one connected covalent molecule | - | - |
-| `CS_SLAB` | str | required (`slab.vasp`) | - | Mode B: slab structure file, exactly one frame; conformers from cs_molecule are placed above it | `CS_MODE = MODE_B` | - |
-| `CS_MOLECULE` | str | required (`molecule.xyz`) | - | Mode B: molecule conformer file; one conformer is drawn at random for each placed start | `CS_MODE = MODE_B` | - |
-| `CS_N_STARTS` | int | `10` | `1..` | Mode B: number of placed start structures to build, each becoming one independent replica; minimum 1 | `CS_MODE = MODE_B` | - |
+| `CS_SLAB` | str | `slab.vasp` (example) | - | Mode B: slab structure file, exactly one frame; conformers from cs_molecule are placed above it | - | - |
+| `CS_MOLECULE` | str | `molecule.xyz` (example) | - | Mode B: molecule conformer file; one conformer is drawn at random for each placed start | - | - |
+| `CS_N_STARTS` | int | `10` | `1..` | Mode B: number of placed start structures to build, each becoming one independent replica; minimum 1 | - | - |
 | `CS_FIX_BELOW` | float | - | - | Extend the input FixAtoms to slab atoms within this height in Angstrom of the lowest slab atom; unset = off | - | - |
 | `CS_MD_MOBILE` | str | `adsorbate` | `adsorbate`, `adsorbate_and_top`, `all_free` | Which atoms are mobile in MD: adsorbate (default), adsorbate_and_top or all_free (every atom not fixed) | - | - |
 | `CS_TOP_DEPTH` | float | `2.0` | - | Depth in Angstrom below the slab top of the extra mobile atoms in cs_md_mobile=adsorbate_and_top; default 2.0 | - | - |
@@ -539,7 +540,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `CS_REFINE_STEPS` | int | `3000` | `1..` | Maximum number of FIRE steps in the final refinement of each exported minimum; default 3000 | - | - |
 | `CS_ALLOW_DIRECT_FORCES` | bool | `.FALSE.` | - | Allow a model that reports direct_forces=true, in which case the ranking is not meaningful; default false | - | - |
 
-**Output**
+**输出控制**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
@@ -554,7 +555,98 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
 | `JOB_NAME` | str | - | - | Optional job name. | - | - |
 
-**General**
+**通用**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `STRICT_CONFIG` | bool | `.TRUE.` | - | Treat unknown configuration keys as errors. | - | - |
+
+<!-- END GENERATED -->
+
+## 批量计算
+
+`mliport batch` 扫一个目录里的结构，而不是跑一份 INCAR，所以这些键来自 `settings.ini` 或
+命令行；`CALC_TYPE = BATCH` 的 `INCAR.mliport` 会被 `mliport run` 拒绝，并提示改用批量
+子命令。
+
+<!-- BEGIN GENERATED: incar-batch -->
+**计算类型**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `CALC_TYPE` | str | - | `sp`, `opt`, `md`, `neb`, `batch`, `confsearch` | Top-level calculation type (selects the runner). | - | `CALCULATION` |
+
+**模型**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
+| `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
+| `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
+| `HEAD` | str | - | - | MACE or DeepMD model head/branch (multi-task models). | - | - |
+| `ACTIVATION_CHECKPOINTING` | bool | `-` | - | GPU memory saving (UMA, overrides inference_mode preset). | - | - |
+| `GPU_MEMORY_GROWTH` | bool | - | - | GRACE TensorFlow allocator grows on demand instead of claiming the whole visible GPU. | - | - |
+| `GPU_MEMORY_LIMIT_MB` | int | - | `1..` | Hard GRACE TensorFlow logical-device memory limit in MiB. | - | - |
+| `NEIGHBOR_CACHE` | bool | - | - | GRACE verlet-style neighbor-list cache (extended cutoff + exact re-filter). The complete periodic-image multiset matches a fresh search; pair ordering may differ. Default: True. | - | - |
+| `NEIGHBOR_SKIN` | float | - | `1e-12..` | GRACE neighbor-cache skin in Å: the cached neighbor list is rebuilt when any atom moves more than skin/2. Larger values rebuild less often but filter longer lists. | - | - |
+| `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
+| `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
+| `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
+| `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
+| `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
+| `CHARGE` | int | - | `-100..100` | Total molecular charge stored in atoms.info. | - | - |
+| `SPIN` | int | - | `0..100` | Molecular spin metadata; UMA omol uses spin multiplicity (2S+1). | - | `SPIN_MULTIPLICITY` |
+
+**设备与资源**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `DEVICE` | str | `cpu` | - | Compute device: cpu, cuda, gpu or cuda:N. | - | - |
+| `TORCH_NUM_THREADS` | int | `-` | `1..` | Backend CPU intra-op threads (PyTorch for UMA/MACE/DPA .pt; TensorFlow for GRACE; legacy canonical field name). | - | `CPU_THREADS` |
+
+**结构优化**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `OPT_ALGO` | str | - | `FIRE`, `BFGS`, `LBFGS` | Geometry optimization algorithm. | - | - |
+| `FMAX` | float | - | `0.0..` | Force convergence threshold in eV/Angstrom. | - | - |
+| `MAX_STEPS` | int | - | `0..` | Maximum optimization steps. | - | - |
+| `CELL_OPT` | bool | - | - | Optimize cell parameters (requires stress support). | - | - |
+| `FIX_SYMMETRY` | bool | - | - | Preserve crystal symmetry during optimization. | - | - |
+
+**分子动力学**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `FMAX_ABORT` | float | - | `0.0..` | MD force-safety abort threshold in eV/Angstrom. | - | - |
+| `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
+
+**输出控制**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `WRITE_RESOLVED_CONFIG` | bool | `.TRUE.` | - | Write resolved_config.json before a calculation. | - | - |
+| `WRITE_FORCES` | bool | `.TRUE.` | - | Write forces to OUTCAR. | - | - |
+| `WRITE_OUTCAR` | bool | - | - | Write the VASP-like OUTCAR interoperability view. | - | - |
+| `WRITE_XDATCAR` | bool | - | - | Write the VASP XDATCAR interoperability trajectory. | - | - |
+| `WRITE_STRESS` | bool | `.TRUE.` | - | Write stress to OUTCAR. | - | - |
+| `WRITE_TRAJECTORY` | bool | - | - | Write ASE trajectory. | - | - |
+| `WRITE_JSON` | bool | - | - | Write JSON results. | - | - |
+| `OUTPUT_FORMAT` | str | `VASP` | - | Output format (VASP). | - | - |
+| `OUTPUT_DIR` | str | - | - | Output directory for the calculation. Used when the command line does not pass --output; the resolved config is written into the final job directory. Relative values resolve against the file that declares them (the INCAR folder for an INCAR), and `mliport run` defaults to <INCAR folder>/results when neither --output nor OUTPUT_DIR is given. | - | - |
+| `JOB_NAME` | str | - | - | Optional job name. | - | - |
+
+**批量计算**
+
+| 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
+|---|---|---|---|---|---|---|
+| `SUB_CALC_TYPE` | str | - | `sp`, `opt` | Sub-calculation type for a sweep batch (sp/opt). | - | - |
+| `PATTERN` | str | - | - | Glob pattern for batch structure discovery. | - | - |
+
+**通用**
 
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
