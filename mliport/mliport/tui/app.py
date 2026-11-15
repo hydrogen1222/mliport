@@ -23,8 +23,9 @@ if TYPE_CHECKING:
 from mliport.tui.analysis_screen import AnalysisScreen
 from mliport.tui.config_screen import ConfigScreen
 from mliport.tui.jobs_screen import JobsScreen
-from mliport.tui.main_screen import MainScreen, TemplateScreen
+from mliport.tui.main_screen import AdvancedScreen, MainScreen, TemplateScreen
 from mliport.tui.run_screen import RunScreen
+from mliport.tui.wizard_screen import NewTaskScreen
 
 
 class MliportApp(App):
@@ -263,6 +264,8 @@ class MliportApp(App):
 
     SCREENS: ClassVar[dict] = {
         "main": MainScreen,
+        "new-task": NewTaskScreen,
+        "advanced": AdvancedScreen,
         "config": ConfigScreen,
         "run": RunScreen,
         "template": TemplateScreen,

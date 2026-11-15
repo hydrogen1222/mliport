@@ -867,13 +867,18 @@ def _write_neb_endpoints(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 @pytest.mark.asyncio()
 async def test_main_screen_lists_neb_entry() -> None:
+    """NEB is reachable from the wizard's Advanced menu (#61 R5.3)."""
     from textual.widgets import ListView
 
+    from mliport.tui.main_screen import AdvancedScreen
+
     app = MliportApp()
-    async with app.run_test(size=(80, 24)):
+    async with app.run_test(size=(80, 24)) as pilot:
+        await app.push_screen(AdvancedScreen())
+        await pilot.pause()
         items = [
             item.id
-            for item in app.screen.query_one("#calc-type-list", ListView).children
+            for item in app.screen.query_one("#advanced-list", ListView).children
         ]
     assert "neb" in items
 
@@ -1495,8 +1500,12 @@ async def test_tui_jobs_screen_is_empty_in_new_state(
 
 @pytest.mark.asyncio()
 async def test_main_screen_offers_confsearch() -> None:
+    """The configuration-search entry stays reachable under Advanced (#61 R5.3)."""
+    from mliport.tui.main_screen import AdvancedScreen
+
     app = MliportApp()
     async with app.run_test(size=(100, 100)) as pilot:
+        await app.push_screen(AdvancedScreen())
         await pilot.pause()
         items = {item.id for item in app.screen.query("ListItem")}
         assert "confsearch" in items
