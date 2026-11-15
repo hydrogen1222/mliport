@@ -7,6 +7,7 @@ the trust-gated conversion, and only DPA-2 checkpoints are accepted there.
 
 from __future__ import annotations
 
+import sys
 import types
 from pathlib import Path
 
@@ -51,9 +52,12 @@ def test_current_runtime_matches_the_pinned_environment():
     assert dpa_runtime_problems("current", "3.2.1.dev63+g0edeaef56") == []
 
 
-def test_legacy_runtime_matches_the_prerelease_environment():
-    for version in ("3.0.0b1", "3.0.0b3"):
-        assert dpa_runtime_problems("legacy", version) == []
+def test_legacy_runtime_matches_only_the_pinned_release():
+    assert dpa_runtime_problems("legacy", "3.0.0b3") == []
+    assert dpa_runtime_problems("legacy", "3.0.0b3+local") == []
+    # b0 does not know ``use_tebd_bias``; b4 already changed the repformer layout.
+    for other in ("3.0.0b0", "3.0.0b1", "3.0.0b2", "3.0.0b4", "3.0.0"):
+        assert dpa_runtime_problems("legacy", other), other
 
 
 def test_legacy_runtime_in_the_current_environment_is_refused():
@@ -97,6 +101,48 @@ def test_legacy_runtime_refuses_a_checkpoint_needing_unsafe_unpickling(
     wrapper = _wrapper(tmp_path, dpa_runtime="legacy")
     with pytest.raises(RuntimeError, match="convert_dpa_checkpoint.py"):
         wrapper.get_calculator()
+    assert wrapper._calculator is None
+
+
+def test_legacy_runtime_refuses_a_non_pt_checkpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(dpa_calc, "installed_deepmd_version", lambda: "3.0.0b3")
+    model = tmp_path / "model.pth"
+    model.write_bytes(b"stub")
+    wrapper = DPACalculatorWrapper(
+        model, device="cpu", task="bulk", dpa_runtime="legacy"
+    )
+    with pytest.raises(ValueError, match="only loads '.pt' checkpoints"):
+        wrapper.get_calculator()
+    assert wrapper._calculator is None
+
+
+def test_legacy_runtime_refuses_to_run_without_tensor_verification(
+    tmp_path, monkeypatch
+):
+    """A skipped strict-tensor check is a failure in the legacy runtime."""
+    monkeypatch.setattr(dpa_calc, "installed_deepmd_version", lambda: "3.0.0b3")
+    torch = pytest.importorskip("torch")
+    payload = {
+        "model": {"_extra_state": {"model_params": {"descriptor": {"type": "dpa2"}}}}
+    }
+    monkeypatch.setattr(torch, "load", lambda *a, **k: payload)
+    module = types.ModuleType("deepmd.calculator")
+
+    class DP:
+        def __init__(self, **kwargs):
+            self.dp = types.SimpleNamespace(
+                deep_eval=types.SimpleNamespace(_dpmodel=None)
+            )
+            self.implemented_properties = ["energy", "forces", "stress"]
+
+    module.DP = DP
+    monkeypatch.setitem(sys.modules, "deepmd", types.ModuleType("deepmd"))
+    monkeypatch.setitem(sys.modules, "deepmd.calculator", module)
+
+    wrapper = _wrapper(tmp_path, dpa_runtime="legacy")
+    with pytest.raises(RuntimeError, match="without tensor verification"):
+        wrapper.get_calculator()
+    assert wrapper._checkpoint_tensors_verified is False
     assert wrapper._calculator is None
 
 
@@ -150,6 +196,17 @@ def test_info_records_runtime_and_deepmd_version(tmp_path, monkeypatch):
     info = wrapper.info()
     assert info["dpa_runtime"] == "legacy"
     assert info["deepmd_version"] == "3.0.0b3"
+
+
+def test_blackwell_has_no_build_for_the_legacy_runtime():
+    """torch 2.3.1+cu121 stops at sm_90; Blackwell must not claim support."""
+    from mliport.install.compatibility import lookup_backend
+
+    backend = lookup_backend("dpa-legacy")
+    assert backend is not None
+    assert backend.arch_profiles["blackwell"].upstream_supported is False
+    assert backend.arch_profiles["hopper"].upstream_supported is True
+    assert backend.arch_profiles["maxwell"].upstream_supported is False
 
 
 def test_model_record_carries_the_dpa_runtime():

@@ -723,7 +723,9 @@ LEGACY_BACKENDS: dict[str, BackendSpec] = {
                 # torch 2.3.1 has cu121 (sm_50..sm_90) and cu118 only; there is
                 # no cu126/cu128 wheel for it, so every architecture uses cu121.
                 cuda_channel="cu121",
-                upstream_supported=arch != "maxwell",
+                # torch 2.3.1+cu121 carries kernels up to sm_90: Blackwell
+                # (sm_100/sm_120) has no build for this runtime at all.
+                upstream_supported=arch not in {"maxwell", "blackwell"},
                 notes=(
                     "torch 2.3.1+cu121; this is the exact build the deepmd-kit "
                     "3.0.0b3 wheel was compiled against."
