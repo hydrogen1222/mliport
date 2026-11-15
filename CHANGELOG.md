@@ -23,6 +23,15 @@
   before - only the lookup that produced it is new.
 - `docs/configuration.md` (+ `.zh.md`) documents the convention, the lookup
   order, the fail-closed cases and the new environment variable.
+- A model may be a directory (GRACE SavedModel) as well as a file: a
+  same-named directory next to the declaring file keeps the previous
+  behaviour, and a directory in `models/` is found by name.
+- `MLIPORT_ROOT` is only derived from a `.venv-<engine>` prefix when its parent
+  really is a checkout (`models/`, a `bin/mliport-*` launcher or
+  `mliport/pyproject.toml`), because `.venv` is also the name of any project
+  virtualenv; otherwise a file name fails closed with instructions. The
+  generated launchers only set `MLIPORT_ROOT` when the caller has not set it,
+  so a shared model store pointed at by `MLIPORT_ROOT` keeps working.
 - `models/` stays git-ignored and the repository hygiene policy still refuses
   tracked weights.
 

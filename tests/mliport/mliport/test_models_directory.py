@@ -136,7 +136,7 @@ def test_two_matches_in_models_are_refused(tmp_path, monkeypatch) -> None:
     with pytest.raises(ModelLookupError) as excinfo:
         _resolve(folder)
     message = str(excinfo.value)
-    assert "more than one file" in message
+    assert "more than one entry" in message
     assert "mace/dup.model" in message.replace(str(root), "")
     assert "uma/dup.model" in message.replace(str(root), "")
 
@@ -189,6 +189,33 @@ def test_same_name_next_to_the_incar_wins_over_models(tmp_path, monkeypatch) -> 
     assert _resolve(folder) == str((folder / "model.pt").resolve())
 
 
+def test_a_model_directory_next_to_the_incar_is_used_as_before(
+    tmp_path, monkeypatch
+) -> None:
+    """GRACE models are SavedModel directories, not files (#61 R2.2)."""
+    root = _checkout(tmp_path)
+    (root / "models" / "saved_model").mkdir()
+    monkeypatch.setenv(MLIPORT_ROOT_ENV, str(root))
+    folder = _task_folder(tmp_path, "saved_model")
+    saved_model = folder / "saved_model"
+    saved_model.mkdir()
+    (saved_model / "saved_model.pb").write_text("graph", encoding="utf-8")
+
+    assert _resolve(folder) == str(saved_model.resolve())
+
+
+def test_a_model_directory_in_models_is_found_by_name(tmp_path, monkeypatch) -> None:
+    root = _checkout(tmp_path)
+    (root / "models" / "grace-model").mkdir()
+    (root / "models" / "grace-model" / "saved_model.pb").write_text(
+        "g", encoding="utf-8"
+    )
+    monkeypatch.setenv(MLIPORT_ROOT_ENV, str(root))
+    folder = _task_folder(tmp_path, "grace-model")
+
+    assert _resolve(folder) == str((root / "models" / "grace-model").resolve())
+
+
 def test_absolute_model_path_is_accepted_as_before(tmp_path) -> None:
     folder = _task_folder(tmp_path, "{MODEL}")
     model = tmp_path / "weights" / "m.model"
@@ -223,6 +250,19 @@ def test_root_is_derived_from_an_installer_venv_prefix(tmp_path, monkeypatch) ->
     assert mliport_root() == root.resolve()
 
 
+def test_installer_venv_prefix_needs_a_checkout_marker(tmp_path, monkeypatch) -> None:
+    """.venv is also the name of any project virtualenv, not just UMA's."""
+    project = tmp_path / "some-project"
+    (project / ".venv-mace" / "bin").mkdir(parents=True)
+    monkeypatch.delenv(MLIPORT_ROOT_ENV, raising=False)
+    monkeypatch.setattr("sys.prefix", str(project / ".venv-mace"))
+    assert mliport_root() is None
+
+    (project / "mliport").mkdir()
+    (project / "mliport" / "pyproject.toml").write_text("[project]", encoding="utf-8")
+    assert mliport_root() == project.resolve()
+
+
 def test_unknown_root_fails_closed_with_instructions(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv(MLIPORT_ROOT_ENV, raising=False)
     monkeypatch.setattr("sys.prefix", str(tmp_path / ".venv-dev"))
@@ -253,9 +293,10 @@ def test_installer_launcher_exports_the_root(tmp_path, monkeypatch) -> None:
 
     backend = ALL_BACKENDS["mace"]
     script = posix_launcher_script(backend)
-    assert "MLIPORT_ROOT=$(CDPATH=" in script
+    assert ': "${MLIPORT_ROOT:=$(CDPATH=' in script
     assert "export MLIPORT_ROOT" in script
-    assert windows_launcher_script(backend).count('set "MLIPORT_ROOT=') == 1
+    windows = windows_launcher_script(backend)
+    assert windows.count('if not defined MLIPORT_ROOT set "MLIPORT_ROOT=') == 1
 
     # The wrapper must resolve the root to the directory that holds bin/.
     launcher = create_launcher(backend, tmp_path)
@@ -274,6 +315,19 @@ def test_installer_launcher_exports_the_root(tmp_path, monkeypatch) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert f"ROOT={tmp_path}" in result.stdout
+
+    # An explicit MLIPORT_ROOT from the caller must win over the checkout.
+    explicit = tmp_path / "shared-model-store"
+    explicit.mkdir()
+    result = subprocess.run(
+        [str(launcher)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, MLIPORT_ROOT_ENV: str(explicit)},
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"ROOT={explicit}" in result.stdout
 
 
 # ---------------------------------------------------------------------------

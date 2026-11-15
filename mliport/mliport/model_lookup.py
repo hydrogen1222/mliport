@@ -73,8 +73,26 @@ def mliport_root(
         return root.resolve()
     prefix_path = Path(sys.prefix if prefix is None else prefix).expanduser()
     if prefix_path.name in _installer_venv_names():
-        return prefix_path.parent.resolve()
+        candidate = prefix_path.parent.resolve()
+        # A matching environment *name* is not proof that its parent is the
+        # mliport checkout: ``.venv`` is the name of UMA's environment and also
+        # of any project-local virtualenv. Without a checkout marker the root
+        # stays unknown, so a file name fails closed with instructions instead
+        # of resolving a model out of an unrelated directory.
+        if looks_like_checkout(candidate):
+            return candidate
     return None
+
+
+def looks_like_checkout(root: str | Path) -> bool:
+    """True when ``root`` carries the markers of an mliport checkout."""
+    directory = Path(root)
+    if (directory / MODELS_DIRNAME).is_dir():
+        return True
+    launchers = directory / "bin"
+    if launchers.is_dir() and any(launchers.glob("mliport-*")):
+        return True
+    return (directory / "mliport" / "pyproject.toml").is_file()
 
 
 def models_dir(root: str | Path) -> Path:
@@ -106,12 +124,19 @@ def available_model_files(root: str | Path | None) -> list[str]:
             if entry.is_file():
                 found.append(entry.name)
             elif entry.is_dir():
-                with os.scandir(entry.path) as nested:
-                    found.extend(
-                        f"{entry.name}/{child.name}"
-                        for child in sorted(nested, key=lambda item: item.name)
-                        if child.is_file()
+                nested = [
+                    child.name
+                    for child in sorted(
+                        os.scandir(entry.path), key=lambda item: item.name
                     )
+                    if child.is_file() or child.is_dir()
+                ]
+                if nested:
+                    found.extend(f"{entry.name}/{name}" for name in nested)
+                else:
+                    # An empty directory in models/ is a model directory in its
+                    # own right (a GRACE SavedModel, for example).
+                    found.append(f"{entry.name}/")
     return found
 
 
@@ -124,7 +149,7 @@ def _searched_locations(name: str, root: Path | None, declared_near: Path) -> li
 
 
 def _not_found_message(name: str, root: Path | None, declared_near: Path) -> str:
-    lines = [f"Model file {name!r} was not found. Searched:"]
+    lines = [f"Model {name!r} was not found. Searched:"]
     lines.extend(
         f"  - {location}" for location in _searched_locations(name, root, declared_near)
     )
@@ -140,14 +165,14 @@ def _not_found_message(name: str, root: Path | None, declared_near: Path) -> str
         lines.append(f"Files in {models_dir(root)}:")
         lines.extend(f"  - {item}" for item in available)
     else:
-        lines.append(f"{models_dir(root)} holds no model files.")
+        lines.append(f"{models_dir(root)} holds no models.")
     return "\n".join(lines)
 
 
 def _missing_root_message(name: str, declared_near: Path) -> str:
     return "\n".join(
         [
-            f"Model file {name!r} is a bare file name and was not found at "
+            f"Model {name!r} is a bare file name and was not found at "
             f"{declared_near}.",
             f"Looking it up in {MODELS_DIRNAME}/ needs a known mliport root, and none "
             "could be determined:",
@@ -185,7 +210,7 @@ def lookup_model_file_name(
     directory = models_dir(resolved_root)
     matches: list[Path] = []
     direct = directory / name
-    if direct.is_file():
+    if direct.exists():
         matches.append(direct)
     else:
         if directory.is_dir():
@@ -194,14 +219,14 @@ def lookup_model_file_name(
                     if not entry.is_dir():
                         continue
                     candidate = Path(entry.path) / name
-                    if candidate.is_file():
+                    if candidate.exists():
                         matches.append(candidate)
     if len(matches) == 1:
         return matches[0].resolve()
     if len(matches) > 1:
         listed = "\n".join(f"  - {match}" for match in matches)
         raise ModelLookupError(
-            f"Model file name {name!r} matches more than one file in "
+            f"Model name {name!r} matches more than one entry in "
             f"{directory}:\n{listed}\n"
             "Name the model by path instead, or keep one copy per name."
         )
@@ -234,7 +259,9 @@ def resolve_model_reference(
         path = Path(base_dir) / path
     if not is_file_name(text):
         return path.resolve()
-    if path.is_file():
+    if path.exists():
+        # A file, or a directory when the backend's model is a directory
+        # (GRACE SavedModel). Either way the user's own path wins over models/.
         return path.resolve()
     return lookup_model_file_name(text, declared_near=path, root=root)
 
@@ -272,6 +299,7 @@ __all__ = [
     "describe_models_directory",
     "is_file_name",
     "lookup_model_file_name",
+    "looks_like_checkout",
     "mliport_root",
     "model_search_paths",
     "models_dir",
