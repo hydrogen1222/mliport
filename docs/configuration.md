@@ -141,7 +141,8 @@ mliport run
 default is a `run`-only convenience: `--output` and `OUTPUT_DIR` still win, a
 relative `OUTPUT_DIR` is resolved against the INCAR folder rather than the
 current directory, and `OUTPUT_DIR = .` restores the previous behaviour of
-writing into the current directory. A `results/` directory that already holds a
+writing into the current directory (a relative `OUTPUT_DIR` from `settings.ini`
+or the command line stays current-directory relative, as before). A `results/` directory that already holds a
 run is refused, as before, until you pass `--overwrite`.
 
 `CALC_TYPE = CONFSEARCH` is accepted by `mliport run` and takes exactly the

@@ -128,7 +128,8 @@ mliport run
 
 `mliport run` 的默认输出目录是 INCAR 所在文件夹下的 `results/`。这个默认值只在 `run`
 里生效：`--output` 和 `OUTPUT_DIR` 仍然优先；`OUTPUT_DIR` 写相对路径时相对 INCAR 所在
-文件夹解析，而不是相对当前目录；`OUTPUT_DIR = .` 可以恢复以前写进当前目录的行为。
+文件夹解析，而不是相对当前目录；`OUTPUT_DIR = .` 可以恢复以前写进当前目录的行为（`settings.ini`
+或命令行里写的相对 `OUTPUT_DIR` 一直就是相对当前目录解析，这一点没有变）。
 和以前一样，`results/` 里已经有计算结果的目录会被拒绝写入，除非加 `--overwrite`。
 
 `mliport run` 支持 `CALC_TYPE = CONFSEARCH`，走的是和 `mliport confsearch run` 完全相同的

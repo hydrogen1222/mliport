@@ -205,20 +205,68 @@ def test_incar_output_dir_is_relative_to_the_incar_not_the_cwd(
 
 
 def test_output_dir_dot_keeps_the_old_behaviour(tmp_path, monkeypatch, capsys) -> None:
-    """OUTPUT_DIR = . opts out of the results/ default and writes in the INCAR folder."""
+    """OUTPUT_DIR = . still means "the current directory", not the INCAR folder.
+
+    Run from somewhere else on purpose: the point of the escape hatch is that it
+    restores the pre-#61 behaviour even when the working directory is not the
+    task folder.
+    """
     folder = _write_task_folder(
         tmp_path, SP_INCAR + "OUTPUT_DIR = .\nJOB_NAME = job1\n"
     )
     engine = _RecordingEngine()
     captured = _patch_engine(monkeypatch, engine)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
 
-    with _chdir(folder):
-        rc = main(["run"])
+    with _chdir(elsewhere):
+        rc = main(
+            [
+                "run",
+                "--incar",
+                str(folder / "INCAR.mliport"),
+                "--structure",
+                str(folder / "POSCAR"),
+            ]
+        )
 
     assert rc == 0, capsys.readouterr()
-    assert captured["config"].output_dir == folder.resolve()
-    assert (folder / "job1" / "resolved_config.json").is_file()
+    assert captured["config"].output_dir == elsewhere.resolve()
+    assert (elsewhere / "job1" / "resolved_config.json").is_file()
     assert not (folder / "results").exists()
+    assert not (folder / "job1").exists()
+
+
+def test_a_settings_ini_output_dir_stays_relative_to_the_working_directory(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Only the INCAR-declared OUTPUT_DIR became INCAR-relative (spec R1.2)."""
+    settings_dir = tmp_path / "cfg"
+    settings_dir.mkdir()
+    (settings_dir / "settings.ini").write_text(
+        "[output]\nOUTPUT_DIR = out_root\n", encoding="utf-8"
+    )
+    folder = _write_task_folder(tmp_path, SP_INCAR)
+    engine = _RecordingEngine()
+    captured = _patch_engine(monkeypatch, engine)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setenv("MLIPORT_SETTINGS", str(settings_dir / "settings.ini"))
+
+    with _chdir(elsewhere):
+        rc = main(
+            [
+                "run",
+                "--incar",
+                str(folder / "INCAR.mliport"),
+                "--structure",
+                str(folder / "POSCAR"),
+            ]
+        )
+
+    assert rc == 0, capsys.readouterr()
+    assert captured["config"].output_dir == (elsewhere / "out_root").resolve()
+    assert not (settings_dir / "out_root").exists()
 
 
 # ---------------------------------------------------------------------------

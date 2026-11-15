@@ -8,9 +8,10 @@ Task folder + INCAR usage round (tracking: #61):
   instead of the current directory. This is the one intentional behaviour
   change of the round: `--output` and `OUTPUT_DIR` still win, a relative
   `OUTPUT_DIR` resolves against the INCAR folder instead of the current
-  directory, and `OUTPUT_DIR = .` restores the old behaviour. Only `run`
-  changes its default; `sp`/`opt`/`md`/`neb`/`batch`/`confsearch` are
-  unaffected. A directory that already holds results is still refused without
+  directory, and `OUTPUT_DIR = .` restores the old behaviour (a relative
+  `OUTPUT_DIR` from `settings.ini` or the command line is still
+  current-directory relative, as before). Only `run` changes its default;
+  `sp`/`opt`/`md`/`neb`/`batch`/`confsearch` are unaffected. A directory that already holds results is still refused without
   `--overwrite`.
 - `mliport run` validates the INCAR and resolves the model path before it looks
   for or reads the structure, so a broken configuration is reported as a

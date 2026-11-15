@@ -243,6 +243,15 @@ def _resolve_declared_paths(sources: dict[str, ResolvedValue], schema: Schema) -
         spec = schema.resolve(key)
         if spec is None or not spec.is_path or not resolved.value:
             continue
+        # Spec R1.2: a relative OUTPUT_DIR declared *in the INCAR* resolves
+        # against the INCAR folder (the task folder). In every other layer - a
+        # settings.ini, the CLI, a profile - it keeps the historical
+        # current-directory behaviour, and "." explicitly means "here", so
+        # `OUTPUT_DIR = .` is a real opt-out of the results/ default.
+        if spec.name == "output_dir" and (
+            resolved.source != "INCAR/job" or str(resolved.value).strip() in {".", "./"}
+        ):
+            continue
         path = Path(str(resolved.value)).expanduser()
         if not path.is_absolute():
             if resolved.base_dir is None:
