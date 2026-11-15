@@ -149,7 +149,7 @@ def test_readme_analysis_task_names_exist() -> None:
 
 
 def test_readme_ensemble_and_thermostat_names_exist() -> None:
-    assert _md_option_choices("ensemble") == {"NVT", "NVE"}
+    assert _md_option_choices("ensemble") == {"NVT", "NVE", "NPT"}
     thermostats = {c.lower() for c in _md_option_choices("thermostat")}
     assert {"langevin", "bussi", "nhc"} <= thermostats
 
