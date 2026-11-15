@@ -122,7 +122,6 @@ def _npt_options() -> dict[str, object]:
         "save_interval": 10,
         "seed": 20260911,
         "com_policy": "none",
-        "pre_relax": False,
         "default_dtype": "float32",
         "head": "small",
     }
