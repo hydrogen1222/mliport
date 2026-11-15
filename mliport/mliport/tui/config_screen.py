@@ -421,6 +421,7 @@ class ConfigScreen(Screen):
             yield RadioSet(
                 RadioButton("NVT", id="nvt", value=current_ensemble == "NVT"),
                 RadioButton("NVE", id="nve", value=current_ensemble == "NVE"),
+                RadioButton("NPT", id="npt", value=current_ensemble == "NPT"),
                 id="ensemble-radio",
             )
 
@@ -428,6 +429,22 @@ class ConfigScreen(Screen):
             yield Input(
                 value=str(self.app.get_config("temperature", 300.0)),
                 id="temp-input",
+            )
+
+            yield Label("NPT target pressure (GPa, + compression):", id="npt-pressure-label")
+            yield Input(
+                value=str(self.app.get_config("pressure_gpa", 0.0)),
+                id="npt-pressure-input",
+            )
+            yield Label("NPT MTK thermostat damping (fs):", id="npt-tdamp-label")
+            yield Input(
+                value=str(self.app.get_config("npt_tdamp", 100.0)),
+                id="npt-tdamp-input",
+            )
+            yield Label("NPT MTK barostat damping (fs):", id="npt-pdamp-label")
+            yield Input(
+                value=str(self.app.get_config("npt_pdamp", 1000.0)),
+                id="npt-pdamp-input",
             )
 
             yield Label("Time Step (fs):")
@@ -498,7 +515,7 @@ class ConfigScreen(Screen):
             pre_relax_config = self.app.get_config("pre_relax")
             if pre_relax_config is None:
                 pre_relax_config = (
-                    str(self.app.get_config("ensemble", "NVT")).upper() != "NVE"
+                    str(self.app.get_config("ensemble", "NVT")).upper() == "NVT"
                 )
             yield Horizontal(
                 Label("Pre-relaxation:"),
@@ -1041,6 +1058,16 @@ class ConfigScreen(Screen):
         ensemble_radio = self.query_one("#ensemble-radio", RadioSet)
         pressed = ensemble_radio.pressed_button
         is_nvt = pressed is None or pressed.id == "nvt"
+        is_npt = pressed is not None and pressed.id == "npt"
+        for selector in (
+            "#npt-pressure-label", "#npt-pressure-input",
+            "#npt-tdamp-label", "#npt-tdamp-input",
+            "#npt-pdamp-label", "#npt-pdamp-input",
+        ):
+            widget = self.query_one(selector)
+            widget.display = is_npt
+            if isinstance(widget, Input):
+                widget.disabled = not is_npt
         thermostat_select = self.query_one("#thermostat-select", Select)
         thermostat = str(thermostat_select.value or "LANGEVIN").upper()
 
@@ -1580,6 +1607,27 @@ class ConfigScreen(Screen):
                 )
                 return
             self.app.update_config("temperature", temp)
+            if self.app.get_config("ensemble") == "NPT":
+                if self._current_model_type() not in {"uma", "mace", "grace", "dpa"}:
+                    self.notify("NPT supports only UMA/MACE/GRACE/DPA", severity="error")
+                    return
+                if temp <= 0:
+                    self.notify("MTK NPT requires temperature > 0 K", severity="error")
+                    return
+                for key, widget_id in (
+                    ("pressure_gpa", "npt-pressure-input"),
+                    ("npt_tdamp", "npt-tdamp-input"),
+                    ("npt_pdamp", "npt-pdamp-input"),
+                ):
+                    try:
+                        value = float(self.query_one(f"#{widget_id}", Input).value)
+                    except ValueError:
+                        self.notify(f"{key} must be numeric", severity="error")
+                        return
+                    if not math.isfinite(value) or (key != "pressure_gpa" and value <= 0):
+                        self.notify(f"{key} must be finite and valid", severity="error")
+                        return
+                    self.app.update_config(key, value)
 
             try:
                 timestep = float(self.query_one("#timestep-input", Input).value)
@@ -1765,19 +1813,22 @@ class ConfigScreen(Screen):
             com_select = self.query_one("#com-policy-select", Select)
             com_policy = str(com_select.value)
             ensemble = str(self.app.get_config("ensemble", "NVT")).upper()
-            if thermostat == "NHC" and ensemble == "NVT" and com_policy == "constraint":
+            if (
+                (thermostat == "NHC" and ensemble == "NVT")
+                or ensemble == "NPT"
+            ) and com_policy == "constraint":
                 self.notify(
-                    "NHC cannot use a FixCom constraint; use Auto (zero COM "
-                    "momentum once) or None",
+                    "NHC/NPT cannot use FixCom; use Auto "
+                    "(one-time COM zeroing) or None",
                     severity="error",
                 )
                 return
             if com_policy == "initialize_only" and (
-                ensemble == "NVE" or thermostat == "BUSSI"
+                ensemble == "NVE" or (ensemble == "NVT" and thermostat == "BUSSI")
             ):
                 self.notify(
-                    "Initialization-only COM removal is supported only by "
-                    "NVT Langevin and NVT NHC",
+                    "Initialization-only COM removal is supported by "
+                    "NVT Langevin/NHC and NPT MTK",
                     severity="error",
                 )
                 return

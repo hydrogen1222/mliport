@@ -191,6 +191,13 @@ class RunScreen(Screen):
             for key in (
                 "ensemble",
                 "temperature",
+                "pressure_gpa",
+                "npt_tdamp",
+                "npt_pdamp",
+                "npt_tchain",
+                "npt_pchain",
+                "npt_tloop",
+                "npt_ploop",
                 "timestep",
                 "steps",
                 "equilibration_steps",
