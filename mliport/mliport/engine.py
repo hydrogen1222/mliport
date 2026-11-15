@@ -198,7 +198,8 @@ class CalculationEngine:
             self.config.calc_type == "md"
             and str(self._effective_run_options().get("ensemble", "NVT")).upper()
             == "NPT"
-            and self.config.model_type not in {"uma", "mace", "grace", "dpa"}
+            and canonical_model_type(self.config.model_type)
+            not in {"uma", "mace", "grace", "dpa"}
         ):
             raise ValueError("NPT supports UMA/MACE/GRACE/DPA ASE runtimes only")
         # Validate option keys against the central schema (plan section 10).

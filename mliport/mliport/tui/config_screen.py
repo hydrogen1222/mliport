@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
     from textual.app import ComposeResult
 
+from mliport.backend_selection import canonical_model_type
 from mliport.tui.run_screen import RunScreen
 
 
@@ -1613,7 +1614,11 @@ class ConfigScreen(Screen):
                 return
             self.app.update_config("temperature", temp)
             if self.app.get_config("ensemble") == "NPT":
-                if self._current_model_type() not in {"uma", "mace", "grace", "dpa"}:
+                try:
+                    npt_model_type = canonical_model_type(self._current_model_type())
+                except ValueError:
+                    npt_model_type = ""
+                if npt_model_type not in {"uma", "mace", "grace", "dpa"}:
                     self.notify(
                         "NPT supports only UMA/MACE/GRACE/DPA", severity="error"
                     )

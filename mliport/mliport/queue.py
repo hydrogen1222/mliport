@@ -152,6 +152,13 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "fix_symmetry": ("--fix-symmetry", "--no-fix-symmetry"),
     # md
     "ensemble": ("--ensemble",),
+    "pressure_gpa": ("--pressure-gpa",),
+    "npt_tdamp": ("--npt-tdamp",),
+    "npt_pdamp": ("--npt-pdamp",),
+    "npt_tchain": ("--npt-tchain",),
+    "npt_pchain": ("--npt-pchain",),
+    "npt_tloop": ("--npt-tloop",),
+    "npt_ploop": ("--npt-ploop",),
     "temperature": ("--temp",),
     "timestep": ("--timestep",),
     "steps": ("--steps",),

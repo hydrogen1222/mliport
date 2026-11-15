@@ -708,6 +708,27 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
     if resolved.calc_type == "md":
         options = resolved.run_options
         ensemble = str(options.get("ensemble", "NVT")).lower()
+        npt_only_options = (
+            "pressure_gpa",
+            "npt_tdamp",
+            "npt_pdamp",
+            "npt_tchain",
+            "npt_pchain",
+            "npt_tloop",
+            "npt_ploop",
+        )
+        if ensemble != "npt":
+            explicitly_set = [
+                key
+                for key in npt_only_options
+                if key in resolved.sources
+                and not resolved.sources[key].source.startswith("built-in defaults")
+            ]
+            if explicitly_set:
+                raise ValueError(
+                    "NPT-only options require ensemble='NPT'; remove these options "
+                    f"or select NPT: {', '.join(explicitly_set)}"
+                )
         thermostat = str(options.get("thermostat", "LANGEVIN")).lower()
         com_policy = str(options.get("com_policy", "auto")).lower()
         temperature = float(options.get("temperature", 300.0))
