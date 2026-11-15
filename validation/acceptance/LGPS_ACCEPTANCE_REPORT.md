@@ -47,7 +47,7 @@ The layered commits are recorded explicitly because acceptance code,
 installed runtime fixes and documentation have different revision points.
 No file can contain the SHA of the commit that contains it; the tested
 runtime commit is frozen above, and the tag commit is recorded in the GitHub
-release metadata and in `validation/maintenance/FINAL_FREEZE_REPORT.md`.
+release metadata.
 
 Environment names, Python versions and package versions are in
 `environment.json` for both phases. Caches (uv/pip) were preserved: this is a

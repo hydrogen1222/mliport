@@ -497,6 +497,12 @@ Repository hygiene:
   explicit `zip(strict=False)` / `subprocess.run(check=False)`, small
   behavior-neutral rewrites). Rule families whose fixes are not
   behavior-neutral stay ignored, each with a reason in `pyproject.toml`.
+- Removed the transient process records `validation/maintenance/`
+  (`FINAL_FREEZE_REPORT.md`, `LEGACY_AUDIT.md`, `WHEEL_CONTENTS.txt`, all about
+  2.0.0b4) and `validation/science/reports/MAIN_RECOVERY_20260913.md` (a Git
+  forensics note that cites a local task book), which `AGENTS.md` rule 9 keeps
+  out of the repository. They stay in the Git history; the distribution
+  hashes belong with the release assets.
 - `test_json_writer.py` and `test_dpa_checkpoint_conversion.py` skip, instead
   of failing at collection, when torch is not installed.
 
