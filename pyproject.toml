@@ -10,6 +10,8 @@
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Explicit, so pytest-asyncio does not warn that the default is about to change.
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 88

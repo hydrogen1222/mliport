@@ -6,9 +6,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
 
 from scripts.convert_dpa_checkpoint import convert_checkpoint
+
+torch = pytest.importorskip("torch")
 
 
 def _checkpoint(path: Path):
