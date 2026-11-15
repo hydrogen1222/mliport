@@ -210,7 +210,7 @@ class BatchRunner:
 
         names: dict[Path, Path] = {}
         owners: dict[Path, Path] = {}
-        for original, path in zip(files, resolved):
+        for original, path in zip(files, resolved, strict=False):
             try:
                 rel_parent = path.parent.relative_to(root)
             except ValueError as exc:

@@ -159,7 +159,9 @@ class LiveRunLogger:
         # ``append=True`` keeps an existing log (a resume or an extension must
         # add to the run's history, never truncate it) and still creates the
         # file on the first write, so it exists from the first line.
-        self._handle = open(
+        # Held for the logger's lifetime and closed in close(), so a context
+        # manager cannot be used here.
+        self._handle = open(  # noqa: SIM115
             self.path,
             "a" if append else "w",
             encoding="utf-8",

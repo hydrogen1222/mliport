@@ -12,10 +12,10 @@ Outputs results in multiple formats (OUTCAR, JSON).
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
-import threading
 
 import numpy as np
 
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from ase import Atoms
+
     from mliport.protocols import ProgressCallback
 
 

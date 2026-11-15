@@ -25,7 +25,7 @@ import time
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 from ase import units
@@ -58,14 +58,15 @@ from mliport.runners.safety import (
     validate_safe_point,
 )
 from mliport.writers.contcar import ContcarWriter
+from mliport.writers.json_writer import JsonWriter
 from mliport.writers.outcar import MDOutcarWriter
 from mliport.writers.xdatcar import XdatcarWriter
-from mliport.writers.json_writer import JsonWriter
 
 if TYPE_CHECKING:
     from typing import Any
 
     from ase import Atoms
+
     from mliport.protocols import ProgressCallback
 
 
@@ -92,21 +93,21 @@ class MDRunner(BaseRunner):
         >>> print(f"Final temperature: {results['temperature']:.1f} K")
     """
 
-    VALID_ENSEMBLES = {"nvt", "nve", "npt"}
-    VALID_THERMOSTATS = {"langevin", "bussi", "nhc"}
-    VALID_COM_POLICIES = {"none", "initialize_only", "constraint", "auto"}
+    VALID_ENSEMBLES: ClassVar = {"nvt", "nve", "npt"}
+    VALID_THERMOSTATS: ClassVar = {"langevin", "bussi", "nhc"}
+    VALID_COM_POLICIES: ClassVar = {"none", "initialize_only", "constraint", "auto"}
     # This matrix is deliberately conservative. These combinations are backed
     # by ASE's public constraint-aware paths and local known-answer tests. An
     # unknown or compound constraint must be validated independently before it
     # can be added here.
-    CONSTRAINT_CAPABILITIES = {
+    CONSTRAINT_CAPABILITIES: ClassVar = {
         "nve": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "npt": frozenset(),
         "langevin": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "bussi": frozenset({"fixcom", "fixatoms", "fixcartesian"}),
         "nhc": frozenset(),
     }
-    COM_POLICY_CAPABILITIES = {
+    COM_POLICY_CAPABILITIES: ClassVar = {
         "nve": frozenset({"none", "constraint"}),
         "npt": frozenset({"none", "initialize_only"}),
         "langevin": frozenset({"none", "initialize_only", "constraint"}),

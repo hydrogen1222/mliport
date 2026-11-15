@@ -16,11 +16,11 @@ Each runner encapsulates the logic for a specific calculation type:
 from __future__ import annotations
 
 from mliport.runners.base import BaseRunner
-from mliport.runners.singlepoint import SinglePointRunner
-from mliport.runners.optimization import OptimizationRunner
-from mliport.runners.md import MDRunner
 from mliport.runners.batch import BatchRunner
+from mliport.runners.md import MDRunner
 from mliport.runners.neb import NEBRunner
+from mliport.runners.optimization import OptimizationRunner
+from mliport.runners.singlepoint import SinglePointRunner
 
 __all__ = [
     "BaseRunner",

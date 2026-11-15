@@ -15,18 +15,18 @@ Runs geometry optimization with support for:
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
-import threading
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 from ase.constraints import FixSymmetry
 from ase.filters import FrechetCellFilter
 from ase.optimize import BFGS, FIRE, LBFGS
 
-from mliport.runners.base import BaseRunner
 from mliport.protocols import CancellationRequested
+from mliport.runners.base import BaseRunner
 from mliport.writers.contcar import ContcarWriter
 from mliport.writers.json_writer import JsonWriter
 from mliport.writers.oszicar import OszicarWriter
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from ase import Atoms
+
     from mliport.protocols import ProgressCallback
 
 
@@ -57,7 +58,7 @@ class OptimizationRunner(BaseRunner):
         >>> print(f"Steps: {results['nsteps']}")
     """
 
-    OPTIMIZERS = {
+    OPTIMIZERS: ClassVar = {
         "fire": FIRE,
         "bfgs": BFGS,
         "lbfgs": LBFGS,
@@ -143,7 +144,7 @@ class OptimizationRunner(BaseRunner):
                 "Cell optimization is not physically defined for an isolated "
                 "molecule. Use positions-only optimization."
             )
-        elif cell_opt and not calculator.has_stress:
+        if cell_opt and not calculator.has_stress:
             raise ValueError(
                 "Cell optimization requires calculator stress support; use "
                 "positions-only optimization for this model/task."

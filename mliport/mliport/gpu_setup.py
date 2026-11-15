@@ -22,10 +22,10 @@ from mliport.install.compatibility import BACKENDS, get_backend_arch_profile
 from mliport.install.hardware import (
     MIN_VRAM_MIB_WARN,
     GpuInfo,
+    _pick_oldest,
     cc_arch_name,
     classify_gpu,
     detect_gpus,
-    _pick_oldest,
 )
 from mliport.install.plan import InstallPlanError, generate_plan, render_plan_shell
 

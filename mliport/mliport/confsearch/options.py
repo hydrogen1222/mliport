@@ -14,7 +14,6 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from ase.data import atomic_numbers
 
@@ -24,9 +23,6 @@ from mliport.confsearch.errors import (
 )
 from mliport.confsearch.index_spec import parse_index_spec
 from mliport.runners.safety import finite_float, strict_integer
-
-if TYPE_CHECKING:
-    pass
 
 #: Default ionic species excluded from covalent graphs (spec section 8.1).
 DEFAULT_IONIC_SPECIES = "Li,Na,K,Rb,Cs,Mg,Ca"
@@ -480,7 +476,7 @@ class ConfsearchOptions:
             raise ConfsearchError(
                 "cs_hold_ps and cs_cool_ps must each cover at least one timestep"
             )
-        self.n_snapshot_interval
+        _ = self.n_snapshot_interval  # property validates on access
 
     def _validate_chemistry(self) -> None:
         bond = finite_float(self.cs_bond_scale, name="cs_bond_scale")

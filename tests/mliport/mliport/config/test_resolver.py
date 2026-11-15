@@ -10,8 +10,7 @@ import pytest
 
 from mliport.backend_selection import NO_BACKEND_SELECTED_MESSAGE
 from mliport.config.incar import IncarConfig
-from mliport.config.resolver import ResolvedValue
-from mliport.config.resolver import resolve_config as _resolve_config
+from mliport.config.resolver import ResolvedValue, resolve_config as _resolve_config
 from mliport.config.settings import load_settings
 
 

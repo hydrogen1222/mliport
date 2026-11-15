@@ -191,7 +191,7 @@ class OutcarWriter:
             ]
         )
 
-        for i, (symbol, pos) in enumerate(zip(symbols, positions)):
+        for i, (symbol, pos) in enumerate(zip(symbols, positions, strict=False)):
             self.lines.append(
                 f"{i + 1:>6} {symbol:>6} {pos[0]:>12.6f} {pos[1]:>12.6f} {pos[2]:>12.6f}"
             )
@@ -515,7 +515,7 @@ class MDOutcarWriter:
             " direct lattice vectors                 reciprocal lattice vectors",
         ]
         reciprocal = atoms.cell.reciprocal()
-        for vector, rec_vector in zip(atoms.cell, reciprocal):
+        for vector, rec_vector in zip(atoms.cell, reciprocal, strict=False):
             lines.append(
                 " "
                 + "".join(f"{value:13.7f}" for value in vector)
@@ -536,7 +536,7 @@ class MDOutcarWriter:
                     " " + "-" * 91,
                 ]
             )
-            for position, force in zip(atoms.positions, force_rows):
+            for position, force in zip(atoms.positions, force_rows, strict=False):
                 lines.append(
                     " "
                     + "".join(f"{value:14.8f}" for value in position)

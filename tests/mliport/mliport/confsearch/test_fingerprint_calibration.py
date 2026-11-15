@@ -426,8 +426,11 @@ def test_requench_residuals_are_caught_by_the_geometry_rule():
     from mliport.confsearch.geometry import mic_vectors
     from mliport.confsearch.quench import quench
     from tests.mliport.mliport.confsearch.calculators import EggCrateCalculator
-    from tests.mliport.mliport.confsearch.test_engine import SLAB_ATOMS, _start
-    from tests.mliport.mliport.confsearch.test_engine import _options as engine_options
+    from tests.mliport.mliport.confsearch.test_engine import (
+        SLAB_ATOMS,
+        _options as engine_options,
+        _start,
+    )
 
     options = engine_options()
     calculator = EggCrateCalculator()

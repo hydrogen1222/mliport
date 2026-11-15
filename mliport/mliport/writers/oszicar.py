@@ -64,7 +64,7 @@ class OszicarWriter:
         output_path: Path | str,
         step: int,
         energy: float,
-        forces: "np.ndarray",
+        forces: np.ndarray,
         natoms: int,
         fmax_target: float | None = None,
     ) -> None:

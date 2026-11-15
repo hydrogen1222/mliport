@@ -22,10 +22,9 @@ order is execution order, so the ids are reproducible.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-
-import math
 
 import numpy as np
 
@@ -449,7 +448,9 @@ class MinimumRegistry:
         """Rebuild a registry from a checkpoint payload (fingerprints recomputed)."""
         from ase import Atoms  # noqa: PLC0415
 
-        from mliport.confsearch.errors import ConfsearchPreparationError  # noqa: PLC0415
+        from mliport.confsearch.errors import (
+            ConfsearchPreparationError,  # noqa: PLC0415
+        )
 
         if payload.get("schema") != "mliport.confsearch-registry/2":
             raise ConfsearchPreparationError(

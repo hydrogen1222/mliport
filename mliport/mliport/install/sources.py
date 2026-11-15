@@ -35,11 +35,10 @@ Source profiles:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from collections.abc import Mapping
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
-
 
 _UV_NETWORK_CACHE_ENV = frozenset(
     {

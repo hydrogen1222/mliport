@@ -7,16 +7,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 from ase.geometry import find_mic
 
-from mliport.analysis.structure import cell_heights_A
-from mliport.analysis.units import (
-    diffusion_A2_fs_to_m2_s,
-    diffusion_m2_s_to_cm2_s,
-)
 from mliport.analysis.drift import (
     drift_displacement,
     drift_semantics,
     reference_indices,
     system_com_drift_diagnostics,
+)
+from mliport.analysis.structure import cell_heights_A
+from mliport.analysis.units import (
+    diffusion_A2_fs_to_m2_s,
+    diffusion_m2_s_to_cm2_s,
 )
 from mliport.analysis.validation import require_analysis
 

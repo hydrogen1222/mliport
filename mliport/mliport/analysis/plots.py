@@ -15,9 +15,9 @@ if TYPE_CHECKING:
 
 def _pyplot():
     try:
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg", force=True)
+        mpl.use("Agg", force=True)
         import matplotlib.pyplot as plt
     except ImportError as exc:  # pragma: no cover - optional environment
         from mliport.analysis.validation import OptionalDependencyError

@@ -540,6 +540,7 @@ def _run_neb_workflow_locked(
         evaluate(probe)
     model = _model_record(calculator, resolved)
     from dataclasses import asdict
+
     from mliport.capabilities import require_neb_capability, resolve_capabilities
 
     capability_method = getattr(calculator, "capabilities", None)

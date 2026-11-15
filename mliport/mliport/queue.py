@@ -493,11 +493,11 @@ def parse_task_file(path: str | Path) -> dict[str, Any]:
                     label=f"{label}: resume",
                     must_exist=True,
                 )
+                from mliport.neb.io import resolve_checkpoint_path  # noqa: PLC0415
                 from mliport.neb.workflow import (  # noqa: PLC0415
                     checkpoint_resolved_layer,
                     checkpoint_run_directory,
                 )
-                from mliport.neb.io import resolve_checkpoint_path  # noqa: PLC0415
 
                 checkpoint_layer = checkpoint_resolved_layer(resume)
                 resume_root = checkpoint_run_directory(resume)

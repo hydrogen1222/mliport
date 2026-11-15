@@ -36,7 +36,6 @@ from mliport.analysis.drift import (
     system_com_drift_diagnostics,
 )
 
-
 DEFAULT_MAX_NATIVE_KINISI_LAG_POINTS = 1000
 _FRAME_OFFSET_ATOL = 1.0e-8
 _FRAME_OFFSET_RTOL = 1.0e-9

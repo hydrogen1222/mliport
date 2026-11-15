@@ -179,7 +179,9 @@ class CalculatorFactory:
                 activation_checkpointing=kwargs.get("activation_checkpointing"),
             )
         elif m_type == "mace":
-            from mliport.calculators.mace_calc import MACECalculatorWrapper  # noqa: PLC0415
+            from mliport.calculators.mace_calc import (
+                MACECalculatorWrapper,  # noqa: PLC0415
+            )
 
             # Accuracy-first fallback for direct construction. Users must opt
             # in explicitly to float32 when throughput matters more.
@@ -191,7 +193,9 @@ class CalculatorFactory:
                 head=kwargs.get("head"),
             )
         elif m_type == "dpa":
-            from mliport.calculators.dpa_calc import DPACalculatorWrapper  # noqa: PLC0415
+            from mliport.calculators.dpa_calc import (
+                DPACalculatorWrapper,  # noqa: PLC0415
+            )
 
             base = DPACalculatorWrapper(
                 model_path=model_path,
@@ -201,7 +205,9 @@ class CalculatorFactory:
                 dpa_runtime=kwargs.get("dpa_runtime", "current"),
             )
         elif m_type == "grace":
-            from mliport.calculators.grace_calc import GRACECalculatorWrapper  # noqa: PLC0415
+            from mliport.calculators.grace_calc import (
+                GRACECalculatorWrapper,  # noqa: PLC0415
+            )
 
             base = GRACECalculatorWrapper(
                 model_path=model_path,
@@ -214,11 +220,12 @@ class CalculatorFactory:
                 neighbor_skin=kwargs.get("neighbor_skin", 1.5),
             )
         elif m_type == "nep":
-            from mliport.calculators.nep_calc import NEPCalculatorWrapper  # noqa: PLC0415
-
             from mliport.backend_selection import (  # noqa: PLC0415
                 normalize_device_for_nep,
                 normalize_nep_runtime,
+            )
+            from mliport.calculators.nep_calc import (
+                NEPCalculatorWrapper,  # noqa: PLC0415
             )
 
             runtime = normalize_nep_runtime(kwargs.get("nep_runtime"))

@@ -32,7 +32,7 @@ from ase.constraints import FixAtoms
 from ase.io import write as ase_write
 
 from mliport.confsearch import status as cs_status
-from mliport.confsearch.graphs import covalent_bonds, classify_minimum, ionic_mask
+from mliport.confsearch.graphs import classify_minimum, covalent_bonds, ionic_mask
 from mliport.confsearch.quench import refine
 from mliport.confsearch.registry import (
     MinimumRecord,
@@ -79,7 +79,7 @@ class RefinementOutcome:
 
 def _index_ranges(indices: Sequence[int]) -> str:
     """Compress 1-based indices into CP2K ``a..b`` ranges."""
-    ordered = sorted(set(int(index) for index in indices))
+    ordered = sorted({int(index) for index in indices})
     if not ordered:
         return ""
     parts: list[str] = []

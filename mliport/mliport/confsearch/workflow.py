@@ -40,12 +40,12 @@ from mliport.confsearch.revisions import (
 )
 from mliport.logger import LiveRunLogger
 from mliport.model_record import build_model_record
+from mliport.neb.io import atomic_write_json
 from mliport.neb.preflight import (
     PREFLIGHT_SCHEMA,
     PreflightNaming,
     run_gradient_preflight,
 )
-from mliport.neb.io import atomic_write_json
 
 if TYPE_CHECKING:
     from collections.abc import Callable

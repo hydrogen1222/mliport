@@ -29,9 +29,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-
-from ase.io import read
-from ase.io import write as ase_write
+from ase.io import read, write as ase_write
 
 from mliport.backend_selection import (
     NEP_RUNTIMES,
@@ -49,9 +47,9 @@ from mliport.engine import CalculationEngine, EngineConfig
 from mliport.protocols import CancellationRequested
 from mliport.run_directory import OutputDirectoryInUseError
 from mliport.run_status import (
-    EXIT_SUCCESS,
     EXIT_CANCELLED,
     EXIT_ERROR,
+    EXIT_SUCCESS,
     RunOutcome,
     classify_exception,
     classify_result,
@@ -95,10 +93,9 @@ def _run_product(
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         previous[sig] = signal.getsignal(sig)
-        try:
+        # ValueError: non-main thread (library use) keeps the default handler.
+        with contextlib.suppress(ValueError):
             signal.signal(sig, _handler)
-        except ValueError:  # non-main thread (library use): keep default
-            pass
     try:
         result = engine.run(
             atoms,
@@ -116,10 +113,8 @@ def _run_product(
         if watchdog is not None:
             watchdog.cancel()
         for sig, prev in previous.items():
-            try:
+            with contextlib.suppress(ValueError):
                 signal.signal(sig, prev)
-            except ValueError:
-                pass
     outcome = classify_result(result, calc_type=calc_type)
     if outcome is RunOutcome.NOT_CONVERGED:
         print(
@@ -2864,9 +2859,9 @@ def _comparability_key(context: dict) -> dict:
 
 def _cmd_confsearch_merge(args: argparse.Namespace) -> int:
     """`merge RUN1 RUN2 ... --output DIR`: combine comparable searches."""
+    from mliport.confsearch import status as cs_status
     from mliport.confsearch.options import ConfsearchOptions
     from mliport.confsearch.regions import Regions
-    from mliport.confsearch import status as cs_status
     from mliport.confsearch.registry import MinimumOrigin, MinimumRegistry
     from mliport.confsearch.results import build_results
 
@@ -3430,7 +3425,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     """Run environment diagnostic checks."""
     import json  # noqa: PLC0415
 
-    from mliport.doctor import run_diagnostics, format_diagnostics  # noqa: PLC0415
+    from mliport.doctor import format_diagnostics, run_diagnostics  # noqa: PLC0415
 
     checks, failures = run_diagnostics(
         model_path=args.model,
@@ -3704,10 +3699,8 @@ def cmd_queue(args: argparse.Namespace) -> int:
                     f"(max_concurrent={args.max_concurrent}, ",
                     f"poll={args.poll}s). Ctrl-C to stop.",
                 )
-                try:
+                with contextlib.suppress(KeyboardInterrupt):
                     scheduler.run_forever()
-                except KeyboardInterrupt:
-                    pass
                 print("Scheduler stopped.")
                 return 0
             pid = start_scheduler(

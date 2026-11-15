@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from mliport.analysis.units import EV_TO_J, BOLTZMANN_J_K
+from mliport.analysis.units import BOLTZMANN_J_K, EV_TO_J
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -86,8 +86,8 @@ def fit_arrhenius(
         )
     extrapolations: list[dict[str, Any]] = []
     lower, upper = float(np.min(temperatures)), float(np.max(temperatures))
-    for target in extrapolate_temperatures_K:
-        target = float(target)
+    for raw_target in extrapolate_temperatures_K:
+        target = float(raw_target)
         if not np.isfinite(target) or target <= 0:
             raise ValueError("Extrapolation temperatures must be positive")
         vector = np.asarray([1.0 / target, 1.0])

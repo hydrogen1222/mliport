@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from ase import Atoms
 
 
-def calculate_pressure(stress_voigt: "np.ndarray") -> float:
+def calculate_pressure(stress_voigt: np.ndarray) -> float:
     """Calculate pressure from stress tensor (Voigt notation).
 
     Args:
@@ -33,7 +33,7 @@ def calculate_pressure(stress_voigt: "np.ndarray") -> float:
     return float(pressure_gpa)
 
 
-def stress_voigt_to_tensor(stress_voigt: "np.ndarray") -> "np.ndarray":
+def stress_voigt_to_tensor(stress_voigt: np.ndarray) -> np.ndarray:
     """Convert Voigt notation stress to 3x3 tensor.
 
     Args:
@@ -52,7 +52,7 @@ def stress_voigt_to_tensor(stress_voigt: "np.ndarray") -> "np.ndarray":
     return tensor
 
 
-def format_lattice(cell: "np.ndarray") -> str:
+def format_lattice(cell: np.ndarray) -> str:
     """Format lattice vectors for output.
 
     Args:
@@ -147,9 +147,8 @@ def check_structure_valid(atoms: Atoms) -> tuple[bool, str]:
     # left-handed cell can have all-positive diagonal elements while its
     # determinant is zero/negative (e.g. linearly dependent lattice
     # vectors), so checking np.diag is not sufficient.
-    if atoms.pbc.any():
-        if atoms.cell.volume <= 0:
-            return False, "Invalid cell (zero or negative volume)"
+    if atoms.pbc.any() and atoms.cell.volume <= 0:
+        return False, "Invalid cell (zero or negative volume)"
 
     return True, ""
 

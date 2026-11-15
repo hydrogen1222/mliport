@@ -284,7 +284,7 @@ def load_settings(
 
     sections: dict[str, dict[str, str]] = {}
     for section in parser.sections():
-        sections[section] = {k: v for k, v in parser.items(section)}
+        sections[section] = dict(parser.items(section))
 
     return MliportSettings(
         parser=parser,

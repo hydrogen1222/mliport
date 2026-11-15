@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from mliport.config.provenance import SourceLocation
 
@@ -28,8 +29,8 @@ class IncarConfig(dict):
         >>> print(config.get("FMAX", 0.05))  # 0.05 with default
     """
 
-    TRUE_VALUES = {".true.", ".t.", "true", "t", "yes", "y", "1"}
-    FALSE_VALUES = {".false.", ".f.", "false", "f", "no", "n", "0"}
+    TRUE_VALUES: ClassVar = {".true.", ".t.", "true", "t", "yes", "y", "1"}
+    FALSE_VALUES: ClassVar = {".false.", ".f.", "false", "f", "no", "n", "0"}
 
     def __init__(
         self,
@@ -168,8 +169,7 @@ class IncarConfig(dict):
                 raise ValueError("quoted value must occupy the complete value token")
             quote = value[0]
             body = value[1:-1]
-            body = body.replace(f"\\{quote}", quote).replace("\\\\", "\\")
-            return body
+            return body.replace(f"\\{quote}", quote).replace("\\\\", "\\")
         return value
 
     @staticmethod

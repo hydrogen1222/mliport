@@ -216,7 +216,7 @@ class DPACalculatorWrapper(BaseMLIPCalculator):
                 self._require_legacy_compatible_definition()
             if self.model_path.suffix.lower() == ".pb":
                 try:
-                    import tensorflow  # noqa: F401, PLC0415
+                    import tensorflow as tf  # noqa: F401, PLC0415
                 except ImportError as exc:
                     raise ImportError(
                         "DPA .pb requires the dpa-tensorflow-legacy runtime. "

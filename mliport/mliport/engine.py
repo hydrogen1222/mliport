@@ -437,21 +437,21 @@ class CalculationEngine:
             """Run option, else the single-source built-in default."""
             return opts.get(key, BUILTIN_DEFAULTS[calc_type][key])
 
-        common = dict(
-            calculator=calculator,
-            output_dir=self.config.output_dir,
-            charge=opts.get("charge"),
-            spin=opts.get("spin"),
-            write_outcar=self.config.settings.get("write_outcar", True),
-            write_forces=self.config.settings.get("write_forces", True),
-            write_stress=self.config.settings.get("write_stress", True),
-            write_json=self.config.settings.get("write_json", True),
-            verbose=False,
-            job_name=self.config.job_name,
-            log_fn=log_fn,
-            progress_callback=progress_callback,
-            cancel_event=cancel_event,
-        )
+        common = {
+            "calculator": calculator,
+            "output_dir": self.config.output_dir,
+            "charge": opts.get("charge"),
+            "spin": opts.get("spin"),
+            "write_outcar": self.config.settings.get("write_outcar", True),
+            "write_forces": self.config.settings.get("write_forces", True),
+            "write_stress": self.config.settings.get("write_stress", True),
+            "write_json": self.config.settings.get("write_json", True),
+            "verbose": False,
+            "job_name": self.config.job_name,
+            "log_fn": log_fn,
+            "progress_callback": progress_callback,
+            "cancel_event": cancel_event,
+        }
 
         if self.config.calc_type == "sp":
             return SinglePointRunner(**common)
@@ -631,32 +631,32 @@ class CalculationEngine:
                 "native_single_process": True,
             },
         )
-        common = dict(
-            engine=identity,
-            output_dir=self.config.output_dir,
-            gpumd_command=str(calc_opts["nep_gpumd_command"]),
-            nep_path=str(self.config.model_path),
-            task=self.config.task,
-            device=self.config.device,
-            cuda_visible_devices=visible,
-            verbose=False,
-            job_name=self.config.job_name,
-            log_fn=log_fn,
-            progress_callback=progress_callback,
-            cancel_event=cancel_event,
-            write_json=self.config.settings.get("write_json", True),
+        common = {
+            "engine": identity,
+            "output_dir": self.config.output_dir,
+            "gpumd_command": str(calc_opts["nep_gpumd_command"]),
+            "nep_path": str(self.config.model_path),
+            "task": self.config.task,
+            "device": self.config.device,
+            "cuda_visible_devices": visible,
+            "verbose": False,
+            "job_name": self.config.job_name,
+            "log_fn": log_fn,
+            "progress_callback": progress_callback,
+            "cancel_event": cancel_event,
+            "write_json": self.config.settings.get("write_json", True),
             # ``--overwrite`` is the user's explicit permission to reuse the
             # directory; the runner then moves the previous raw tree aside
             # instead of appending to it.
-            allow_existing_native=bool(self.config.overwrite),
-            identity_extra={
+            "allow_existing_native": bool(self.config.overwrite),
+            "identity_extra": {
                 "nep_runtime": "gpumd",
                 "device_requested": self.config.device,
                 "actual_device_uuid": visible,
                 "per_call_subprocess": False,
                 "native_single_process": True,
             },
-        )
+        }
         if self.config.calc_type == "sp":
             return NativeGPUMDRunner(calc_type="sp", **common)
         if self.config.calc_type == "opt":
@@ -725,7 +725,7 @@ class CalculationEngine:
         # Own the run directory before opening/truncating its log or loading a
         # potentially large model. This closes the race where two frontends
         # could both load a model before the workflow-level lock was acquired.
-        with _run_directory_lock(output):
+        with _run_directory_lock(output):  # noqa: SIM117 - keep lock/log nesting explicit
             with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
                 run_logger(f"Output directory: {output}")
                 run_logger(f"Live log: {self.run_log_path}")

@@ -15,8 +15,8 @@ import numpy as np
 from ase.constraints import FixAtoms
 from ase.io import read as ase_read
 
-from mliport.confsearch.errors import ConfsearchPreparationError
 from mliport.confsearch.engine import PreparedStart
+from mliport.confsearch.errors import ConfsearchPreparationError
 from mliport.confsearch.index_spec import parse_index_spec
 from mliport.confsearch.placement import place_molecule
 from mliport.confsearch.regions import resolve_regions, validate_all

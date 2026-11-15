@@ -14,6 +14,7 @@ returns the same result-dictionary shape as the ASE-backed runners.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -616,24 +617,20 @@ class NativeGPUMDRunner(BaseRunner):
         """Build a concise but diagnostic process-failure message."""
         stdout_tail: list[str] = []
         stderr_tail: list[str] = []
-        try:
+        with contextlib.suppress(OSError):
             stdout_tail = (
                 Path(outcome.stdout_path)
                 .read_text(encoding="utf-8", errors="replace")
                 .strip()
                 .splitlines()[-8:]
             )
-        except OSError:
-            pass
-        try:
+        with contextlib.suppress(OSError):
             stderr_tail = (
                 Path(outcome.stderr_path)
                 .read_text(encoding="utf-8", errors="replace")
                 .strip()
                 .splitlines()[-8:]
             )
-        except OSError:
-            pass
         return (
             f"Native GPUMD exited with return code {outcome.returncode}. "
             f"Raw files are kept in {outcome.cwd}. "

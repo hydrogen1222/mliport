@@ -155,8 +155,10 @@ def _api_resolve_full(
     overwrite: bool = False,
 ) -> tuple[EngineConfig, Any]:
     """Resolve API inputs while retaining immutable provenance for workflows."""
-    from mliport.config import load_settings  # noqa: PLC0415
-    from mliport.config import resolve_config  # noqa: PLC0415
+    from mliport.config import (
+        load_settings,  # noqa: PLC0415
+        resolve_config,  # noqa: PLC0415
+    )
 
     settings = load_settings(explicit=settings_path)
     if model_path:

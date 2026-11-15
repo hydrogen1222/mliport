@@ -60,10 +60,20 @@ ignore = [
   "PERF102", # Use values() of dict
   "RUF001",  # Ambiguous unicode character
   "RUF100",  # Unused noqa directive
+  # Rules that are enforced on the package but deliberately not for these
+  # families (style/micro-performance, or the fix can change runtime behavior):
+  "UP038",   # isinstance(x, A | B): deprecated upstream, slower than a tuple
+  "PERF203", # try/except in a loop (needed for per-item error handling)
+  "PERF401", # manual list comprehension (output-formatting loops read better)
+  "PERF403", # manual dict comprehension
+  "TCH001",  # first-party import into TYPE_CHECKING (runtime annotation users)
+  "TCH002",  # third-party import into TYPE_CHECKING (textual/dataclass runtime)
+  "RUF002",  # Ambiguous unicode in docstrings (units, symbols)
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mliport"]
+combine-as-imports = true
 required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.pydocstyle]
@@ -71,5 +81,8 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "mliport/mliport/install/__init__.py" = ["F401"]
+# placement.py defines ``objective``/``positions_at`` inside the sampling loop
+# and calls them within the same iteration, so late binding is not an issue.
+"mliport/mliport/confsearch/placement.py" = ["B023"]
 # Test-only style rules stay scoped to tests instead of masking production.
 "tests/**" = ["F841", "B017"]
