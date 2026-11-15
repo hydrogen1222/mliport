@@ -11,7 +11,7 @@ POTCAR。模型对你的体系准不准，取决于你选的模型文件。
 
 主要功能：
 
-- **各后端用法一致。** 单点、结构优化（固定或可变晶胞）、NVE/NVT 分子动力学（Langevin、Bussi、
+- **各后端用法一致。** 单点、结构优化（固定或可变晶胞）、NVE/NVT 分子动力学及四种 ASE 后端的各向同性 MTK NPT（Langevin、Bussi、
   Nosé–Hoover 链）、NEB 和 CI-NEB、slab 吸附构型搜索、批量计算和任务队列。可以用命令行、INCAR 风格
   的输入文件、TUI 或 Python 调用。NEP 的原生 `gpumd` 运行时只支持单点、结构优化和 MD（见 [NEP](docs/backends/nep.zh.md)）。
 - **不做默认猜测。** 没有默认后端。选项拼错，或者用了别的后端的选项，程序会报错停下。
@@ -154,9 +154,9 @@ DPA 和 GRACE 的框架加载后就不能再换 GPU。没有设置 `CUDA_VISIBLE
   --fmax 0.05 --max-steps 200 --cell-opt --device cuda --output runs/lgps-opt
 ```
 
-**分子动力学。** `--ensemble` 可选 `NVE` 或 `NVT`，`--thermostat` 可选 `LANGEVIN`、`BUSSI` 或 `NHC`。
+**分子动力学。** `--ensemble` 可选 `NVE`、`NVT`，以及仅适用于 ASE 的 UMA/MACE/GRACE/DPA 的各向同性 `NPT`；NVT 的 `--thermostat` 可选 `LANGEVIN`、`BUSSI` 或 `NHC`。
 要从保存了速度的某一帧接着跑，用 `--velocity-policy preserve --no-pre-relax`。用 NHC 时，默认的
-`--com-policy auto` 会在开始时把质心动量清零，避免整体漂移影响 MSD 和输运分析。
+`--com-policy auto` 会在开始时把质心动量清零，避免整体漂移影响 MSD 和输运分析。NPT 另外使用 `--pressure-gpa`、`--npt-tdamp`、`--npt-pdamp`，其可变胞轨迹不能直接代入定胞 MSD；详见[MD 工作流](docs/workflows/md.zh.md)。
 
 ```bash
 .venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \
