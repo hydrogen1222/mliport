@@ -35,8 +35,11 @@ Standard XDATCAR represents fixed-cell MD only: NPT disables XDATCAR with a logg
 
 | Option | Meaning |
 |---|---|
-| `--ensemble` | `NVT` (default) or `NVE` |
+| `--ensemble` | `NVT` (default), `NVE`, or isotropic `NPT` (UMA/MACE/GRACE/DPA ASE only) |
 | `--temp` | target temperature in K (default 300) |
+| `--pressure-gpa` | NPT external hydrostatic pressure in GPa (+ compressive; default 0) |
+| `--npt-tdamp`, `--npt-pdamp` | NPT MTK thermostat/barostat damping times in fs |
+| `--npt-tchain`, `--npt-pchain`, `--npt-tloop`, `--npt-ploop` | NPT MTK chain lengths and integration substeps |
 | `--timestep` | integration step in fs (default 1.0) |
 | `--steps` | production steps (default 1000) |
 | `--equilibration-steps` | equilibration in the same ensemble before production (default 0) |

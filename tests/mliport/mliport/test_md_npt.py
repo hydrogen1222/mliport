@@ -14,8 +14,10 @@ from ase.constraints import FixAtoms, FixCom
 from ase.io import Trajectory
 
 from mliport.analysis.dataset import TrajectoryDataset
+from mliport.config import resolve_config
 from mliport.config.defaults import BUILTIN_DEFAULTS
 from mliport.config.schema import get_schema
+from mliport.engine import CalculationEngine, EngineConfig
 from mliport.runners.md import MDRunner
 
 
@@ -78,6 +80,44 @@ def runner(wrapper, output_dir, **kwargs):
     }
     args.update(kwargs)
     return MDRunner(wrapper, **args)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("pressure_gpa", 5.0),
+        ("npt_tdamp", 100.0),
+        ("npt_pdamp", 1000.0),
+        ("npt_tchain", 7),
+        ("npt_pchain", 4),
+        ("npt_tloop", 2),
+        ("npt_ploop", 2),
+    ],
+)
+def test_npt_only_options_are_rejected_outside_npt(tmp_path, key, value):
+    with pytest.raises(ValueError, match="NPT-only options require ensemble='NPT'"):
+        resolve_config(
+            calc_type="md",
+            cli={
+                "model_type": "mace",
+                "model_path": str(tmp_path / "unused.model"),
+                key: value,
+            },
+        )
+
+
+def test_fairchem_alias_is_accepted_for_npt(tmp_path):
+    resolved = resolve_config(
+        calc_type="md",
+        cli={
+            "model_type": "fairchem",
+            "model_path": str(tmp_path / "unused.model"),
+            "ensemble": "NPT",
+            "pressure_gpa": 0.0,
+        },
+    )
+    engine = CalculationEngine(EngineConfig.from_resolved(resolved))
+    assert engine.config.model_type == "fairchem"
 
 
 def test_schema_npt_parameters():
@@ -179,7 +219,7 @@ def test_npt_pressure_units_com_and_mtk_setpoint(tmp_path):
 
 
 def test_npt_variable_cell_io_and_transport_gate(tmp_path):
-    result = runner(Wrapper(), tmp_path).run(structure())
+    result = runner(Wrapper(), tmp_path, write_json=True).run(structure())
     assert result["ensemble"] == "NPT"
     assert result["thermostat"] == "MTK"
     assert result["target_pressure_GPa"] == 1.5
@@ -207,6 +247,18 @@ def test_npt_variable_cell_io_and_transport_gate(tmp_path):
     assert result["md_provenance"]["target_pressure_eV_A3"] == pytest.approx(
         1.5 * units.GPa
     )
+    md_json = json.loads(
+        (tmp_path / "raw" / "mliport_results.json").read_text()
+    )["calculation"]["md"]
+    assert md_json["target_pressure_GPa"] == pytest.approx(1.5)
+    assert md_json["npt"]["npt_algorithm"] == "isotropic_mtk"
+    assert md_json["npt"]["target_pressure_eV_A3"] == pytest.approx(
+        1.5 * units.GPa
+    )
+    assert md_json["npt"]["npt_tdamp_fs"] == pytest.approx(20.0)
+    assert md_json["npt"]["npt_pdamp_fs"] == pytest.approx(40.0)
+    assert md_json["npt"]["variable_cell"] is True
+    assert md_json["npt"]["transport_eligible"] is False
 
 
 @pytest.mark.parametrize("ensemble", ["NVE", "NVT"])
