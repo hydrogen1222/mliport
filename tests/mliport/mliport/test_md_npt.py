@@ -58,14 +58,14 @@ def structure():
 
 
 def runner(wrapper, output_dir, **kwargs):
-    args = dict(
-        ensemble="NPT", temperature=300, pressure_gpa=1.5,
-        npt_tdamp=20.0, npt_pdamp=40.0,
-        timestep=0.5, steps=24, equilibration_steps=4,
-        save_interval=2, seed=42, pre_relax=False,
-        output_dir=output_dir, verbose=False,
-        write_outcar=False, write_json=False,
-    )
+    args = {
+        "ensemble": "NPT", "temperature": 300, "pressure_gpa": 1.5,
+        "npt_tdamp": 20.0, "npt_pdamp": 40.0,
+        "timestep": 0.5, "steps": 24, "equilibration_steps": 4,
+        "save_interval": 2, "seed": 42, "pre_relax": False,
+        "output_dir": output_dir, "verbose": False,
+        "write_outcar": False, "write_json": False,
+    }
     args.update(kwargs)
     return MDRunner(wrapper, **args)
 
