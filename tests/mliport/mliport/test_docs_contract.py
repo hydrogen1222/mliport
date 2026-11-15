@@ -32,6 +32,7 @@ PAGES = (
     "test-systems",
     "installation",
     "configuration",
+    "incar",
     "models",
     "backends/index",
     "backends/mace",

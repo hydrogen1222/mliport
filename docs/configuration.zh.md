@@ -100,7 +100,8 @@ device = cuda
 ## INCAR 风格的输入文件
 
 `mliport run --incar INCAR.mliport` 读取一个仿照 VASP INCAR 写法的参数文件。只是格式像，
-内容和 DFT 无关。
+内容和 DFT 无关。所有可以写的键，连同类型、默认值、取值范围和适用条件，都列在
+[INCAR 键参考](incar.md) 里。
 
 ```text
 CALC_TYPE = SP

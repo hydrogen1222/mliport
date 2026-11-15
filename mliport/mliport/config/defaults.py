@@ -279,6 +279,40 @@ def _engine_model_section(engine: str, calc_type: str) -> list[str]:
     return lines
 
 
+def _template_value(calc_type: str, spec) -> Any:
+    """The value a template writes for one option.
+
+    Placeholders win (the user must supply the value), then a display-only
+    ``template_value``, then the built-in default for this calculation type,
+    then the schema default.
+    """
+    if spec.placeholder:
+        return spec.placeholder
+    if spec.template_value is not None:
+        return spec.template_value
+    value = get_default(calc_type, spec.name)
+    if value is not None:
+        return value
+    if spec.default is not None:
+        return spec.default
+    return ""
+
+
+def _format_template_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return _bool(value)
+    return str(value)
+
+
+def _template_line(spec, value: Any, *, commented: bool = False) -> str:
+    """One ``KEY = value  # one-line meaning`` template line."""
+    line = f"{spec.incar_key} = {_format_template_value(value)}"
+    note = spec.description.strip()
+    if note:
+        line = f"{line}  # {note}"
+    return f"# {line}" if commented else line
+
+
 def build_incar_default(calc_type: str, engine: str | None = None) -> str:
     """Build the INCAR template text for ``calc_type`` from the single source.
 
@@ -286,8 +320,19 @@ def build_incar_default(calc_type: str, engine: str | None = None) -> str:
     user must select one of the four runtimes.  A specific ``engine`` renders
     only the fields that backend actually needs (UMA task family vs the
     explicit ``bulk``/``molecule`` PBC semantics of MACE/DPA/GRACE).
+
+    The body of the template is generated from the option table in
+    :mod:`mliport.config.schema` (#61 R3.1/R3.4): every section appears exactly
+    once, in ``TEMPLATE_GROUP_ORDER``; each key is listed once with its one-line
+    meaning; a key whose ``applies_when`` condition does not hold for the
+    template's own values is either left out (thermostat-specific keys) or kept
+    as a commented example (the NPT block of the MD template).
     """
     from mliport.backend_selection import normalize_model_type  # noqa: PLC0415
+    from mliport.config.schema import (  # noqa: PLC0415
+        TEMPLATE_GROUP_ORDER,
+        get_schema,
+    )
 
     calc_type = calc_type.lower()
     if calc_type not in {"sp", "opt", "md", "neb", "confsearch"}:
@@ -295,141 +340,79 @@ def build_incar_default(calc_type: str, engine: str | None = None) -> str:
     if engine is not None:
         engine = normalize_model_type(engine)
 
+    all_specs = get_schema().specs
+    specs = [
+        spec
+        for spec in all_specs
+        if spec.template
+        and (not spec.template_scopes or calc_type in spec.template_scopes)
+    ]
+    values = {spec.name: _template_value(calc_type, spec) for spec in specs}
+    all_specs_by_name = {spec.name: spec for spec in all_specs}
+    # Conditional keys need the value of the key their condition names, even
+    # when that key is not itself part of the template.
+    for spec in all_specs:
+        for key, _expected in spec.applies_when:
+            if key not in values:
+                values[key] = _template_value(calc_type, all_specs_by_name[key])
+
     lines: list[str] = []
     lines.append("# mliport Calculation Settings")
     lines.append(
         f"# Generated from the single source of defaults (calc_type={calc_type})."
     )
     lines.append("")
-    calculation_key = "CALCULATION" if calc_type == "neb" else "CALC_TYPE"
-    lines.append(f"{calculation_key} = {calc_type.upper()}")
-    lines.append("")
-    lines.append("# Model Settings")
-    if engine is None:
-        lines.extend(_neutral_model_section())
-    else:
-        lines.extend(_engine_model_section(engine, calc_type))
-    device = DEFAULT_DEVICE_BY_CALC_TYPE.get(calc_type, "cpu")
-    lines.append(f"DEVICE = {device}")
-    lines.append("")
 
-    if calc_type == "opt":
-        opt = BUILTIN_DEFAULTS["opt"]
-        lines.append("# Optimization Settings")
-        lines.append(f"OPT_ALGO = {opt['optimizer']}")
-        lines.append(f"FMAX = {opt['fmax']}")
-        lines.append(f"MAX_STEPS = {opt['max_steps']}")
-        lines.append(f"CELL_OPT = {_bool(opt['cell_opt'])}")
-        lines.append(f"FIX_SYMMETRY = {_bool(opt['fix_symmetry'])}")
-        lines.append("")
-    elif calc_type == "md":
-        md = BUILTIN_DEFAULTS["md"]
-        lines.append("# MD Settings")
-        lines.append(f"MD_ENSEMBLE = {md['ensemble']}")
-        lines.append(f"TEMPERATURE = {md['temperature']}")
-        lines.append(f"TIMESTEP = {md['timestep']}")
-        lines.append(f"EQUILIBRATION_STEPS = {md['equilibration_steps']}")
-        lines.append(f"STEPS = {md['steps']}")
-        lines.append(f"THERMOSTAT = {md['thermostat']}")
-        lines.append(f"FRICTION = {md['friction']}")
-        lines.append(f"BUSSI_TAU = {md['bussi_tau']}")
-        lines.append(f"NHC_TDAMP = {md['nhc_tdamp']}")
-        lines.append(f"NHC_TCHAIN = {md['nhc_tchain']}")
-        lines.append(f"NHC_TLOOP = {md['nhc_tloop']}")
-        lines.append(f"SAVE_INTERVAL = {md['save_interval']}")
-        lines.append(f"COM_POLICY = {md['com_policy']}")
-        lines.append("")
-    elif calc_type == "confsearch":
-        cs = BUILTIN_DEFAULTS["confsearch"]
-        lines.append("# Configuration search Settings (adsorbate mode, NVT)")
-        # Mode A is the default. Both keys are placeholders a user must fill in;
-        # an unfilled REQUIRED cannot be resolved, which is the fail-closed
-        # behaviour the template contract (spec R3.2) relies on.
-        lines.append("# Mode A: your own start structures and the adsorbate indices")
-        lines.append("CS_STARTS = REQUIRED  # start structure(s), space separated")
-        lines.append("CS_ADSORBATE_INDICES = REQUIRED  # e.g. 300-341 or 0,5,7-9")
-        lines.append("#")
-        lines.append("# Mode B: let mliport place the molecule on the slab instead")
-        lines.append("# CS_SLAB = slab.vasp")
-        lines.append("# CS_MOLECULE = molecule.xyz")
-        lines.append("# CS_N_STARTS = 10")
-        lines.append("")
-        for key in (
-            "cs_mode",
-            "cs_md_mobile",
-            "cs_cycles",
-            "cs_temperature_high",
-            "cs_temperature_low",
-            "cs_hold_ps",
-            "cs_cool_ps",
-            "cs_snapshot_interval_ps",
-            "cs_ramp_interval",
-            "cs_save_interval",
-            "cs_accept_temperature",
-            "cs_quench_fmax",
-            "cs_quench_steps",
-            "cs_bond_scale",
-            "cs_bond_break_scale",
-            "cs_ionic_species",
-            "cs_reaction_policy",
-            "cs_desorption_distance",
-            "cs_min_image_distance",
-            "cs_min_vacuum_gap",
-            "cs_place_contact_scale",
-            "cs_place_anchor_scale",
-            "cs_place_other_min_scale",
-            "cs_place_max_attempts",
-            "cs_dedup_energy_tol",
-            "cs_dedup_geom_tol",
-            "cs_dedup_fp_tol",
-            "cs_fp_rcut",
-            "cs_fp_binwidth",
-            "cs_fp_sigma",
-            "cs_top_k",
-            "cs_export_window",
-            "cs_refine",
-            "cs_refine_fmax",
-            "cs_refine_steps",
-            "cs_allow_direct_forces",
-        ):
-            lines.append(
-                f"{key.upper()} = {_bool(cs[key]) if isinstance(cs[key], bool) else cs[key]}"
+    for group in TEMPLATE_GROUP_ORDER:
+        group_specs = [spec for spec in specs if spec.group == group]
+        if not group_specs and group != "Model":
+            continue
+        body: list[str] = []
+        # Conditional keys whose condition does not hold: keep them as a
+        # commented example only when the table asks for one.
+        examples: dict[tuple[tuple[str, str], ...], list] = {}
+        for spec in sorted(group_specs, key=lambda item: item.order):
+            if group == "Calculation":
+                # ``CALC_TYPE``/``CALCULATION`` is the header of every template;
+                # NEB keeps its historical CALCULATION spelling.
+                key = "CALCULATION" if calc_type == "neb" else spec.incar_key
+                note = f"  # {spec.description}" if spec.description else ""
+                body.append(f"{key} = {calc_type.upper()}{note}")
+                continue
+            if group == "Model":
+                continue  # rendered backend-specifically below
+            if spec.applies_to(values, calc_type):
+                body.append(_template_line(spec, values[spec.name]))
+            elif spec.example_when_inactive:
+                examples.setdefault(spec.applies_when, []).append(spec)
+
+        if group == "Model":
+            body = (
+                _neutral_model_section()
+                if engine is None
+                else _engine_model_section(engine, calc_type)
             )
-        lines.append("TIMESTEP = 0.5")
-        lines.append("FRICTION = 0.01")
-        lines.append("")
-    elif calc_type == "neb":
-        neb = BUILTIN_DEFAULTS["neb"]
-        lines.append("# Fixed-cell NEB Settings")
-        lines.append("NEB_INITIAL = initial.vasp")
-        lines.append("NEB_FINAL = final.vasp")
-        lines.append(f"NEB_IMAGES = {neb['n_intermediate_images']}")
-        lines.append(f"NEB_CLIMB = {_bool(neb['climb'])}")
-        lines.append(f"NEB_METHOD = {neb['neb_method']}")
-        lines.append(f"NEB_INTERPOLATION = {neb['neb_interpolation']}")
-        lines.append(f"NEB_PATH_CONVENTION = {neb['path_convention']}")
-        lines.append(f"NEB_SPRING = {neb['neb_spring']}")
-        lines.append(f"FMAX = {neb['fmax']}")
-        lines.append(f"MAX_STEPS = {neb['max_steps']}")
-        lines.append(f"NEB_PRE_FMAX = {neb['neb_pre_fmax']}")
-        lines.append(f"NEB_PRE_MAX_STEPS = {neb['neb_pre_max_steps']}")
-        lines.append(f"NEB_MAXSTEP = {neb['neb_maxstep']}")
-        lines.append(f"NEB_ENDPOINT_POLICY = {neb['endpoint_policy']}")
-        lines.append(f"NEB_ENDPOINT_FMAX = {neb['endpoint_fmax']}")
-        lines.append(f"NEB_ENDPOINT_STEPS = {neb['endpoint_steps']}")
-        lines.append(f"IDPP_FMAX = {neb['idpp_fmax']}")
-        lines.append(f"IDPP_STEPS = {neb['idpp_steps']}")
-        lines.append(f"IDPP_MIC = {_bool(neb['idpp_mic'])}")
-        lines.append(f"NEB_MIN_DISTANCE = {neb['neb_min_distance']}")
-        lines.append(f"NEB_CHECKPOINT_INTERVAL = {neb['checkpoint_interval']}")
+        if not body and not examples:
+            continue
+        lines.append(f"# {group} Settings")
+        lines.extend(body)
+        for condition, example_specs in examples.items():
+            note = next(
+                (spec.example_note for spec in example_specs if spec.example_note), ""
+            )
+            if note:
+                lines.append(f"# {note}")
+            if example_specs[0].example_condition_line:
+                for key, value in condition:
+                    spec = get_schema().resolve(key)
+                    spelling = spec.incar_key if spec is not None else key.upper()
+                    lines.append(
+                        f"# {spelling} = {value}  # switch that enables this block"
+                    )
+            for spec in example_specs:
+                lines.append(_template_line(spec, values[spec.name], commented=True))
         lines.append("")
 
-    if calc_type != "neb":
-        lines.append("# Output Control")
-        lines.append("WRITE_FORCES = .TRUE.")
-        lines.append("WRITE_STRESS = .TRUE.")
-        lines.append("OUTPUT_FORMAT = VASP")
-        lines.append("")
     return "".join(line + "\n" for line in lines)
 
 

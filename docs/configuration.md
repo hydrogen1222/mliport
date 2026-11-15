@@ -110,7 +110,9 @@ device = cuda
 ## INCAR-style jobs
 
 `mliport run --incar INCAR.mliport` reads a key/value file in the style of a
-VASP INCAR. It is only the style: this is not a DFT input.
+VASP INCAR. It is only the style: this is not a DFT input. Every accepted key,
+with its type, default, allowed values and applicability, is listed in the
+[INCAR key reference](incar.md).
 
 ```text
 CALC_TYPE = SP

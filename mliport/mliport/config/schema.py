@@ -23,17 +23,43 @@ from __future__ import annotations
 import difflib
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from numbers import Integral, Real
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from typing import Any
 
 
 @dataclass(frozen=True)
 class OptionSpec:
-    """Specification of a single recognised option."""
+    """Specification of a single recognised option.
+
+    Besides validation, this record is the single source of the *presentation*
+    facts about a key:
+
+    * ``description`` is the one-line English explanation used as the INCAR
+      template comment and as the "meaning" column of the generated key
+      reference (``docs/incar.md``);
+    * ``group`` is the section a key belongs to; ``order`` is its position
+      inside that group (assigned from the declaration order in ``_SPECS``, so
+      one table fixes both the template and the documentation order);
+    * ``template`` marks the keys a generated INCAR template shows. Keys
+      without it are INCAR-writable but not part of the template (for example
+      ``TORCH_NUM_THREADS``);
+    * ``applies_when`` is the "applies only when" condition of a key, as
+      ``(key, value)`` pairs that must all hold, e.g. the MTK barostat keys
+      only apply when ``ENSEMBLE = NPT``;
+    * ``example_when_inactive`` keeps a conditional key in the template as a
+      commented example instead of dropping it (the NPT block of the MD
+      template);
+    * ``placeholder`` is the value a template writes when the user must supply
+      one (``MODEL_PATH = REQUIRED``).
+
+    Tracking: #61 R3.1 / R3.4. Templates, ``mliport config schema`` and the
+    generated key reference all read these fields; there is no second list.
+    """
 
     name: str
     type: type = str
@@ -45,6 +71,58 @@ class OptionSpec:
     default: Any | None = None
     description: str = ""
     is_path: bool = False
+    group: str = ""
+    order: int = 0
+    template: bool = False
+    template_scopes: tuple[str, ...] = ()
+    applies_when: tuple[tuple[str, str], ...] = ()
+    example_when_inactive: bool = False
+    placeholder: str = ""
+    template_value: Any = None
+    example_note: str = ""
+    example_condition_line: bool = True
+    condition_calc_types: tuple[str, ...] = ()
+
+    @property
+    def incar_key(self) -> str:
+        """The UPPER_CASE spelling a template writes for this option.
+
+        The canonical spelling is the option name in upper case when it is a
+        declared alias; otherwise the longest declared upper-case alias (which
+        is the most descriptive one, e.g. ``NEB_IMAGES`` over ``IMAGES``).
+        """
+        upper = sorted(alias for alias in self.aliases if alias.isupper())
+        if self.name.upper() in upper:
+            return self.name.upper()
+        if upper:
+            return max(upper, key=len)
+        return self.name.upper()
+
+    def applies_to(
+        self, values: Mapping[str, Any], calc_type: str | None = None
+    ) -> bool:
+        """True when ``applies_when`` holds for the given option values.
+
+        Conditions are compared case-insensitively against the *string form* of
+        the value, so ``ENSEMBLE = NPT`` matches ``"npt"``. ``condition_calc_types``
+        scopes a condition to the calculation types it belongs to: the Langevin
+        friction key is thermostat-conditional for MD, where a thermostat is
+        chosen, and unconditional for the configuration search, which always
+        runs Langevin.
+        """
+        if (
+            calc_type is not None
+            and self.condition_calc_types
+            and calc_type not in self.condition_calc_types
+        ):
+            return True
+        for key, expected in self.applies_when:
+            actual = values.get(key)
+            if actual is None:
+                return False
+            if str(actual).strip().casefold() != str(expected).strip().casefold():
+                return False
+        return True
 
     def matches(self, key: str) -> bool:
         """True if ``key`` (case-insensitive) is this option's name or an alias."""
@@ -622,10 +700,50 @@ _SPECS: list[OptionSpec] = [
         minimum=0.0,
         description="MTK barostat damping time in fs (strictly positive).",
     ),
-    OptionSpec("npt_tchain", int, frozenset({"md"}), aliases={"NPT_TCHAIN"}, minimum=1),
-    OptionSpec("npt_pchain", int, frozenset({"md"}), aliases={"NPT_PCHAIN"}, minimum=1),
-    OptionSpec("npt_tloop", int, frozenset({"md"}), aliases={"NPT_TLOOP"}, minimum=1),
-    OptionSpec("npt_ploop", int, frozenset({"md"}), aliases={"NPT_PLOOP"}, minimum=1),
+    OptionSpec(
+        "npt_tchain",
+        int,
+        frozenset({"md"}),
+        aliases={"NPT_TCHAIN"},
+        minimum=1,
+        description=(
+            "MTK NPT only: number of Nose-Hoover chain variables in the "
+            "thermostat; >= 1, default 3"
+        ),
+    ),
+    OptionSpec(
+        "npt_pchain",
+        int,
+        frozenset({"md"}),
+        aliases={"NPT_PCHAIN"},
+        minimum=1,
+        description=(
+            "MTK NPT only: number of chain variables in the barostat; >= 1, "
+            "default 3"
+        ),
+    ),
+    OptionSpec(
+        "npt_tloop",
+        int,
+        frozenset({"md"}),
+        aliases={"NPT_TLOOP"},
+        minimum=1,
+        description=(
+            "MTK NPT only: number of Suzuki-Yoshida sub-steps per thermostat "
+            "integration; >= 1, default 1"
+        ),
+    ),
+    OptionSpec(
+        "npt_ploop",
+        int,
+        frozenset({"md"}),
+        aliases={"NPT_PLOOP"},
+        minimum=1,
+        description=(
+            "MTK NPT only: number of Suzuki-Yoshida sub-steps per barostat "
+            "integration; >= 1, default 1"
+        ),
+    ),
     OptionSpec(
         "timestep",
         float,
@@ -879,6 +997,147 @@ _SPECS: list[OptionSpec] = [
 # ---------------------------------------------------------------------------
 
 
+#: One-line meanings of the confsearch keys, used as the template comment
+#: and as the "meaning" column of the generated key reference (#61 R4).
+_CONFSEARCH_DESCRIPTIONS: dict[str, str] = {
+    "cs_mode": (
+        "Search mode; v1 accepts only 'adsorbate' (bulk_mobile, melt_quench, interface, multi_adsorbate are rejected)"
+    ),
+    "cs_starts": (
+        "Mode A: start structures (files or directories), one independent replica each; needs cs_adsorbate_indices"
+    ),
+    "cs_adsorbate_indices": (
+        "Mode A: 0-based adsorbate atom indices such as 300-341 or 0,5,7-9; must be one connected covalent molecule"
+    ),
+    "cs_slab": (
+        "Mode B: slab structure file, exactly one frame; conformers from cs_molecule are placed above it"
+    ),
+    "cs_molecule": (
+        "Mode B: molecule conformer file; one conformer is drawn at random for each placed start"
+    ),
+    "cs_n_starts": (
+        "Mode B: number of placed start structures to build, each becoming one independent replica; minimum 1"
+    ),
+    "cs_fix_below": (
+        "Extend the input FixAtoms to slab atoms within this height in Angstrom of the lowest slab atom; unset = off"
+    ),
+    "cs_md_mobile": (
+        "Which atoms are mobile in MD: adsorbate (default), adsorbate_and_top or all_free (every atom not fixed)"
+    ),
+    "cs_top_depth": (
+        "Depth in Angstrom below the slab top of the extra mobile atoms in cs_md_mobile=adsorbate_and_top; default 2.0"
+    ),
+    "cs_temperature_high": (
+        "Hold temperature in K of every heat-hold-cool cycle and of the initial velocities; default 500"
+    ),
+    "cs_temperature_low": (
+        "End temperature in K of the linear cooling ramp in each cycle, must be <= cs_temperature_high; default 300"
+    ),
+    "cs_hold_ps": (
+        "Duration in ps of the hold phase at cs_temperature_high in each cycle; must be a whole number of timesteps"
+    ),
+    "cs_cool_ps": (
+        "Duration in ps of the linear cooling ramp from cs_temperature_high to cs_temperature_low in each cycle"
+    ),
+    "cs_snapshot_interval_ps": (
+        "Spacing in ps between hold-phase snapshots that get quenched; must be < cs_hold_ps, 0 disables snapshots"
+    ),
+    "cs_ramp_interval": (
+        "Number of MD steps between thermostat set-point updates during the linear cooling ramp; default 10"
+    ),
+    "cs_cycles": (
+        "Number of heat-hold-cool cycles run per replica after its start quench; 0 leaves only the start quenches"
+    ),
+    "cs_save_interval": (
+        "Write one raw MD frame every this many MD steps (default 100); quench snapshots and cycle ends are always kept"
+    ),
+    "cs_accept_temperature": (
+        "Temperature in K of the Metropolis test that accepts or rejects a replica's end-of-cycle minimum; default 500"
+    ),
+    "cs_quench_fmax": (
+        "FIRE force convergence threshold in eV/A for every snapshot and cycle-end quench; default 0.05"
+    ),
+    "cs_quench_steps": (
+        "Maximum FIRE steps per quench; exceeding it marks the minimum quench_not_converged and unranked; default 2000"
+    ),
+    "cs_bond_scale": (
+        "Bond test in the covalent graphs: bonded when closer than this multiple of the covalent-radii sum; default 1.2"
+    ),
+    "cs_bond_break_scale": (
+        "MD aborts if an adsorbate bond exceeds this multiple of the covalent-radii sum; must be > cs_bond_scale (1.5)"
+    ),
+    "cs_ionic_species": (
+        "Element symbols excluded from every covalent graph (ionic hopping is no reaction); default Li,Na,K,Rb,Cs,Mg,Ca"
+    ),
+    "cs_reaction_policy": (
+        "Whether minima whose covalent bonds changed are ranked and exported: exclude (default) or include"
+    ),
+    "cs_desorption_distance": (
+        "Adsorbate-slab distance in Angstrom above which a minimum is labelled desorbed and dropped; default 5.0"
+    ),
+    "cs_min_image_distance": (
+        "Adsorbate in-plane self-image distance in Angstrom below which a minimum is image_contact; default 4.0"
+    ),
+    "cs_min_vacuum_gap": (
+        "Gap in Angstrom from the adsorbate to the slab image one cell along c; smaller marks image_contact (8.0)"
+    ),
+    "cs_place_contact_scale": (
+        "Mode B: target ratio of the closest adsorbate-slab pair to the covalent-radii sum (unbonded); default 1.5"
+    ),
+    "cs_place_anchor": (
+        "Mode B: 0-based anchor atom indices in the molecule file; the lowest atom is drawn from them and placed bonded"
+    ),
+    "cs_place_anchor_scale": (
+        "Mode B with cs_place_anchor: anchored pair ratio to the covalent-radii sum, i.e. already bonded; default 1.1"
+    ),
+    "cs_place_other_min_scale": (
+        "Mode B with cs_place_anchor: lower bound for every other adsorbate-slab pair in radii-sum units; default 1.3"
+    ),
+    "cs_place_anchor_targets": (
+        "Mode B with cs_place_anchor: slab elements the closest slab atom must belong to (e.g. an ionic species)"
+    ),
+    "cs_place_max_attempts": (
+        "Mode B: random placement attempts tried per start before the run fails; default 1000"
+    ),
+    "cs_dedup_energy_tol": (
+        "Energy window in eV within which two minima may be merged as the same minimum; default 0.010"
+    ),
+    "cs_dedup_geom_tol": (
+        "Per-atom displacement in Angstrom below which two minima count as the same geometry (rule G); default 0.20"
+    ),
+    "cs_dedup_fp_tol": (
+        "Fingerprint distance below which two minima merge (rule D, catches symmetry equivalents); default 0.0004"
+    ),
+    "cs_fp_rcut": (
+        "Cutoff radius in Angstrom of the adsorbate Oganov-Valle fingerprint used for dedup; default 8.0"
+    ),
+    "cs_fp_binwidth": (
+        "Fingerprint histogram bin width in Angstrom, at most half of cs_fp_sigma; default 0.02"
+    ),
+    "cs_fp_sigma": (
+        "Gaussian smearing width in Angstrom applied to the fingerprint histogram bins; default 0.20"
+    ),
+    "cs_top_k": (
+        "Maximum number of ranked minima exported as candidates for DFT re-ranking; default 10"
+    ),
+    "cs_export_window": (
+        "Only minima within this energy window in eV above the best one are refined and exported; default 0.5"
+    ),
+    "cs_refine": (
+        "Re-refine the exported candidates with a tighter force threshold before ranking and export; default true"
+    ),
+    "cs_refine_fmax": (
+        "Force threshold in eV/A for the final refinement, must be <= cs_quench_fmax; default 0.02"
+    ),
+    "cs_refine_steps": (
+        "Maximum number of FIRE steps in the final refinement of each exported minimum; default 3000"
+    ),
+    "cs_allow_direct_forces": (
+        "Allow a model that reports direct_forces=true, in which case the ranking is not meaningful; default false"
+    ),
+}
+
+
 def _confsearch_specs() -> list[OptionSpec]:
     scope = frozenset({"confsearch"})
     specifications: list[tuple] = [
@@ -1052,7 +1311,7 @@ def _confsearch_specs() -> list[OptionSpec]:
                 minimum=minimum,
                 maximum=maximum,
                 default=default,
-                description=f"confsearch option {name} (spec section 12.3).",
+                description=_CONFSEARCH_DESCRIPTIONS[name],
             )
         )
     return specs
@@ -1061,11 +1320,422 @@ def _confsearch_specs() -> list[OptionSpec]:
 _SPECS.extend(_confsearch_specs())
 
 
+# ---------------------------------------------------------------------------
+# Presentation metadata (#61 R3.1 / R3.4).
+#
+# One table, applied to the specs above, fixes three things at once:
+#
+# * which section a key belongs to and in which order it is listed, both in a
+#   generated INCAR template and in the generated key reference
+#   (``docs/incar.md``),
+# * which keys a generated template actually shows (``template``),
+# * the "applies only when" conditions (NPT keys, thermostat-specific keys) and
+#   the placeholder a template writes for a value the user must supply.
+#
+# ``_SPECS`` above stays the single list of recognised keys; this table only
+# annotates those keys and is checked against them (see
+# ``tests/mliport/mliport/config/test_schema.py``).
+# ---------------------------------------------------------------------------
+
+#: Section order of every generated template and of the key reference.
+TEMPLATE_GROUP_ORDER: tuple[str, ...] = (
+    "Calculation",
+    "Model",
+    "Device and resources",
+    "Optimization",
+    "Molecular dynamics",
+    "NEB",
+    "Configuration search",
+    "Output",
+    "Batch",
+    "General",
+)
+
+#: canonical key -> section. Every key that is user-facing has exactly one.
+_TEMPLATE_GROUPS: dict[str, tuple[str, ...]] = {
+    "Calculation": ("calc_type",),
+    "Model": (
+        "model_type",
+        "model_path",
+        "task",
+        "head",
+        "inference_mode",
+        "default_dtype",
+        "activation_checkpointing",
+        "dpa_runtime",
+        "nep_runtime",
+        "nep_gpumd_command",
+        "charge",
+        "spin",
+        "d3",
+        "d3_xc",
+        "d3_damping",
+        "gpu_memory_growth",
+        "gpu_memory_limit_mb",
+        "neighbor_cache",
+        "neighbor_skin",
+    ),
+    "Device and resources": ("device", "torch_num_threads"),
+    "Optimization": ("optimizer", "fmax", "max_steps", "cell_opt", "fix_symmetry"),
+    "Molecular dynamics": (
+        "ensemble",
+        "temperature",
+        "timestep",
+        "steps",
+        "equilibration_steps",
+        "thermostat",
+        "friction",
+        "bussi_tau",
+        "nhc_tdamp",
+        "nhc_tchain",
+        "nhc_tloop",
+        "pressure_gpa",
+        "npt_tdamp",
+        "npt_pdamp",
+        "npt_tchain",
+        "npt_pchain",
+        "npt_tloop",
+        "npt_ploop",
+        "save_interval",
+        "com_policy",
+        "velocity_policy",
+        "pre_relax",
+        "pre_relax_steps",
+        "pre_relax_fmax",
+        "pre_relax_mode",
+        "seed",
+        "fmax_abort",
+    ),
+    "NEB": (
+        "neb_initial",
+        "neb_final",
+        "n_intermediate_images",
+        "climb",
+        "neb_method",
+        "neb_interpolation",
+        "path_convention",
+        "neb_spring",
+        "neb_pre_fmax",
+        "neb_pre_max_steps",
+        "neb_maxstep",
+        "endpoint_policy",
+        "endpoint_fmax",
+        "endpoint_steps",
+        "idpp_fmax",
+        "idpp_steps",
+        "idpp_mic",
+        "neb_min_distance",
+        "checkpoint_interval",
+    ),
+    "Configuration search": tuple(
+        sorted(
+            (
+                "cs_mode",
+                "cs_starts",
+                "cs_adsorbate_indices",
+                "cs_slab",
+                "cs_molecule",
+                "cs_n_starts",
+                "cs_fix_below",
+                "cs_md_mobile",
+                "cs_top_depth",
+                "cs_temperature_high",
+                "cs_temperature_low",
+                "cs_hold_ps",
+                "cs_cool_ps",
+                "cs_snapshot_interval_ps",
+                "cs_ramp_interval",
+                "cs_cycles",
+                "cs_save_interval",
+                "cs_accept_temperature",
+                "cs_quench_fmax",
+                "cs_quench_steps",
+                "cs_bond_scale",
+                "cs_bond_break_scale",
+                "cs_ionic_species",
+                "cs_reaction_policy",
+                "cs_desorption_distance",
+                "cs_min_image_distance",
+                "cs_min_vacuum_gap",
+                "cs_place_contact_scale",
+                "cs_place_anchor",
+                "cs_place_anchor_scale",
+                "cs_place_other_min_scale",
+                "cs_place_anchor_targets",
+                "cs_place_max_attempts",
+                "cs_dedup_energy_tol",
+                "cs_dedup_geom_tol",
+                "cs_dedup_fp_tol",
+                "cs_fp_rcut",
+                "cs_fp_binwidth",
+                "cs_fp_sigma",
+                "cs_top_k",
+                "cs_export_window",
+                "cs_refine",
+                "cs_refine_fmax",
+                "cs_refine_steps",
+                "cs_allow_direct_forces",
+            )
+        )
+    ),
+    "Output": (
+        "write_outcar",
+        "write_forces",
+        "write_stress",
+        "write_xdatcar",
+        "write_trajectory",
+        "write_json",
+        "output_format",
+        "output_dir",
+        "job_name",
+        "write_resolved_config",
+    ),
+    "Batch": ("sub_calc_type", "pattern"),
+    "General": ("strict_config",),
+}
+
+#: Keys a generated INCAR template shows, grouped by the calc type they are
+#: rendered for. ``None`` means "every calc type".
+_TEMPLATE_KEYS: dict[str, tuple[str, ...] | None] = {
+    "calc_type": None,
+    "device": None,
+    "optimizer": ("opt",),
+    "fmax": ("opt", "neb"),
+    "max_steps": ("opt", "neb"),
+    "cell_opt": ("opt",),
+    "fix_symmetry": ("opt",),
+    "ensemble": ("md",),
+    "temperature": ("md",),
+    "timestep": ("md", "confsearch"),
+    "equilibration_steps": ("md",),
+    "steps": ("md",),
+    "thermostat": ("md",),
+    "friction": ("md", "confsearch"),
+    "bussi_tau": ("md",),
+    "nhc_tdamp": ("md",),
+    "nhc_tchain": ("md",),
+    "nhc_tloop": ("md",),
+    "pressure_gpa": ("md",),
+    "npt_tdamp": ("md",),
+    "npt_pdamp": ("md",),
+    "npt_tchain": ("md",),
+    "npt_pchain": ("md",),
+    "npt_tloop": ("md",),
+    "npt_ploop": ("md",),
+    "save_interval": ("md",),
+    "com_policy": ("md",),
+    "neb_initial": ("neb",),
+    "neb_final": ("neb",),
+    "n_intermediate_images": ("neb",),
+    "climb": ("neb",),
+    "neb_method": ("neb",),
+    "neb_interpolation": ("neb",),
+    "path_convention": ("neb",),
+    "neb_spring": ("neb",),
+    "neb_pre_fmax": ("neb",),
+    "neb_pre_max_steps": ("neb",),
+    "neb_maxstep": ("neb",),
+    "endpoint_policy": ("neb",),
+    "endpoint_fmax": ("neb",),
+    "endpoint_steps": ("neb",),
+    "idpp_fmax": ("neb",),
+    "idpp_steps": ("neb",),
+    "idpp_mic": ("neb",),
+    "neb_min_distance": ("neb",),
+    "checkpoint_interval": ("neb",),
+    "cs_starts": ("confsearch",),
+    "cs_adsorbate_indices": ("confsearch",),
+    "cs_slab": ("confsearch",),
+    "cs_molecule": ("confsearch",),
+    "cs_n_starts": ("confsearch",),
+    "cs_mode": ("confsearch",),
+    "cs_md_mobile": ("confsearch",),
+    "cs_cycles": ("confsearch",),
+    "cs_temperature_high": ("confsearch",),
+    "cs_temperature_low": ("confsearch",),
+    "cs_hold_ps": ("confsearch",),
+    "cs_cool_ps": ("confsearch",),
+    "cs_snapshot_interval_ps": ("confsearch",),
+    "cs_ramp_interval": ("confsearch",),
+    "cs_save_interval": ("confsearch",),
+    "cs_accept_temperature": ("confsearch",),
+    "cs_quench_fmax": ("confsearch",),
+    "cs_quench_steps": ("confsearch",),
+    "cs_bond_scale": ("confsearch",),
+    "cs_bond_break_scale": ("confsearch",),
+    "cs_ionic_species": ("confsearch",),
+    "cs_reaction_policy": ("confsearch",),
+    "cs_desorption_distance": ("confsearch",),
+    "cs_min_image_distance": ("confsearch",),
+    "cs_min_vacuum_gap": ("confsearch",),
+    "cs_place_contact_scale": ("confsearch",),
+    "cs_place_anchor_scale": ("confsearch",),
+    "cs_place_other_min_scale": ("confsearch",),
+    "cs_place_max_attempts": ("confsearch",),
+    "cs_dedup_energy_tol": ("confsearch",),
+    "cs_dedup_geom_tol": ("confsearch",),
+    "cs_dedup_fp_tol": ("confsearch",),
+    "cs_fp_rcut": ("confsearch",),
+    "cs_fp_binwidth": ("confsearch",),
+    "cs_fp_sigma": ("confsearch",),
+    "cs_top_k": ("confsearch",),
+    "cs_export_window": ("confsearch",),
+    "cs_refine": ("confsearch",),
+    "cs_refine_fmax": ("confsearch",),
+    "cs_refine_steps": ("confsearch",),
+    "cs_allow_direct_forces": ("confsearch",),
+    # NEB refuses these outputs, so its template does not offer them.
+    "write_forces": ("sp", "opt", "md", "confsearch"),
+    "write_stress": ("sp", "opt", "md", "confsearch"),
+    "output_format": ("sp", "opt", "md", "confsearch"),
+}
+
+#: "Applies only when" conditions and the placeholders users must fill in.
+_TEMPLATE_CONDITIONS: dict[str, dict[str, Any]] = {
+    # MTK barostat: the NPT example block of the MD template.
+    "pressure_gpa": {
+        "applies_when": (("ensemble", "NPT"),),
+        "example_when_inactive": True,
+        "example_note": "To run NPT instead, uncomment this block:",
+    },
+    "npt_tdamp": {
+        "applies_when": (("ensemble", "NPT"),),
+        "example_when_inactive": True,
+    },
+    "npt_pdamp": {
+        "applies_when": (("ensemble", "NPT"),),
+        "example_when_inactive": True,
+    },
+    "npt_tchain": {
+        "applies_when": (("ensemble", "NPT"),),
+        "example_when_inactive": True,
+    },
+    "npt_pchain": {
+        "applies_when": (("ensemble", "NPT"),),
+        "example_when_inactive": True,
+    },
+    "npt_tloop": {
+        "applies_when": (("ensemble", "NPT"),),
+        "example_when_inactive": True,
+    },
+    "npt_ploop": {
+        "applies_when": (("ensemble", "NPT"),),
+        "example_when_inactive": True,
+    },
+    # Displayed template values for keys whose runtime default lives in the
+    # writer/engine rather than in BUILTIN_DEFAULTS.
+    "device": {"template_value": "cpu"},
+    "write_forces": {"template_value": True},
+    "write_stress": {"template_value": True},
+    "output_format": {"template_value": "VASP"},
+    "neb_initial": {"placeholder": "initial.vasp"},
+    "neb_final": {"placeholder": "final.vasp"},
+    # Thermostat-specific keys: only the selected thermostat is written.
+    "friction": {
+        "applies_when": (("thermostat", "LANGEVIN"),),
+        "condition_calc_types": ("md",),
+    },
+    "bussi_tau": {"applies_when": (("thermostat", "BUSSI"),)},
+    "nhc_tdamp": {"applies_when": (("thermostat", "NHC"),)},
+    "nhc_tchain": {"applies_when": (("thermostat", "NHC"),)},
+    "nhc_tloop": {"applies_when": (("thermostat", "NHC"),)},
+    # Values the user must supply: the template cannot invent a model or the
+    # structures to search.
+    "model_path": {"placeholder": "REQUIRED"},
+    "cs_starts": {
+        "placeholder": "REQUIRED",
+        "example_note": "Mode A: your own start structures and the adsorbate indices",
+    },
+    "cs_adsorbate_indices": {"placeholder": "REQUIRED"},
+    # Mode B is the alternative start source: a commented example only.
+    "cs_slab": {
+        "applies_when": (("cs_mode", "MODE_B"),),
+        "example_when_inactive": True,
+        "example_condition_line": False,
+        "example_note": "Mode B alternative: let mliport place the molecule on the slab",
+        "placeholder": "slab.vasp",
+    },
+    "cs_molecule": {
+        "applies_when": (("cs_mode", "MODE_B"),),
+        "example_when_inactive": True,
+        "example_condition_line": False,
+        "placeholder": "molecule.xyz",
+    },
+    "cs_n_starts": {
+        "applies_when": (("cs_mode", "MODE_B"),),
+        "example_when_inactive": True,
+        "example_condition_line": False,
+        "template_value": 10,
+    },
+}
+
+#: Template values that are not the built-in default (the user must supply a
+#: real value, and a template must still be syntactically valid).
+_TEMPLATE_VALUES: dict[str, Any] = {}
+
+
+def _apply_presentation_metadata(specs: list[OptionSpec]) -> list[OptionSpec]:
+    """Attach group/order/template/condition metadata to the declared specs.
+
+    The order inside a group follows the declaration order in ``_SPECS`` (a
+    stable, already-curated order), and every key of ``_TEMPLATE_GROUPS`` must
+    resolve to a declared option - a typo is an error, not a silently missing
+    documentation row.
+    """
+    known = {spec.name for spec in specs}
+    unknown = sorted(
+        key for keys in _TEMPLATE_GROUPS.values() for key in keys if key not in known
+    )
+    if unknown:
+        raise RuntimeError(f"Unknown options in the template table: {unknown}")
+    duplicates = sorted(
+        key
+        for key in {key for keys in _TEMPLATE_GROUPS.values() for key in keys}
+        if sum(key in keys for keys in _TEMPLATE_GROUPS.values()) > 1
+    )
+    if duplicates:
+        raise RuntimeError(f"Options in more than one template group: {duplicates}")
+
+    group_of = {key: group for group, keys in _TEMPLATE_GROUPS.items() for key in keys}
+    template_scopes = dict(_TEMPLATE_KEYS)
+    unknown_template = sorted(key for key in template_scopes if key not in known)
+    if unknown_template:
+        raise RuntimeError(f"Unknown template keys: {unknown_template}")
+    unknown_conditions = sorted(key for key in _TEMPLATE_CONDITIONS if key not in known)
+    if unknown_conditions:
+        raise RuntimeError(f"Unknown template conditions: {unknown_conditions}")
+
+    annotated: list[OptionSpec] = []
+    for index, spec in enumerate(specs):
+        conditions = _TEMPLATE_CONDITIONS.get(spec.name, {})
+        annotated.append(
+            replace(
+                spec,
+                group=group_of.get(spec.name, ""),
+                order=index,
+                template=spec.name in template_scopes,
+                template_scopes=template_scopes.get(spec.name, ()),
+                applies_when=conditions.get("applies_when", ()),
+                example_when_inactive=bool(
+                    conditions.get("example_when_inactive", False)
+                ),
+                placeholder=str(conditions.get("placeholder", "")),
+                template_value=conditions.get("template_value"),
+                example_note=str(conditions.get("example_note", "")),
+                example_condition_line=bool(
+                    conditions.get("example_condition_line", True)
+                ),
+                condition_calc_types=tuple(conditions.get("condition_calc_types", ())),
+            )
+        )
+    return annotated
+
+
 def get_schema() -> Schema:
     """Return the singleton :class:`Schema` instance."""
     global _SCHEMA  # noqa: PLW0603
     if _SCHEMA is None:
-        _SCHEMA = Schema(_SPECS)
+        _SCHEMA = Schema(_apply_presentation_metadata(_SPECS))
     return _SCHEMA
 
 

@@ -33,6 +33,7 @@ POTCAR。模型对你的体系准不准，取决于你选的模型文件。
 | 安装一个或多个后端（GPU 或 CPU） | [安装](docs/installation.zh.md) |
 | 了解 MACE、DPA、GRACE、UMA、NEP 是什么并选一个 | [后端](docs/backends/index.zh.md)、[模型](docs/models.zh.md) |
 | 通过 CLI、INCAR 风格文件或 `settings.ini` 设置选项 | [配置](docs/configuration.zh.md) |
+| 查任意 INCAR 键的含义、默认值和允许的取值 | [INCAR 键参考](docs/incar.zh.md) |
 | 单点、弛豫、MD、NEB、构型搜索、批量、队列 | [工作流](docs/workflows/index.zh.md) |
 | MSD、扩散、电导率、RDF、谱、Arrhenius | [分析](docs/analysis/index.zh.md) |
 | 了解每个输出文件的内容 | [输出文件](docs/outputs.zh.md) |
