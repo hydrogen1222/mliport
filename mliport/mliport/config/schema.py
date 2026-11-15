@@ -582,7 +582,7 @@ _SPECS: list[OptionSpec] = [
         str,
         frozenset({"md"}),
         aliases={"MD_ENSEMBLE"},
-        choices=("NVT", "NVE"),
+        choices=("NVT", "NVE", "NPT"),
         description="MD ensemble.",
     ),
     OptionSpec(
@@ -593,6 +593,22 @@ _SPECS: list[OptionSpec] = [
         minimum=0.0,
         description="Temperature in Kelvin.",
     ),
+    OptionSpec(
+        "pressure_gpa", float, frozenset({"md"}), aliases={"PRESSURE_GPA", "PRESSURE"},
+        description="NPT hydrostatic target pressure in GPa (positive is compressive).",
+    ),
+    OptionSpec(
+        "npt_tdamp", float, frozenset({"md"}), aliases={"NPT_TDAMP"}, minimum=0.0,
+        description="MTK thermostat damping time in fs (strictly positive).",
+    ),
+    OptionSpec(
+        "npt_pdamp", float, frozenset({"md"}), aliases={"NPT_PDAMP"}, minimum=0.0,
+        description="MTK barostat damping time in fs (strictly positive).",
+    ),
+    OptionSpec("npt_tchain", int, frozenset({"md"}), aliases={"NPT_TCHAIN"}, minimum=1),
+    OptionSpec("npt_pchain", int, frozenset({"md"}), aliases={"NPT_PCHAIN"}, minimum=1),
+    OptionSpec("npt_tloop", int, frozenset({"md"}), aliases={"NPT_TLOOP"}, minimum=1),
+    OptionSpec("npt_ploop", int, frozenset({"md"}), aliases={"NPT_PLOOP"}, minimum=1),
     OptionSpec(
         "timestep",
         float,
