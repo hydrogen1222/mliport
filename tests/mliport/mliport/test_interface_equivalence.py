@@ -483,9 +483,7 @@ def test_neb_mapping_and_checkpoint_policy_resolve_identically(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "options", [_md_options(), _npt_options()], ids=["nvt", "npt"]
-)
+@pytest.mark.parametrize("options", [_md_options(), _npt_options()], ids=["nvt", "npt"])
 @pytest.mark.asyncio()
 async def test_tui_md_command_resolves_like_api_request(
     tmp_path: Path, options: dict[str, object]

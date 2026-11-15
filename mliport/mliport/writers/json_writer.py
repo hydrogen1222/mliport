@@ -293,9 +293,7 @@ class JsonWriter:
                 "transport_eligible",
             )
             npt_provenance = {
-                key: provenance[key]
-                for key in npt_provenance_keys
-                if key in provenance
+                key: provenance[key] for key in npt_provenance_keys if key in provenance
             }
             if npt_provenance:
                 md_data["npt"] = npt_provenance

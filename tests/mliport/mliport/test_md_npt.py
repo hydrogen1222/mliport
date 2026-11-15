@@ -247,14 +247,12 @@ def test_npt_variable_cell_io_and_transport_gate(tmp_path):
     assert result["md_provenance"]["target_pressure_eV_A3"] == pytest.approx(
         1.5 * units.GPa
     )
-    md_json = json.loads(
-        (tmp_path / "raw" / "mliport_results.json").read_text()
-    )["calculation"]["md"]
+    md_json = json.loads((tmp_path / "raw" / "mliport_results.json").read_text())[
+        "calculation"
+    ]["md"]
     assert md_json["target_pressure_GPa"] == pytest.approx(1.5)
     assert md_json["npt"]["npt_algorithm"] == "isotropic_mtk"
-    assert md_json["npt"]["target_pressure_eV_A3"] == pytest.approx(
-        1.5 * units.GPa
-    )
+    assert md_json["npt"]["target_pressure_eV_A3"] == pytest.approx(1.5 * units.GPa)
     assert md_json["npt"]["npt_tdamp_fs"] == pytest.approx(20.0)
     assert md_json["npt"]["npt_pdamp_fs"] == pytest.approx(40.0)
     assert md_json["npt"]["variable_cell"] is True
