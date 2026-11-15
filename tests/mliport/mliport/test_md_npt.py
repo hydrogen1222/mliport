@@ -13,6 +13,7 @@ from ase.calculators.calculator import Calculator
 from ase.constraints import FixAtoms, FixCom
 from ase.io import Trajectory
 
+from mliport.analysis.dataset import TrajectoryDataset
 from mliport.config.defaults import BUILTIN_DEFAULTS
 from mliport.config.schema import get_schema
 from mliport.runners.md import MDRunner
@@ -198,6 +199,10 @@ def test_npt_variable_cell_io_and_transport_gate(tmp_path):
     assert manifest["trajectory"]["variable_cell"] is True
     assert manifest["trajectory"]["transport_eligible"] is False
     assert manifest["trajectory"]["positions_convention"] == "unknown"
+    dataset = TrajectoryDataset.load(tmp_path)
+    assert dataset.positions_convention == "unknown"
+    with pytest.raises(ValueError, match="NPT variable-cell trajectories"):
+        TrajectoryDataset.load(tmp_path, positions_convention="unwrapped")
     assert "xdatcar" not in manifest["artifacts"]
     assert result["md_provenance"]["target_pressure_eV_A3"] == pytest.approx(
         1.5 * units.GPa
