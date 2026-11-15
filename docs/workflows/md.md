@@ -1,6 +1,6 @@
 # Molecular dynamics
 
-`mliport md` runs NVE or NVT dynamics with the backend you pick and records a
+`mliport md` runs NVE, NVT or NPT dynamics with the backend you pick and records a
 trajectory that the [analysis](../analysis/index.md) tools can read back.
 
 ```bash
@@ -14,6 +14,22 @@ trajectory that the [analysis](../analysis/index.md) tools can read back.
 You need a periodic structure, a model and an explicit backend. MD on a
 molecule needs a molecular task (`omol` / `molecule`) and sensible charge and
 spin.
+
+## Isotropic NPT cell equilibration (ASE-only)
+
+For UMA/MACE/GRACE/DPA, `--ensemble NPT` uses ASE's **isotropic Martyna–Tobias–Klein (MTK)** thermostat/barostat, not Langevin/Bussi/NHC. Example:
+
+```bash
+mliport md structure.cif --model model.pt --model-type mace \
+  --ensemble NPT --temp 800 --pressure-gpa 0 \
+  --npt-tdamp 100 --npt-pdamp 1000 \
+  --timestep 0.5 --steps 50000 --save-interval 10 \
+  --no-pre-relax --output runs/npt-800K
+```
+
+The parameters `--npt-tchain`/`--npt-pchain` default to 3 and `--npt-tloop`/`--npt-ploop` to 1. Times are in fs. **Positive pressure is compressive (GPa)**; the conversion to ASE eV/Å³ is recorded. Thermostat and barostat damping are not equilibration time guarantees. The NPT run uses 3D PBC, a finite positive-volume cell, and model **stress**. It rejects all atomic/COM constraints, partial PBC, zero T, and unsupported backends (including NEP/GPUMD). Automatic COM handling zeroes initial COM momentum once; the recorded MTK thermostat set point accounts for the 3 missing kinetic degrees of freedom.
+
+Standard XDATCAR represents fixed-cell MD only: NPT disables XDATCAR with a logged reason, while `raw/trajectory.traj` preserves each frame's cell and momenta. The `md.csv` file records instantaneous **total** pressure including the kinetic term, and volume per saved frame. NPT trajectory metadata is marked variable-cell / transport-ineligible: do **not** calculate conventional fixed-cell MSD, Einstein–Helfand conductivity or diffusion from it. For solid electrolytes, equilibrate volume/cell at the target T and pressure, extract the *equilibrated-window mean cell* with an independent statistical check, then start a **separate** fixed-cell NVT/NVE run. The last NPT frame is not automatically an average cell. NPT frame restarts do not preserve hidden MTK chain/barostat state and are not exact trajectory continuation. Near a phase transition or an anisotropic crystal, an isotropic cell-only barostat may be insufficient.
 
 ## Options you will use
 
