@@ -1,55 +1,123 @@
 # 输运（kinisi）
 
-`transport` 用 kinisi 从 MD 轨迹估计可移动离子的示踪扩散系数及其误差；对带电离子，还会换算成
-Nernst–Einstein 电导率。
+`transport` 用 [kinisi](https://github.com/kinisi-dev/kinisi) 库从 MD 轨迹估计可移动离子的
+示踪扩散系数及其统计不确定性，并换算为 Nernst–Einstein 离子电导率。kinisi 通过分块平均和贝叶斯
+拟合正确处理 MSD 在不同滞后时间之间的相关性。
 
 ```bash
-mliport analyze runs/md transport --mobile Li --charge 1 \
-  --fit-start-ps 50 --temperature-K 800
+./bin/mliport-mace analyze runs/lgps-md transport \
+  --mobile Li --charge 1 --fit-start-ps 50 --temperature-K 800
 ```
 
-需要：一条采样轨迹，已知的**保存帧**间隔（外部文件用 `--frame-interval-fs` 给出），可移动离子种类和
-它的电荷（以 e 为单位），以及扩散拟合的起始时间。平衡阶段的帧不参与分析。
+!!! tip "先看 MSD，再算输运"
+    先运行 [MSD](msd.md) 任务，确认轨迹处于扩散区间（α ≈ 1）。`transport` 提取的是
+    扩散系数——如果轨迹还没有进入扩散区间，无论统计处理多严格，数字都不可靠。
 
-## 常用选项
+## 物理背景
+
+### 从 MSD 到扩散系数
+
+Einstein 关系把 MSD 的长时间极限和自扩散系数联系起来：
+
+$$
+D = \lim_{t \to \infty} \frac{\text{MSD}(t)}{2 \, d \, t}
+$$
+
+其中 *d* 是空间维数。实际操作中，在扩散区间对 MSD 拟合直线，从斜率提取 *D*。难点在于估计
+这个斜率的**不确定性**。
+
+### 为什么用 kinisi？
+
+对 MSD 做简单线性拟合会低估不确定性，因为相邻滞后时间的 MSD 值是**相关的**——它们共享时间原点。
+kinisi 通过以下方式解决这个问题：
+
+1. 将轨迹分块，计算不同滞后时间之间的 MSD 协方差矩阵。
+2. 做贝叶斯拟合，考虑这些相关性。
+3. 给出 *D* 的后验分布，从中得到可信区间（不确定性）。
+
+这比简单最小二乘更严格，避免报告不真实的小误差棒。
+
+### Nernst–Einstein 电导率
+
+**Nernst–Einstein 关系**把示踪扩散系数和离子电导率联系起来：
+
+$$
+\sigma_\text{NE} = \frac{n \, (z \, e)^2 \, D}{k_B \, T}
+$$
+
+其中 *n* 是可移动离子的数密度，*z* 是电荷数，*e* 是元电荷，*k*_B 是玻尔兹曼常数，
+*T* 是温度。
+
+!!! warning "Nernst–Einstein 假设离子运动不相关"
+    Nernst–Einstein 电导率假设每个离子独立扩散。在真实材料中，离子-离子关联（**Haven 比**）
+    可能使真实电导率偏离 NE 估计。用 `--collective-conductivity` 计算考虑关联的集体
+    （Onsager）电导率。
+
+### Haven 比
+
+Haven 比量化示踪输运和电荷输运之间的偏差：
+
+$$
+H_R = \frac{D_\text{tracer}}{D_\text{charge}}
+$$
+
+*H*_R = 1 表示不相关的运动（NE 精确）。*H*_R < 1 表示协同运动使电导率高于个体扩散的预测。
+*H*_R > 1 表示反关联运动降低了电导率。对很多固态电解质，*H*_R 在 0.3–0.8 之间。
+
+## 用法
+
+### 必需选项
 
 | 选项 | 含义 |
 |---|---|
-| `--mobile SPECIES` | 可移动离子（必需） |
-| `--charge` | 离子电荷，以 e 为单位（必需；用于电导率） |
-| `--fit-start-ps` | 扩散拟合的起点（必需） |
-| `--lag-step-ps`、`--lag-stop-ps` | 手动设置更稀疏的时间间隔网格；两个要么都写，要么都不写 |
-| `--dimensions` | 参与计算的方向，取 `xyz` 的子集（默认 `xyz`） |
-| `--temperature-K` | Nernst–Einstein 换算所用的温度 |
-| `--drift-reference`、`--drift-mode`、`--drift-indices` | 骨架漂移校正（mode 默认 `arithmetic_mean`） |
-| `--collective-conductivity`、`--collective-system-particles` | 同时计算考虑离子关联的集体（Onsager）电导率；后者是 kinisi 按原子编号顺序分的统计组数（默认 1），不是独立的 MD 轨迹 |
-| `--jump-diffusion` | 同时运行 kinisi 的跳跃扩散分析，作为参考 |
-| `--n-samples`、`--n-walkers`、`--n-burn`、`--n-thin`、`--random-seed` | kinisi 采样控制（默认 1000、32、500、10、0） |
-| `--parser-memory-limit-gib` | 估计内存峰值超过该值时拒绝分析（默认 4 GiB） |
-| `--allow-reconstructed-fallback` | 仅供诊断：改用 kinisi 未经验证的位移重建方法，结果会标记 `publication_grade=false` |
+| `--mobile SPECIES` | 可移动离子（如 `Li`、`Na`） |
+| `--charge Z` | 离子电荷，以 *e* 为单位（如 Li⁺ 写 `1`） |
+| `--fit-start-ps` | 扩散拟合窗口的起点（ps） |
 
-稀疏网格减少的是时间间隔的个数，轨迹帧并不减少。轨迹很长时，用稀疏网格可以让 kinisi 的协方差矩阵
-不超出内存限制。
+### 常用选项
 
-## 输出
+| 选项 | 默认值 | 含义 |
+|---|---|---|
+| `--temperature-K` | — | Nernst–Einstein 换算所用的温度 |
+| `--dimensions` | `xyz` | 参与计算的笛卡尔方向（`xyz` 的子集） |
+| `--lag-step-ps` | — | 滞后时间网格间距（稀疏化协方差矩阵） |
+| `--lag-stop-ps` | — | 最大滞后时间（和 `--lag-step-ps` 要么都写，要么都不写） |
+| `--drift-reference` | `nonmobile` | 骨架漂移校正 |
+| `--drift-mode` | `arithmetic_mean` | 漂移计算方法 |
 
-`results.json` 里有 `D` 及其误差、电导率（由示踪扩散得到的 Nernst–Einstein 电导率，要求时还有集体
-电导率）、时间间隔网格和拟合区间、采样诊断，以及模型信息和软件 commit。`transport_summary.csv` 把
-主要数字放在一行里。
+### 集体电导率
 
-轨迹太短、拟合区间内采样不够、帧间隔未知、坐标约定矛盾、内存估计超限时，都会报错并说明原因。
-只有明确允许时才会用位移重建方法，并会记录在结果里。
+| 选项 | 默认值 | 含义 |
+|---|---|---|
+| `--collective-conductivity` | false | 同时计算 Onsager（电荷集体）电导率 |
+| `--collective-system-particles` | 1 | kinisi 统计组数（不是独立 MD 副本） |
 
-## 结果怎么看
+### 跳跃扩散
 
-- 有限长度的轨迹算出的扩散系数，只有在拟合区间处于扩散区间、并给出了采样误差时才可信。要看 kinisi
-  给出的误差，不要只看 `D` 的平均值。
-- Nernst–Einstein 电导率假设离子之间没有关联，不算集体电导率的话，它不是完整的电导率。报告时要写明
-  用的是哪一个。
-- 固定体积的晶胞会限制扩散机制，晶胞太小可能使扩散偏慢或失真。请写明晶胞大小以及是否优化过。
-- 骨架漂移必须处理，不同的漂移处理会得到不同的 `D`。
-- 想知道离子经过*哪些*位点、怎么跳跃，用 [GEMDAT](electrolyte-gemdat.md)。输运分析只给出速率，不揭示
-  机理。
+| 选项 | 含义 |
+|---|---|
+| `--jump-diffusion` | 同时运行 kinisi 的跳跃扩散分析，作为诊断参考 |
+
+### 采样控制
+
+| 选项 | 默认值 | 含义 |
+|---|---|---|
+| `--n-samples` | 1000 | 后验样本数 |
+| `--n-walkers` | 32 | MCMC 行走者数 |
+| `--n-burn` | 500 | 烧入步数 |
+| `--n-thin` | 10 | 稀疏化间隔 |
+| `--random-seed` | 0 | 随机种子，保证可复现 |
+| `--parser-memory-limit-gib` | 4 | 内存守卫：估计峰值超过此值时拒绝分析 |
+
+### 回退选项
+
+| 选项 | 含义 |
+|---|---|
+| `--allow-reconstructed-fallback` | 使用 kinisi 未经验证的位移重建方法（结果标记 `publication_grade=false`） |
+
+## 示例
+
+在 800 K 下对 LGPS 中的锂做完整的输运分析：
 
 ## `publication_grade` 的含义边界
 
@@ -68,29 +136,58 @@ mliport analyze runs/md transport --mobile Li --charge 1 \
 `alpha`、后验宽度、多副本/多窗口、晶胞尺寸检查）决定，而不是这个标记。
 
 ```bash
-mliport analyze runs/md-800K transport --mobile Li --charge 1 \
+./bin/mliport-mace analyze runs/lgps-md-800K transport \
+  --mobile Li --charge 1 \
   --fit-start-ps 50 --lag-step-ps 5 --lag-stop-ps 500 \
-  --temperature-K 800 --drift-reference nonmobile \
-  --drift-mode mass_weighted_com --collective-conductivity --jump-diffusion
+  --temperature-K 800 \
+  --drift-reference nonmobile --drift-mode mass_weighted_com \
+  --collective-conductivity --jump-diffusion
 ```
 
-## 几种估计方法的比较
+## 输出文件
 
-验证时会在*同一条*轨迹上用几种方法估计，分别报告。它们回答的问题不同，结果不要求一致：
+结果写入 `<run>/analysis/transport/<analysis-id>/`：
 
-| 方法 | 说明 | 拟合区间 |
+| 文件 | 内容 |
+|---|---|
+| `results.json` | *D* 及其不确定性、NE 电导率、集体电导率（如果请求了）、采样诊断、溯源信息 |
+| `transport_summary.csv` | 主要数字汇总在一行 |
+
+## 结果解读
+
+### 应报告的信息
+
+报告输运结果时要写明：
+
+1. **扩散系数及其不确定性** — 不能只报告 *D* 的均值。
+2. **哪种电导率** — 基于示踪扩散的 Nernst–Einstein，还是集体电导率。
+3. **拟合窗口** — 从哪里开始和结束，以及为什么这样选。
+4. **漂移处理** — 骨架漂移校正方式会改变 *D*。
+5. **晶胞** — 定容 NVT 限制扩散机制；NPT 允许晶胞呼吸。太小的晶胞会抑制扩散。
+
+### 几种估计方法的比较
+
+同一条轨迹上的不同估计方法回答的问题不同：
+
+| 方法 | 说明 | 适用场景 |
 |---|---|---|
-| 简单最小二乘 | `D = slope(MSD)/(2d)`，写明单位换算 | 起点和 kinisi 一致 |
-| mliport 的 MSD 诊断 | 在明确区间上的最小二乘（区分扩散区间） | 记录的拟合区间 |
-| kinisi 后验 | 示踪扩散系数及其可信区间 | kinisi 的时间间隔和拟合区间 |
-| Nernst–Einstein | `sigma_NE = n (z e)^2 D_tracer / (k_B T)` | 由示踪扩散推出 |
+| 简单最小二乘 | MSD 斜率 / (2d)，不处理协方差 | 快速检查 |
+| kinisi 后验 | 示踪 *D* 及其可信区间 | 正式发表 |
+| Nernst–Einstein | σ = n(ze)²D/(k_BT) | 从示踪 *D* 得到电导率 |
+| 集体电导率 | 电荷加权 MSD 的 Onsager 电导率 | 包含关联的完整电导率 |
 
-报告里记录 `kinisi_to_plain_D_ratio`，比值低于 0.5 或高于 2 时给出 `estimator_disagreement_warning`。这只
-是提醒你去找差异的原因（拟合区间、漂移、扩散区间），不是合格线。单位换算用已知结果核对：
-`1 Å²/ps = 1e-8 m²/s`，所以三维 MSD 斜率为 `6 Å²/ps` 时 `D = 1e-8 m²/s`。
+kinisi 与简单最小二乘的比值偏离 1 很多时，拟合窗口可能不在扩散区间——检查 [MSD 的 α 曲线](msd.md)。
 
-两者差别很大，通常是因为拟合区间不在扩散区间，先看局部 `alpha`。演示用的短计算即使轨迹本身没问题，
-也可能出现 `alpha ≈ 2`。
+### 失败情况
+
+以下情况会报错并给出明确原因：
+
+- 轨迹对于请求的拟合窗口太短
+- 帧间隔未知（外部轨迹没有提供 `--frame-interval-fs`）
+- 坐标约定与存储的元数据矛盾
+- 估计内存超过 `--parser-memory-limit-gib`
+
+轨迹太短时返回采样不足状态——mliport 不会凭空制造扩散系数。
 
 ## 实测例子
 
@@ -101,4 +198,10 @@ mliport analyze runs/md-800K transport --mobile Li --charge 1 \
 ```
 
 对仓库里 1 ns 的 GRACE LGPS 轨迹，这条命令得到 `D = 1.885e-09 m²/s`，95% 可信区间为
-`[1.492e-09, 2.275e-09] m²/s`（拟合区间 100–200 ps）。轨迹太短时会返回"采样不足"，不给出扩散系数。
+`[1.492e-09, 2.275e-09] m²/s`（拟合区间 100–200 ps）。
+
+## 下一步
+
+- 了解扩散机制（哪些位点、怎么跳跃）：[GEMDAT](electrolyte-gemdat.md)
+- 从多个温度提取活化能：[Arrhenius](arrhenius.md)
+- 回头检查扩散区间：[MSD](msd.md)

@@ -1,49 +1,95 @@
 # Backends
 
-mliport runs exactly one backend per calculation. The backend comes from
-`--model-type`, from a model alias or profile in your settings, or the run stops
-with `No MLIP backend was selected`. Nothing falls back to something else.
+mliport supports five machine-learned interatomic potential backends. Each backend wraps a different neural-network architecture and its upstream framework, but all of them present the same interface to mliport: you pass a structure and a checkpoint, and mliport returns energies, forces and (where available) stresses in a consistent format.
 
-| Backend | Page | `--model-type` | Checkpoint used in the examples |
-|---|---|---|---|
-| MACE | [MACE](mace.md) | `mace` | `mace-omat-0-medium.model` |
-| DPA (DeepMD-kit) | [DPA](dpa.md) | `dpa` | `DPA-3.1-3M.pt` with `--head Omat24` |
-| GRACE | [GRACE](grace.md) | `grace` | `GRACE-2L-OMAT-medium-base` |
-| UMA (FAIRChem) | [UMA](uma.md) | `uma` (or `fairchem`) | `uma-s-1p2.pt` with `--task omat` |
-| NEP | [NEP](nep.md) | `nep` (+ required `--nep-runtime ase|gpumd`) | your own `nep.txt` |
+## What is a backend?
 
-Each backend lives in its own environment (`.venv-mace`, `.venv-dpa`,
-`.venv-grace`, `.venv`, `.venv-nep`) because their frameworks and Python
-requirements differ;
-see [Installation](../installation.md) for how that works. To check that one of
-them can really run, ask `doctor`:
+A "backend" in mliport is a combination of three things:
+
+1. **A neural-network architecture** — the mathematical model that predicts atomic energies and forces from nuclear positions (MACE, DPA, GRACE, UMA or NEP).
+2. **An upstream framework** — the Python package that loads and evaluates the trained checkpoint (`mace-torch`, `deepmd-kit`, `tensorpotential`, `fairchem-core` or `calorine`).
+3. **A trained checkpoint** — the file containing the learned weights. The checkpoint determines what chemistry the model knows, at what DFT reference level, and for which kinds of systems (bulk, surface, molecule).
+
+mliport runs exactly one backend per calculation. The backend is selected by `--model-type` (or `MODEL_TYPE` in an INCAR file), from a model alias or profile in your `settings.ini`, or the run stops with `No MLIP backend was selected`. There is no default and no fallback.
+
+## Backend comparison
+
+| | MACE | DPA | GRACE | UMA | NEP |
+|---|---|---|---|---|---|
+| Architecture | Equivariant message passing with many-body features | Message passing on a line-graph series (pairs → angles → …) | Graph atomic cluster expansion (1L local, 2L semilocal) | eSEN with mixture of linear experts | Neuroevolution potential (feedforward, GPU-optimized) |
+| Example checkpoint | `mace-omat-0-medium` | `DPA-3.1-3M` | `GRACE-2L-OMAT-medium-base` | `uma-s-1p2` | Your own `nep.txt` |
+| Training data | OMat24 (~110M structures) | OpenLAM-v1 (31 datasets) | OMat24 | OMat24 + OMol25 + OC20 + ODAC25 + OMC25 | User-supplied |
+| Reference DFT level | PBE / PBE+U (bulk) | Per head (Omat24 = PBE/PBE+U) | PBE / PBE+U (bulk) | Per task (omat = PBE/PBE+U) | Whatever you trained on |
+| Key selector | `--dtype` (float32/float64) | `--head` (dataset branch) | Model build (default/fp64) | `--task` (omat/omol/oc20/…) | `--nep-runtime` (ase/gpumd) |
+| Framework | PyTorch | PyTorch | TensorFlow | PyTorch | Calorine (ASE) or native GPUMD |
+| Environment | `.venv-mace` | `.venv-dpa` | `.venv-grace` | `.venv` | `.venv-nep` |
+
+None of these example checkpoints includes dispersion corrections. Only UMA was trained on surfaces, molecules and porous materials as well as bulk crystals. A foundation model reproduces its reference DFT functional — not experiment — and how well it does that on *your* system is something to verify with a few DFT single points. See [Models](../models.md) for guidance on comparing backends honestly.
+
+## How to choose a backend
+
+The right backend depends on your system and what you need from the calculation:
+
+**I need to study surfaces, molecules or metal-organic frameworks**
+→ **UMA** is the only example model trained on non-bulk systems (OC20 for catalysis surfaces, OMol25 for molecules, ODAC25 for MOFs). The other four example models were trained only on bulk inorganic crystals, so applying them to surfaces or molecules is extrapolation.
+
+**I need double-precision (float64) accuracy**
+→ **MACE** with `--dtype float64`, or **GRACE** with the fp64 build. Most other backends compute in the precision their checkpoint was exported with.
+
+**I need maximum throughput for long MD runs**
+→ **NEP** with the native GPUMD runtime (`--nep-runtime gpumd`) is a single GPU process for the entire run with minimal overhead. **GRACE 1L** models trade some accuracy for speed. UMA's `turbo` inference mode enables `torch.compile` and TF32.
+
+**I have my own trained potential**
+→ **NEP** is designed for user-trained `nep.txt` files. The other four backends can also load custom checkpoints, but their example checkpoints are foundation models.
+
+**I need the widest elemental coverage from one model**
+→ **DPA** (OpenLAM-v1 covers 31 datasets across many chemistries) or **UMA** (five dataset families covering bulk, surface, molecule, MOF and molecular-crystal chemistry).
+
+**I need to run NEB or configuration search**
+→ Any backend whose forces are the gradient of the energy (conservative). MACE, DPA, GRACE and UMA all qualify. NEP works with `--nep-runtime ase` only; the native GPUMD runtime does not support NEB or configuration search.
+
+## Separate environments
+
+Each backend lives in its own Python virtual environment because their upstream frameworks have incompatible dependencies:
+
+| Backend | Environment | Why separate |
+|---|---|---|
+| MACE | `.venv-mace` | `mace-torch` pins specific PyTorch versions |
+| DPA | `.venv-dpa` | `deepmd-kit` needs its own torch + C++ extensions |
+| GRACE | `.venv-grace` | `tensorpotential` uses TensorFlow, not PyTorch |
+| UMA | `.venv` | `fairchem-core` pins its own torch version |
+| NEP | `.venv-nep` | `calorine` is a compiled C extension |
+
+The install script creates the environment you ask for:
+
+```bash
+./scripts/install_mliport.sh --engines mace --device auto
+```
+
+To verify that a backend can actually run, use `doctor`:
 
 ```bash
 .venv-mace/bin/mliport doctor --engine mace --device auto
 ```
 
-DPA and GRACE need their GPU chosen before the framework loads. The command line
-handles this by restarting itself in a fresh process with `CUDA_VISIBLE_DEVICES`
-set; from the Python API you have to set it in the calling process yourself.
+See [Installation](../installation.md) for the full setup procedure.
 
-Every page below follows the same outline: how the backend is installed, which
-model profiles mliport has pinned, how to run it, and what to watch out for.
-The environment and profile tables are generated from the compatibility registry
-and the validation manifest, so they cannot drift from the code.
+## GPU isolation
 
-## At a glance
+DPA and GRACE need their GPU chosen before the framework loads its CUDA context. The command line handles this automatically by restarting itself in a fresh process with `CUDA_VISIBLE_DEVICES` set. From the Python API, you must set the environment variable in the calling process yourself before importing the framework:
 
-| | MACE | DPA | GRACE | UMA |
-|---|---|---|---|---|
-| Architecture | equivariant message passing with many-body features | message passing on a line-graph series (pairs, angles, ...) | graph atomic cluster expansion (`1L` local, `2L` semilocal) | eSEN network with a mixture of linear experts |
-| Example checkpoint trained on | OMat24 | OpenLAM-v1 (31 datasets) | OMat24 | OMat24, OMol25, OC20, ODAC25, OMC25 |
-| Reference level of the example | PBE / PBE+U, bulk | per head; `Omat24` = PBE / PBE+U | PBE / PBE+U, bulk | per task; `omat` = PBE / PBE+U |
-| You choose | precision (`float64` / `float32`) | `--head` | the exported build | `--task` |
-| Framework | PyTorch | PyTorch (TensorFlow for `.pb`) | TensorFlow | PyTorch |
-| License of the example | check the checkpoint | check the checkpoint | check the checkpoint | non-commercial research |
+```python
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+from mliport.api import run_single_point
+```
 
-None of these checkpoints includes dispersion, and only UMA was trained on
-surfaces and molecules as well as bulk. A foundation model reproduces its
-reference functional, not experiment, and how well it does that on *your*
-system is something to check with a few DFT single points. The
-[Models](../models.md) page explains how to compare backends honestly.
+## Page outline
+
+Every backend page below follows the same structure:
+
+1. **What the model is** — architecture, training data, what the forces represent
+2. **Install** — environment and install command
+3. **Pinned profiles** — which checkpoints mliport has registered
+4. **Run it** — command-line and INCAR examples
+5. **Things to know** — gotchas, limitations and backend-specific options

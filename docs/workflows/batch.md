@@ -1,42 +1,34 @@
-# Batch
+# Batch calculations
 
-`mliport batch` runs one calculation, a single point by default, over every
-structure in a directory, with one model, one backend and one configuration.
+`mliport batch` runs one calculation — a single point or a geometry
+relaxation — over every structure in a directory. The model is loaded once
+and reused for every structure, so you pay the startup cost a single time.
+
+## When to use batch
+
+Batch mode is for **throughput**: you have many structures and one model, and
+you want results for all of them. Common use cases include:
+
+- Screening a set of candidate structures from a structure prediction run
+- Computing single-point energies for a training or validation set
+- Re-relaxing structures from one model with another
+- Benchmarking a model against a dataset
+
+## Command line
 
 ```bash
-.venv-mace/bin/mliport batch structures/ \
+# Single-point over all structures in a directory
+mliport batch structures/ \
   --model mace-omat-0-medium.model --model-type mace \
   --calc-type sp --pattern "*.cif" \
   --output batch_results
-```
 
-The model is loaded once and the calculator is reused for every structure, which
-is the point of batching: you pay the startup cost a single time.
-
-## Options you will use
-
-| Option | Meaning |
-|---|---|
-| `--calc-type` | what to run per structure: `sp` (default) or `opt` |
-| `--pattern` | file glob relative to the input directory; it may span sub-directories (`'*/rank_*/1.cif'`, `'**/*.cif'`). Without it mliport finds `*.cif`, `*.xyz`, `*.vasp` and `POSCAR*` directly in the input directory |
-| `--output` | the batch output directory (default `batch_results`) |
-| `--fmax`, `--max-steps`, `--optimizer`, `--cell-opt`, `--fix-symmetry` | relaxation settings for `--calc-type opt`, with the same meaning and defaults as `mliport opt`; they are rejected for `--calc-type sp` |
-| `--resume` | continue an interrupted batch in the same `--output` directory |
-| `--model`, `--model-type`, `--task`, `--head`, `--device` | model and backend selection |
-
-## Relaxing structures spread over many directories
-
-Generated structures often share a file name and differ only in their
-directory, for example `ML-OPT/<composition>/rank_0001/1.cif`. Point batch at
-the top directory and select the files with a pattern:
-
-```bash
+# Relaxation with a pattern for nested directories
 mliport batch ML-OPT/ \
   --model my-grace-model --model-type grace --device cuda \
   --calc-type opt --pattern '*/rank_*/1.cif' \
   --fmax 0.05 --max-steps 1000 --optimizer FIRE --no-cell-opt \
   --output runs/ml-opt
-```
 
 Quote the pattern so the shell does not expand it. Each structure's output
 directory mirrors its path below the input directory
@@ -112,3 +104,78 @@ and say so.
   --model DPA-3.1-3M.pt --model-type dpa --head Omat24 \
   --calc-type sp --output runs/dpa-batch
 ```
+
+Quote the `--pattern` so the shell does not expand it. Each structure's output
+directory mirrors its path below the input directory, so files with the same
+name never overwrite each other.
+
+## Options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--calc-type` | `sp` | What to run per structure: `sp` or `opt` |
+| `--pattern` | `*.cif`, `*.xyz`, `*.vasp`, `POSCAR*` | File glob; may span subdirectories (`'*/rank_*/1.cif'`, `'**/*.cif'`) |
+| `--output` | `batch_results` | Batch output directory |
+| `--resume` | — | Continue an interrupted batch |
+| `--fmax` | 0.05 eV/Å | Relaxation force threshold (with `--calc-type opt`) |
+| `--max-steps` | 500 | Relaxation step limit (with `--calc-type opt`) |
+| `--optimizer` | `FIRE` | Relaxation optimizer (with `--calc-type opt`) |
+| `--cell-opt` | off | Cell optimization (with `--calc-type opt`) |
+| `--fix-symmetry` | off | Preserve symmetry (with `--calc-type opt`) |
+| `--model`, `--model-type`, `--task`, `--head`, `--device` | — | Model and backend selection |
+
+Relaxation options (`--fmax`, `--max-steps`, `--optimizer`, `--cell-opt`,
+`--fix-symmetry`) are rejected when `--calc-type` is `sp`.
+
+## Output structure
+
+One run directory per structure under `--output`, each containing the usual
+single-point or relaxation files. Every structure keeps its own model
+identity and resolved configuration. At the batch level:
+
+| File | Contents |
+|---|---|
+| `batch_summary.json` | Overall status: completed, failed, and not-converged counts |
+| `batch_progress.jsonl` | One line per structure as it finishes |
+| `batch_manifest.json` | Settings that define the batch (model, options, file hashes) |
+
+Each entry in `batch_summary.json` exposes `status` as `completed`,
+`not_converged`, or `failed`. Only completed runs have `success: true`;
+non-converged optimizations count as both `failed` and `not_converged`.
+
+## Error handling
+
+A structure that fails is reported as failed — it never becomes a zero-energy
+entry. The batch continues with the next structure. A missing or empty input
+directory fails closed before anything runs. Two input structures that would
+map to the same output directory are detected and rejected before the batch
+starts.
+
+## Resuming interrupted batches
+
+Every structure records its outcome immediately: `batch_status.json` in its
+own directory and one line appended to `batch_progress.jsonl`. To continue
+after an interruption:
+
+```bash
+mliport batch structures/ --model ... --calc-type sp \
+  --output batch_results --resume
+```
+
+Resume rules:
+
+- **Completed** and **not_converged** structures are reused (not recomputed),
+  but only if the input file has the same sha256 and every output file is
+  intact.
+- **Failed** structures and the one that was running when the batch stopped
+  are rerun from their input geometry.
+- The batch **refuses to resume** if any setting in `batch_manifest.json`
+  differs — results from different settings are never mixed.
+- `--resume` cannot be combined with `--overwrite`.
+
+## Important caveat
+
+Batch mode is for throughput, not a consistency guarantee. Ensure that every
+structure fits the backend's task (periodic vs molecular), and do not mix
+structures that need different heads or tasks in one batch — run them
+separately.
