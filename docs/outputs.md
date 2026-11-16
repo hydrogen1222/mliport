@@ -31,6 +31,11 @@ A run takes a lock on its output directory while it works, and refuses a directo
 that already holds results (an earlier run, or VASP's own `OUTCAR` / `CONTCAR`)
 unless you pass `--overwrite`.
 
+`mliport run` writes into `results/` in the folder that holds the INCAR (see the
+task folder in [Configuration](configuration.md)); `--output` or `OUTPUT_DIR`
+still choose another directory. The other subcommands keep writing into the
+current directory unless told otherwise.
+
 ## Molecular dynamics
 
 MD separates the lossless data from the VASP-style exports:
