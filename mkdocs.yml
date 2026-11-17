@@ -98,6 +98,7 @@ nav:
       - installation.md
       - models.md
       - configuration.md
+      - incar.md
   - Backends:
       - backends/index.md
       - backends/mace.md

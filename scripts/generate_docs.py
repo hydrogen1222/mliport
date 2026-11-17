@@ -16,6 +16,9 @@ Blocks (each page exists in English as ``page.md`` and in Chinese as
 - ``docs/backends/<engine>`` -- ``environment`` (environment, Python range
   and runtime stack) and ``profiles`` (pinned model profiles from
   ``validation/science/model_manifest.json``);
+- ``docs/incar`` -- ``incar-common`` and one ``incar-<calc type>`` block per
+  calculation type (the INCAR key reference, generated from the option table in
+  ``mliport/config/schema.py``);
 - ``docs/workflows/neb`` -- ``neb-capability`` (which entry point can express
   which NEB option, from ``validation/science/capability_matrix.json``).
 
@@ -41,6 +44,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "mliport"))
 
+from mliport.config.defaults import (  # noqa: E402
+    BUILTIN_DEFAULTS,
+    DEFAULT_DEVICE_BY_CALC_TYPE,
+)
+from mliport.config.schema import (  # noqa: E402
+    TEMPLATE_GROUP_ORDER,
+    get_schema,
+)
 from mliport.install.compatibility import (  # noqa: E402
     BACKENDS,
     python_versions_for,
@@ -161,8 +172,163 @@ def render_neb_capability_table(lang: str) -> str:
     return "\n".join(lines)
 
 
+#: Calculation types that get their own key-reference section.
+INCAR_CALC_TYPES = ("sp", "opt", "md", "neb", "confsearch")
+
+#: Scopes that are valid for every calculation type.
+_COMMON_SCOPES = frozenset({"general", "output", "meta", "safety", "resources"})
+
+_INCAR_HEADER = {
+    "en": (
+        "Key",
+        "Type",
+        "Default",
+        "Allowed values",
+        "Meaning",
+        "Applies when",
+        "Aliases",
+    ),
+    "zh": ("键", "类型", "默认值", "取值范围", "含义", "适用条件", "别名"),
+}
+
+
+def _incar_key_row(spec, calc_type: str | None) -> list[str]:
+    """One row of the generated INCAR key reference."""
+    default = _incar_default_text(spec, calc_type)
+    allowed = _incar_allowed_text(spec)
+    applies = ""
+    # ``example_condition_line is False`` marks an internal "always commented"
+    # sentinel rather than a real condition (the mode-B confsearch example);
+    # printing it would document a value the validator rejects.
+    if spec.applies_when and spec.example_condition_line:
+        applies = "; ".join(
+            f"`{key.upper()} = {value}`" for key, value in spec.applies_when
+        )
+    if spec.condition_calc_types and calc_type not in spec.condition_calc_types:
+        applies = ""
+    # Only INCAR spellings belong in this column; lowercase aliases are the
+    # CLI/API names and would only confuse a user editing an INCAR file.
+    aliases = sorted(
+        alias for alias in spec.aliases if alias != spec.incar_key and alias.isupper()
+    )
+    return [
+        f"`{spec.incar_key}`",
+        spec.type.__name__,
+        default,
+        allowed,
+        spec.description or "-",
+        applies or "-",
+        ", ".join(f"`{alias}`" for alias in aliases) or "-",
+    ]
+
+
+def _incar_default_text(spec, calc_type: str | None) -> str:
+    if spec.placeholder and spec.example_when_inactive:
+        return f"`{spec.placeholder}` (example)"
+    if spec.placeholder:
+        return f"required (`{spec.placeholder}`)"
+    if spec.template_value is not None:
+        return f"`{_incar_value_text(spec.template_value)}`"
+    if spec.name == "device" and calc_type is not None:
+        return f"`{DEFAULT_DEVICE_BY_CALC_TYPE.get(calc_type, 'cpu')}`"
+    for scope in ([calc_type] if calc_type else []) + ["general", "calculator"]:
+        block = BUILTIN_DEFAULTS.get(scope) or {}
+        if spec.name in block:
+            return f"`{_incar_value_text(block[spec.name])}`"
+    if spec.default is not None:
+        return f"`{_incar_value_text(spec.default)}`"
+    return "-"
+
+
+def _incar_value_text(value) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return ".TRUE." if value else ".FALSE."
+    return str(value)
+
+
+def _incar_allowed_text(spec) -> str:
+    parts: list[str] = []
+    if spec.choices:
+        parts.append(", ".join(f"`{choice}`" for choice in spec.choices))
+    if spec.minimum is not None or spec.maximum is not None:
+        low = "" if spec.minimum is None else f"{spec.minimum}"
+        high = "" if spec.maximum is None else f"{spec.maximum}"
+        parts.append(f"`{low}..{high}`")
+    return "; ".join(parts) or "-"
+
+
+def _incar_specs(calc_type: str | None):
+    """Keys valid for ``calc_type`` (``None`` = the keys common to all)."""
+    specs = []
+    for spec in get_schema().specs:
+        scopes = set(spec.scopes)
+        is_calculator = any(scope.startswith("calculator") for scope in scopes)
+        if calc_type is None:
+            if is_calculator or scopes & _COMMON_SCOPES:
+                specs.append(spec)
+            continue
+        if calc_type in scopes or is_calculator or scopes & _COMMON_SCOPES:
+            specs.append(spec)
+        elif scopes & {"sp", "opt", "md", "neb", "batch", "confsearch"}:
+            continue  # a key of another calculation type
+    return specs
+
+
+def render_incar_keys(lang: str, calc_type: str | None = None) -> str:
+    """The generated key-reference tables of ``docs/incar`` (#61 R4).
+
+    One table per section of the option table, in ``TEMPLATE_GROUP_ORDER``, so
+    the page, the templates and ``mliport config schema`` cannot disagree.
+    """
+    specs = _incar_specs(calc_type)
+    lines: list[str] = []
+    for group in TEMPLATE_GROUP_ORDER:
+        group_specs = [spec for spec in specs if spec.group == group]
+        if not group_specs:
+            continue
+        heading = _incar_group_heading(group, lang)
+        lines.append(f"**{heading}**")
+        lines.append("")
+        lines.append(_row(_INCAR_HEADER[lang]))
+        lines.append("|" + "---|" * len(_INCAR_HEADER[lang]))
+        for spec in sorted(group_specs, key=lambda item: item.order):
+            lines.append(_row(_incar_key_row(spec, calc_type)))
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+#: Section names are metadata of the option table, so the Chinese page
+#: translates them here rather than inside the generated blocks.
+_INCAR_GROUP_NAMES_ZH = {
+    "Calculation": "计算类型",
+    "Model": "模型",
+    "Device and resources": "设备与资源",
+    "Optimization": "结构优化",
+    "Molecular dynamics": "分子动力学",
+    "NEB": "NEB",
+    "Configuration search": "构型搜索",
+    "Output": "输出控制",
+    "Batch": "批量计算",
+    "General": "通用",
+}
+
+
+def _incar_group_heading(group: str, lang: str) -> str:
+    """Section heading of one generated INCAR table."""
+    if lang == "zh":
+        return _INCAR_GROUP_NAMES_ZH.get(group, group)
+    return group
+
+
 def _blocks_for(page: str, lang: str) -> dict[str, str]:
     """The generated blocks a page must contain (empty for hand-only pages)."""
+    if page == "incar":
+        blocks = {"incar-common": render_incar_keys(lang)}
+        for calc_type in (*INCAR_CALC_TYPES, "batch"):
+            blocks[f"incar-{calc_type}"] = render_incar_keys(lang, calc_type)
+        return blocks
     if page == "installation":
         return {
             "backend-matrix": render_backend_matrix(lang),
@@ -199,6 +365,7 @@ def splice_blocks(text: str, blocks: dict[str, str], *, where: str) -> str:
 
 #: Pages that carry generated blocks.
 GENERATED_PAGES = (
+    "incar",
     "installation",
     "workflows/neb",
     *(f"backends/{engine}" for engine in BACKENDS),

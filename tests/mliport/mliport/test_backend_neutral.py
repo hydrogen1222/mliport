@@ -43,11 +43,15 @@ def _incar_values(text: str) -> dict[str, str]:
 
 
 def _active_lines(text: str) -> list[str]:
-    return [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
+    """Active ``KEY = VALUE`` pairs, with the generated inline comment removed."""
+    active: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        active.append(f"{key.strip()} = {value.split('#', 1)[0].strip()}")
+    return active
 
 
 # --------------------------------------------------------------- RT-01

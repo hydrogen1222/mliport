@@ -87,6 +87,29 @@ Everything needed to reproduce the run is next to it: the model identity,
 where each configuration value came from, the requested and the actual device,
 and the mliport version.
 
+## 7. The task folder way
+
+The commands above work, but you do not want to retype them. The intended daily
+use is one folder per task: an `INCAR.mliport` next to the structure file, and
+`mliport run` with no arguments at all.
+
+```text
+LiDS-on-LPSC/
+  INCAR.mliport
+  POSCAR
+```
+
+```bash
+cd LiDS-on-LPSC
+mliport run
+```
+
+`run` writes into `results/` beside the INCAR, and `--output` or `OUTPUT_DIR`
+still choose another directory. A model given as a bare file name is looked up
+in the repository's `models/` directory, so `MODEL_PATH = mace-omat-0-medium.model`
+works once the file is in `models/`. Every key is documented in the
+[INCAR key reference](incar.md).
+
 ## The other backends
 
 Install the backend you want with `--engines dpa`, `grace` or `uma`, then use
