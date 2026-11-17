@@ -292,3 +292,46 @@ def test_legacy_fixed_cell_exports_unchanged(tmp_path, ensemble):
     assert meta["variable_cell"] is False
     assert meta["transport_eligible"] is True
     assert meta["positions_convention"] == "unwrapped"
+
+
+# --- R10-F01: NPT cross-field validation must run before any run directory ---
+#
+# These four constraints were only enforced inside ``MDRunner``, i.e. after the
+# output directory, ``resolved_config.json`` and the model were already created.
+# They are pure configuration facts and are now rejected by the resolver.
+@pytest.mark.parametrize(
+    ("cli", "message"),
+    [
+        ({"thermostat": "NHC"}, "NPT uses MTK thermostat"),
+        ({"write_trajectory": False}, "NPT requires lossless variable-cell"),
+        ({"temperature": 0}, "MTK NPT temperature must be > 0"),
+        ({"npt_tdamp": 0.0}, "MTK NPT tdamp and pdamp must be > 0"),
+        ({"npt_pdamp": 0.0}, "MTK NPT tdamp and pdamp must be > 0"),
+    ],
+)
+def test_npt_cross_field_errors_are_rejected_before_the_runner(tmp_path, cli, message):
+    base = {
+        "model_type": "mace",
+        "model_path": str(tmp_path / "unused.model"),
+        "ensemble": "NPT",
+        "pressure_gpa": 1.0,
+    }
+    with pytest.raises(ValueError, match=message):
+        resolve_config(calc_type="md", cli={**base, **cli})
+
+
+def test_npt_default_langevin_and_trajectory_still_resolve(tmp_path):
+    """The legal NPT default must keep resolving exactly as before."""
+    resolved = resolve_config(
+        calc_type="md",
+        cli={
+            "model_type": "mace",
+            "model_path": str(tmp_path / "unused.model"),
+            "ensemble": "NPT",
+            "pressure_gpa": 2.0,
+            "temperature": 600,
+            "steps": 10,
+        },
+    )
+    assert resolved.run_options["ensemble"] == "NPT"
+    assert str(resolved.run_options.get("thermostat", "LANGEVIN")).lower() == "langevin"
