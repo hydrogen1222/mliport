@@ -32,7 +32,7 @@ total energies and are only comparable within one model identity.
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -103,7 +103,7 @@ control keys apply here as they do for optimization and MD.
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -175,7 +175,7 @@ control keys apply here as they do for optimization and MD.
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -259,7 +259,7 @@ thermostat named in the "Applies when" column; the NPT keys only apply to
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -358,7 +358,7 @@ switches that would silently drop a mandatory record.
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -462,7 +462,7 @@ executes it through the same code path as `mliport confsearch run`.
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -589,7 +589,7 @@ batch subcommand.
 | Key | Type | Default | Allowed values | Meaning | Applies when | Aliases |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |

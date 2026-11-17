@@ -273,7 +273,12 @@ _SPECS: list[OptionSpec] = [
         str,
         frozenset({"calculator"}),
         aliases={"MODEL_PATH", "model"},
-        description="Path to the model checkpoint/file.",
+        description=(
+            "Model checkpoint file or directory. A value without any path "
+            "separator is a file name: it is resolved next to the declaring "
+            "file first, then in <MLIPORT_ROOT>/models (one level of "
+            "subdirectories allowed)."
+        ),
         is_path=True,
     ),
     OptionSpec(

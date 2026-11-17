@@ -28,7 +28,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -98,7 +98,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -170,7 +170,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -253,7 +253,7 @@ NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -351,7 +351,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | `default` | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -455,7 +455,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
@@ -581,7 +581,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | 键 | 类型 | 默认值 | 取值范围 | 含义 | 适用条件 | 别名 |
 |---|---|---|---|---|---|---|
 | `MODEL_TYPE` | str | - | `uma`, `fairchem`, `mace`, `dpa`, `grace`, `nep` | MLIP engine. | - | - |
-| `MODEL_PATH` | str | required (`REQUIRED`) | - | Path to the model checkpoint/file. | - | - |
+| `MODEL_PATH` | str | required (`REQUIRED`) | - | Model checkpoint file or directory. A value without any path separator is a file name: it is resolved next to the declaring file first, then in <MLIPORT_ROOT>/models (one level of subdirectories allowed). | - | - |
 | `TASK` | str | - | - | UMA task (omat/omol/...) or bulk/molecule for other engines. | - | - |
 | `INFERENCE_MODE` | str | - | `default`, `turbo` | UMA inference mode. Non-default modes are rejected for other engines. | - | - |
 | `DEFAULT_DTYPE` | str | - | `float32`, `float64` | MACE model dtype (accuracy-first default: float64). | - | - |
