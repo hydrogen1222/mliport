@@ -25,13 +25,61 @@ if TYPE_CHECKING:
 
 
 class MainScreen(Screen):
-    """Main menu screen for selecting calculation type."""
+    """Main menu: the task-folder wizard first, everything else under Advanced."""
 
     def compose(self) -> ComposeResult:
         """Compose the main screen."""
         yield Container(
-            Static("Select Calculation Type", id="title"),
-            Static("Choose the type of calculation to run", id="subtitle"),
+            Static("mliport", id="title"),
+            Static(
+                "Start a new task in a folder, or open the advanced screens",
+                id="subtitle",
+            ),
+            ListView(
+                ListItem(
+                    Static(
+                        "✨ New task (recommended)\n   "
+                        "Pick a calculation type, a structure and a model; get a "
+                        "folder with INCAR.mliport and run it"
+                    ),
+                    id="new-task",
+                ),
+                ListItem(
+                    Static(
+                        "⚙️  Advanced\n   "
+                        "Configure SP/OPT/MD/NEB/CONFSEARCH by hand, jobs, "
+                        "analysis, templates"
+                    ),
+                    id="advanced",
+                ),
+                ListItem(Static("❌ Exit\n   Quit the application"), id="exit"),
+                id="calc-type-list",
+            ),
+            id="main-container",
+        )
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handle selection from the main list."""
+        item_id = event.item.id
+        if item_id == "exit":
+            self.app.exit()
+            return
+        if item_id == "new-task":
+            self.app.push_screen("new-task")
+            return
+        if item_id == "advanced":
+            self.app.push_screen(AdvancedScreen())
+            return
+
+
+class AdvancedScreen(Screen):
+    """The pre-wizard entry points: manual configuration, jobs, analysis."""
+
+    def compose(self) -> ComposeResult:
+        """Compose the advanced menu (the historical main screen)."""
+        yield Container(
+            Static("Advanced", id="title"),
+            Static("Manual configuration and the other screens", id="subtitle"),
             ListView(
                 ListItem(
                     Static(
@@ -77,8 +125,8 @@ class MainScreen(Screen):
                     Static("📝 Generate Template\n   Create INCAR template file"),
                     id="template",
                 ),
-                ListItem(Static("❌ Exit\n   Quit the application"), id="exit"),
-                id="calc-type-list",
+                ListItem(Static("◀ Back\n   Return to the main menu"), id="back"),
+                id="advanced-list",
             ),
             id="main-container",
         )
@@ -87,8 +135,8 @@ class MainScreen(Screen):
         """Handle selection from list view."""
         item_id = event.item.id
 
-        if item_id == "exit":
-            self.app.exit()
+        if item_id == "back":
+            self.app.pop_screen()
             return
 
         if item_id == "template":
@@ -155,11 +203,16 @@ class TemplateScreen(Screen):
         The template deliberately selects no backend (``MODEL_TYPE =
         REQUIRED``); a template that silently defaults to one model would
         contradict mliport's explicit backend-selection contract.
+
+        The file comes from :func:`mliport.config.defaults.build_incar_default`,
+        the same generator the CLI uses (spec R5.3), so a template created here
+        is byte-identical to ``mliport template <type>``.
         """
         from mliport.config.defaults import build_incar_default  # noqa: PLC0415
+        from mliport.task_folder import TASK_CALC_TYPES  # noqa: PLC0415
 
         template_type = getattr(self, "selected_type", "sp")
-        if template_type not in {"sp", "opt", "md", "neb"}:
+        if template_type not in TASK_CALC_TYPES:
             template_type = "sp"
         filename = f"INCAR.{template_type}.template"
         try:

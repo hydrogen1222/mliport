@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+TUI new-task wizard (tracking: #61, R5):
+
+- `mliport tui` now opens on a wizard that asks three things - calculation type,
+  structure file and model (backend first, then a file from the `models/`
+  listing) - and writes a task folder: `INCAR.mliport` from the same generator
+  as `mliport template` with `MODEL_TYPE`/`MODEL_PATH` filled in, plus a
+  byte-for-byte copy of the structure under the name `mliport run` looks for
+  (`POSCAR` / `structure.cif` / `structure.xyz`). It then prints
+  `cd <folder> && mliport run`; "Create & Run" calls `mliport run` itself, so
+  the wizard and the command line share one run path.
+- The previous entry points stay reachable under "Advanced": the manual
+  configuration screens (SP/OPT/MD/NEB/CONFSEARCH), jobs, analysis and the
+  template generator, which now also accepts `confsearch` instead of silently
+  writing an SP template.
+- The wizard leaves `TASK` (and `HEAD` where the backend has an active one) as
+  `REQUIRED` placeholders and reports them, because the UMA task family and the
+  other backends' `bulk`/`molecule` semantic are model decisions that a
+  one-click run must not inherit from a template default.
+- A model picked from a `models/` subdirectory (`uma/s1.pt`) is written as the
+  absolute path inside `models/`, not as a working-directory-relative path.
+- The task-folder logic lives in `mliport/task_folder.py` (no Textual import),
+  so it is unit-tested without a terminal: template reuse, suffix
+  normalization, byte-identical copies, refusal to overwrite an existing task,
+  and the run delegation.
+- `docs/configuration.md` (+ `.zh.md`) describes the new TUI flow.
+
 `models/` directory convention (tracking: #61):
 
 - A `MODEL_PATH` that is a file name (no path separator) is looked up next to
