@@ -81,8 +81,18 @@ def ensure_output_available(path: str | Path, *, overwrite: bool) -> None:
 def run_directory_lock(path: str | Path) -> Iterator[Path]:
     """Hold a non-blocking exclusive lock on ``path`` for one run."""
     directory = Path(path)
-    directory.mkdir(parents=True, exist_ok=True)
-    handle = (directory / RUN_LOCK_NAME).open("a+b")
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        handle = (directory / RUN_LOCK_NAME).open("a+b")
+    except OSError as exc:
+        # A read-only directory, a full disk or a path the user cannot write is
+        # a user-actionable condition, not a crash: report where it failed
+        # instead of raising a bare PermissionError traceback (R10 R01/R03).
+        raise OutputDirectoryInUseError(
+            f"Cannot write in output directory {directory}: "
+            f"{exc.strerror or exc}. Choose a writable --output directory, "
+            "or fix its permissions."
+        ) from exc
     acquired = False
     try:
         try:

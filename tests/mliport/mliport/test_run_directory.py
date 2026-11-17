@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from mliport.engine import CalculationEngine, EngineConfig
@@ -93,3 +95,39 @@ def test_engine_run_refuses_before_loading_a_model(tmp_path, monkeypatch) -> Non
     monkeypatch.setattr(engine, "_create_calculator", _fail)
     with pytest.raises(OutputDirectoryInUseError):
         engine.run(atoms=None)  # type: ignore[arg-type]
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX permission bits are what this test exercises (Windows has no chmod semantics)",
+)
+def test_unwritable_output_directory_is_reported_not_raised_as_a_traceback(
+    tmp_path,
+) -> None:
+    """A read-only run directory must produce an actionable error (R10 R01/R03).
+
+    Before this, opening the lock file raised a bare ``PermissionError``, so the
+    CLI exited with a Python traceback instead of the ``Error: ...`` line every
+    other refused directory produces.
+    """
+    # ``os.geteuid`` only exists on POSIX; the skipif above keeps this body
+    # POSIX-only, and the getattr keeps the check defensive on exotic platforms.
+    if getattr(os, "geteuid", lambda: -1)() == 0:  # pragma: no cover - root
+        pytest.skip("running as root: permission bits do not deny access")
+
+    readonly = tmp_path / "readonly"
+    readonly.mkdir()
+    readonly.chmod(0o500)
+    try:
+        with (
+            pytest.raises(OutputDirectoryInUseError) as excinfo,
+            run_directory_lock(readonly),
+        ):
+            pass
+    finally:
+        readonly.chmod(0o700)
+
+    message = str(excinfo.value)
+    assert f"Cannot write in output directory {readonly}" in message
+    assert "Permission denied" in message
+    assert "--output" in message

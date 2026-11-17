@@ -993,6 +993,38 @@ def test_incar_output_dir_is_supported_and_written_into_job_dir(
     assert not (tmp_path / "out_root" / "resolved_config.json").exists()
 
 
+def test_missing_default_structure_says_what_was_searched(
+    tmp_path, monkeypatch, capsys
+):
+    """`run` with an INCAR elsewhere must say where it looked (R10 R03).
+
+    The default structure names are taken from the current directory, so a user
+    who runs `mliport run --incar other/task/INCAR.mliport` from the wrong place
+    used to see only "No structure file specified and no default found".
+    """
+    task = tmp_path / "task"
+    task.mkdir()
+    (task / "model.pt").touch()
+    incar = task / "INCAR.mliport"
+    incar.write_text(
+        "CALC_TYPE = SP\nMODEL_TYPE = UMA\nMODEL_PATH = model.pt\nTASK = omat\n",
+        encoding="utf-8",
+    )
+    old = os.getcwd()
+    try:
+        os.chdir(tmp_path)  # deliberately not the folder that holds the INCAR
+        rc = main(["run", "--incar", str(incar)])
+    finally:
+        os.chdir(old)
+
+    out = capsys.readouterr().out
+    assert rc == EXIT_ERROR
+    assert "No structure file specified and no default found" in out
+    assert "POSCAR, CONTCAR, structure.cif, structure.xyz" in out
+    assert str(tmp_path) in out
+    assert "run the command from the folder that holds it" in out
+
+
 def test_two_jobs_keep_their_own_resolved_configs(tmp_path, monkeypatch):
     structure = _write_poscar(tmp_path)
     (tmp_path / "model.pt").touch()
