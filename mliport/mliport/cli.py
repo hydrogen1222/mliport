@@ -424,8 +424,8 @@ Examples:
         type=str,
         default=None,
         help=(
-            "Output directory (default: INCAR OUTPUT_DIR, else the current "
-            "directory)"
+            "Output directory (default: INCAR OUTPUT_DIR, else results/ in the "
+            "folder that holds the INCAR)"
         ),
     )
     run_parser.add_argument(
@@ -2155,6 +2155,7 @@ def _resolve_engine_config(
     incar_layer: dict | None = None,
     output_dir: str | None = None,
     job_name: str | None = None,
+    default_output_dir: str | Path | None = None,
 ) -> tuple:
     """Resolve a full config and build an EngineConfig from it.
 
@@ -2196,14 +2197,19 @@ def _resolve_engine_config(
     )
     engine_config = EngineConfig.from_resolved(resolved)
     # Output-directory precedence (review R13): an explicit argument wins,
-    # then an explicit CLI --output, then INCAR/settings OUTPUT_DIR, then ".".
+    # then an explicit CLI --output, then INCAR/settings OUTPUT_DIR, then the
+    # caller's default, then ".".
     # The argparse default for --output is None precisely so an INCAR
     # OUTPUT_DIR is not silently shadowed by the current-directory default.
+    # `mliport run` passes <INCAR folder>/results as the default (task-folder
+    # usage, #61 R1.2); every other subcommand keeps ".".
     explicit_output = (
         output_dir if output_dir is not None else getattr(args, "output", None)
     )
     if explicit_output is None:
         explicit_output = resolved.settings.get("output_dir")
+    if explicit_output is None:
+        explicit_output = default_output_dir
     engine_config.output_dir = (
         Path(explicit_output if explicit_output else ".").expanduser().resolve()
     )
@@ -2315,6 +2321,19 @@ def _emit_resolved_config(resolved, output_dir: Path) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Execute 'run': one INCAR in a task folder, no arguments required.
+
+    Tracking: #61 (task folder + INCAR + ``models/``). The flow is deliberate:
+
+    1. parse and validate the INCAR (syntax, keys, values),
+    2. resolve the full configuration, including the model path,
+    3. only then look for and read the structure,
+    4. claim the output directory and run.
+
+    Steps 1-2 come before any structure or model work so a broken INCAR is
+    reported as a configuration error, not as a missing POSCAR or a backend
+    import failure (spec R1.4).
+    """
     started_at = _run_started_at(args)
     # Load configuration
     incar_path = Path(args.incar).expanduser()
@@ -2338,8 +2357,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
     calc_type = config.get_str("CALC_TYPE", config.get_str("CALCULATION", "sp")).lower()
+    job_name = config.get_str("JOB_NAME", None)
+    # Task-folder default output: <INCAR folder>/results (spec R1.2). It is a
+    # *default*, so --output and OUTPUT_DIR still win (see _resolve_engine_config).
+    default_output_dir = incar_path.expanduser().resolve().parent / "results"
+
     if calc_type == "neb":
-        job_name = config.get_str("JOB_NAME", None)
         try:
             engine_config, resolved, _settings = _resolve_engine_config(
                 args,
@@ -2347,6 +2370,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 incar_layer=config,
                 output_dir=args.output,
                 job_name=job_name,
+                default_output_dir=default_output_dir,
             )
             initial_path = resolved.run_options.get("neb_initial")
             final_path = resolved.run_options.get("neb_final")
@@ -2374,6 +2398,42 @@ def cmd_run(args: argparse.Namespace) -> int:
         except Exception as exc:
             print(f"Error: {exc}")
             return EXIT_ERROR
+
+    if calc_type == "confsearch":
+        # Spec R3.3: an INCAR may select CONFSEARCH, and it must take exactly the
+        # same code path as `mliport confsearch run` (no second implementation).
+        return _run_confsearch_job(
+            args,
+            incar_layer=config,
+            resume=False,
+            dry_run=False,
+            default_output_dir=default_output_dir,
+        )
+
+    # Determine calculation type from INCAR (authoritative for the `run` flow).
+    # `mliport run` dispatches single-structure runs only. A BATCH INCAR was
+    # previously accepted by validation and then crashed with a confusing
+    # "Unknown calc_type: batch" after model loading. Fail fast with guidance.
+    if calc_type not in {"sp", "opt", "md"}:
+        print(f"Error: CALC_TYPE={calc_type!r} cannot be executed by 'mliport run'.")
+        if calc_type == "batch":
+            print(
+                "       Batch calculations use the 'mliport batch' subcommand instead."
+            )
+        return 1
+
+    # The INCAR dict (UPPER keys) is passed as a resolver layer; aliases are
+    # canonicalised automatically (MODEL_TYPE -> model_type, FMAX -> fmax ...).
+    # Resolving here, before the structure is read, also resolves MODEL_PATH and
+    # rejects unknown keys/settings first (spec R1.4).
+    engine_config, resolved, _settings = _resolve_engine_config(
+        args,
+        calc_type,
+        incar_layer=config,
+        output_dir=args.output,
+        job_name=job_name,
+        default_output_dir=default_output_dir,
+    )
 
     # Determine structure file
     structure_file = args.structure
@@ -2404,28 +2464,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"System: {atoms.get_chemical_formula()}")
     print(f"Atoms: {len(atoms)}")
     print()
-
-    # Determine calculation type from INCAR (authoritative for the `run` flow).
-    # `mliport run` dispatches single-structure runs only. A BATCH INCAR was
-    # previously accepted by validation and then crashed with a confusing
-    # "Unknown calc_type: batch" after model loading. Fail fast with guidance.
-    if calc_type not in {"sp", "opt", "md"}:
-        print(f"Error: CALC_TYPE={calc_type!r} cannot be executed by 'mliport run'.")
-        if calc_type == "batch":
-            print(
-                "       Batch calculations use the 'mliport batch' subcommand instead."
-            )
-        return 1
-    job_name = config.get_str("JOB_NAME", None)
-    # The INCAR dict (UPPER keys) is passed as a resolver layer; aliases are
-    # canonicalised automatically (MODEL_TYPE -> model_type, FMAX -> fmax ...).
-    engine_config, resolved, _settings = _resolve_engine_config(
-        args,
-        calc_type,
-        incar_layer=config,
-        output_dir=args.output,
-        job_name=job_name,
-    )
 
     engine = CalculationEngine.from_config(engine_config)
     try:
@@ -3145,7 +3183,7 @@ def _confsearch_layer_from_context(context: dict) -> dict:
 
 
 def _cmd_confsearch_run(args: argparse.Namespace, *, resume: bool) -> int:
-    """Run or resume a confsearch job."""
+    """Execute ``mliport confsearch run|resume`` from the command line."""
     incar_layer: dict = {}
     if resume:
         run_dir = Path(args.run).expanduser().resolve()
@@ -3168,17 +3206,45 @@ def _cmd_confsearch_run(args: argparse.Namespace, *, resume: bool) -> int:
             if value is not None:
                 incar_layer.setdefault(key, value)
 
+    return _run_confsearch_job(
+        args,
+        incar_layer=incar_layer,
+        resume=resume,
+        dry_run=bool(getattr(args, "dry_run", False)),
+    )
+
+
+def _run_confsearch_job(
+    args: argparse.Namespace,
+    *,
+    incar_layer: dict,
+    resume: bool,
+    dry_run: bool,
+    default_output_dir: str | Path | None = None,
+) -> int:
+    """Resolve, run and report one confsearch job.
+
+    This is the single code path behind both ``mliport confsearch run`` and an
+    INCAR with ``CALC_TYPE = CONFSEARCH`` run through ``mliport run`` (spec
+    R3.3). ``incar_layer`` is the INCAR mapping for the second entry point and
+    a plain dict of CLI-provided keys for the first, so the resolved
+    configuration is identical for identical inputs.
+    """
     engine_config, resolved, _settings = _resolve_engine_config(
-        args, "confsearch", incar_layer=incar_layer
+        args,
+        "confsearch",
+        incar_layer=incar_layer,
+        default_output_dir=default_output_dir,
     )
     engine = CalculationEngine.from_config(engine_config)
     result = engine.run_confsearch(
         resolved,
         output_dir=engine_config.output_dir,
         resume=resume,
-        dry_run=bool(getattr(args, "dry_run", False)),
+        dry_run=dry_run,
         log_fn=_console_log,
     )
+
     if result.get("status") == "dry_run":
         budget = result.get("budget", {})
         print("confsearch dry run: inputs and regions are valid")

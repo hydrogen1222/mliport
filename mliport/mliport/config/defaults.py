@@ -342,12 +342,18 @@ def build_incar_default(calc_type: str, engine: str | None = None) -> str:
     elif calc_type == "confsearch":
         cs = BUILTIN_DEFAULTS["confsearch"]
         lines.append("# Configuration search Settings (adsorbate mode, NVT)")
-        lines.append(
-            "# CS_STARTS = starts.xyz   # mode A: CS_ADSORBATE_INDICES = 300-341"
-        )
-        lines.append(
-            "# or: CS_SLAB = slab.vasp  CS_MOLECULE = molecule.xyz  CS_N_STARTS = 10"
-        )
+        # Mode A is the default. Both keys are placeholders a user must fill in;
+        # an unfilled REQUIRED cannot be resolved, which is the fail-closed
+        # behaviour the template contract (spec R3.2) relies on.
+        lines.append("# Mode A: your own start structures and the adsorbate indices")
+        lines.append("CS_STARTS = REQUIRED  # start structure(s), space separated")
+        lines.append("CS_ADSORBATE_INDICES = REQUIRED  # e.g. 300-341 or 0,5,7-9")
+        lines.append("#")
+        lines.append("# Mode B: let mliport place the molecule on the slab instead")
+        lines.append("# CS_SLAB = slab.vasp")
+        lines.append("# CS_MOLECULE = molecule.xyz")
+        lines.append("# CS_N_STARTS = 10")
+        lines.append("")
         for key in (
             "cs_mode",
             "cs_md_mobile",

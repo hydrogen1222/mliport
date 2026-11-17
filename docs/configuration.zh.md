@@ -116,6 +116,25 @@ mliport template sp --engine mace --output INCAR.mace
 mliport template sp --output INCAR.neutral   # backend-neutral, MODEL_TYPE=REQUIRED
 ```
 
+### 任务文件夹
+
+推荐的日常用法是一个任务一个文件夹：`INCAR.mliport` 和结构文件（`POSCAR`、`CONTCAR`、
+`structure.cif` 或 `structure.xyz`）放在一起。这样 `mliport run` 不需要任何参数：
+
+```bash
+cd LiDS-on-LPSC
+mliport run
+```
+
+`mliport run` 的默认输出目录是 INCAR 所在文件夹下的 `results/`。这个默认值只在 `run`
+里生效：`--output` 和 `OUTPUT_DIR` 仍然优先；`OUTPUT_DIR` 写相对路径时相对 INCAR 所在
+文件夹解析，而不是相对当前目录；`OUTPUT_DIR = .` 可以恢复以前写进当前目录的行为（`settings.ini`
+或命令行里写的相对 `OUTPUT_DIR` 一直就是相对当前目录解析，这一点没有变）。
+和以前一样，`results/` 里已经有计算结果的目录会被拒绝写入，除非加 `--overwrite`。
+
+`mliport run` 支持 `CALC_TYPE = CONFSEARCH`，走的是和 `mliport confsearch run` 完全相同的
+代码路径。`CALC_TYPE = BATCH` 不支持，批处理要用 `mliport batch`，它需要自己的输入目录。
+
 ## 后端专用的选项
 
 | 选项 | 后端 | 作用 |

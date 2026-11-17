@@ -35,6 +35,32 @@
 - `models/` stays git-ignored and the repository hygiene policy still refuses
   tracked weights.
 
+Task folder + INCAR usage round (tracking: #61):
+
+- `mliport run` now writes into `results/` in the folder that holds the INCAR
+  instead of the current directory. This is the one intentional behaviour
+  change of the round: `--output` and `OUTPUT_DIR` still win, a relative
+  `OUTPUT_DIR` resolves against the INCAR folder instead of the current
+  directory, and `OUTPUT_DIR = .` restores the old behaviour (a relative
+  `OUTPUT_DIR` from `settings.ini` or the command line is still
+  current-directory relative, as before). Only `run` changes its default;
+  `sp`/`opt`/`md`/`neb`/`batch`/`confsearch` are unaffected. A directory that already holds results is still refused without
+  `--overwrite`.
+- `mliport run` validates the INCAR and resolves the model path before it looks
+  for or reads the structure, so a broken configuration is reported as a
+  configuration error rather than as a missing POSCAR or a backend failure.
+- `CALC_TYPE = CONFSEARCH` is accepted by `mliport run` and goes through the
+  same code path as `mliport confsearch run`; `CALC_TYPE = BATCH` still points
+  at `mliport batch`.
+- The `confsearch` template now emits `CS_STARTS` / `CS_ADSORBATE_INDICES` as
+  fill-in placeholders (mode A) with the mode-B keys as commented examples, and
+  a parametrised round-trip test (5 template types x 6 backend values) pins
+  that every generated template is accepted by the validation and resolution
+  `mliport run` performs.
+- `docs/configuration.md` (+ `.zh.md`) documents the task folder, the new
+  default output directory and the `CONFSEARCH` dispatch; `docs/outputs.md`
+  (+ `.zh.md`) records where a run writes.
+
 DPA-SSE support through a DPA-2 legacy runtime:
 
 - DPA has a second, explicitly selected environment. `.venv-dpa-legacy` (install
