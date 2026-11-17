@@ -3427,12 +3427,17 @@ def cmd_config(args: argparse.Namespace) -> int:
 
     if sub == "schema":
         schema = get_schema()
-        print(f"{'name':24s} {'type':8s} {'scopes':24s} aliases")
-        print("-" * 80)
+        # The section column comes from the same option table that generates
+        # the INCAR templates and docs/incar.md (#61 R3.4).
+        print(f"{'name':24s} {'type':8s} {'scopes':24s} {'section':22s} aliases")
+        print("-" * 104)
         for spec in schema.specs:
             scopes = ",".join(sorted(spec.scopes))
             aliases = ",".join(sorted(spec.aliases)) if spec.aliases else ""
-            print(f"{spec.name:24s} {spec.type.__name__:8s} {scopes:24s} {aliases}")
+            print(
+                f"{spec.name:24s} {spec.type.__name__:8s} {scopes:24s} "
+                f"{spec.group:22s} {aliases}"
+            )
         return 0
 
     # sub == "show"

@@ -41,6 +41,7 @@ The full documentation is at <https://hydrogen1222.github.io/mliport/> (English 
 | install one or more backends, on GPU or CPU | [Installation](docs/installation.md) |
 | understand what MACE, DPA, GRACE, UMA and NEP are and pick one | [Backends](docs/backends/index.md), [Models](docs/models.md) |
 | set options through the CLI, an INCAR-style file or `settings.ini` | [Configuration](docs/configuration.md) |
+| look up any INCAR key, its default and the values it accepts | [INCAR key reference](docs/incar.md) |
 | single point, relaxation, MD, NEB, configuration search, batch, queue | [Workflows](docs/workflows/index.md) |
 | MSD, diffusion, conductivity, RDF, spectra, Arrhenius | [Analysis](docs/analysis/index.md) |
 | know what each output file contains | [Output files](docs/outputs.md) |

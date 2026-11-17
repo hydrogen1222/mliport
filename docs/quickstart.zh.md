@@ -76,6 +76,27 @@ print(calculation["optimization"]["converged"], calculation["results"]["energy"]
 同一目录下还有复现这次计算所需的全部信息：模型信息、每个参数的来源、请求的设备和实际使用
 的设备、mliport 版本。
 
+## 7. 任务文件夹的写法
+
+上面的命令可以用，但每天重复敲没必要。推荐的日常用法是一个任务一个文件夹：`INCAR.mliport`
+和结构文件放在一起，然后 `mliport run` 不带任何参数。
+
+```text
+LiDS-on-LPSC/
+  INCAR.mliport
+  POSCAR
+```
+
+```bash
+cd LiDS-on-LPSC
+mliport run
+```
+
+`run` 会把结果写进 INCAR 旁边的 `results/`；`--output` 或 `OUTPUT_DIR` 仍然可以指定别的
+目录。`MODEL_PATH` 只写文件名时，程序会去仓库的 `models/` 目录里找，所以把
+`mace-omat-0-medium.model` 放进 `models/` 之后，`MODEL_PATH = mace-omat-0-medium.model`
+就能直接用。每个键的含义见 [INCAR 键参考](incar.md)。
+
 ## 其他后端
 
 用 `--engines dpa`、`grace` 或 `uma` 安装其他后端，然后用各自的环境运行：

@@ -77,10 +77,12 @@ def test_pi03_generic_template_cannot_default_to_uma():
     from mliport.config.defaults import build_incar_default
 
     text = build_incar_default("sp")
+    # The template carries a one-line meaning after each value (#61 R3.1), so
+    # compare the assignments, not the raw lines.
     active = [
-        line.strip()
+        " = ".join(part.split("#", 1)[0].strip() for part in line.strip().split("=", 1))
         for line in text.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
+        if line.strip() and not line.lstrip().startswith("#") and "=" in line
     ]
     assert "MODEL_TYPE = REQUIRED" in active
     assert not any(line.upper().startswith("MODEL_TYPE = UMA") for line in active)
