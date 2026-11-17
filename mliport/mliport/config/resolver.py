@@ -763,9 +763,10 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
             # API users; the messages are identical on purpose.
             if temperature <= 0.0:
                 raise ValueError("MTK NPT temperature must be > 0 K")
-            if float(options.get("npt_tdamp", 100.0)) <= 0.0 or float(
-                options.get("npt_pdamp", 1000.0)
-            ) <= 0.0:
+            if (
+                float(options.get("npt_tdamp", 100.0)) <= 0.0
+                or float(options.get("npt_pdamp", 1000.0)) <= 0.0
+            ):
                 raise ValueError("MTK NPT tdamp and pdamp must be > 0 fs")
             if resolved.settings.get("write_trajectory") is False:
                 raise ValueError(
