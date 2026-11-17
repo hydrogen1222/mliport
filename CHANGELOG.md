@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+`models/` directory convention (tracking: #61):
+
+- A `MODEL_PATH` that is a file name (no path separator) is looked up next to
+  the declaring file first and then in `<MLIPORT_ROOT>/models/<name>` and
+  `<MLIPORT_ROOT>/models/*/<name>` (one level of subdirectories). Two matches
+  are an error instead of an arbitrary pick, because a different checkpoint is
+  a different model identity. Values that contain a path separator keep exactly
+  their previous meaning and are never redirected into `models/`. A bare name
+  that cannot be found now fails before the run starts, with every searched
+  location and the files `models/` does contain, instead of failing later at
+  model load.
+- `MLIPORT_ROOT` is taken from the environment, else from the parent of an
+  installer-created `.venv-<engine>` prefix; with no root a bare file name is
+  refused with instructions rather than resolved against a guess. The generated
+  `bin/mliport-<engine>` launchers export it (POSIX and Windows).
+- `mliport doctor` reports the resolved checkout root, the `models/` directory
+  and the model files it holds.
+- The resolved absolute model path is what `resolved_config.json` records, as
+  before - only the lookup that produced it is new.
+- `docs/configuration.md` (+ `.zh.md`) documents the convention, the lookup
+  order, the fail-closed cases and the new environment variable.
+- A model may be a directory (GRACE SavedModel) as well as a file: a
+  same-named directory next to the declaring file keeps the previous
+  behaviour, and a directory in `models/` is found by name.
+- `MLIPORT_ROOT` is only derived from a `.venv-<engine>` prefix when its parent
+  really is a checkout (`models/`, a `bin/mliport-*` launcher or
+  `mliport/pyproject.toml`), because `.venv` is also the name of any project
+  virtualenv; otherwise a file name fails closed with instructions. The
+  generated launchers only set `MLIPORT_ROOT` when the caller has not set it,
+  so a shared model store pointed at by `MLIPORT_ROOT` keeps working.
+- `models/` stays git-ignored and the repository hygiene policy still refuses
+  tracked weights.
+
 Task folder + INCAR usage round (tracking: #61):
 
 - `mliport run` now writes into `results/` in the folder that holds the INCAR

@@ -231,7 +231,7 @@ def test_resolver_path_nve_pre_relax_off():
             calc_type="md",
             cli={
                 "model_type": "uma",
-                "model_path": "uma-s-1.pt",
+                "model_path": "./uma-s-1.pt",
                 "ensemble": ens,
             },
         )

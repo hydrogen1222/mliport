@@ -86,14 +86,14 @@ def test_resolver_requires_an_explicit_backend():
 def test_resolver_accepts_an_explicit_cli_backend():
     resolved = resolve_config(
         calc_type="sp",
-        cli={"model_type": "mace", "task": "bulk", "model_path": "m.model"},
+        cli={"model_type": "mace", "task": "bulk", "model_path": "./m.model"},
     )
     assert resolved.model_type == "mace"
     assert resolved.task == "bulk"
 
 
 def test_resolver_model_alias_supplies_the_backend():
-    alias = ModelAlias(name="m", engine="mace", path="m.model", task="bulk")
+    alias = ModelAlias(name="m", engine="mace", path="./m.model", task="bulk")
     resolved = resolve_config(
         calc_type="sp",
         model_aliases={"m": alias},

@@ -257,7 +257,7 @@ def test_nep_runtime_is_rejected_for_other_engines():
             calc_type="sp",
             cli={
                 "model_type": "mace",
-                "model_path": "model.bin",
+                "model_path": "./model.bin",
                 "task": "bulk",
                 "nep_runtime": "ase",
             },

@@ -206,7 +206,7 @@ def test_cli_selected_engine_uses_matching_engine_defaults() -> None:
         rc = resolve_config(
             calc_type="sp",
             settings=settings,
-            cli={"model_type": "mace", "model_path": "m.model"},
+            cli={"model_type": "mace", "model_path": "./m.model"},
         )
         assert rc.task == "bulk"
         assert rc.device == "cuda:1"
@@ -226,7 +226,7 @@ def test_grace_gpu_memory_policy_is_a_calculator_option() -> None:
         rc = resolve_config(
             calc_type="md",
             settings=settings,
-            cli={"model_type": "grace", "model_path": "grace_model"},
+            cli={"model_type": "grace", "model_path": "./grace_model"},
         )
 
         assert rc.calculator_options["gpu_memory_growth"] is True
@@ -236,10 +236,10 @@ def test_grace_gpu_memory_policy_is_a_calculator_option() -> None:
 
 def test_engine_builtins_are_materialized_in_resolved_config() -> None:
     mace = resolve_config(
-        calc_type="md", cli={"model_type": "mace", "model_path": "m.model"}
+        calc_type="md", cli={"model_type": "mace", "model_path": "./m.model"}
     )
     grace = resolve_config(
-        calc_type="md", cli={"model_type": "grace", "model_path": "grace"}
+        calc_type="md", cli={"model_type": "grace", "model_path": "./grace"}
     )
 
     assert mace.calculator_options["default_dtype"] == "float64"
@@ -259,7 +259,7 @@ def test_non_uma_turbo_mode_fails_instead_of_being_ignored() -> None:
             calc_type="md",
             cli={
                 "model_type": "dpa",
-                "model_path": "dpa.pt",
+                "model_path": "./dpa.pt",
                 "inference_mode": "turbo",
             },
         )
@@ -472,7 +472,7 @@ def test_batch_calc_type() -> None:
 def test_neb_defaults_and_incar_paths_are_typed(tmp_path: Path) -> None:
     incar = IncarConfig.from_string(
         "CALCULATION = NEB\n"
-        "MODEL_PATH = model.pt\n"
+        "MODEL_PATH = ./model.pt\n"
         "NEB_INITIAL = initial.vasp\n"
         "NEB_FINAL = final.vasp\n"
         "NEB_IMAGES = 3\n"
