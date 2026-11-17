@@ -756,6 +756,26 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
         thermostat = str(options.get("thermostat", "LANGEVIN")).lower()
         com_policy = str(options.get("com_policy", "auto")).lower()
         temperature = float(options.get("temperature", 300.0))
+        if ensemble == "npt":
+            # NPT cross-field contracts are pure configuration facts, so they are
+            # rejected here, before any output directory, resolved_config.json or
+            # model load (R10-F01).  The same checks stay in MDRunner for direct
+            # API users; the messages are identical on purpose.
+            if temperature <= 0.0:
+                raise ValueError("MTK NPT temperature must be > 0 K")
+            if (
+                float(options.get("npt_tdamp", 100.0)) <= 0.0
+                or float(options.get("npt_pdamp", 1000.0)) <= 0.0
+            ):
+                raise ValueError("MTK NPT tdamp and pdamp must be > 0 fs")
+            if resolved.settings.get("write_trajectory") is False:
+                raise ValueError(
+                    "NPT requires lossless variable-cell ASE trajectory output"
+                )
+            if thermostat != "langevin":
+                raise ValueError(
+                    "NPT uses MTK thermostat, not a selectable NVT thermostat"
+                )
         always_positive = {
             "timestep": float(options.get("timestep", 1.0)),
             "pre_relax_fmax": float(options.get("pre_relax_fmax", 0.1)),
