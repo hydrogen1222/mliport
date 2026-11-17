@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from mliport.engine import CalculationEngine, EngineConfig
@@ -95,6 +97,10 @@ def test_engine_run_refuses_before_loading_a_model(tmp_path, monkeypatch) -> Non
         engine.run(atoms=None)  # type: ignore[arg-type]
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX permission bits are what this test exercises (Windows has no chmod semantics)",
+)
 def test_unwritable_output_directory_is_reported_not_raised_as_a_traceback(
     tmp_path,
 ) -> None:
@@ -104,9 +110,9 @@ def test_unwritable_output_directory_is_reported_not_raised_as_a_traceback(
     CLI exited with a Python traceback instead of the ``Error: ...`` line every
     other refused directory produces.
     """
-    import os
-
-    if os.geteuid() == 0:  # pragma: no cover - root ignores the permission bits
+    # ``os.geteuid`` only exists on POSIX; the skipif above keeps this body
+    # POSIX-only, and the getattr keeps the check defensive on exotic platforms.
+    if getattr(os, "geteuid", lambda: -1)() == 0:  # pragma: no cover - root
         pytest.skip("running as root: permission bits do not deny access")
 
     readonly = tmp_path / "readonly"
