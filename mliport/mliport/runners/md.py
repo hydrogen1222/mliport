@@ -139,13 +139,6 @@ class MDRunner(BaseRunner):
         steps: int = 1000,
         equilibration_steps: int = 0,
         thermostat: str = "LANGEVIN",
-        pressure_gpa: float = 0.0,
-        npt_tdamp: float = 100.0,
-        npt_pdamp: float = 1000.0,
-        npt_tchain: int = 3,
-        npt_pchain: int = 3,
-        npt_tloop: int = 1,
-        npt_ploop: int = 1,
         friction: float = 0.001,
         bussi_tau: float = 1000.0,
         nhc_tdamp: float = 100.0,
@@ -177,6 +170,18 @@ class MDRunner(BaseRunner):
         cancel_event: threading.Event | None = None,
         charge: int | None = None,
         spin: int | None = None,
+        # NPT-only options (Issues #102/E8). They live after ``*`` so that the
+        # historical positional order above can never bind them by mistake:
+        # before this, ``friction`` was re-bound to ``pressure_gpa`` and every
+        # following positional argument shifted by seven.
+        *,
+        pressure_gpa: float = 0.0,
+        npt_tdamp: float = 100.0,
+        npt_pdamp: float = 1000.0,
+        npt_tchain: int = 3,
+        npt_pchain: int = 3,
+        npt_tloop: int = 1,
+        npt_ploop: int = 1,
     ):
         """Initialize MD runner.
 
@@ -188,9 +193,6 @@ class MDRunner(BaseRunner):
             steps: Number of production MD steps
             equilibration_steps: Same-ensemble MD steps before production
             thermostat: NVT thermostat (LANGEVIN, BUSSI, or NHC)
-            pressure_gpa: NPT external pressure in GPa (+ compressive)
-            npt_tdamp: MTK thermostat damping in fs
-            npt_pdamp: MTK barostat damping in fs
             friction: Langevin friction coefficient (1/fs)
             bussi_tau: Bussi/CSVR coupling time in femtoseconds
             nhc_tdamp: Nose-Hoover-chain damping time in femtoseconds
@@ -216,6 +218,15 @@ class MDRunner(BaseRunner):
             fmax_abort: Raw model-force abort threshold in eV/Angstrom
             log_fn: Optional callback function for custom log output
             progress_callback: Optional callback for progress events
+
+        Keyword-only NPT arguments (#61 R?/Issue #102):
+            pressure_gpa: NPT external pressure in GPa (+ compressive)
+            npt_tdamp: MTK thermostat damping in fs
+            npt_pdamp: MTK barostat damping in fs
+            npt_tchain: MTK thermostat chain length
+            npt_pchain: MTK barostat chain length
+            npt_tloop: MTK thermostat integration substeps
+            npt_ploop: MTK barostat integration substeps
         """
         # Validate every physical scalar before BaseRunner creates the output
         # directory. Direct Python callers receive the same fail-closed
