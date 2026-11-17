@@ -70,6 +70,15 @@ def classify_result(result: Any, *, calc_type: str | None = None) -> RunOutcome:
         return RunOutcome.NOT_CONVERGED
 
     converged = result.get("converged")
+    if converged is not None:
+        # A numpy-backed backend (e.g. a DeepMD/DP relaxation) reports the flag
+        # as ``np.bool_``, which is not the ``False`` singleton.  Normalise to
+        # a Python bool so an unconverged run cannot be promoted to success;
+        # a flag that cannot be interpreted as one boolean fails closed.
+        try:
+            converged = bool(converged)
+        except (TypeError, ValueError):
+            return RunOutcome.NOT_CONVERGED
     if converged is False:
         return RunOutcome.NOT_CONVERGED
     if converged is None and calc_type in CONVERGENCE_CALC_TYPES:
