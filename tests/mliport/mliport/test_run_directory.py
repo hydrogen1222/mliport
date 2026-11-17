@@ -93,3 +93,35 @@ def test_engine_run_refuses_before_loading_a_model(tmp_path, monkeypatch) -> Non
     monkeypatch.setattr(engine, "_create_calculator", _fail)
     with pytest.raises(OutputDirectoryInUseError):
         engine.run(atoms=None)  # type: ignore[arg-type]
+
+
+def test_unwritable_output_directory_is_reported_not_raised_as_a_traceback(
+    tmp_path,
+) -> None:
+    """A read-only run directory must produce an actionable error (R10 R01/R03).
+
+    Before this, opening the lock file raised a bare ``PermissionError``, so the
+    CLI exited with a Python traceback instead of the ``Error: ...`` line every
+    other refused directory produces.
+    """
+    import os
+
+    if os.geteuid() == 0:  # pragma: no cover - root ignores the permission bits
+        pytest.skip("running as root: permission bits do not deny access")
+
+    readonly = tmp_path / "readonly"
+    readonly.mkdir()
+    readonly.chmod(0o500)
+    try:
+        with (
+            pytest.raises(OutputDirectoryInUseError) as excinfo,
+            run_directory_lock(readonly),
+        ):
+            pass
+    finally:
+        readonly.chmod(0o700)
+
+    message = str(excinfo.value)
+    assert f"Cannot write in output directory {readonly}" in message
+    assert "Permission denied" in message
+    assert "--output" in message

@@ -2438,14 +2438,24 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Determine structure file
     structure_file = args.structure
     if structure_file is None:
-        # Try common defaults
-        for default in ["POSCAR", "CONTCAR", "structure.cif", "structure.xyz"]:
+        # Try common defaults in the current directory. A task folder is meant
+        # to be run from inside itself (that is where `mliport run` writes
+        # `results/`), so the default names are not searched next to an
+        # `--incar` that lives elsewhere; say what was searched instead of only
+        # reporting that nothing was found.
+        candidates = ["POSCAR", "CONTCAR", "structure.cif", "structure.xyz"]
+        for default in candidates:
             if Path(default).exists():
                 structure_file = default
                 break
 
     if structure_file is None:
         print("Error: No structure file specified and no default found")
+        print(f"       Searched for {', '.join(candidates)} in {Path.cwd()}")
+        print(
+            "       Pass the structure as an argument, or run the command from "
+            "the folder that holds it."
+        )
         return 1
 
     structure_path = Path(structure_file).expanduser().resolve()
