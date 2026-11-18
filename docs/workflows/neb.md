@@ -191,8 +191,7 @@ differ from an uninterrupted run, so always verify convergence.
 
 ## Capability matrix
 
-Not every NEB option is available from every interface. This table is generated
-from `validation/science/capability_matrix.json`.
+Not every NEB option is available from every interface. This table is generated from `validation/science/capability_matrix.json`. 
 
 <!-- BEGIN GENERATED: neb-capability -->
 | Feature | API | direct CLI | INCAR | TUI |
@@ -208,17 +207,3 @@ from `validation/science/capability_matrix.json`.
 | min distance guard | yes | yes | yes | yes |
 <!-- END GENERATED -->
 
-| Feature | API | CLI | INCAR | TUI |
-|---|---|---|---|---|
-| Endpoints | yes | yes | yes | yes |
-| Atom map | yes | yes | no | yes |
-| Image shifts | yes | yes | no | yes |
-| Resume | yes | yes | no | yes |
-| Path convention | yes | yes | yes | yes |
-| Interpolation | yes | yes | yes | yes |
-| Climbing image | yes | yes | yes | yes |
-| Pre-relaxation | yes | yes | yes | yes |
-| Min distance guard | yes | yes | yes | yes |
-
-A `no` means the feature requires the API, CLI or TUI — nothing is
-translated silently.
