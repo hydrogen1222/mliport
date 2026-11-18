@@ -112,3 +112,121 @@ def test_pause_and_resume_only_affect_a_pending_job(tmp_path: Path) -> None:
     assert manager.resume_paused(job_id) is True
     assert manager.get_job(job_id)["status"] == "pending"
     assert manager.kill_job(job_id) is True
+
+
+
+def test_scheduler_respects_paused_task_folder_queue(tmp_path: Path) -> None:
+    """A wizard-style pending job cannot bypass the paused scheduler."""
+    from mliport.queue import QueueScheduler, pause_scheduler, resume_scheduler
+
+    manager = JobManager(jobs_dir=tmp_path / "jobs")
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    job_id = manager.new_job_id()
+    manager.enqueue(
+        job_id,
+        "sp",
+        str(task_dir / "POSCAR"),
+        "He",
+        1,
+        "cpu",
+        [sys.executable, "-c", "print('queued worker started')"],
+        submit_cwd=task_dir,
+    )
+    scheduler = QueueScheduler(jobs_dir=manager.jobs_dir, max_concurrent=1)
+    assert pause_scheduler(manager.jobs_dir) is True
+    assert scheduler.run_once() == 0
+    assert manager.get_job(job_id)["status"] == "pending"
+    assert resume_scheduler(manager.jobs_dir) is True
+    assert scheduler.run_once() == 1
+    assert _wait_for_status(manager, job_id, {"done"})["status"] == "done"
+
+
+def test_queue_worker_uses_task_folder_as_working_directory(tmp_path: Path) -> None:
+    """The worker must read task-local relative inputs and settings."""
+    from mliport.queue import QueueScheduler
+
+    manager = JobManager(jobs_dir=tmp_path / "jobs")
+    folder = tmp_path / "workdir"
+    folder.mkdir()
+    job_id = manager.new_job_id()
+    manager.enqueue(
+        job_id,
+        "sp",
+        str(folder / "POSCAR"),
+        "He",
+        1,
+        "cpu",
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; "
+            "Path('relative-marker.txt').write_text('folder cwd')",
+        ],
+        submit_cwd=folder,
+    )
+    assert manager.get_job(job_id)["submit_cwd"] == str(folder)
+    scheduler = QueueScheduler(jobs_dir=manager.jobs_dir)
+    assert scheduler.run_once() == 1
+    _wait_for_status(manager, job_id, {"done"})
+    assert (folder / "relative-marker.txt").read_text() == "folder cwd"
+    assert not (tmp_path / "relative-marker.txt").exists()
+
+
+def test_busy_gpu_lease_leaves_later_job_pending(tmp_path: Path) -> None:
+    """A busy physical GPU is not bypassed by wizard-style enqueue."""
+    import os
+
+    from mliport.queue import QueueScheduler
+
+    manager = JobManager(jobs_dir=tmp_path / "jobs")
+    command = [sys.executable, "-c", "print('not spawned')"]
+    occupied_id = manager.new_job_id()
+    manager.enqueue(
+        occupied_id, "sp", "/tmp/POSCAR", "He", 1, "cuda:0", command
+    )
+    token = manager.new_job_id()
+    claimed = manager.claim_job(
+        occupied_id,
+        claim_token=token,
+        owner_pid=os.getpid(),
+        device_uuid="GPU-test-lease",
+    )
+    assert claimed is not None
+
+    queued_id = manager.new_job_id()
+    manager.enqueue(
+        queued_id, "sp", "/tmp/POSCAR", "He", 1, "cuda:1", command
+    )
+    scheduler = QueueScheduler(
+        jobs_dir=manager.jobs_dir,
+        max_concurrent=2,
+        device_uuid_resolver=lambda _device: "GPU-test-lease",
+    )
+    assert scheduler.run_once() == 0
+    assert manager.get_job(queued_id)["status"] == "pending"
+
+
+def test_leased_worker_rewrites_nonzero_gpu_ordinal_in_run_argv() -> None:
+    """A physical UUID lease maps to logical cuda:0 without a real GPU."""
+    from mliport.job_worker import leased_process_environment
+
+    command = [
+        sys.executable,
+        "-m",
+        "mliport.cli",
+        "run",
+        "--incar",
+        "/tmp/INCAR.mliport",
+        "--device",
+        "cuda:1",
+    ]
+    rewritten, env = leased_process_environment(
+        {"device": "cuda:1", "device_uuid": "GPU-test-lease"},
+        command,
+        {},
+    )
+    assert command[-1] == "cuda:1"
+    assert rewritten[-1] == "cuda:0"
+    assert env["CUDA_VISIBLE_DEVICES"] == "GPU-test-lease"
+    assert env["DEVICE"] == "cuda"
