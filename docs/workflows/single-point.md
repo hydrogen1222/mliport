@@ -107,7 +107,7 @@ In the output directory you will find:
 
 | File | Contents |
 |---|---|
-| `OUTCAR` | VASP-compatible output with energy, forces and stress |
+| `OUTCAR` | VASP-style output with energy, forces and stress |
 | `CONTCAR` | A copy of the input structure (nothing moved) |
 | `mliport_results.json` | Machine-readable results: energy, forces, stress, timing |
 | `resolved_config.json` | Every option that was active and where it came from |
