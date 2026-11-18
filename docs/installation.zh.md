@@ -76,7 +76,7 @@ uv run --no-project --with packaging --python 3.12 -- python -m mliport.install 
 1. 创建虚拟环境（`.venv-mace`、`.venv-dpa` 等）。
 2. 以可编辑模式安装 mliport 及分析扩展。
 3. 安装该后端的框架（锁定版本）。
-4. 在 `./bin/` 下写入启动器脚本（如 `./bin/mliport-mace`）。
+4. 在 `./bin/` 下写入系统原生启动器（POSIX 上为 `./bin/mliport-mace`，Windows 上为 `./bin/mliport-mace.cmd`）。
 5. 运行 `mliport doctor` 验证安装（除非指定了 `--skip-doctor`）。
 
 整个过程是确定性的：同一命令在同一机器上产生相同的环境，因为框架版本锁定在兼容性注册表（`mliport/mliport/install/compatibility.py`）中。
