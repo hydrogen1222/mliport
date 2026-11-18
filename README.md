@@ -99,7 +99,7 @@ You can also invoke the environment directly (without the launcher):
 .venv-mace/bin/mliport sp structure.cif --model model.model --model-type mace
 .venv/bin/mliport sp structure.cif --model uma.pt --model-type uma
 # Windows
-.venv-mace\\Scripts\\mliport.exe sp structure.cif --model model.model --model-type mace
+.venv-mace\Scripts\mliport.exe sp structure.cif --model model.model --model-type mace
 ```
 
 The installer pins upstream backend versions, installs the analysis extras and runs
