@@ -167,7 +167,7 @@ NEP 不在默认引擎列表中，因为其原生 GPU 运行时需要单独编�
 
 启动器只选择 Python 环境，不设置模型、精度或任何科学选项。
 
-在 Windows 上，每个环境有 `Scripts\mliport.exe`，安装器会同时生成 `bin\mliport-*.cmd` 启动器。
+在 Windows 上，每个环境有 `Scripts\mliport.exe`，安装器会生成原生 `bin\mliport-*.cmd` 启动器；POSIX shell 启动器只会在 POSIX 系统上生成。
 
 ### DPA 和 GRACE：GPU 设备隔离
 
