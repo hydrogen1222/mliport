@@ -449,46 +449,23 @@ def test_device_accepts_cuda_n() -> None:
     assert args.device == "cuda:2"
 
 
-@pytest.mark.parametrize(
-    ("subcmd", "extra"),
-    [
-        ("run", ["--output", "tmp-run"]),
-        ("resume", ["tmp-run"]),
-        ("extend", ["tmp-run", "--cycles", "2"]),
-    ],
-)
-def test_confsearch_device_option_is_resolved_for_all_compute_subcommands(subcmd, extra):
+def test_confsearch_device_option_on_all_compute_subcommands():
     from mliport.cli import _build_cli_opts
 
     parser = create_parser()
-    args = parser.parse_args(
-        [
-            "confsearch",
-            subcmd,
-            *extra,
-            "--model",
-            "mock.model",
-            "--model-type",
-            "mace",
-            "--device",
-            "cuda:1",
-        ]
+    commands = (
+        ["confsearch", "run", "--output", "tmp-run"],
+        ["confsearch", "resume", "tmp-run"],
+        ["confsearch", "extend", "tmp-run", "--cycles", "2"],
     )
-    assert args.device == "cuda:1"
-    assert _build_cli_opts(args, "confsearch")["device"] == "cuda:1"
-    omitted = parser.parse_args(
-        [
-            "confsearch",
-            subcmd,
-            *extra,
-            "--model",
-            "mock.model",
-            "--model-type",
-            "mace",
-        ]
-    )
-    assert omitted.device is None
-    assert "device" not in _build_cli_opts(omitted, "confsearch")
+    for command in commands:
+        base = [*command, "--model", "mock.model", "--model-type", "mace"]
+        selected = parser.parse_args([*base, "--device", "cuda:1"])
+        assert selected.device == "cuda:1"
+        assert _build_cli_opts(selected, "confsearch")["device"] == "cuda:1"
+        omitted = parser.parse_args(base)
+        assert omitted.device is None
+        assert "device" not in _build_cli_opts(omitted, "confsearch")
 
 
 def test_model_optional_with_model_alias() -> None:
