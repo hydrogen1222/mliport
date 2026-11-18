@@ -153,9 +153,9 @@ def test_grace_maxwell_profile_marks_missing_gpu_wheel() -> None:
 def test_dpa_legacy_channel_excludes_blackwell() -> None:
     backend = ALL_BACKENDS["dpa-legacy"]
     profile = backend.arch_profiles["blackwell"]
-    channel = CUDA_CHANNELS[effective_cuda_channel(
-        backend, ARCH_PROFILES["blackwell"], profile
-    )]
+    channel = CUDA_CHANNELS[
+        effective_cuda_channel(backend, ARCH_PROFILES["blackwell"], profile)
+    ]
 
     assert channel.name == "cu121"
     assert channel.sm_max == (9, 0)
