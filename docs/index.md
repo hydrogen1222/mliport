@@ -6,7 +6,7 @@ command line, one INCAR-style input file, one terminal UI and one Python API.
 Hand it a structure and a checkpoint, and it does the rest: single-point
 calculations, geometry relaxation, molecular dynamics (NVE, NVT and NPT), NEB
 barrier searches, adsorbate configuration searches on slabs, batch sweeps
-and trajectory analysis. Every result is written in VASP-compatible format
+and trajectory analysis. Every result is written in VASP-style format
 (`OUTCAR`, `OSZICAR`, `CONTCAR`, `XDATCAR`) alongside a machine-readable JSON
 record of exactly what was run.
 
@@ -49,7 +49,7 @@ reliable result, rather than returning a number you should not trust.
 |---|---|
 | Unified workflow | Single point, relaxation (fixed/variable cell), NVE/NVT/NPT MD, NEB/CI-NEB, configuration search, batch, job queue |
 | Five backends | MACE, DPA (DeepPotential), GRACE, UMA (Meta), NEP (GPUMD) |
-| VASP-compatible output | `OUTCAR`, `OSZICAR`, `CONTCAR`, `XDATCAR` — readable by any tool that parses VASP files |
+| VASP-style output | `OUTCAR`, `OSZICAR`, `CONTCAR`, `XDATCAR` — readable by any tool that parses VASP files |
 | INCAR-style input | Write an `INCAR.mliport` file with familiar VASP-like syntax; run it with `mliport run` |
 | Strict configuration | Unknown keys, cross-backend keys and type mismatches are errors, not warnings |
 | NPT molecular dynamics | Isotropic MTK NPT ensemble for ASE-based backends (MACE, DPA, GRACE, UMA) |
