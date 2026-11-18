@@ -943,7 +943,9 @@ Examples:
     )
     conf_run.add_argument("--task", type=str, default=None)
     conf_run.add_argument(
-        "--device", type=str, default=None,
+        "--device",
+        type=str,
+        default=None,
         help="cpu, cuda, gpu or cuda:N (default: configured device, else cpu).",
     )
     conf_run.add_argument("--output", type=str, default=None)
@@ -1080,7 +1082,9 @@ Examples:
     )
     conf_resume.add_argument("--task", type=str, default=None)
     conf_resume.add_argument(
-        "--device", type=str, default=None,
+        "--device",
+        type=str,
+        default=None,
         help="Override recorded device (subject to resume identity validation).",
     )
     _add_resolver_args(conf_resume, trajectory_output_flags=False)
@@ -1098,7 +1102,9 @@ Examples:
     )
     conf_extend.add_argument("--task", type=str, default=None)
     conf_extend.add_argument(
-        "--device", type=str, default=None,
+        "--device",
+        type=str,
+        default=None,
         help="Override recorded device (subject to checkpoint identity validation).",
     )
     _add_resolver_args(conf_extend, trajectory_output_flags=False)
