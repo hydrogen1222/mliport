@@ -271,6 +271,8 @@ def test_real_gemdat_immobile_trajectory_is_a_physical_no_events(
     np.testing.assert_array_equal(
         result.arrays["jump_matrix"], np.zeros((2, 2), dtype=int)
     )
+
+
 def test_short_trajectory_publication_grade_is_not_a_convergence_claim() -> None:
     """``publication_grade=True`` must not be readable as "publishable".
 
