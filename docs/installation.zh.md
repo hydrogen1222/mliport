@@ -99,12 +99,12 @@ NEP 不在默认引擎列表中，因为其原生 GPU 运行时需要单独编�
 ## 各环境运行什么
 
 <!-- BEGIN GENERATED: backend-matrix -->
-| Backend | Environment | Python | Runtime stack |
+| 后端 | 环境 | Python | 运行时 |
 |---|---|---|---|
 | UMA (FAIRChem) | `.venv` | 3.11, 3.12, 3.13 | `fairchem-core==2.25.0` (torch 2.13.0) |
 | MACE | `.venv-mace` | 3.10, 3.11, 3.12, 3.13 | `mace-torch==0.3.16` (torch 2.8.0) |
 | DPA (DeepMD-kit) | `.venv-dpa` | 3.10, 3.11, 3.12, 3.13 | `deepmd-kit @ git+https://github.com/deepmodeling/deepmd-kit.git@0edeaef5617e9878edeb2346bf37bb6a035a4f51` (torch 2.11.0) |
-| NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1` (NumPy/ASE, resolved by the installer; gpumd built with CUDA Toolkit 12.9) |
+| NEP (Calorine / GPUMD) | `.venv-nep` | 3.10, 3.11, 3.12, 3.13 | `calorine==4.1`（NumPy/ASE 由安装器解析；gpumd 需用 CUDA Toolkit 12.9 编译） |
 | GRACE | `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
 <!-- END GENERATED -->
 
@@ -183,13 +183,13 @@ PyTorch 和 TensorFlow 为不同 GPU 代际提供不同的 CUDA 构建版本。�
 CUDA 13 通道（`cu130`，UMA 的 torch 2.13 使用）需要 580+ 驱动，且不包含 Turing 以下的核函数，因此 Volta 保持在 `cu126`。
 
 <!-- BEGIN GENERATED: gpu-routes -->
-| Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
+| 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
 |---|---|---|---|---|---|---|
-| UMA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
-| MACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
-| DPA | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test |
-| NEP | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
-| GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
+| UMA | 实验性 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 |
+| MACE | 实验性 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 |
+| DPA | 实验性 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 |
+| NEP | 实验性 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 实验性 |
+| GRACE | 实验性 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 实验性 |
 <!-- END GENERATED -->
 
 仔细阅读表格中的状态：`experimental` 意味着上游框架未在该 GPU 系列上测试，`needs runtime smoke test` 意味着路径存在但 mliport 尚无该硬件上的实际运行记录。只有 V100 有硬件证据。详细的架构分析见[架构报告](https://github.com/hydrogen1222/mliport/blob/main/validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md)。
