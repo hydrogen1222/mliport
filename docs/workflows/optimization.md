@@ -103,7 +103,7 @@ trajectory.
 | File | Contents |
 |---|---|
 | `CONTCAR` | The final (relaxed) structure |
-| `OUTCAR` | VASP-compatible trace of energy and forces at each step |
+| `OUTCAR` | VASP-style trace of energy and forces at each step |
 | `OSZICAR` | One-line-per-step energy record (like VASP's ionic steps) |
 | `mliport_results.json` | Convergence status, step count, final energy and forces |
 | `resolved_config.json` | Complete resolved configuration |
