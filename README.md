@@ -9,7 +9,7 @@ through one command line, one terminal UI, one INCAR-style input file and one Py
 Give it a structure file and a model checkpoint, and it handles single-point energy
 calculations, geometry relaxation, molecular dynamics (NVE / NVT / NPT), NEB barrier
 searches, adsorbate configuration searches on slabs, batch sweeps and trajectory analysis.
-Every result is written in VASP-compatible format (`OUTCAR`, `OSZICAR`, `CONTCAR`,
+Every result is written in VASP-style format (`OUTCAR`, `OSZICAR`, `CONTCAR`,
 `XDATCAR`) alongside a machine-readable JSON record so you always know exactly how a
 number was produced.
 
@@ -37,7 +37,7 @@ number was produced.
 - **Unified workflows** — Single point, relaxation (fixed / variable cell), NVE / NVT / NPT
   molecular dynamics, NEB / CI-NEB, configuration search, batch sweeps, job queue
 - **Five backends** — MACE, DPA (DeePMD-kit), GRACE, UMA (Meta / FairChem), NEP (GPUMD / Calorine)
-- **VASP-compatible output** — `OUTCAR`, `OSZICAR`, `CONTCAR`, `XDATCAR`, readable by VESTA, OVITO,
+- **VASP-style output** — `OUTCAR`, `OSZICAR`, `CONTCAR`, `XDATCAR`, readable by VESTA, OVITO,
   pymatgen and any VASP post-processing tool
 - **Trajectory analysis** — MSD, tracer diffusivity, ionic conductivity (kinisi), RDF, RMSD/RMSF,
   VACF, vibrational spectra, mobile-ion density, GEMDAT electrolyte analysis, Arrhenius fitting
@@ -93,8 +93,17 @@ cd mliport
 | UMA | `.venv` | `bin/mliport-uma` |
 | NEP | `.venv-nep` | `bin/mliport-nep` |
 
+You can also invoke the environment directly (without the launcher):
+
+```bash
+.venv-mace/bin/mliport sp structure.cif --model model.model --model-type mace
+.venv/bin/mliport sp structure.cif --model uma.pt --model-type uma
+# Windows
+.venv-mace\Scripts\mliport.exe sp structure.cif --model model.model --model-type mace
+```
+
 The installer pins upstream backend versions, installs the analysis extras and runs
-`mliport doctor` for each engine. Python 3.12 is the default; mliport supports 3.10–3.13
+`mliport doctor` for each engine. Python 3.12 is the default; mliport supports 3.10-3.13
 (UMA needs ≥ 3.11). Verified on a V100 with driver 580.173.02; other GPU families use
 different wheel routes — see [Installation](docs/installation.md) for GPU / CPU / offline /
 proxy / uninstall details.
@@ -153,7 +162,7 @@ In `runs/lgps-mace-sp/` you get:
 |---|---|
 | `mliport_results.json` | Energy, forces, stress, timing, provenance |
 | `resolved_config.json` | Every configuration value and its source |
-| `OUTCAR` | VASP-compatible output |
+| `OUTCAR` | VASP-style output |
 | `CONTCAR` | Final structure |
 | `run.log` | Full log |
 
@@ -272,7 +281,7 @@ This is a beta candidate (2.0.0b5). It has been installed from these instruction
 clean V100 machine and run through the LGPS workflow and analysis matrix; the block
 below is generated from the validation reports.
 
-INCAR-style input covers the common controls, not every interface. Which option each
+INCAR-style input covers the common controls, not every interface. Advanced explicit atom mapping/image-shift control is available through API/direct CLI/TUI only. Which option each
 entry point (API, direct CLI, INCAR, TUI) can express is recorded in
 `validation/science/capability_matrix.json`; a `no` or `partial` there means that
 entry point cannot say it, and nothing is translated silently.

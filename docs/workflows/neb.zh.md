@@ -151,18 +151,19 @@ mliport neb --resume runs/neb --output runs/neb
 
 ## 功能支持矩阵
 
-并非每个 NEB 选项都能在每个入口使用：
+并非每个 NEB 选项都能在每个入口设置。下表由 `validation/science/capability_matrix.json` 自动生成。
 
-| 功能 | API | CLI | INCAR | TUI |
+<!-- BEGIN GENERATED: neb-capability -->
+| 功能 | API | 直接 CLI | INCAR | TUI |
 |---|---|---|---|---|
-| 端点 | 支持 | 支持 | 支持 | 支持 |
-| 原子映射 | 支持 | 支持 | 不支持 | 支持 |
-| image 晶格平移 | 支持 | 支持 | 不支持 | 支持 |
-| 续算 | 支持 | 支持 | 不支持 | 支持 |
-| 路径约定 | 支持 | 支持 | 支持 | 支持 |
-| 插值方式 | 支持 | 支持 | 支持 | 支持 |
-| Climbing image | 支持 | 支持 | 支持 | 支持 |
-| 预优化 | 支持 | 支持 | 支持 | 支持 |
-| 最小距离保护 | 支持 | 支持 | 支持 | 支持 |
+| endpoints | yes | yes | yes | yes |
+| atom map | yes | yes | no | yes |
+| image shifts | yes | yes | no | yes |
+| resume | yes | yes | no | yes |
+| path convention | yes | yes | yes | yes |
+| interpolation | yes | yes | yes | yes |
+| method climb | yes | yes | yes | yes |
+| pre relaxation | yes | yes | yes | yes |
+| min distance guard | yes | yes | yes | yes |
+<!-- END GENERATED -->
 
-"不支持"意味着该功能需要通过 API、CLI 或 TUI 使用——不会被静默地翻译。

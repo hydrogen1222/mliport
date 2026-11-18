@@ -114,6 +114,8 @@ results = run_single_point(
 mliport 采用 MIT 许可证，只把 GRACE 当作另外安装的软件调用，不打包、不再分发 GRACE 的代码或权重。
 上游软件和模型需要另外引用，见[引用](../citations.md)。
 
+## 许可
+
 **GRACE 软件本身的许可证。** `tensorpotential` 采用
 [Academic Software Licence（ASL）](https://github.com/ICAMS/grace-tensorpotential/blob/master/LICENSE.md)，
 不是开源许可证：它只允许学术、非商业用途，且对衍生作品是互惠（类似 GPLv2）的。它的 PyPI 元数据

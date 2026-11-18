@@ -281,7 +281,7 @@ another format, convert it to XDATCAR first (for example with ASE's
 | `mliport_results.json` | ✓ | Energy, forces, stress, timing, provenance |
 | `resolved_config.json` | ✓ | Every config value and its source layer |
 | `run.log` | ✓ | Full run log |
-| `OUTCAR` | sp, opt | VASP-compatible forces and energy |
+| `OUTCAR` | sp, opt | VASP-style forces and energy |
 | `OSZICAR` | opt, md | Step-by-step convergence / thermodynamics |
 | `CONTCAR` | sp, opt | Final structure in POSCAR format |
 | `XDATCAR` | md | Trajectory in VASP format |
