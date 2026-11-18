@@ -1,77 +1,117 @@
 # Installation
 
-mliport does not live in one big environment. Each backend (MACE, DPA, GRACE,
-UMA, and the opt-in NEP) pulls in its own stack, and those stacks do not always get
-along, so the installer builds **one environment per backend** and installs
-mliport into each. The `mliport` you run from `.venv-mace` can only run MACE;
-the one in `.venv` can only run UMA, and so on. Pick the backends you need,
-install those, and call `mliport` from the matching environment.
+## Why one environment per backend?
 
-## The installer
+Machine-learning interatomic potentials depend on deep-learning frameworks — PyTorch,
+TensorFlow, JAX — and those frameworks pin specific versions of CUDA libraries, NumPy
+and other low-level packages. When two backends need *different* versions of the same
+library (MACE wants PyTorch 2.8, DPA needs 2.11, GRACE runs on TensorFlow), putting
+them in one environment creates unsolvable version conflicts.
 
-Install [uv](https://docs.astral.sh/uv/) and clone the repository:
+mliport solves this by building **one virtual environment per backend**. Each
+environment contains mliport itself plus that backend's stack, and the `mliport`
+command inside it can only call that backend. This keeps every dependency chain clean
+and every run reproducible.
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone https://github.com/hydrogen1222/mliport
-cd mliport
-```
+| Backend | Environment | What it can run |
+|---|---|---|
+| UMA (FAIRChem) | `.venv` | UMA checkpoints only |
+| MACE | `.venv-mace` | MACE checkpoints only |
+| DPA (DeePMD-kit) | `.venv-dpa` | DPA checkpoints only |
+| GRACE | `.venv-grace` | GRACE checkpoints only |
+| NEP (Calorine / GPUMD) | `.venv-nep` | NEP potentials only |
 
-On a machine with an NVIDIA GPU and a working driver (this route was tested on
-a V100-SXM2-16GB with driver 580.173.02):
+You only need the backends you use. If you only work with MACE, install only MACE.
+
+## Prerequisites
+
+You need two things before running the installer:
+
+1. **uv** — a fast Python package manager that handles virtual environments and
+   dependency resolution. It replaces `pip` and `venv` in one tool and is
+   significantly faster:
+
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+2. **The mliport repository**:
+
+    ```bash
+    git clone https://github.com/hydrogen1222/mliport
+    cd mliport
+    ```
+
+On a GPU machine you also need a working NVIDIA driver. The installer was tested on
+a V100-SXM2-16GB with driver 580.173.02.
+
+## Running the installer
+
+### GPU machine (recommended)
 
 ```bash
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device auto
 ```
 
-On a machine without one:
+`--device auto` detects whether a GPU is available and picks the right CUDA wheel
+channel for your GPU architecture. You can install a subset — `--engines mace dpa`
+skips GRACE and UMA.
+
+### CPU-only machine
 
 ```bash
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
-NEP is opt-in: it is not in the default engine list, because its native runtime
-also needs a `gpumd` binary that you build yourself (see
-[NEP](backends/nep.md)). Add it explicitly:
+CPU installs are smaller (no CUDA libraries) and work everywhere, but inference is
+slower. This is useful for post-processing, analysis, and testing on laptops.
+
+### What the installer does
+
+For each engine you name, the installer:
+
+1. Creates a virtual environment (`.venv-mace`, `.venv-dpa`, etc.).
+2. Installs mliport in editable mode with the analysis extras.
+3. Installs the backend's framework at the pinned version.
+4. Writes a launcher script into `./bin/` (e.g. `./bin/mliport-mace`).
+5. Runs `mliport doctor` to verify the installation (unless `--skip-doctor`).
+
+The whole process is deterministic: the same command on the same machine produces the
+same environments, because the framework versions are pinned in the compatibility
+registry (`mliport/mliport/install/compatibility.py`).
+
+### Useful installer flags
+
+| Flag | What it does |
+|---|---|
+| `--dry-run` | Print every step without executing anything |
+| `--clean` | Delete and rebuild the environments of the named engines |
+| `--skip-doctor` | Skip the verification step at the end |
+| `--python 3.12` | Force a specific Python version (must satisfy every named backend) |
+| `--source offline` | Use a prepared wheel cache instead of downloading |
+
+## NEP: an opt-in backend
+
+NEP is not in the default engine list because its native GPU runtime needs a
+separately compiled `gpumd` binary that the installer cannot build for you.
+
+**CPU-only NEP** works immediately — the Calorine ASE runtime needs no compilation:
 
 ```bash
-./scripts/install_mliport.sh --engines nep --device cpu     # CPU ASE runtime (Calorine CPUNEP)
-./scripts/install_mliport.sh --engines nep --device auto    # GPU machine; the closing doctor needs your gpumd build
+./scripts/install_mliport.sh --engines nep --device cpu
 ```
 
-Like every other backend, `.venv-nep` gets the pinned `calorine` and an editable
-mliport in one resolver run, so `.venv-nep/bin/mliport` exists and `doctor` can
-run. The installer does not compile `gpumd`. With `--device cpu` the install
-needs no `gpumd`: the CPU ASE runtime works immediately. With `--device cuda`, or
-`--device auto` on a machine with an NVIDIA GPU, the closing `doctor` checks the
-CUDA path and fails naming `gpumd` until one is on `PATH` or in
-`MLIPORT_GPUMD_COMMAND`. The environment is already installed by then, but the
-`bin/mliport-nep` launcher is only written after every step succeeds, so either
-build `gpumd` and re-run the installer, or install with `--device cpu` /
-`--skip-doctor` (and call `.venv-nep/bin/mliport` directly in the meantime).
-
-Re-running the installer while an environment already exists is decided by an
-explicit contract before any step runs. A **compatible** environment — a real
-virtual environment of the requested Python that carries no other backend's
-packages — is reused and its pinned packages are re-resolved in place. Anything
-else is **refused**: a plain directory at that path, an interpreter that cannot
-report its version, a venv built with another Python, or a venv that already
-holds another backend's framework (for example `torch` inside `.venv-nep`).
-The refusal names the reason, changes nothing, and tells you to add `--clean`,
-which deletes and rebuilds only the environments of the engines you name. Pass fewer engines if you only need some. `--dry-run` prints every step without
-executing anything. Unless you give `--skip-doctor`, the installer runs
-`mliport doctor` in each environment when it finishes. The analysis, transport
-and electrolyte features come with the same install; there is no second step.
-
-The installer also writes small launchers into `./bin/`:
+**GPU NEP** requires you to build `gpumd` yourself with CUDA Toolkit 12.9 (or
+compatible), then either put it on `PATH` or set `MLIPORT_GPUMD_COMMAND`:
 
 ```bash
-./bin/mliport-mace sp structure.cif --model model.model --model-type mace
-./bin/mliport-uma  sp structure.cif --model uma.pt --model-type uma
+./scripts/install_mliport.sh --engines nep --device auto
+# The closing doctor will fail until gpumd is available.
+# Build gpumd, then re-run the installer, or use --skip-doctor
+# and call .venv-nep/bin/mliport directly.
 ```
 
-A launcher only picks the Python environment. It never sets a model, a dtype or
-any scientific option for you.
+See [NEP](backends/nep.md) for build instructions and runtime details.
 
 ## Which environment runs what
 
@@ -85,24 +125,18 @@ any scientific option for you.
 | GRACE | `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
 <!-- END GENERATED -->
 
-For NEP the parenthesis names two different things: Calorine runs on NumPy and
-ASE, which the installer resolves together with mliport (neither is pinned
-separately), while `CUDA Toolkit 12.9` is the toolkit the separately built
-`gpumd` binary was verified with. They are not one version.
+The `Python` column shows the versions the installer will accept for that backend.
+This is the intersection of mliport's own `requires-python`, the backend's constraints,
+and the framework wheels available. The table is auto-generated from the compatibility
+registry — the authoritative source of pins.
 
-The `Python` column is what the installer will accept for that backend: the
-intersection of the Python versions mliport supports, the backend's own
-`requires-python`, and the Python range of the framework wheels it needs. The
-table is generated from the compatibility registry
-(`mliport/mliport/install/compatibility.py`), which is also where the exact
-pins live.
+You can force an interpreter with `--python`, but it must satisfy *every* backend
+you asked for. An impossible combination like `--python 3.10 --engines uma` (UMA
+needs 3.11+) is refused before anything is installed.
 
-You can force an interpreter with `--python`, but it has to satisfy *every*
-backend you asked for. A combination that cannot work, such as
-`--python 3.10 --engines uma`, is refused before anything is installed; the
-installer never quietly picks a different version.
+## Verifying the installation
 
-## Check the install
+After the installer finishes, verify each backend:
 
 ```bash
 .venv-mace/bin/mliport doctor --engine mace --device auto
@@ -112,15 +146,16 @@ installer never quietly picks a different version.
 .venv-nep/bin/mliport   doctor --engine nep  --device cpu     # if you installed NEP
 ```
 
-Each command exits 0 when the required checks pass and ends with a line such as
-`Environment checks passed for MACE on CUDA.` The report also lists optional
-features (TUI, analysis, transport, electrolyte, plotting). To try a real
-model, add `--model PATH --task TASK --structure FILE`. `doctor --json` gives
-the same report in a machine-readable form, handy for cluster provisioning.
+Each command exits 0 when the required checks pass and reports optional features
+(TUI, analysis, transport, electrolyte, plotting). To test with a real model, add
+`--model PATH --task TASK --structure FILE`. For machine-readable output (useful for
+cluster provisioning scripts), use `doctor --json`.
 
 ## Running mliport
 
-Call the CLI from the environment that owns the backend:
+### Using environment paths directly
+
+Call `mliport` from the environment that owns the backend:
 
 ```bash
 .venv-mace/bin/mliport  sp structure.cif --model model.model --model-type mace
@@ -130,45 +165,61 @@ Call the CLI from the environment that owns the backend:
 .venv-nep/bin/mliport   sp structure.cif --model nep.txt    --model-type nep --nep-runtime ase --device cpu
 ```
 
-The launchers in `./bin/` run exactly these commands. On Windows each
-environment has a `Scripts\mliport.exe`, and the installer writes
-`bin\mliport-*.cmd` launchers next to the POSIX ones:
+### Using launchers
 
-```bat
-.venv-mace\Scripts\mliport.exe sp structure.cif --model model.model --model-type mace
+The installer writes convenience scripts into `./bin/` that select the right
+environment for you:
+
+```bash
+./bin/mliport-mace sp structure.cif --model model.model --model-type mace
+./bin/mliport-uma  sp structure.cif --model uma.pt --model-type uma
 ```
 
-### DPA and GRACE and the GPU
+A launcher only picks the Python environment. It never sets a model, a dtype or
+any scientific option for you.
 
-DPA and GRACE cannot move a CUDA context once their framework has loaded. When
-`CUDA_VISIBLE_DEVICES` is not set, the CLI restarts the same command in a fresh
-process with the GPU you asked for visible, and prints a short note saying so.
-The Python API cannot restart its caller, so if you use DPA or GRACE from
-Python, set `CUDA_VISIBLE_DEVICES` (or `""` for CPU) before importing the
-framework.
+On Windows, each environment has `Scripts\mliport.exe`, and the installer writes
+`bin\mliport-*.cmd` launchers alongside the POSIX ones.
+
+### DPA and GRACE: GPU device isolation
+
+DPA (DeePMD-kit) and GRACE (TensorFlow) cannot move a CUDA context once their
+framework has loaded. When `CUDA_VISIBLE_DEVICES` is not set, the CLI automatically
+restarts the same command in a fresh process with the requested GPU visible, and
+prints a note saying so.
+
+The Python API cannot restart its caller. If you use DPA or GRACE from Python, set
+`CUDA_VISIBLE_DEVICES` before importing the framework:
+
+```bash
+export CUDA_VISIBLE_DEVICES=0          # for GPU
+export CUDA_VISIBLE_DEVICES=""         # for CPU
+```
+
+A GPU's UUID comes from `nvidia-smi --query-gpu=uuid --format=csv,noheader`.
 
 ## Models
 
-mliport does not download checkpoints. Fetch one with the upstream tool and pass
-its path with `--model`; a local file works offline. Where to get the
-checkpoints, and the pinned file names and SHA-256 values used by the validation
-suite, are on the [Models](models.md) page.
+mliport does not download checkpoints. Fetch the model you need from the upstream
+project and pass its path with `--model`. A local file works offline. Where to get
+checkpoints and the pinned file names used by the validation suite are on the
+[Models](models.md) page.
 
-If you download from Hugging Face through a SOCKS proxy, install `httpx[socks]`
-in the environment you download with, and keep `NO_PROXY` free of bracketed
-entries such as `[::1]`, which httpx rejects. `HF_ENDPOINT=https://hf-mirror.com`
-selects the Hugging Face mirror some sites use. The installer itself goes
-through `uv`, which reads the same proxy variables.
+If you download from Hugging Face through a SOCKS proxy, install `httpx[socks]` in
+the download environment and keep `NO_PROXY` free of bracketed entries like `[::1]`.
+`HF_ENDPOINT=https://hf-mirror.com` selects the mirror some sites use.
 
 ## GPU architectures
 
-PyTorch and TensorFlow ship different CUDA builds for different GPU
-generations, and the installer picks the right one for yours: Maxwell, Pascal
-and Volta use the cu126 legacy channel, Turing and newer use cu128 or later.
-The CUDA 13 channel (`cu130`, which the UMA runtime uses from torch 2.13)
-requires an NVIDIA driver of 580 or newer, and it carries no kernels below
-Turing — Volta therefore stays on `cu126`, which works with older drivers.
-`mliport setup` prints the GPU it detected and the route it would take.
+PyTorch and TensorFlow ship different CUDA builds for different GPU generations. The
+installer detects your GPU and picks the right wheel channel automatically:
+
+- **Turing and newer** (RTX 20xx/30xx/40xx, A100, H100): use `cu128` or `cu130`.
+- **Volta** (V100): stays on `cu126`, which works with older drivers.
+- **Maxwell and Pascal**: `cu126` legacy channel; marked `experimental` upstream.
+
+The CUDA 13 channel (`cu130`, used by UMA's torch 2.13) requires driver 580+ and
+carries no kernels below Turing, so Volta stays on `cu126`.
 
 <!-- BEGIN GENERATED: gpu-routes -->
 | Engine | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
@@ -180,43 +231,77 @@ Turing — Volta therefore stays on `cu126`, which works with older drivers.
 | GRACE | experimental | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | needs runtime smoke test | experimental |
 <!-- END GENERATED -->
 
-Read the cells carefully: `experimental` means the upstream framework does not
-test that GPU family, and `needs runtime smoke test` means a route exists but
-mliport has not recorded a real run on that hardware. Neither means "verified".
-Only the V100 has hardware evidence. The other families are classified from a
-close inspection of the wheels and native extensions: the compiled architecture
-lists, the `+cu126`/`+cu128` wheel hashes and the `cuobjdump` output are in the
+Read the cells carefully: `experimental` means the upstream framework does not test
+that GPU family, and `needs runtime smoke test` means a route exists but mliport has
+not recorded a real run on that hardware. Only the V100 has hardware evidence. The
+detailed architecture analysis is in the
 [architecture report](https://github.com/hydrogen1222/mliport/blob/main/validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md).
-`mliport doctor` prints that classification for the GPU it finds instead of
-claiming a verification.
 
-Pre-Turing GPUs depend on the CUDA 12.6 channel, and PyTorch stops publishing
-it from 2.15. In those environments keep the installer's pins and do not
-upgrade the framework; a CUDA 13 build is not an alternative there, because it
-has no kernels below Turing regardless of the driver.
+Pre-Turing GPUs depend on the CUDA 12.6 channel. PyTorch stops publishing it from
+2.15, so keep the installer's pins and do not upgrade the framework in those
+environments.
+
+`mliport setup` prints the GPU it detected and the route it would take.
+
+## Re-running the installer
+
+The installer has a clear contract for existing environments:
+
+- **Compatible environment** (a real venv of the requested Python, without another
+  backend's packages): reused; pinned packages are re-resolved in place.
+- **Incompatible environment** (a plain directory, wrong Python, or another backend's
+  framework present): **refused**. The refusal names the reason and tells you to add
+  `--clean` to delete and rebuild.
+
+`--clean` only deletes environments of the engines you name. If you only need to
+rebuild MACE, `--clean --engines mace` leaves the others untouched.
 
 ## Offline machines
 
-Point `--source offline` at a prepared wheel cache, or install on a connected
-machine and copy the environments over. Only two things move: uv's cache
-(`UV_CACHE_DIR`) and the model directory. `UV_PYTHON_DOWNLOADS=never` stops the
-installer from fetching a managed interpreter.
+For air-gapped clusters, prepare a wheel cache on a connected machine and point the
+installer at it:
+
+```bash
+./scripts/install_mliport.sh --engines mace --device cpu --source offline
+```
+
+Only two things need to move: uv's wheel cache (`UV_CACHE_DIR`) and the model files.
+Set `UV_PYTHON_DOWNLOADS=never` to stop the installer from fetching a managed
+interpreter.
 
 ## Disk space and removal
 
-A four-engine GPU install takes roughly 25–35 GB, most of it PyTorch and
-TensorFlow; a CPU install is smaller. To remove a backend, delete its
-environment directory (`.venv-mace`, `.venv-dpa`, `.venv-grace`, `.venv-nep` or `.venv`).
-The repository and your model files are untouched, and the `./bin/mliport-*`
-launchers go with the `bin/` directory. Run the installer again to recreate an
-environment.
+A four-engine GPU install takes roughly 25–35 GB, most of it PyTorch and TensorFlow.
+A CPU install is smaller. To remove a backend, delete its environment directory
+(`.venv-mace`, `.venv-dpa`, `.venv-grace`, `.venv-nep` or `.venv`). The repository
+and model files are untouched. The launchers go with the `bin/` directory.
 
 ## Installing by hand
 
 Every backend environment needs mliport itself plus that engine's stack. The
-authoritative pins are in `mliport/mliport/install/compatibility.py`, and the
-installer is the only path that keeps them consistent with your GPU
-architecture. If you do it by hand anyway, create one environment per backend,
-install `./mliport` into each, and run `mliport doctor` there; do not trust
-results until every check passes. Installing mliport once and expecting it to
-reach into the other environments will not work.
+authoritative pins are in `mliport/mliport/install/compatibility.py`. If you do it
+by hand:
+
+1. Create one environment per backend.
+2. Install `./mliport` into each.
+3. Run `mliport doctor` in each environment.
+4. Do not trust results until every check passes.
+
+Installing mliport once and expecting it to reach into other environments will not
+work — each environment is self-contained by design.
+
+## Common pitfalls
+
+**"The installer exits before installing anything."** An unknown engine name, a
+`--python` that a backend cannot use, or `--device cuda` on a machine without a
+supported GPU. Run with `--dry-run` to see the plan and the constraint that failed.
+
+**"A launcher is missing or points at the wrong environment."** The installer did
+not finish, or mliport was installed by hand. Check with `ls bin/` and
+`readlink -f bin/mliport-mace`. Re-run the installer for that engine.
+
+**"I can't install all backends — the versions conflict."** That is exactly why
+separate environments exist. Install each backend independently; they do not need
+to coexist in one environment.
+
+See [Troubleshooting](troubleshooting.md) for more installation issues.

@@ -2,59 +2,76 @@
 
 **English** | [简体中文](README_CN.md)
 
-Run machine-learned interatomic potentials — MACE, DPA, GRACE, UMA and NEP — from one
-command line, one terminal UI and one Python API. Give it a structure and a
-checkpoint; it relaxes, runs molecular dynamics, finds NEB barriers, searches adsorbate
-configurations on a slab or analyzes a trajectory, and writes the files a VASP user expects: `OUTCAR`, `OSZICAR`,
-`CONTCAR`, `XDATCAR`.
+**mliport** is a unified workflow layer for machine-learned interatomic potentials (MLIPs).
+It lets you run five MLIP backends — **MACE**, **DPA**, **GRACE**, **UMA** and **NEP** —
+through one command line, one terminal UI, one INCAR-style input file and one Python API.
 
-mliport is a workflow layer, not a model and not a DFT code. The files are
-VASP-shaped, but there is no SCF and no POTCAR, and whether a potential is right for
-your chemistry depends on the checkpoint you choose.
+Give it a structure file and a model checkpoint, and it handles single-point energy
+calculations, geometry relaxation, molecular dynamics (NVE / NVT / NPT), NEB barrier
+searches, adsorbate configuration searches on slabs, batch sweeps and trajectory analysis.
+Every result is written in VASP-compatible format (`OUTCAR`, `OSZICAR`, `CONTCAR`,
+`XDATCAR`) alongside a machine-readable JSON record so you always know exactly how a
+number was produced.
 
-What you get:
+> **mliport is a workflow layer, not a model and not a DFT code.**
+> The output files look like VASP, but there is no SCF cycle, no k-point mesh and no
+> POTCAR. Whether a potential is accurate for your chemistry depends on the checkpoint
+> you choose and the validation you do.
 
-- **The same workflow on every backend.** Single point, fixed- and variable-cell
-  relaxation, NVE/NVT MD (Langevin, Bussi, Nosé–Hoover chain), and ASE-only isotropic MTK NPT (UMA/MACE/GRACE/DPA), NEB and CI-NEB,
-  MD-based configuration search for an adsorbate on a slab, batch sweeps and a job
-  queue, from the CLI, an INCAR-style file, the TUI or Python. NEP's native `gpumd`
-  runtime covers only single point, relaxation and MD (see
-  [NEP](docs/backends/nep.md)).
-- **No silent guessing.** There is no default backend, and a misspelled option, or
-  one that belongs to another backend, stops the run. Configuration errors fail
-  closed.
-- **A paper trail.** Every run records the model file and its SHA-256, the requested
-  and the actual device, the resolved configuration and the mliport version.
-- **Analysis that says when the data is too short.** Trajectory validation,
-  thermodynamics, RDF, RMSD/RMSF, MSD, VACF, spectra, mobile-ion density, kinisi
-  transport, GEMDAT electrolyte analysis and Arrhenius fits.
+📖 **Full documentation:** <https://hydrogen1222.github.io/mliport/>
+(English and 中文; the same pages are in [`docs/`](docs/) and read fine on GitHub)
 
-## Documentation
+## Why mliport?
 
-The full documentation is at <https://hydrogen1222.github.io/mliport/> (English and
-中文); the same pages are in [`docs/`](docs/) and read fine on GitHub.
-
-| I want to … | Read |
+| Problem | How mliport solves it |
 |---|---|
-| run my first calculation | [Quickstart](docs/quickstart.md) |
-| check a model on a system with a known answer | [Test systems](docs/test-systems.md) |
-| install one or more backends, on GPU or CPU | [Installation](docs/installation.md) |
-| understand what MACE, DPA, GRACE, UMA and NEP are and pick one | [Backends](docs/backends/index.md), [Models](docs/models.md) |
-| set options through the CLI, an INCAR-style file or `settings.ini` | [Configuration](docs/configuration.md) |
-| look up any INCAR key, its default and the values it accepts | [INCAR key reference](docs/incar.md) |
-| single point, relaxation, MD, NEB, configuration search, batch, queue | [Workflows](docs/workflows/index.md) |
+| Each MLIP backend has its own Python API and CLI | One set of commands works for all five backends |
+| Switching backends means rewriting scripts | Change `--model-type` and `--model`; everything else stays the same |
+| Hard to tell what configuration was actually used | Every run writes `resolved_config.json` recording every option and its source |
+| Misspelled options are silently ignored | Strict mode by default — unknown or cross-backend keys are errors |
+| Short trajectories produce misleading diffusion coefficients | Analysis reports an explicit "insufficient sampling" status instead of a bad number |
+| Reproducing someone else's calculation | SHA-256 of the model file, actual device, mliport version — all recorded automatically |
+
+## Feature overview
+
+- **Unified workflows** — Single point, relaxation (fixed / variable cell), NVE / NVT / NPT
+  molecular dynamics, NEB / CI-NEB, configuration search, batch sweeps, job queue
+- **Five backends** — MACE, DPA (DeePMD-kit), GRACE, UMA (Meta / FairChem), NEP (GPUMD / Calorine)
+- **VASP-compatible output** — `OUTCAR`, `OSZICAR`, `CONTCAR`, `XDATCAR`, readable by VESTA, OVITO,
+  pymatgen and any VASP post-processing tool
+- **Trajectory analysis** — MSD, tracer diffusivity, ionic conductivity (kinisi), RDF, RMSD/RMSF,
+  VACF, vibrational spectra, mobile-ion density, GEMDAT electrolyte analysis, Arrhenius fitting
+- **NPT dynamics** — Isotropic MTK NPT for ASE-based backends (MACE, DPA, GRACE, UMA)
+- **DFT-D3 dispersion** — Optional DFT-D3 correction on any backend
+- **Python API** — Six functions for scripting: `run_single_point`, `run_optimization`, `run_md`,
+  `run_neb`, `run_confsearch`, `calculate_energy`
+- **Provenance** — SHA-256, device, configuration source and version recorded for every run
+
+## Quick navigation
+
+| I want to… | Read |
+|---|---|
+| Run my first calculation | [Quickstart](docs/quickstart.md) |
+| Install one or more backends (GPU or CPU) | [Installation](docs/installation.md) |
+| Check a model on a known system | [Test systems](docs/test-systems.md) |
+| Understand the five backends and pick one | [Backends](docs/backends/index.md), [Models](docs/models.md) |
+| Set options (CLI, INCAR-style, `settings.ini`) | [Configuration](docs/configuration.md) |
+| Single point, relaxation, MD, NEB, confsearch, batch, queue | [Workflows](docs/workflows/index.md) |
 | MSD, diffusion, conductivity, RDF, spectra, Arrhenius | [Analysis](docs/analysis/index.md) |
-| know what each output file contains | [Output files](docs/outputs.md) |
-| fix an error | [Troubleshooting](docs/troubleshooting.md) |
-| cite mliport and the models | [Citations](docs/citations.md) |
+| Use mliport from Python | [Python API](docs/api.md) |
+| Know what each output file contains | [Output files](docs/outputs.md) |
+| Fix an error | [Troubleshooting](docs/troubleshooting.md) |
+| Cite mliport and the models | [Citations](docs/citations.md) |
 
 ## Install
 
-Linux and WSL2. You need `git` and [uv](https://docs.astral.sh/uv/); the installer
-makes one Python environment per backend and a launcher for each under `bin/`.
+**Platforms:** Linux and WSL2. **Requirements:** `git` and [uv](https://docs.astral.sh/uv/).
+
+The installer creates one isolated Python environment per backend and a launcher script for
+each under `bin/`.
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh     # if you do not have uv yet
+curl -LsSf https://astral.sh/uv/install.sh | sh     # if you don't have uv yet
 git clone https://github.com/hydrogen1222/mliport
 cd mliport
 
@@ -64,17 +81,9 @@ cd mliport
 # or CPU only
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 
-# NEP is opt-in (add it explicitly, alone or with the others)
+# NEP is opt-in (add it explicitly)
 ./scripts/install_mliport.sh --engines nep --device cpu
 ```
-
-The installer pins the upstream backend versions, installs the analysis extras and
-runs `mliport doctor` for each engine. Python 3.12 is the default for the
-four-engine install; the package supports Python 3.10-3.13, and if you pass
-`--python`, every backend you request must accept it (UMA needs 3.11 or newer). The
-install was verified on a V100 with driver 580.173.02; older and newer GPU families
-use other wheel routes, listed in [docs/installation.md](docs/installation.md),
-together with CPU, offline and proxy setups and uninstalling.
 
 | Engine | Environment | Launcher |
 |---|---|---|
@@ -84,162 +93,139 @@ together with CPU, offline and proxy setups and uninstalling.
 | UMA | `.venv` | `bin/mliport-uma` |
 | NEP | `.venv-nep` | `bin/mliport-nep` |
 
-NEP is not part of the default engine list. The installer puts the pinned `calorine`
-and an editable mliport into `.venv-nep`, which is enough for the CPU ASE runtime
-(`CPUNEP`, float64). The native runtime and `GPUNEP` also need a `gpumd` executable,
-which the installer does **not** build (it needs your CUDA toolkit and a matching
-`-arch=sm_XX`). On a GPU host, `--device auto|cuda` makes the closing `doctor` demand `gpumd`, so
-use `--device cpu` until you have built it; see [docs/backends/nep.md](docs/backends/nep.md) for the build and for
-`mliport doctor --engine nep`.
+The installer pins upstream backend versions, installs the analysis extras and runs
+`mliport doctor` for each engine. Python 3.12 is the default; mliport supports 3.10–3.13
+(UMA needs ≥ 3.11). Verified on a V100 with driver 580.173.02; other GPU families use
+different wheel routes — see [Installation](docs/installation.md) for GPU / CPU / offline /
+proxy / uninstall details.
 
-Run mliport from the environment of the backend you want, or through its launcher:
+<details>
+<summary>NEP setup notes</summary>
+
+NEP is not in the default engine list. The installer puts Calorine and an editable mliport
+into `.venv-nep`, which is enough for the CPU ASE runtime (`CPUNEP`, float64). The native
+runtime and `GPUNEP` also need a `gpumd` executable that the installer does **not** build
+(it needs your CUDA toolkit and `-arch=sm_XX`). Use `--device cpu` until you have built
+`gpumd`; see [NEP backend](docs/backends/nep.md) for the build instructions.
+
+</details>
+
+### Verify the installation
 
 ```bash
-.venv-mace/bin/mliport doctor --engine mace --device auto
-./bin/mliport-mace --help
+./bin/mliport-mace doctor --engine mace --device auto
 ```
 
-A good result ends with `Environment checks passed for MACE on CUDA.` On Windows each
-environment has `Scripts\mliport.exe` and the installer writes `bin\mliport-*.cmd`
-launchers. `mliport doctor --json` gives the same checks for scripts.
+A good result ends with `Environment checks passed for MACE on CUDA.`
+(`mliport doctor --json` gives machine-readable output for scripts.)
 
-### Models
+### Get a model checkpoint
 
-mliport does not download checkpoints. Fetch one with the upstream tool and pass its
-path with `--model`; a local directory works offline.
+mliport does not download checkpoints. Fetch one from the upstream project and pass its
+path with `--model`:
 
-| Engine | Checkpoint | Where from |
+| Engine | Checkpoint | Source |
 |---|---|---|
 | MACE | `mace-omat-0-medium.model` | [mace-foundations release](https://github.com/ACEsuit/mace-foundations/releases/tag/mace_omat_0) |
 | DPA | `DPA-3.1-3M.pt` | [deepmodelingcommunity/DPA-3.1-3M](https://huggingface.co/deepmodelingcommunity/DPA-3.1-3M) |
 | GRACE | `GRACE-2L-OMAT-medium-base` | [AMS-ICAMS-RUB/grace-foundation-models](https://huggingface.co/AMS-ICAMS-RUB/grace-foundation-models) |
 | UMA | `uma-s-1p2.pt` | [facebook/UMA](https://huggingface.co/facebook/UMA) |
-| NEP | your own `nep.txt` | trained for your elements and conditions; mliport ships and downloads none |
+| NEP | your own `nep.txt` | trained for your elements and conditions; mliport ships none |
 
-The hashes the validation suite uses are pinned in
-[`validation/science/model_manifest.json`](validation/science/model_manifest.json).
-Licenses belong to the upstream projects; UMA's checkpoint is under a non-commercial
-research license. Hugging Face mirrors and SOCKS proxies are covered in
-[docs/models.md](docs/models.md).
+Validation hashes: [`validation/science/model_manifest.json`](validation/science/model_manifest.json).
+Licenses belong to the upstream projects; UMA is non-commercial research only. Hugging Face
+mirrors and SOCKS proxies: [Models](docs/models.md).
 
 ## A first calculation
 
-The repository carries a 50-atom Li10GeP2S12 (LGPS) cell, small enough for a CPU
-smoke test:
+The repository carries a 50-atom Li₁₀GeP₂S₁₂ (LGPS) cell, small enough for a CPU smoke test:
 
 ```bash
-.venv-mace/bin/mliport sp examples/structures/li10gep2s12_primitive.vasp \
+./bin/mliport-mace sp examples/structures/li10gep2s12_primitive.vasp \
   --model /path/to/mace-omat-0-medium.model \
   --model-type mace --task bulk --device cuda \
   --output runs/lgps-mace-sp
 ```
 
-In `runs/lgps-mace-sp/` you get `mliport_results.json` (energy, forces, stress,
-timing), `resolved_config.json` (what was really used), `OUTCAR`, `CONTCAR`,
-`run.log` and, for a relaxation or MD run, `OSZICAR`. A run refuses an output
-directory that already holds results and locks it while it works; `--overwrite`
-replaces them on purpose. The device in the result is the one the backend reported,
-not the one you asked for.
+In `runs/lgps-mace-sp/` you get:
+
+| File | Contents |
+|---|---|
+| `mliport_results.json` | Energy, forces, stress, timing, provenance |
+| `resolved_config.json` | Every configuration value and its source |
+| `OUTCAR` | VASP-compatible output |
+| `CONTCAR` | Final structure |
+| `run.log` | Full log |
+
+A run refuses an output directory that already holds results (use `--overwrite` to replace
+them). The device in the result is the one the backend actually used, not the one you requested.
 
 ## Choosing a backend
 
-The backend comes from `--model-type` or a configured alias. Without one the run
-fails; mliport never falls back to another model on its own.
+The backend comes from `--model-type` (or a configured alias). Without one the run fails —
+mliport never falls back to another model.
 
 ```bash
-.venv-mace/bin/mliport  sp LGPS.vasp --model mace-omat-0-medium.model --model-type mace  --task bulk --device cuda
-.venv-dpa/bin/mliport   sp LGPS.vasp --model DPA-3.1-3M.pt --model-type dpa --task bulk --head Omat24 --device cuda
-.venv-grace/bin/mliport sp LGPS.vasp --model GRACE-2L-OMAT-medium-base --model-type grace --task bulk --device cuda
-.venv/bin/mliport       sp LGPS.vasp --model uma-s-1p2.pt --model-type uma --task omat --device cuda
-.venv-nep/bin/mliport   sp LGPS.vasp --model nep.txt --model-type nep --nep-runtime ase --device cpu
+./bin/mliport-mace  sp LGPS.vasp --model mace-omat-0-medium.model --model-type mace  --task bulk --device cuda
+./bin/mliport-dpa   sp LGPS.vasp --model DPA-3.1-3M.pt --model-type dpa --task bulk --head Omat24 --device cuda
+./bin/mliport-grace sp LGPS.vasp --model GRACE-2L-OMAT-medium-base --model-type grace --task bulk --device cuda
+./bin/mliport-uma   sp LGPS.vasp --model uma-s-1p2.pt --model-type uma --task omat --device cuda
+./bin/mliport-nep   sp LGPS.vasp --model nep.txt --model-type nep --nep-runtime ase --device cpu
 ```
 
-| Engine | `--model-type` | Task / head | Good to know |
+| Engine | `--model-type` | Task / head | Notes |
 |---|---|---|---|
-| MACE | `mace` | `bulk` | float64 by default; `--dtype float32` is faster, less precise |
-| DPA | `dpa` | `bulk`, `--head Omat24` | multitask checkpoint; a missing head is an error, not a guess |
-| GRACE | `grace` | `bulk` | TensorFlow runtime, CPU and GPU |
-| UMA | `uma` (`fairchem` is an alias) | `omat` | `--task omol` for molecules; non-commercial research license |
-| NEP | `nep` + required `--nep-runtime ase\|gpumd` | `bulk` (PBC only) | runtime is never inferred; `ase` = Calorine (`cpu` float64, `cuda` float32 via one `gpumd` process per call), `gpumd` = one native process per run (float32) |
+| MACE | `mace` | `bulk` | float64 by default; `--dtype float32` is faster |
+| DPA | `dpa` | `bulk`, `--head Omat24` | Multitask checkpoint — must specify head |
+| GRACE | `grace` | `bulk` | TensorFlow runtime; CPU and GPU |
+| UMA | `uma` (alias: `fairchem`) | `omat` | `--task omol` for molecules; non-commercial research license |
+| NEP | `nep` + `--nep-runtime ase\|gpumd` | `bulk` (PBC only) | Runtime never inferred; `ase` = Calorine, `gpumd` = native |
 
-DPA and GRACE cannot change GPU after their framework has loaded, so when
-`CUDA_VISIBLE_DEVICES` is unset the CLI restarts the command in a fresh process with
-the right GPU visible. From Python, set `CUDA_VISIBLE_DEVICES` before you import
-them. More in [docs/backends/index.md](docs/backends/index.md).
+DPA and GRACE cannot change GPU after loading. Set `CUDA_VISIBLE_DEVICES` before import.
+See [Backends](docs/backends/index.md) for details.
 
-## The main workflows
+## Main workflows
 
-**Relaxation.** `--fmax` and `--max-steps` set convergence; `--cell-opt` relaxes the
-cell with the ions.
+**Relaxation** — minimize forces, optionally also the cell:
 
 ```bash
-.venv-mace/bin/mliport opt LGPS.vasp --model model.model --model-type mace \
+./bin/mliport-mace opt LGPS.vasp --model model.model --model-type mace \
   --fmax 0.05 --max-steps 200 --cell-opt --device cuda --output runs/lgps-opt
 ```
 
-**Molecular dynamics.** `--ensemble` is `NVE`, `NVT`, or (ASE UMA/MACE/GRACE/DPA only) isotropic `NPT`. With NVT, `--thermostat` is `LANGEVIN`,
-`BUSSI` or `NHC`. A run can continue from a saved frame that has velocities with
-`--velocity-policy preserve --no-pre-relax`. With NHC the default `--com-policy auto`
-zeroes the center-of-mass momentum once, so the cell does not drift and bias
-MSD-based transport. For NPT use `--pressure-gpa`, `--npt-tdamp`, and `--npt-pdamp`; the variable-cell trajectory is not qualified for direct fixed-cell MSD. See [MD workflow](docs/workflows/md.md).
+**Molecular dynamics** — NVE, NVT (Langevin / Bussi / NHC) or NPT (ASE backends only):
 
 ```bash
-.venv-mace/bin/mliport md LGPS.vasp --model model.model --model-type mace \
+./bin/mliport-mace md LGPS.vasp --model model.model --model-type mace \
   --ensemble NVT --thermostat LANGEVIN --temp 800 --timestep 1.0 \
   --steps 10000 --save-interval 100 --device cuda --output runs/lgps-md
 ```
 
-**NEB and CI-NEB.** The two endpoint files define the band, `--images` sets how many
-intermediates, `--climb` turns on the climbing image. Before the first step mliport
-checks, on your own band, whether the model's forces are the gradient of its energy
-(noise-aware finite differences) and refuses to go on if they are not; a model whose
-predictor reports direct (non-gradient) forces is always refused. The measurement is saved as
-`gradient_preflight`. It is a spot check of consistency, not a statement about
-accuracy.
+**NEB / CI-NEB** — minimum-energy path with gradient pre-flight check:
 
 ```bash
-.venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
+./bin/mliport-mace neb --initial initial.vasp --final final.vasp \
   --images 5 --climb \
   --model model.model --model-type mace --device cuda --output runs/lgps-neb
 ```
 
-Resume with `--resume runs/lgps-neb --output runs/lgps-neb`. The step budgets are
-part of the run's identity, so changing `--max-steps` while resuming is rejected.
-Advanced explicit atom mapping/image-shift control is available through API/direct
-CLI/TUI only.
-
-**Configuration search.** `confsearch` looks for low-energy configurations of one
-adsorbate on one side of a periodic slab: many independent starts (your structures,
-or random placements with `--slab`/`--molecule`), each run through heat–hold–cool
-Langevin cycles at fixed cell, with every snapshot quenched, classified (molecules
-whose covalent skeleton broke are set aside) and deduplicated. The result is a ranked
-list of the lowest minima found, with saturation evidence and POSCAR/CP2K files for
-DFT re-ranking — never a claim of a global minimum. `--dry-run` checks the inputs
-and the budget without loading a model.
+**Configuration search** — low-energy adsorbate configurations on a slab:
 
 ```bash
-.venv-mace/bin/mliport confsearch run --slab slab.vasp --molecule conformers.xyz \
+./bin/mliport-mace confsearch run --slab slab.vasp --molecule conformers.xyz \
   --n-starts 20 --cycles 5 \
   --model model.model --model-type mace --task bulk --device cuda --output runs/ads
 ```
 
-Interrupted runs continue with `confsearch resume`, finished ones grow with
-`confsearch extend --cycles N`, and comparable runs combine with `confsearch merge`.
-Details, defaults and limits: [docs/workflows/confsearch.md](docs/workflows/confsearch.md).
-
-**Batch, INCAR-style runs, queue, TUI, Python.**
+**Batch, queue, TUI and Python:**
 
 ```bash
-.venv-mace/bin/mliport batch structures/ --pattern "*.vasp" --calc-type sp \
+./bin/mliport-mace batch structures/ --pattern "*.vasp" --calc-type sp \
   --model model.model --model-type mace --device cuda --output runs/batch
 
-.venv-mace/bin/mliport template sp --output INCAR.mliport     # edit MODEL_PATH, MODEL_TYPE, ...
-.venv-mace/bin/mliport run -i INCAR.mliport -s LGPS.vasp -o runs/incar-sp
-
-.venv-mace/bin/mliport queue submit tasks.json                # then: queue start, jobs, queue stop
+./bin/mliport-mace queue submit tasks.json       # then: queue start, jobs, queue stop
+./bin/mliport-mace tui                           # interactive terminal UI
 ```
-
-`mliport tui` opens the interactive application (it needs a terminal). From Python:
 
 ```python
 from mliport.api import calculate_energy, run_single_point
@@ -248,37 +234,37 @@ energy = calculate_energy("LGPS.vasp", "model.model", model_type="mace", device=
 result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device="cuda")
 ```
 
+See [Workflows](docs/workflows/index.md) for the full reference.
+
 ## Analyzing a trajectory
 
 `analyze` takes an mliport run directory or an ASE trajectory:
 
 ```bash
-.venv-mace/bin/mliport analyze runs/lgps-md validate
-.venv-mace/bin/mliport analyze runs/lgps-md thermo
-.venv-mace/bin/mliport analyze runs/lgps-md msd --mobile Li
-.venv-mace/bin/mliport analyze runs/lgps-md rdf --center Li --neighbor S
-.venv-mace/bin/mliport analyze runs/lgps-md rmsd
-.venv-mace/bin/mliport analyze runs/lgps-md vacf
-.venv-mace/bin/mliport analyze runs/lgps-md spectrum
-.venv-mace/bin/mliport analyze runs/lgps-md density --mobile Li
-.venv-mace/bin/mliport analyze runs/lgps-md transport --mobile Li --charge 1 --fit-start-ps 100
-.venv-mace/bin/mliport analyze runs/lgps-md electrolyte --mobile Li --discover-sites-from-density
+./bin/mliport-mace analyze runs/lgps-md validate
+./bin/mliport-mace analyze runs/lgps-md thermo
+./bin/mliport-mace analyze runs/lgps-md msd --mobile Li
+./bin/mliport-mace analyze runs/lgps-md rdf --center Li --neighbor S
+./bin/mliport-mace analyze runs/lgps-md transport --mobile Li --charge 1 --fit-start-ps 100
+./bin/mliport-mace analyze runs/lgps-md electrolyte --mobile Li --discover-sites-from-density
+./bin/mliport-mace analyze runs/lgps-md vacf
+./bin/mliport-mace analyze runs/lgps-md spectrum
+./bin/mliport-mace analyze runs/lgps-md density --mobile Li
 ```
 
-Results go to `runs/lgps-md/analysis/<task>/<id>/` as JSON, CSV and, where it makes
-sense, PNG and SVG; plots render headlessly. A short trajectory is accepted but not
-over-read: `msd` and `transport` return an explicit insufficient-sampling status
-instead of a diffusion coefficient, and `arrhenius` fits only the points you give it.
-Options for each task are in [docs/analysis/index.md](docs/analysis/index.md).
+Results go to `runs/lgps-md/analysis/<task>/<id>/` as JSON, CSV, PNG and SVG. A short
+trajectory is accepted but not over-read: `msd` and `transport` return an explicit
+insufficient-sampling status instead of a diffusion coefficient, and `arrhenius` fits only
+the points you give it. See [Analysis](docs/analysis/index.md) for the full reference.
 
 ## Configuration
 
-The backend is always explicit (`--model-type mace|dpa|grace|uma|nep` plus `--model`,
-or an alias; `nep` also needs `--nep-runtime`). Configuration is strict: unknown and cross-backend keys are errors, and
-`--lenient-config` downgrades them for exploratory runs. `mliport config` inspects
-settings; a project `settings.ini` can define aliases, and `--settings PATH` wins
-over the user and project files. Each run writes `resolved_config.json` with the
-source of every value.
+The backend is always explicit (`--model-type` plus `--model`, or an alias; `nep` also
+needs `--nep-runtime`). Configuration is strict: unknown and cross-backend keys are errors.
+`--lenient-config` downgrades them for exploratory runs. `mliport config` inspects settings;
+a project `settings.ini` can define aliases, and `--settings PATH` overrides the user and
+project files. Every run writes `resolved_config.json` recording the source of each value.
+See [Configuration](docs/configuration.md).
 
 ## Status and limits
 
@@ -328,12 +314,22 @@ Per-workload tables, tier scopes and limitations live in the reports; the README
 
 <!-- END GENERATED -->
 
+**Known limits:**
+
+- INCAR-style input covers the common controls, not every option.
+- NEP: you supply the `nep.txt`; mliport cannot say whether it fits your material. The native
+  `gpumd` runtime has no CPU path and refuses NEB, batch and confsearch. Not part of the
+  validation campaign. See [NEP](docs/backends/nep.md).
+- Model accuracy belongs to the upstream checkpoint.
+- Configuration search (`confsearch`) is new: CI-tested with synthetic models, not yet
+  GPU-validated with real models. Treat its ranking as a screening for DFT.
+
 ## Citation
 
-See [docs/citations.md](docs/citations.md) and [`CITATION.cff`](CITATION.cff). If you
-use a backend model, cite the upstream model and respect its license.
+See [Citations](docs/citations.md) and [`CITATION.cff`](CITATION.cff). If you use a backend
+model, cite its upstream paper and respect its license.
 
 ## License
 
-The mliport package is under the license in [`LICENSE.md`](LICENSE.md). Model
-checkpoints and the upstream frameworks keep their own licenses.
+mliport is under the license in [`LICENSE.md`](LICENSE.md). Model checkpoints and upstream
+frameworks keep their own licenses.

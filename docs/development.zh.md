@@ -107,3 +107,15 @@ uv build mliport              # sdist 与 wheel
   生成了哪些验证记录、为什么）。
 - CI 必须全部通过：Python 3.10 到 3.13 的测试、lint、打包和文档构建。
 - 不要为了让报告好看而放宽阈值，也不要删掉如实标注的 `not_run` 记录。
+
+## 已移除的内部模块（v2.0.0b5）
+
+PR #118 移除了两个内部模块。如果你有代码引用了它们，请按下表修改：
+
+| 已移除 | 替代方案 |
+|---|---|
+| `mliport.utils`（整个模块） | 无公开替代；这些工具函数是私有辅助。请直接使用 ASE、pathlib 或标准库中的等价实现。 |
+| `mliport.logger.CalculationLogger` | 无公开替代；运行日志现在由 runner 内部处理。 |
+
+这两个符号从未出现在公开 API 中。如果你使用了它们，说明你依赖的是私有实现细节。公开入口
+（`mliport.api`、`mliport.config`、CLI）不受影响。

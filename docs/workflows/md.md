@@ -1,23 +1,53 @@
 # Molecular dynamics
 
-`mliport md` runs NVE, NVT or NPT dynamics with the backend you pick and records a
-trajectory that the [analysis](../analysis/index.md) tools can read back.
+`mliport md` integrates the classical equations of motion to generate a
+trajectory — a time series of atomic positions and velocities that samples a
+thermodynamic ensemble. The trajectory is the raw material for all of
+mliport's [analysis](../analysis/index.md) tools: diffusion coefficients,
+radial distribution functions, vibrational spectra and more.
+
+## The physics
+
+Molecular dynamics solves Newton's equations of motion:
+
+$$m_i \ddot{\mathbf{r}}_i = \mathbf{F}_i = -\nabla_i E$$
+
+where the forces $\mathbf{F}_i$ come from the MLIP model at each timestep.
+The trajectory is integrated with velocity Verlet, and a thermostat can be
+coupled to control the temperature.
+
+### Ensembles
+
+- **NVE** (microcanonical): constant number of atoms, volume and total
+  energy. No thermostat. Used for benchmarking energy conservation or when
+  you need unperturbed dynamics (e.g. for vibrational spectra via VACF).
+- **NVT** (canonical): constant temperature via a thermostat. The most common
+  choice for equilibrium sampling and transport-coefficient extraction.
+- **NPT** (isothermal–isobaric): constant temperature and pressure via a
+  coupled thermostat and barostat. Used for equilibrating the cell volume at a
+  target pressure before switching to NVT for production.
+
+## Command line
 
 ```bash
-.venv-mace/bin/mliport md structure.cif \
+mliport md structure.cif \
   --model mace-omat-0-medium.model --model-type mace \
   --ensemble NVT --temp 300 --timestep 1.0 --steps 1000 \
   --equilibration-steps 500 --save-interval 10 \
   --output runs/md
 ```
 
-You need a periodic structure, a model and an explicit backend. MD on a
-molecule needs a molecular task (`omol` / `molecule`) and sensible charge and
-spin.
+### A production run at 800 K with NHC thermostat
 
-## Isotropic NPT cell equilibration (ASE-only)
+```bash
+mliport md structure.cif --model uma.pt --model-type uma --task omat \
+  --ensemble NVT --temp 800 --timestep 1.0 \
+  --equilibration-steps 5000 --steps 50000 --save-interval 10 \
+  --thermostat NHC \
+  --output runs/md-800K
+```
 
-For UMA/MACE/GRACE/DPA, `--ensemble NPT` uses ASE's **isotropic Martyna–Tobias–Klein (MTK)** thermostat/barostat, not Langevin/Bussi/NHC. Example:
+### NPT cell equilibration
 
 ```bash
 mliport md structure.cif --model model.pt --model-type mace \
@@ -27,108 +57,223 @@ mliport md structure.cif --model model.pt --model-type mace \
   --no-pre-relax --output runs/npt-800K
 ```
 
-In INCAR-style files and `settings.ini` the same options are `ENSEMBLE` (or `MD_ENSEMBLE`) `= NPT`, `PRESSURE_GPA` (alias `PRESSURE`), `NPT_TDAMP`, `NPT_PDAMP`, `NPT_TCHAIN`, `NPT_PCHAIN`, `NPT_TLOOP` and `NPT_PLOOP`; the NPT-only keys are rejected unless the ensemble is NPT.
+NPT uses ASE's **isotropic Martyna–Tobias–Klein (MTK)** thermostat/barostat
+for the UMA, MACE, GRACE and DPA backends. NEP/GPUMD is not supported for
+NPT. See the [NPT details](#npt-details) section below.
 
-The parameters `--npt-tchain`/`--npt-pchain` default to 3 and `--npt-tloop`/`--npt-ploop` to 1. Times are in fs. **Positive pressure is compressive (GPa)**; the conversion to ASE eV/Å³ is recorded. Thermostat and barostat damping are not equilibration time guarantees. The NPT run uses 3D PBC, a finite positive-volume cell, and model **stress**. It rejects all atomic/COM constraints, partial PBC, zero T, and unsupported backends (including NEP/GPUMD). Automatic COM handling zeroes initial COM momentum once; the recorded MTK thermostat set point accounts for the 3 missing kinetic degrees of freedom.
+## Python API
 
-Standard XDATCAR represents fixed-cell MD only: NPT disables XDATCAR with a logged reason, while `raw/trajectory.traj` preserves each frame's cell and momenta. The `md.csv` file records instantaneous **total** pressure including the kinetic term, and volume per saved frame. NPT trajectory metadata is marked variable-cell / transport-ineligible: do **not** calculate conventional fixed-cell MSD, Einstein–Helfand conductivity or diffusion from it. For solid electrolytes, equilibrate volume/cell at the target T and pressure, extract the *equilibrated-window mean cell* with an independent statistical check, then start a **separate** fixed-cell NVT/NVE run. The last NPT frame is not automatically an average cell. NPT frame restarts do not preserve hidden MTK chain/barostat state and are not exact trajectory continuation. Near a phase transition or an anisotropic crystal, an isotropic cell-only barostat may be insufficient.
+```python
+from mliport.api import run_md
 
-## Options you will use
+# NVT production run
+results = run_md(
+    structure="structure.cif",
+    model_path="mace-omat-0-medium.model",
+    model_type="mace",
+    ensemble="NVT",
+    temperature=800,
+    timestep=1.0,
+    steps=50000,
+    thermostat="NHC",
+    save_interval=10,
+    output_dir="runs/md-800K",
+)
+print(f"Final temperature: {results['temperature']:.1f} K")
+```
 
-| Option | Meaning |
-|---|---|
-| `--ensemble` | `NVT` (default), `NVE`, or isotropic `NPT` (UMA/MACE/GRACE/DPA ASE only) |
-| `--temp` | target temperature in K (default 300) |
-| `--pressure-gpa` | NPT external hydrostatic pressure in GPa (+ compressive; default 0) |
-| `--npt-tdamp`, `--npt-pdamp` | NPT MTK thermostat/barostat damping times in fs |
-| `--npt-tchain`, `--npt-pchain`, `--npt-tloop`, `--npt-ploop` | NPT MTK chain lengths and integration substeps |
-| `--timestep` | integration step in fs (default 1.0) |
-| `--steps` | production steps (default 1000) |
-| `--equilibration-steps` | equilibration in the same ensemble before production (default 0) |
-| `--thermostat` | `LANGEVIN` (default), `BUSSI` or `NHC` |
-| `--friction`, `--bussi-tau`, `--nhc-tdamp`, `--nhc-tchain`, `--nhc-tloop` | thermostat parameters |
-| `--save-interval` | write a frame every N steps (default 10) |
-| `--seed` | random seed; generated and recorded when omitted |
-| `--velocity-policy`, `--com-policy` | how velocities and the center-of-mass motion are handled |
-| `--pre-relax`, `--pre-relax-steps`, `--pre-relax-fmax` | a short positions-only relaxation before MD (default on for NVT, off for NVE and NPT; 50 steps, 0.1 eV/Å) |
-| `--fmax-abort` | abort when a force exceeds this many eV/Å (default 20) |
-| `--write-outcar`, `--write-xdatcar`, `--write-trajectory` | which outputs to write |
+The function accepts an ASE `Atoms` object or a file path. It returns a
+dictionary with temperature, energy, and trajectory metadata.
 
-### Pre-relaxation is a gate, not a suggestion
+!!! note "NPT arguments are keyword-only"
+    When calling `run_md` for NPT, pass NPT parameters as keyword arguments:
+    `pressure_gpa=0.0`, `npt_tdamp=100.0`, etc. They cannot be passed
+    positionally. This prevents the historical positional-argument ambiguity
+    with `MDRunner` (Issue #102).
+
+## Options
+
+### Dynamics
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--ensemble` | `NVT` | `NVE`, `NVT`, or `NPT` |
+| `--temp` | 300 K | Target temperature |
+| `--timestep` | 1.0 fs | Integration timestep |
+| `--steps` | 1000 | Production steps |
+| `--equilibration-steps` | 0 | Equilibration steps (same ensemble, before production) |
+| `--save-interval` | 10 | Write a trajectory frame every N steps |
+| `--seed` | random | Random seed; generated and recorded when omitted |
+
+### Thermostats (NVT)
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--thermostat` | `LANGEVIN` | `LANGEVIN`, `BUSSI` or `NHC` |
+| `--friction` | — | Langevin friction coefficient (1/fs) |
+| `--bussi-tau` | — | Bussi/CSVR coupling time (fs) |
+| `--nhc-tdamp` | — | Nosé–Hoover chain damping time (fs) |
+| `--nhc-tchain` | — | NHC chain length |
+| `--nhc-tloop` | — | NHC integration substeps |
+
+### NPT parameters
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--pressure-gpa` | 0 | External hydrostatic pressure in GPa (positive = compressive) |
+| `--npt-tdamp` | — | MTK thermostat damping time (fs) |
+| `--npt-pdamp` | — | MTK barostat damping time (fs) |
+| `--npt-tchain` / `--npt-pchain` | 3 | MTK chain lengths |
+| `--npt-tloop` / `--npt-ploop` | 1 | MTK integration substeps |
+
+### Pre-relaxation
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--pre-relax` | on for NVT, off for NVE/NPT | Positions-only relaxation before MD |
+| `--pre-relax-steps` | 50 | Maximum pre-relaxation steps |
+| `--pre-relax-fmax` | 0.1 eV/Å | Pre-relaxation force threshold |
+
+### Safety and output
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--fmax-abort` | 20 eV/Å | Abort when a force exceeds this |
+| `--velocity-policy` | — | How initial velocities are handled |
+| `--com-policy` | `auto` | Center-of-mass motion handling |
+| `--write-outcar` | true | Write VASP-style OUTCAR |
+| `--write-xdatcar` | true | Write VASP-style XDATCAR (NVT/NVE only) |
+| `--write-trajectory` | true | Write ASE `.traj` trajectory |
+
+## Pre-relaxation: a gate, not a suggestion
 
 If the pre-relaxation does not reach `--pre-relax-fmax` within
-`--pre-relax-steps`, the run **stops before production MD**. Starting dynamics
-from a structure that is still far from a minimum is rarely what anyone wants,
-and a silent "good enough" would hide it. The error tells you what to do: raise
+`--pre-relax-steps`, the run **stops before production MD begins**. Starting
+dynamics from a structure with large forces is rarely what anyone wants, and a
+silent "good enough" would hide it. The error tells you what to do: increase
 the step budget, loosen the threshold if you can justify it scientifically, or
-turn pre-relaxation off explicitly. The outcome of a pre-relaxation that did
-finish is recorded in `md_provenance.pre_relax`.
+turn pre-relaxation off with `--no-pre-relax`. The outcome of a successful
+pre-relaxation is recorded in `md_provenance.pre_relax`.
+
+## Thermostats: which one and why it matters
+
+The thermostat controls temperature in NVT simulations. The choice affects
+the dynamics and therefore the transport coefficients you extract.
+
+- **Langevin** (default): stochastic thermostat that adds friction and random
+  forces. Straightforward and stable. The friction parameter couples how
+  strongly the thermostat acts. *Caveat*: Langevin dynamics are not
+  Hamiltonian, so velocity autocorrelation functions and vibrational spectra
+  computed from Langevin trajectories carry thermostat artifacts. For spectra,
+  use NVE or NHC.
+- **Bussi/CSVR**: deterministic thermostat that rescales velocities to match
+  the canonical distribution (Bussi, Donadio and Parrinello, J. Chem. Phys.
+  **126**, 014101, 2007). A good middle ground: minimal perturbation to the
+  dynamics while enforcing the correct temperature distribution.
+- **NHC** (Nosé–Hoover chain): deterministic thermostat based on extended
+  system dynamics (Martyna et al., J. Chem. Phys. **97**, 2635, 1992).
+  Produces true canonical sampling with unperturbed dynamics. Best choice for
+  vibrational spectra and diffusion coefficients. **Cannot coexist with
+  FixCom or other ASE constraints.** mliport checks for constraints *before*
+  loading the model — if the input structure carries any constraint, the run
+  fails immediately with an actionable error rather than loading the model and
+  then crashing.
+
+**Always state the thermostat when reporting a diffusion coefficient.** Two
+simulations with different thermostats at the same temperature are different
+dynamical systems.
+
+### NHC and center-of-mass motion
+
+NHC cannot run with a `FixCom` constraint. With the default `--com-policy
+auto` (same as `initialize_only`), mliport zeroes the center-of-mass momentum
+once after initializing velocities, and NHC then conserves it. The run
+therefore has $3N-3$ kinetic degrees of freedom, and the thermostat set point
+is scaled by $(3N-3)/(3N)$ (recorded as `nhc_set_temperature_K`). With
+`--com-policy none`, the random COM momentum stays, the cell drifts
+ballistically, and that drift dominates the MSD unless the analysis removes it.
 
 ## Timestep, save interval and what analysis sees
 
-`--timestep` is how the equations of motion are integrated; `--save-interval`
-is how often a frame is written. With a 1 fs timestep and `--save-interval 10`
-you get a frame every 10 fs, and it is this saved spacing, not the integration
-step, that transport analysis needs.
+`--timestep` is the integration step size; `--save-interval` is how often a
+frame is saved. With 1 fs timestep and `--save-interval 10`, you get a frame
+every 10 fs. It is this **saved spacing** — not the integration step — that
+transport analysis needs to know.
 
 Keep equilibration out of your statistics: use `--equilibration-steps` and
-analyze only the production segment. Keep the ensembles apart, too. NVE and NVT
-are different dynamics and their trajectories should never be averaged together.
+analyze only the production segment. Keep ensembles apart — NVE and NVT are
+different dynamics and their trajectories should never be averaged together.
 
-## Thermostats and center-of-mass motion
+## NPT details
 
-`--thermostat` chooses how NVT temperature is controlled. Langevin is
-stochastic; Bussi and NHC are deterministic. Transport coefficients depend on the
-choice, so state it when you report a diffusion coefficient.
+NPT runs an isotropic Martyna–Tobias–Klein (MTK) thermostat/barostat. It is
+available on UMA, MACE, GRACE and DPA backends (not NEP/GPUMD).
 
-NHC deserves a note. It cannot run together with a FixCom (or any other)
-constraint. With the default `--com-policy auto` (the same as `initialize_only`)
-mliport zeroes the center-of-mass momentum once after initializing velocities,
-which NHC then conserves. The run therefore has `3N-3` kinetic degrees of
-freedom, and the thermostat set point is scaled by `(3N-3)/3N` (recorded as
-`nhc_set_temperature_K`). With `--com-policy none` the random center-of-mass
-momentum stays, the whole cell drifts ballistically, and that drift dominates the
-MSD of the mobile ions unless the analysis removes it.
+**Requirements:**
 
-Constraints and fixed atoms are applied through the calculator and runners;
-state them when you report diffusion.
+- 3D periodic boundary conditions
+- A finite positive-volume cell
+- A model that provides **stress**
+- No atomic/COM constraints, no partial PBC
+
+**Pressure convention:** positive pressure is compressive (GPa). The
+conversion to ASE's internal eV/Å³ is recorded.
+
+**XDATCAR and analysis:** Standard XDATCAR represents fixed-cell MD only, so
+NPT disables XDATCAR (with a logged reason). The trajectory is preserved in
+`raw/trajectory.traj` with each frame's cell and momenta. The `md.csv` file
+records instantaneous total pressure (including kinetic term) and volume per
+saved frame.
+
+**Transport analysis caveat:** NPT trajectories are marked
+variable-cell / transport-ineligible. Do **not** calculate conventional
+fixed-cell MSD, Einstein–Helfand conductivity or diffusion from NPT data.
+For solid electrolytes, the recommended workflow is:
+
+1. Equilibrate volume/cell at target T and pressure with NPT
+2. Extract the equilibrated-window mean cell with an independent statistical
+   check (the last NPT frame is **not** automatically an average cell)
+3. Start a **separate** fixed-cell NVT or NVE production run on the
+   equilibrated cell
+
+**Frame restarts:** NPT frame restarts do not preserve hidden MTK
+chain/barostat state and are not exact trajectory continuations.
 
 ## Continuing a run
 
-`md` has no `--resume` flag. To continue, read a saved frame that carries
-momenta and start a **new** run from it:
+MD has no `--resume` flag. To continue a trajectory, read a saved frame that
+carries momenta and start a **new** run:
 
 ```bash
-.venv-mace/bin/mliport md last_frame.traj --model mace-omat-0-medium.model \
-  --model-type mace --velocity-policy preserve --no-pre-relax --output runs/md-part2
+mliport md last_frame.traj --model mace-omat-0-medium.model \
+  --model-type mace --velocity-policy preserve --no-pre-relax \
+  --output runs/md-part2
 ```
 
-The new run keeps the supplied positions and velocities and does not draw a
-fresh Maxwell–Boltzmann distribution. It is a separate run directory with its own
-record, and its first frame equals the last frame of the previous leg (the
-acceptance suite checks exactly that).
+The new run keeps the supplied positions and velocities without drawing a
+fresh Maxwell–Boltzmann distribution. It is a separate run directory with its
+own record, and its first frame equals the last frame of the previous leg.
 
 ## What can stop a run
 
-A force above `--fmax-abort` or a NaN aborts the run rather than writing corrupt
-frames. A failure while writing output aborts it too, instead of silently
-dropping frames. A missing model or structure, or an option combination that is
-not supported, fails before the dynamics start.
+- A force above `--fmax-abort` or a NaN aborts immediately rather than writing
+  corrupt frames.
+- A failure while writing output aborts instead of silently dropping frames.
+- A missing model, structure, or unsupported option combination fails before
+  the dynamics start.
 
-The acceptance matrix runs 5-step NVE and 5-step Langevin, Bussi and NHC smoke
-tests in all four backend environments. Those runs check the workflow and the
-thermostat plumbing, not that the temperature has equilibrated.
+## Output files
 
-## A production-style example
+| File | Location | Contents |
+|---|---|---|
+| `trajectory.traj` | `raw/` | Full ASE trajectory with positions, velocities, cell |
+| `md.csv` | `raw/` | Per-frame energy, temperature, pressure, volume |
+| `OUTCAR`, `OSZICAR` | `vasp/` | VASP-compatible energy and force records |
+| `XDATCAR` | `vasp/` | VASP-compatible trajectory (NVT/NVE only, fixed cell) |
+| `mliport_results.json` | `.` | Summary: temperature, energy, timing |
+| `resolved_config.json` | `.` | Complete resolved configuration |
+| `run_context.json` | `.` | Model identity and provenance |
+| `artifacts.json` | `.` | File listing with units and hashes |
+| `run.log` | `.` | Human-readable log |
 
-```bash
-.venv/bin/mliport md structure.cif --model uma.pt --model-type uma --task omat \
-  --ensemble NVT --temp 800 --timestep 1.0 \
-  --equilibration-steps 5000 --steps 50000 --save-interval 10 \
-  --thermostat NHC \
-  --output runs/md-800K
-```
-
-The files this produces are described in [Output files](../outputs.md): the
-canonical trajectory and `md.csv` under `raw/`, the VASP-style files under
-`vasp/`, and `artifacts.json` listing them with units and hashes.
+See [Output files](../outputs.md) for the conventions shared by all workflows.

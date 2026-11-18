@@ -1,37 +1,95 @@
 # Transport (kinisi)
 
-`transport` estimates the tracer diffusion coefficient of the mobile ion from an
-MD trajectory, with an uncertainty, using the kinisi analyzer, and converts it to
-a Nernst–Einstein ionic conductivity for charged species.
+The `transport` task estimates the tracer diffusion coefficient of mobile ions
+with a proper uncertainty, and converts it to a Nernst–Einstein ionic
+conductivity. It uses the [kinisi](https://github.com/kinisi-dev/kinisi)
+library for statistically rigorous blocked averaging of the MSD.
 
 ```bash
-mliport analyze runs/md transport --mobile Li --charge 1 \
-  --fit-start-ps 50 --temperature-K 800
+./bin/mliport-mace analyze runs/lgps-md transport \
+  --mobile Li --charge 1 --fit-start-ps 50 --temperature-K 800
 ```
 
-You need a production trajectory with a known **saved-frame** spacing
-(`--frame-interval-fs` for external files), the mobile species, its charge in
-units of e, and the start of the diffusive fit. Equilibration frames are left out.
+!!! tip "MSD first, then transport"
+    Run the [MSD](msd.md) task first to check that your trajectory is in the
+    diffusive regime (α ≈ 1). The `transport` task extracts a diffusion
+    coefficient — if the trajectory is not diffusive, the number will be
+    unreliable regardless of the statistical treatment.
 
-## Options you will use
+## Physical background
 
-| Option | Meaning |
+### From MSD to diffusivity
+
+The Einstein relation connects the long-time limit of the MSD to the self-
+diffusion coefficient:
+
+$$
+D = \lim_{t \to \infty} \frac{\text{MSD}(t)}{2 \, d \, t}
+$$
+
+where *d* is the number of spatial dimensions. In practice, you fit a straight
+line to the MSD in the diffusive regime and extract *D* from its slope. The
+challenge is estimating the **uncertainty** on this slope.
+
+### Why kinisi?
+
+A naive linear fit to the MSD underestimates the uncertainty because MSD values
+at neighboring lag times are **correlated** — they share time origins. kinisi
+addresses this by:
+
+1. Splitting the trajectory into blocks and computing the MSD covariance
+   matrix across lag times.
+2. Performing a Bayesian fit that accounts for these correlations.
+3. Reporting a posterior distribution for *D*, from which a credible interval
+   (uncertainty) is drawn.
+
+This is more statistically rigorous than a simple least-squares fit and avoids
+reporting artificially small error bars.
+
+### Nernst–Einstein conductivity
+
+The **Nernst–Einstein relation** connects the tracer diffusion coefficient to an
+ionic conductivity:
+
+$$
+\sigma_\text{NE} = \frac{n \, (z \, e)^2 \, D}{k_B \, T}
+$$
+
+where *n* is the number density of mobile ions, *z* is the charge number, *e*
+is the elementary charge, *k*_B is Boltzmann's constant, and *T* is the
+temperature.
+
+!!! warning "Nernst–Einstein assumes uncorrelated motion"
+    The Nernst–Einstein conductivity assumes that each ion diffuses
+    independently. In real materials, ion–ion correlations (the **Haven ratio**)
+    can make the true conductivity differ from the NE estimate. Use
+    `--collective-conductivity` to compute the charge-collective (Onsager)
+    conductivity, which captures these correlations.
+
+### Haven ratio
+
+The Haven ratio quantifies the deviation between tracer and charge transport:
+
+$$
+H_R = \frac{D_\text{tracer}}{D_\text{charge}}
+$$
+
+*H*_R = 1 means uncorrelated motion (NE is exact). *H*_R < 1 means cooperative
+motion enhances conductivity beyond what individual diffusion would predict.
+*H*_R > 1 means anti-correlated motion reduces it. For many solid
+electrolytes, *H*_R is in the range 0.3–0.8.
+
+## Usage
+
+### Required options
+
+| Option | Description |
 |---|---|
-| `--mobile SPECIES` | the mobile species (required) |
-| `--charge` | ionic charge in units of e (required; used for conductivity) |
-| `--fit-start-ps` | where the diffusion fit starts (required) |
-| `--lag-step-ps`, `--lag-stop-ps` | an explicit, sparser kinisi lag grid; give both or neither |
-| `--dimensions` | which Cartesian axes enter the estimate, as a subset of `xyz` (default `xyz`) |
-| `--temperature-K` | temperature for the Nernst–Einstein conversion |
-| `--drift-reference`, `--drift-mode`, `--drift-indices` | framework-drift correction (mode default `arithmetic_mean`) |
-| `--collective-conductivity`, `--collective-system-particles` | also compute the charge-collective (Onsager) conductivity; kinisi's index-ordered statistical groups (default 1; they are not independent MD replicas) |
-| `--jump-diffusion` | also run kinisi's jump-diffusion analyzer as a diagnostic |
-| `--n-samples`, `--n-walkers`, `--n-burn`, `--n-thin`, `--random-seed` | kinisi sampling controls (defaults 1000, 32, 500, 10, 0) |
-| `--parser-memory-limit-gib` | refuse to parse when the estimated memory peak exceeds this (default 4) |
-| `--allow-reconstructed-fallback` | diagnostic only: fall back to kinisi's unverified displacement reconstruction; the result is marked `publication_grade=false` |
+| `--mobile SPECIES` | Mobile species (e.g., `Li`, `Na`) |
+| `--charge Z` | Ionic charge in units of *e* (e.g., `1` for Li⁺) |
+| `--fit-start-ps` | Start of the diffusive fit window (picoseconds) |
 
-The lag grid sparsifies lag times, not trajectory frames. On a long trajectory a
-sparse grid is what keeps kinisi's covariance matrix inside the memory guard.
+### Common options
 
 ## What comes out
 
@@ -97,30 +155,106 @@ agree:
 
 | Estimator | What it is | Window |
 |---|---|---|
-| plain OLS baseline | `D = slope(MSD)/(2d)` with explicit unit conversion | aligned to the kinisi fit start |
-| native MSD diagnostic | the product's explicit-range OLS diagnostic (regime-aware) | the recorded fit window |
-| kinisi posterior | tracer diffusion with a credible interval | the kinisi lag and fit window |
-| Nernst–Einstein | `sigma_NE = n (z e)^2 D_tracer / (k_B T)` | derived from the tracer estimate |
+| `--temperature-K` | — | Temperature for Nernst–Einstein conversion |
+| `--dimensions` | `xyz` | Which Cartesian axes contribute (subset of `xyz`) |
+| `--lag-step-ps` | — | Lag-time grid spacing (sparsifies the covariance matrix) |
+| `--lag-stop-ps` | — | Maximum lag time (give both or neither with `--lag-step-ps`) |
+| `--drift-reference` | `nonmobile` | Framework drift correction |
+| `--drift-mode` | `arithmetic_mean` | Drift calculation method |
 
-The report records `kinisi_to_plain_D_ratio` and raises an
-`estimator_disagreement_warning` when the ratio falls below 0.5 or above 2. That
-is a prompt to explain the difference (windows, drift, regime), not a pass/fail
-threshold. The unit audit is a known-answer check: `1 Å²/ps = 1e-8 m²/s`, so a 3D
-MSD slope of `6 Å²/ps` gives `D = 1e-8 m²/s`.
+### Collective conductivity
 
-A large disagreement usually means the fitted window is not in the diffusive
-regime, so check the local `alpha`: a "demonstration, not converged" protocol can
-show `alpha ≈ 2` even though the trajectory is finite and healthy.
+| Option | Default | Description |
+|---|---|---|
+| `--collective-conductivity` | false | Also compute the Onsager (charge-collective) conductivity |
+| `--collective-system-particles` | 1 | Number of kinisi statistical groups (not independent MD replicas) |
 
-## A tested example
+### Jump diffusion
+
+| Option | Description |
+|---|---|
+| `--jump-diffusion` | Also run kinisi's jump-diffusion analyzer as a diagnostic |
+
+### Sampling controls
+
+| Option | Default | Description |
+|---|---|---|
+| `--n-samples` | 1000 | Posterior samples |
+| `--n-walkers` | 32 | MCMC walkers |
+| `--n-burn` | 500 | Burn-in steps |
+| `--n-thin` | 10 | Thinning interval |
+| `--random-seed` | 0 | Random seed for reproducibility |
+| `--parser-memory-limit-gib` | 4 | Memory guard for the covariance matrix |
+
+### Fallback option
+
+| Option | Description |
+|---|---|
+| `--allow-reconstructed-fallback` | Use kinisi's unverified displacement reconstruction (marks result as `publication_grade=false`) |
+
+## Example
+
+A complete transport analysis of lithium in LGPS at 800 K:
 
 ```bash
-.venv-grace/bin/mliport analyze results/lgps-1ns transport \
-  --mobile Li --charge 1 --fit-start-ps 100 \
-  --lag-step-ps 1 --lag-stop-ps 200
+./bin/mliport-mace analyze runs/lgps-md-800K transport \
+  --mobile Li --charge 1 \
+  --fit-start-ps 50 --lag-step-ps 5 --lag-stop-ps 500 \
+  --temperature-K 800 \
+  --drift-reference nonmobile --drift-mode mass_weighted_com \
+  --collective-conductivity --jump-diffusion
 ```
 
-On the repository's 1 ns GRACE LGPS run this returns `D = 1.885e-09 m²/s` with a
-95% credible interval of `[1.492e-09, 2.275e-09] m²/s` (fit window 100–200 ps).
-Short trajectories return an insufficient-sampling status instead; mliport never
-makes up a diffusion coefficient for them.
+## Output files
+
+Results are written to `<run>/analysis/transport/<analysis-id>/`:
+
+| File | Contents |
+|---|---|
+| `results.json` | *D* with uncertainty, NE conductivity, collective conductivity (if requested), sampling diagnostics, provenance |
+| `transport_summary.csv` | Headline numbers in one row |
+
+## Interpreting results
+
+### What to report
+
+When reporting transport results:
+
+1. **The diffusivity and its uncertainty** — not just the mean *D*.
+2. **Which conductivity** — tracer-based Nernst–Einstein, or collective.
+3. **The fit window** — where it starts and ends, and why.
+4. **The drift policy** — framework drift removal changes *D*.
+5. **The cell** — constant-volume NVT constrains the mechanism; NPT lets the
+   cell breathe. A small cell suppresses diffusion.
+
+### Comparing estimators
+
+Different estimators of *D* from the same trajectory answer different questions:
+
+| Estimator | Description | When to use |
+|---|---|---|
+| Plain OLS | Slope of MSD / (2d), no covariance | Quick check |
+| kinisi posterior | Tracer *D* with credible interval | Publication |
+| Nernst–Einstein | σ = n(ze)²D/(k_BT) | Conductivity from tracer *D* |
+| Collective | Onsager conductivity from charge-weighted MSD | Full conductivity with correlations |
+
+When the kinisi-to-OLS ratio deviates strongly from 1, the fit window may not
+be in the diffusive regime — check the [MSD α curve](msd.md).
+
+### Failure modes
+
+The task fails closed (with a clear reason) when:
+
+- The trajectory is too short for the requested fit window
+- Frame interval is unknown (external trajectory without `--frame-interval-fs`)
+- Coordinate convention conflicts with stored metadata
+- Estimated memory exceeds `--parser-memory-limit-gib`
+
+A short trajectory returns an insufficient-sampling status — mliport never
+fabricates a diffusion coefficient.
+
+## Next steps
+
+- To understand the diffusion mechanism (which sites, which jumps): [GEMDAT](electrolyte-gemdat.md)
+- To extract an activation energy from multiple temperatures: [Arrhenius](arrhenius.md)
+- To go back and check the diffusion regime: [MSD](msd.md)

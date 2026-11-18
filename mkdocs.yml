@@ -125,8 +125,10 @@ nav:
       - analysis/vacf-spectrum.md
       - analysis/arrhenius.md
   - Reference:
+      - api.md
       - outputs.md
       - validation.md
+      - faq.md
       - troubleshooting.md
       - migration-from-mlipx.md
       - citations.md
