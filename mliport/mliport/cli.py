@@ -942,6 +942,10 @@ Examples:
         "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_run.add_argument("--task", type=str, default=None)
+    conf_run.add_argument(
+        "--device", type=str, default=None,
+        help="cpu, cuda, gpu or cuda:N (default: configured device, else cpu).",
+    )
     conf_run.add_argument("--output", type=str, default=None)
     conf_run.add_argument("--name", "-n", default=None)
     conf_run.add_argument("--cycles", dest="cs_cycles", type=int, default=None)
@@ -1075,6 +1079,10 @@ Examples:
         "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_resume.add_argument("--task", type=str, default=None)
+    conf_resume.add_argument(
+        "--device", type=str, default=None,
+        help="Override recorded device (subject to resume identity validation).",
+    )
     _add_resolver_args(conf_resume, trajectory_output_flags=False)
 
     conf_extend = confsearch_sub.add_parser(
@@ -1089,6 +1097,10 @@ Examples:
         "--model-type", type=str, default=None, choices=list(model_type_choices())
     )
     conf_extend.add_argument("--task", type=str, default=None)
+    conf_extend.add_argument(
+        "--device", type=str, default=None,
+        help="Override recorded device (subject to checkpoint identity validation).",
+    )
     _add_resolver_args(conf_extend, trajectory_output_flags=False)
 
     conf_merge = confsearch_sub.add_parser(
