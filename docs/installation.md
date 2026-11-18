@@ -66,6 +66,22 @@ skips GRACE and UMA.
 CPU installs are smaller (no CUDA libraries) and work everywhere, but inference is
 slower. This is useful for post-processing, analysis, and testing on laptops.
 
+### Windows (PowerShell)
+
+The `scripts/install_mliport.sh` bootstrap is Bash-only. From the repository root,
+run the Python-native installer directly in PowerShell:
+
+```powershell
+$env:PYTHONPATH = Join-Path $PWD "mliport"
+uv run --no-project --with packaging --python 3.12 -- python -m mliport.install --engines mace --device auto
+```
+
+This creates Windows virtual environments under `.venv-*/Scripts/` and native
+`bin/mliport-*.cmd` launchers. Use `.venv-mace\Scripts\mliport.exe` or
+`bin\mliport-mace.cmd` to run MACE. Backend build and GPU support remain subject
+to each upstream project's Windows support; the presence of a launcher alone is
+not evidence that a backend's GPU runtime is available.
+
 ### What the installer does
 
 For each engine you name, the installer:
