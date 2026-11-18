@@ -177,6 +177,28 @@ def test_mixed_known_and_unknown_future_gpu_fails_closed() -> None:
     assert "torch==2.8.0+cpu" in _all_argv(plan)
 
 
+def test_mixed_architecture_warnings_cover_every_visible_gpu() -> None:
+    plan = generate_plan(
+        [_gpu("RTX 2080 Ti", 7, 5), _gpu("RTX PRO 6000", 12, 0)],
+        ["grace"],
+        device="auto",
+        verify=False,
+    )
+    assert any("GRACE on turing: needs smoke test" in warning for warning in plan.warnings)
+    assert any("GRACE on blackwell: EXPERIMENTAL" in warning for warning in plan.warnings)
+
+
+def test_nep_blackwell_architecture_is_reported_as_experimental() -> None:
+    plan = generate_plan(
+        [_gpu("RTX PRO 6000", 12, 0)],
+        ["nep"],
+        device="auto",
+        verify=False,
+    )
+    assert any("NEP (Calorine / GPUMD) on blackwell: EXPERIMENTAL" in warning
+               for warning in plan.warnings)
+
+
 def test_grace_maxwell_missing_gpu_wheel_falls_back_or_refuses() -> None:
     maxwell = [_gpu("GTX 980", 5, 2)]
     with pytest.raises(InstallPlanError, match="no usable GPU runtime wheel"):
