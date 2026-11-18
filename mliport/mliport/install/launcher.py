@@ -56,19 +56,21 @@ def windows_launcher_script(backend: BackendSpec) -> str:
 
 
 def launcher_path(engine: str, base_dir: str | Path) -> Path:
-    return Path(base_dir) / LAUNCHER_DIR / f"mliport-{engine}"
+    suffix = ".cmd" if os.name == "nt" else ""
+    return Path(base_dir) / LAUNCHER_DIR / f"mliport-{engine}{suffix}"
 
 
 def create_launcher(backend: BackendSpec, base_dir: str | Path) -> Path:
-    """Write the launcher(s) for one backend and return the POSIX path."""
+    """Write the native launcher for one backend and return its actual path."""
     directory = Path(base_dir) / LAUNCHER_DIR
     directory.mkdir(parents=True, exist_ok=True)
-    posix = directory / launcher_name(backend)
-    posix.write_text(posix_launcher_script(backend), encoding="utf-8")
-    posix.chmod(posix.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     if os.name == "nt":
         cmd = directory / f"{launcher_name(backend)}.cmd"
         cmd.write_text(windows_launcher_script(backend), encoding="utf-8")
+        return cmd
+    posix = directory / launcher_name(backend)
+    posix.write_text(posix_launcher_script(backend), encoding="utf-8")
+    posix.chmod(posix.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return posix
 
 
