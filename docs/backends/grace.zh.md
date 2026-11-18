@@ -58,4 +58,12 @@ GRACE 模型是导出的 TensorFlow SavedModel，通过 `tensorpotential` 加载
 - **精度**由模型决定：固定的 profile 包括上游默认版本和 fp64 版本，见上表。
 - **应力**是否支持取决于模型。
 
-mliport 采用 MIT 许可证。上游软件和模型需要另外引用，见[引用](../citations.md)。
+mliport 采用 MIT 许可证，只把 GRACE 当作另外安装的软件调用，不打包、不再分发 GRACE 的代码或权重。
+上游软件和模型需要另外引用，见[引用](../citations.md)。
+
+**GRACE 软件本身的许可证。** `tensorpotential` 采用
+[Academic Software Licence（ASL）](https://github.com/ICAMS/grace-tensorpotential/blob/master/LICENSE.md)，
+不是开源许可证：它只允许学术、非商业用途，且对衍生作品是互惠（类似 GPLv2）的。它的 PyPI 元数据
+声明为 `License: Academic Software License (ASL)`。安装 `grace` 环境就是在运行该软件，因此商业或
+商业研究用途需要向权利方（ACEworks GmbH）另行取得商业许可，这与检查点自身的许可证无关。mliport
+不内嵌 GRACE 代码，所以这条限制不改变 mliport 的 MIT 许可证，只改变你可以用这个后端做什么。
