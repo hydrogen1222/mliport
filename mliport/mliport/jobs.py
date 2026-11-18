@@ -501,6 +501,7 @@ class JobManager:
         python: str | None = None,
         *,
         display_name: str | None = None,
+        submit_cwd: str | Path | None = None,
     ) -> str:
         """Atomically add a uniquely identified PENDING job."""
         job_id = self._validate_new_job_id(job_id)
@@ -523,7 +524,11 @@ class JobManager:
             "schema_version": STATE_SCHEMA_VERSION,
             "application": STATE_APPLICATION,
             "created_by_version": _created_by_version(),
-            "submit_cwd": str(Path.cwd()),
+            "submit_cwd": str(
+                Path(submit_cwd if submit_cwd is not None else Path.cwd())
+                .expanduser()
+                .resolve()
+            ),
             "project_root": str(_project_root()),
             "job_id": job_id,
             "run_id": job_id,

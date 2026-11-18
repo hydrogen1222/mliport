@@ -94,7 +94,9 @@ class AdvancedScreen(Screen):
                     id="opt",
                 ),
                 ListItem(
-                    Static("🌡️  Molecular Dynamics (MD)\n   Run NVT/NVE simulations"),
+                    Static(
+                        "🌡️  Molecular Dynamics (MD)\n   Run NVT/NVE/NPT simulations"
+                    ),
                     id="md",
                 ),
                 ListItem(

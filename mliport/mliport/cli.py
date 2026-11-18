@@ -168,9 +168,24 @@ def _mliport_version() -> str:
         return "0.0.0"
 
 
+class _MliportArgumentParser(argparse.ArgumentParser):
+    """Argument parser whose usage errors fail instead of "not converged".
+
+    ``argparse`` exits with status 2 for a usage error, but mliport reserves
+    exit code 2 for "the calculation finished but did not converge" (see
+    :mod:`mliport.run_status`).  The queue worker maps a child's exit code back
+    to a job status, so an invalid command line must not be reported as
+    ``not_converged``: it is a failure (exit 1) like any other error.
+    """
+
+    def error(self, message: str) -> None:  # type: ignore[override]
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_ERROR, f"{self.prog}: error: {message}\n")
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create argument parser with subcommands."""
-    parser = argparse.ArgumentParser(
+    parser = _MliportArgumentParser(
         prog="mliport",
         description="mliport - VASP-like CLI for MLIP models",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -449,6 +464,16 @@ Examples:
         help=(
             "Allow replacing calculation outputs (an earlier run, or VASP "
             "OUTCAR/CONTCAR) already present in the output directory"
+        ),
+    )
+    run_parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help=(
+            "Override the INCAR DEVICE for this run: cpu, cuda, gpu or cuda:N. "
+            "The queue rewrites this flag to the leased GPU's logical cuda:0, "
+            "so a queued job is pinned to its leased card."
         ),
     )
 
@@ -2095,6 +2120,13 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             if value is not None:
                 opts[key] = value
     elif calc_type == "confsearch":
+        # ``confsearch run`` takes mode-A starts positionally (argparse dest
+        # ``starts``); the resolver's option is ``cs_starts``.  Normalise here
+        # as well as in ``_cmd_confsearch_run`` so an argv built by the queue/
+        # TUI helper resolves identically through this helper.
+        starts = getattr(args, "starts", None)
+        if starts:
+            opts["cs_starts"] = os.pathsep.join(str(item) for item in starts)
         for key in _CONFSEARCH_CLI_KEYS:
             value = getattr(args, key, None)
             if value is not None:

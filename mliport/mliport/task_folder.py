@@ -2,24 +2,31 @@
 
 A *task folder* is the unit of daily mliport use: an ``INCAR.mliport`` next to
 the structure file, so that ``mliport run`` needs no arguments at all. This
-module owns the two operations behind the TUI wizard, and nothing else:
+module owns the task-folder operations behind the TUI wizard, and nothing else:
 
 * :func:`create_task_folder` writes ``INCAR.mliport`` from the same template
-  generator the CLI uses (with ``MODEL_TYPE`` / ``MODEL_PATH`` filled in) and
-  copies the chosen structure *byte for byte* under the name the ``run``
-  structure lookup expects (``POSCAR`` / ``structure.cif`` / ``structure.xyz``);
-* :func:`run_task_folder` runs it through :func:`mliport.cli.main`, i.e. the
-  exact code path of ``mliport run``. The TUI must never build its own run
-  command for this.
+  generator the CLI uses (with ``MODEL_TYPE`` / ``MODEL_PATH`` and the explicit
+  task/head filled in) and copies the chosen structure *byte for byte* under the
+  name the ``run`` structure lookup expects (``POSCAR`` / ``structure.cif`` /
+  ``structure.xyz``);
+* :func:`task_folder_readiness` keeps creation and executability separate: an
+  unresolved ``REQUIRED`` value is reported, never replaced by a default;
+* :func:`submit_task_folder` starts a ready folder as a detached background job
+  whose command is ``mliport run`` itself, through the shared
+  :class:`mliport.jobs.JobManager` worker/status/log path. The TUI never builds
+  its own run command and never blocks its event loop on the calculation;
+* :func:`run_task_folder` remains the blocking ``mliport.cli.main`` entry point
+  for non-interactive callers.
 
-Both functions fail closed: an unknown calculation type, an unsupported
-structure suffix, an existing non-empty destination or a template without the
-two model lines is an error, never a guess.
+All functions fail closed: an unknown calculation type, an unsupported structure
+suffix, an existing non-empty destination, a template without the two model
+lines, or a folder that is not ready is an error, never a guess.
 """
 
 from __future__ import annotations
 
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,6 +50,40 @@ INCAR_NAME = "INCAR.mliport"
 
 class TaskFolderError(ValueError):
     """A task folder could not be created without guessing."""
+
+
+@dataclass(frozen=True)
+class TaskFolderReadiness:
+    """Whether a created task folder is ready to be executed as written.
+
+    ``create_task_folder`` deliberately succeeds with ``REQUIRED`` placeholders
+    for decisions the wizard must not guess (task/head and the extra inputs of
+    NEB/confsearch).  Creation and executability are therefore separate facts:
+    callers that want to start a run must consult :func:`task_folder_readiness`
+    (or :func:`submit_task_folder`, which refuses to queue an unready folder).
+    """
+
+    calc_type: str
+    placeholders: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+
+    @property
+    def runnable(self) -> bool:
+        return not self.placeholders and not self.errors
+
+    def explanation(self) -> str:
+        """A user-facing reason why the folder cannot run yet."""
+        if self.placeholders:
+            return (
+                "This task folder still has unfilled REQUIRED values: "
+                + ", ".join(self.placeholders)
+                + ". Fill them in "
+                + INCAR_NAME
+                + " first."
+            )
+        if self.errors:
+            return "This task folder is not valid yet: " + "; ".join(self.errors)
+        return ""
 
 
 @dataclass(frozen=True)
@@ -96,6 +137,12 @@ def _model_reference_for_task_folder(model_path: str | Path) -> str:
     if not raw:
         raise TaskFolderError("A model file (MODEL_PATH) is required.")
     if is_file_name(raw):
+        # A bare name is either a models/ entry (resolved by `run` at run time)
+        # or a file in the wizard's directory.  Record the latter absolutely so
+        # the background worker does not depend on the wizard's cwd.
+        local = Path(raw).expanduser()
+        if local.is_file():
+            return str(local.resolve())
         return raw
     candidate = Path(raw).expanduser()
     if candidate.exists():
@@ -116,6 +163,20 @@ def _model_reference_for_task_folder(model_path: str | Path) -> str:
     )
 
 
+def _validated_device(value: str) -> str:
+    """Normalise an explicit ``DEVICE`` value or fail closed.
+
+    The wizard must not write a device the CLI would reject later, and it must
+    not fall back to a different one when the value is malformed.
+    """
+    import re  # noqa: PLC0415
+
+    normalized = str(value).strip().lower()
+    if re.fullmatch(r"(?:cpu|gpu|cuda(?::\d+)?)", normalized) is None:
+        raise TaskFolderError(f"Unsupported device {value!r}; use cpu, cuda or cuda:N.")
+    return normalized
+
+
 def incar_text_for(
     calc_type: str,
     *,
@@ -123,6 +184,8 @@ def incar_text_for(
     model_path: str | Path,
     task: str | None = None,
     head: str | None = None,
+    dpa_runtime: str | None = None,
+    device: str | None = None,
 ) -> str:
     """The template for ``calc_type`` with the chosen model filled in.
 
@@ -149,9 +212,20 @@ def incar_text_for(
     resolved_model = _model_reference_for_task_folder(model_path)
 
     text = build_incar_default(calc, engine=engine)
+    # Some backends have no active HEAD line in the template (MACE keeps it as
+    # an optional comment).  An explicit head must still be recorded, or the
+    # run silently executes the model's own default head instead.
+    template_has_active_head = any(
+        line.strip().startswith("HEAD") and "=" in line for line in text.splitlines()
+    )
+    # An explicit head replaces the template's commented "optional" hint
+    # instead of being duplicated next to it.
+    drop_commented_head = bool(head) and not template_has_active_head
+    written_device = _validated_device(device) if device is not None else None
     lines: list[str] = []
     seen_model_type = False
     seen_model_path = False
+    seen_device = False
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("MODEL_TYPE"):
@@ -161,6 +235,10 @@ def incar_text_for(
         if stripped.startswith("MODEL_PATH"):
             lines.append(f"MODEL_PATH = {resolved_model}")
             seen_model_path = True
+            if engine == "dpa" and dpa_runtime:
+                lines.append(f"DPA_RUNTIME = {dpa_runtime}")
+            if head and not template_has_active_head:
+                lines.append(f"HEAD = {head.strip()}")
             continue
         if stripped.startswith("TASK") and "=" in stripped:
             lines.append(f"TASK = {task.strip() if task else 'REQUIRED'}")
@@ -168,12 +246,24 @@ def incar_text_for(
         if stripped.startswith("HEAD") and "=" in stripped:
             lines.append(f"HEAD = {head.strip() if head else 'REQUIRED'}")
             continue
+        if drop_commented_head and stripped.startswith("# HEAD"):
+            continue
+        if (
+            written_device is not None
+            and stripped.startswith("DEVICE")
+            and "=" in stripped
+        ):
+            lines.append(f"DEVICE = {written_device}")
+            seen_device = True
+            continue
         lines.append(line)
     if not (seen_model_type and seen_model_path):
         raise TaskFolderError(
             "The generated template does not declare MODEL_TYPE and MODEL_PATH; "
             "refusing to write an INCAR the wizard cannot fill in."
         )
+    if written_device is not None and not seen_device:
+        lines.append(f"DEVICE = {written_device}")
     return "\n".join(lines) + "\n"
 
 
@@ -184,6 +274,10 @@ def create_task_folder(
     structure: str | Path,
     model_type: str,
     model_path: str | Path,
+    task: str | None = None,
+    head: str | None = None,
+    dpa_runtime: str | None = None,
+    device: str | None = None,
     overwrite: bool = False,
 ) -> TaskFolder:
     """Create a task folder and return what was written.
@@ -194,6 +288,14 @@ def create_task_folder(
         structure: Existing structure file; copied byte for byte.
         model_type: Backend chosen for ``MODEL_TYPE``.
         model_path: Model file chosen; recorded as an absolute path.
+        task: Explicit model task/system semantic.  ``None`` leaves ``TASK``
+            as a ``REQUIRED`` placeholder (the wizard then refuses to run it).
+        head: Explicit MACE head/DPA branch.  ``None`` leaves ``HEAD`` as a
+            ``REQUIRED`` placeholder when the template has that line.
+        dpa_runtime: Explicit DPA runtime (``current``/``legacy``); ``None``
+            keeps the CLI default strategy (``current``) without writing it.
+        device: Explicit compute device recorded as ``DEVICE``.  ``None`` keeps
+            the template's own value (the CLI built-in default, ``cpu``).
         overwrite: Allow writing into an existing directory (only when it holds
             neither an INCAR nor a structure of ours).
 
@@ -223,7 +325,15 @@ def create_task_folder(
                 )
     folder.mkdir(parents=True, exist_ok=True)
 
-    incar_text = incar_text_for(calc_type, model_type=model_type, model_path=model_path)
+    incar_text = incar_text_for(
+        calc_type,
+        model_type=model_type,
+        model_path=model_path,
+        task=task,
+        head=head,
+        dpa_runtime=dpa_runtime,
+        device=device,
+    )
     structure_copy = folder / target_name
     # Byte-for-byte copy: the wizard must never rewrite a structure.
     shutil.copyfile(source, structure_copy)
@@ -257,32 +367,155 @@ def remaining_placeholders(incar_text: str) -> list[str]:
     )
 
 
-def task_folder_command(folder: str | Path) -> list[str]:
+def task_folder_command(
+    folder: str | Path, *, structure: str | Path | None = None
+) -> list[str]:
     """The argv of ``mliport run`` for a created task folder.
 
     This is the single entry point the "run now" path uses, so the wizard and
-    the command line execute the same code.
+    the command line execute the same code.  Passing the structure explicitly
+    means the command does not depend on the caller's working directory (and
+    therefore never needs a process-wide ``chdir``).
     """
     path = Path(folder).expanduser().resolve()
-    return ["run", "--incar", str(path / INCAR_NAME)]
+    argv = ["run", "--incar", str(path / INCAR_NAME)]
+    if structure is not None:
+        argv += ["--structure", str(Path(structure).expanduser().resolve())]
+    return argv
 
 
 def run_task_folder(folder: str | Path) -> int:
-    """Run a "Create & Run" request through ``mliport run`` itself."""
+    """Run a "Create & Run" request through ``mliport run`` itself (blocking).
+
+    Kept for non-interactive callers and tests.  The TUI never calls this on its
+    event loop: it queues :func:`submit_task_folder` instead.  The task folder's
+    structure is passed explicitly so no global working-directory change is
+    needed.
+    """
     from mliport.cli import main  # noqa: PLC0415
 
-    cwd = Path.cwd()
     path = Path(folder).expanduser().resolve()
-    try:
-        # `run` discovers the structure in the working directory, so the task
-        # folder is the working directory for this call - exactly what the
-        # printed `cd <folder> && mliport run` does.
-        import os  # noqa: PLC0415
+    structure = _task_folder_structure(path)
+    return main(task_folder_command(path, structure=structure))
 
-        os.chdir(path)
-        return main(task_folder_command("."))
-    finally:
-        os.chdir(cwd)
+
+def _task_folder_structure(folder: Path) -> Path | None:
+    """The structure file ``run`` discovers in ``folder`` (POSCAR first)."""
+    for name in ("POSCAR", "CONTCAR", "structure.cif", "structure.xyz"):
+        candidate = folder / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def task_folder_readiness(folder: str | Path) -> TaskFolderReadiness:
+    """Report whether a created task folder can run as written.
+
+    This is intentionally a read-only check of the same INCAR ``mliport run``
+    reads.  It never repairs placeholders and never falls back to template
+    defaults for task/head.
+    """
+    from mliport.config.incar import IncarConfig  # noqa: PLC0415
+
+    path = Path(folder).expanduser().resolve()
+    incar = path / INCAR_NAME
+    if not incar.is_file():
+        return TaskFolderReadiness(
+            calc_type="", errors=(f"{INCAR_NAME} was not found in {path}",)
+        )
+    config = IncarConfig.from_file(incar)
+    calc_type = str(
+        config.get_str("CALC_TYPE", config.get_str("CALCULATION", "")) or ""
+    ).lower()
+    placeholders = tuple(remaining_placeholders(incar.read_text(encoding="utf-8")))
+    errors: tuple[str, ...] = ()
+    if not placeholders:
+        try:
+            errors = tuple(config.validate())
+        except ValueError as exc:
+            errors = (str(exc),)
+    return TaskFolderReadiness(
+        calc_type=calc_type, placeholders=placeholders, errors=errors
+    )
+
+
+def submit_task_folder(
+    folder: str | Path,
+    *,
+    manager=None,
+    python: str | None = None,
+    display_name: str | None = None,
+):
+    """Queue a ready task folder for persistent scheduler-controlled execution.
+
+    The job goes through the same :class:`mliport.jobs.JobManager` pending,
+    claim, lease, status and log machinery as every other TUI job; it is not a
+    second execution engine. The scheduler (not this UI call) starts it while
+    respecting queue pause and GPU/concurrency limits. Closing the TUI does
+    not cancel it.
+
+    Raises:
+        TaskFolderError: the folder has unfilled placeholders, invalid config,
+            a missing structure, or the job could not be submitted.
+    """
+    from ase.io import read  # noqa: PLC0415
+
+    from mliport.config.resolver import resolve_config  # noqa: PLC0415
+    from mliport.config.settings import load_settings  # noqa: PLC0415
+    from mliport.jobs import JobManager  # noqa: PLC0415
+
+    path = Path(folder).expanduser().resolve()
+    readiness = task_folder_readiness(path)
+    if not readiness.runnable:
+        raise TaskFolderError(readiness.explanation())
+    incar = path / INCAR_NAME
+    structure = _task_folder_structure(path)
+    if structure is None:
+        raise TaskFolderError(
+            f"No structure file ({', '.join(('POSCAR', 'CONTCAR', 'structure.cif', 'structure.xyz'))}) was found in {path}."
+        )
+
+    from mliport.config.incar import IncarConfig  # noqa: PLC0415
+
+    config = IncarConfig.from_file(incar)
+    calc_type = readiness.calc_type
+    if calc_type not in TASK_CALC_TYPES:
+        raise TaskFolderError(
+            f"Unknown calculation type {calc_type!r} in {incar}; cannot submit it."
+        )
+    # The worker executes with cwd=path, exactly like `cd folder && mliport run`.
+    # Resolve settings from that same folder so its device/GPU lease agrees
+    # with the eventual CLI invocation (including per-engine settings.ini).
+    resolved = resolve_config(
+        calc_type=calc_type, incar=config, settings=load_settings(cwd=path)
+    )
+    atoms = read(structure)
+    command = task_folder_command(path, structure=structure)
+    # The leased worker maps a physical UUID to a logical cuda:0 by rewriting
+    # argv --device. Without an explicit flag an INCAR cuda:N would defeat
+    # that isolation and potentially execute on the wrong GPU.
+    command.extend(["--device", str(resolved.device)])
+    argv = [python or sys.executable, "-m", "mliport.cli", *command]
+    job_manager = manager if manager is not None else JobManager()
+    job_id = job_manager.new_job_id()
+    try:
+        job_manager.enqueue(
+            job_id,
+            calc_type,
+            str(structure),
+            atoms.get_chemical_formula(),
+            len(atoms),
+            str(resolved.device),
+            argv,
+            python=python or sys.executable,
+            display_name=display_name or path.name,
+            submit_cwd=path,
+        )
+    except Exception as exc:
+        # Never let a failed claim/spawn escape into the Textual event loop as
+        # an unhandled exception; the caller shows this as a creation result.
+        raise TaskFolderError(f"Could not queue the background job: {exc}") from exc
+    return job_id
 
 
 def available_models(root: str | Path | None = None) -> list[str]:
@@ -310,6 +543,7 @@ __all__ = [
     "TASK_CALC_TYPES",
     "TaskFolder",
     "TaskFolderError",
+    "TaskFolderReadiness",
     "available_models",
     "create_task_folder",
     "default_folder_name",
@@ -318,5 +552,7 @@ __all__ = [
     "remaining_placeholders",
     "run_task_folder",
     "structure_target_name",
+    "submit_task_folder",
     "task_folder_command",
+    "task_folder_readiness",
 ]

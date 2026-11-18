@@ -708,7 +708,8 @@ def test_doctor_parser_rejects_invalid_device() -> None:
     parser = create_parser()
     with pytest.raises(SystemExit) as exc:
         parser.parse_args(["doctor", "--device", "cuda:bad"])
-    assert exc.value.code == 2
+    # A malformed option is a failure, never mliport's "not converged" code.
+    assert exc.value.code == EXIT_ERROR == 1
 
 
 def test_doctor_exits_gracefully() -> None:
@@ -917,6 +918,50 @@ def test_engine_gets_a_cancellation_event(tmp_path, monkeypatch, capsys):
     _run_opt_with_engine(tmp_path, monkeypatch, engine, capsys)
     assert engine.kwargs.get("cancel_event") is not None
     assert engine.kwargs["cancel_event"].is_set() is False
+
+
+def test_run_device_flag_overrides_the_incar_device(tmp_path, monkeypatch, capsys):
+    """The queue pins a leased GPU by rewriting ``run --device``.
+
+    ``run`` had no ``--device``, so every wizard-submitted job (which appends
+    one) died in argparse before doing any work.
+    """
+    structure = _write_poscar(tmp_path)
+    (tmp_path / "model.pt").write_text("weights\n", encoding="utf-8")
+    incar = tmp_path / "INCAR.mliport"
+    incar.write_text(
+        "CALC_TYPE = SP\n"
+        "MODEL_TYPE = MACE\n"
+        "MODEL_PATH = model.pt\n"
+        "TASK = bulk\n"
+        "DEVICE = cpu\n",
+        encoding="utf-8",
+    )
+    seen: list[str] = []
+
+    def from_config(config):
+        seen.append(config.device)
+        return _ResultEngine(exc=RuntimeError("stop after configuration"))
+
+    monkeypatch.setattr("mliport.cli.CalculationEngine.from_config", from_config)
+    for extra in (["--device", "cuda:0"], []):
+        rc = main(["run", "--incar", str(incar), "--structure", str(structure), *extra])
+        assert rc == EXIT_ERROR
+    # The explicit flag wins; without it the INCAR value is honoured.
+    assert seen == ["cuda:0", "cpu"]
+
+
+def test_a_usage_error_is_a_failure_not_a_non_convergence() -> None:
+    """Exit code 2 means "did not converge", so argparse must not use it.
+
+    A queue worker maps a child exit code back to a job status: an invalid
+    command line reported as ``not_converged`` would be a false scientific
+    claim about a run that never started.
+    """
+    parser = create_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["run", "--bogus-flag"])
+    assert exc.value.code == EXIT_ERROR == 1
 
 
 def test_classify_result_defaults_to_not_converged_for_convergence_types():

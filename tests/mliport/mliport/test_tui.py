@@ -702,6 +702,46 @@ async def test_job_detail_screen_displays_log() -> None:
 
 
 @pytest.mark.asyncio()
+async def test_jobs_screen_enter_opens_the_selected_job_log(tmp_path: Path) -> None:
+    """A job's log must be reachable from the Jobs screen by keyboard.
+
+    With the default *cell* cursor, ``Enter`` posted no row selection, so
+    ``JobDetailScreen`` could never be opened from the list.
+    """
+    manager = JobManager(jobs_dir=tmp_path)
+    job_id = manager.new_job_id()
+    manager.enqueue(
+        job_id,
+        "sp",
+        "/tmp/POSCAR",
+        "H2",
+        2,
+        "cpu",
+        ["true"],
+        display_name="detail-test",
+    )
+
+    app = MliportApp()
+    jobs_screen = JobsScreen()
+    jobs_screen._job_manager = manager
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await app.push_screen(jobs_screen)
+        await pilot.pause()
+        table = jobs_screen.query_one("#jobs-table")
+        assert table.cursor_type == "row"
+        assert table.row_count == 1
+
+        table.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert isinstance(app.screen, JobDetailScreen)
+        assert app.screen.job_id == job_id
+
+
+@pytest.mark.asyncio()
 async def test_jobs_screen_handles_empty_store_and_remounts(tmp_path: Path) -> None:
     """An empty jobs screen mounts, refreshes, and remounts without crashing."""
     app = MliportApp()
@@ -1578,6 +1618,15 @@ async def test_confsearch_run_command_mode_a_and_b(tmp_path: Path) -> None:
         mode_a = screen._build_command()
     assert mode_a[3] == "confsearch" and mode_a[4] == "run"
     assert str(start) in mode_a
+    from mliport.cli import _resolve_engine_config, create_parser
+
+    parsed_a = create_parser().parse_args(mode_a[3:])
+    engine_a, resolved_a, _settings = _resolve_engine_config(parsed_a, "confsearch")
+    assert engine_a.calc_type == "confsearch"
+    assert resolved_a.run_options["cs_adsorbate_indices"] == "300-341"
+    assert resolved_a.run_options["cs_cycles"] == 3
+    assert resolved_a.run_options["cs_md_mobile"] == "adsorbate_and_top"
+    assert resolved_a.run_options["cs_refine"] is False
     for flag, value in (
         ("--adsorbate-indices", "300-341"),
         ("--cycles", "3"),
@@ -1616,6 +1665,12 @@ async def test_confsearch_run_command_mode_a_and_b(tmp_path: Path) -> None:
     assert "--slab" in mode_b and str(slab) in mode_b
     assert "--molecule" in mode_b and str(molecule) in mode_b
     assert "--n-starts" in mode_b and "5" in mode_b
+    parsed_b = create_parser().parse_args(mode_b[3:])
+    engine_b, resolved_b, _settings = _resolve_engine_config(parsed_b, "confsearch")
+    assert engine_b.calc_type == "confsearch"
+    assert resolved_b.run_options["cs_n_starts"] == 5
+    assert resolved_b.run_options["cs_slab"] == str(slab)
+    assert resolved_b.run_options["cs_molecule"] == str(molecule)
 
 
 @pytest.mark.asyncio()
@@ -1908,3 +1963,382 @@ async def test_analysis_screen_offers_rmsd_and_arrhenius() -> None:
         screen.query_one("#analysis-arr-diffusivities-input").value = "1e-10,x,3"
         with pytest.raises(ValueError, match="not a number"):
             screen._parameters("arrhenius")
+
+
+# ---------------------------------------------------------------------------
+# Run-screen status contract: pending/running/paused/terminal (#124)
+# ---------------------------------------------------------------------------
+
+
+def _record_job(manager: JobManager, job_id: str, status: JobStatus, **kwargs) -> None:
+    defaults = {
+        "calc_type": "sp",
+        "structure": "/tmp/POSCAR",
+        "formula": "H2",
+        "natoms": 2,
+        "pid": 0,
+        "device": "cpu",
+        "display_name": "status-test",
+    }
+    defaults.update(kwargs)
+    manager._write_job_state(job_id, status, **defaults)
+
+
+@pytest.mark.asyncio()
+async def test_run_screen_tracks_pending_paused_running_and_not_converged(
+    tmp_path: Path,
+) -> None:
+    manager = JobManager(jobs_dir=tmp_path / "jobs")
+    job_id = str(uuid.uuid4())
+    _record_job(manager, job_id, JobStatus.PENDING)
+
+    app = MliportApp()
+    async with app.run_test(size=(100, 60)) as pilot:
+        screen = RunScreen(monitor_job_id=job_id)
+        screen._job_manager = manager
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        assert "Pending" in str(screen.status.render())
+        assert screen._refresh_timer is not None
+
+        _record_job(manager, job_id, JobStatus.PAUSED)
+        screen._refresh_job()
+        assert "Paused" in str(screen.status.render())
+        assert screen._refresh_timer is not None
+
+        _record_job(manager, job_id, JobStatus.PENDING)
+        screen._refresh_job()
+        assert "Pending" in str(screen.status.render())
+
+        _record_job(manager, job_id, JobStatus.RUNNING, pid=1)
+        screen._refresh_job()
+        assert "Running" in str(screen.status.render())
+        assert screen._refresh_timer is not None
+        assert "%" not in str(screen.status.render())
+
+        _record_job(
+            manager,
+            job_id,
+            JobStatus.NOT_CONVERGED,
+            pid=1,
+            error="Exit code 2",
+        )
+        screen._refresh_job()
+        status = str(screen.status.render())
+        assert "NOT converged" in status
+        assert "success" not in status.lower()
+        assert screen._refresh_timer is None
+
+
+@pytest.mark.asyncio()
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (JobStatus.DONE, "Done"),
+        (JobStatus.FAILED, "Failed"),
+        (JobStatus.CANCELLED, "Cancelled"),
+        (JobStatus.NOT_CONVERGED, "NOT converged"),
+    ],
+)
+async def test_run_screen_terminal_statuses_stop_refreshing(
+    tmp_path: Path, status: JobStatus, expected: str
+) -> None:
+    manager = JobManager(jobs_dir=tmp_path / "jobs")
+    job_id = str(uuid.uuid4())
+    _record_job(manager, job_id, status, finished_at="2026-01-01T00:00:00+00:00")
+
+    app = MliportApp()
+    async with app.run_test(size=(100, 60)) as pilot:
+        screen = RunScreen(monitor_job_id=job_id)
+        screen._job_manager = manager
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        assert expected in str(screen.status.render())
+        assert screen._refresh_timer is None
+        assert screen.query_one("#cancel-btn").disabled is True
+
+
+@pytest.mark.asyncio()
+async def test_run_screen_follows_background_log(tmp_path: Path) -> None:
+    manager = JobManager(jobs_dir=tmp_path / "jobs")
+    job_id = str(uuid.uuid4())
+    _record_job(manager, job_id, JobStatus.RUNNING, pid=1)
+    manager._log_file(job_id).write_text("first line\n", encoding="utf-8")
+
+    app = MliportApp()
+    async with app.run_test(size=(100, 60)) as pilot:
+        screen = RunScreen(monitor_job_id=job_id)
+        screen._job_manager = manager
+        await app.push_screen(screen)
+        await pilot.pause()
+        assert "first line" in "\n".join(screen.log_widget.lines)
+
+        with manager._log_file(job_id).open("a", encoding="utf-8") as handle:
+            handle.write("second line\n")
+        screen._refresh_job()
+        assert "second line" in "\n".join(screen.log_widget.lines)
+
+
+# ---------------------------------------------------------------------------
+# NPT advanced parameters and DPA runtime in the config screen (#124)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio()
+async def test_npt_advanced_parameters_are_collected_and_only_forwarded_for_npt(
+    tmp_path: Path,
+) -> None:
+    structure = tmp_path / "structure.cif"
+    model = tmp_path / "model.pt"
+    structure.write_text("")
+    model.write_text("")
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "md",
+            "structure_file": str(structure),
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+        }
+    )
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        screen.query_one("#npt").value = True
+        await pilot.pause()
+        for selector in (
+            "#npt-tchain-input",
+            "#npt-pchain-input",
+            "#npt-tloop-input",
+            "#npt-ploop-input",
+        ):
+            assert screen.query_one(selector).display is True
+
+        screen.query_one("#npt-tchain-input").value = "4"
+        screen.query_one("#npt-pchain-input").value = "5"
+        screen.query_one("#npt-tloop-input").value = "2"
+        screen.query_one("#npt-ploop-input").value = "3"
+        app.push_screen = Mock()
+        screen._save_and_run()
+
+        assert app.get_config("npt_tchain") == 4
+        assert app.get_config("npt_pchain") == 5
+        assert app.get_config("npt_tloop") == 2
+        assert app.get_config("npt_ploop") == 3
+
+        npt_command = RunScreen()._build_command()
+        for flag, value in (
+            ("--npt-tchain", "4"),
+            ("--npt-pchain", "5"),
+            ("--npt-tloop", "2"),
+            ("--npt-ploop", "3"),
+        ):
+            assert npt_command[npt_command.index(flag) + 1] == value
+
+        # NVE/NVT must not inherit any NPT knob.
+        app.update_config("ensemble", "NVE")
+        nve_command = RunScreen()._build_command()
+        for flag in (
+            "--npt-tchain",
+            "--npt-pchain",
+            "--npt-tloop",
+            "--npt-ploop",
+            "--pressure-gpa",
+        ):
+            assert flag not in nve_command
+
+
+@pytest.mark.asyncio()
+async def test_npt_chain_lengths_reject_zero(tmp_path: Path) -> None:
+    structure = tmp_path / "structure.cif"
+    model = tmp_path / "model.pt"
+    structure.write_text("")
+    model.write_text("")
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "md",
+            "structure_file": str(structure),
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+        }
+    )
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#npt").value = True
+        await pilot.pause()
+        screen.query_one("#npt-tchain-input").value = "0"
+        screen.notify = Mock()
+        app.push_screen = Mock()
+        screen._save_and_run()
+
+    app.push_screen.assert_not_called()
+    assert screen.notify.called
+    assert "npt_tchain" in str(screen.notify.call_args)
+
+
+@pytest.mark.asyncio()
+async def test_dpa_runtime_is_explicit_and_cleared_for_other_backends(
+    tmp_path: Path,
+) -> None:
+    structure = tmp_path / "structure.cif"
+    model = tmp_path / "model.pt"
+    structure.write_text("")
+    model.write_text("")
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "sp",
+            "structure_file": str(structure),
+            "model_file": str(model),
+            "model_type": "dpa",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+        }
+    )
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        assert screen.query_one("#dpa-runtime-select").display is True
+        # Blank keeps the CLI default; no implicit runtime is written.
+        screen.query_one("#dpa-runtime-select").value = "legacy"
+        app.push_screen = Mock()
+        screen._save_and_run()
+        assert app.get_config("dpa_runtime") == "legacy"
+        command = RunScreen()._build_command()
+        assert command[command.index("--dpa-runtime") + 1] == "legacy"
+
+        # A previous DPA runtime must not leak into MACE.
+        app.push_screen.reset_mock()
+        screen.query_one("#model-type-select").value = "mace"
+        await pilot.pause()
+        assert screen.query_one("#dpa-runtime-select").display is False
+        screen._save_and_run()
+        assert app.get_config("dpa_runtime") is None
+        command = RunScreen()._build_command()
+        assert "--dpa-runtime" not in command
+        assert app.get_config("head") is None
+        assert "--head" not in command
+
+
+@pytest.mark.asyncio()
+async def test_neb_resume_run_screen_uses_checkpoint_and_original_directory(
+    tmp_path: Path,
+) -> None:
+    from ase import Atoms
+    from ase.io import write
+
+    run_dir = tmp_path / "neb-run"
+    run_dir.mkdir()
+    (run_dir / "checkpoint.json").write_text("{}", encoding="utf-8")
+    write(run_dir / "band.traj", Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.8]]))
+
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "neb",
+            "structure_file": None,
+            "neb_final": None,
+            "neb_atom_map": None,
+            "neb_image_shifts": None,
+            "neb_resume": str(run_dir),
+            "model_file": None,
+            "model_type": "mace",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+        }
+    )
+    async with app.run_test(size=(100, 60)) as pilot:
+        screen = RunScreen()
+        screen._job_manager = JobManager(jobs_dir=tmp_path / "jobs")
+        await app.push_screen(screen)
+        await pilot.pause()
+        assert screen._job_id is not None
+        job = screen._job_manager.get_job(screen._job_id)
+
+    assert job is not None
+    assert job["status"] == "pending"
+    assert job["calc_type"] == "neb"
+    assert job["structure"] == str(run_dir)
+    command = job["cmd"]
+    assert command[command.index("--resume") + 1] == str(run_dir)
+    assert "--initial" not in command
+    assert "--final" not in command
+    assert "--model" not in command
+    assert "--output" not in command
+
+
+@pytest.mark.asyncio()
+async def test_switching_model_clears_incompatible_backend_options(
+    tmp_path: Path,
+) -> None:
+    structure = tmp_path / "structure.cif"
+    model = tmp_path / "model.pt"
+    structure.write_text("")
+    model.write_text("")
+    app = MliportApp()
+    app.config.update(
+        {
+            "calc_type": "sp",
+            "structure_file": str(structure),
+            "model_file": str(model),
+            "model_type": "mace",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+            "head": "old-mace-head",
+            "default_dtype": "float32",
+            "inference_mode": "turbo",
+            "activation_checkpointing": False,
+            "d3": True,
+            "d3_xc": "pbe",
+            "d3_damping": "zero",
+        }
+    )
+
+    async with app.run_test(size=(100, 100)) as pilot:
+        screen = ConfigScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#model-type-select").value = "grace"
+        await pilot.pause()
+        assert screen.query_one("#head-input").value == ""
+        assert screen.query_one("#d3-switch").value is False
+        assert screen.query_one("#d3-xc-input").value == ""
+        assert screen.query_one("#inference-mode-select").value == "default"
+        app.push_screen = Mock()
+        screen._save_and_run()
+        command = RunScreen()._build_command()
+
+    assert app.get_config("head") is None
+    assert app.get_config("d3") is None
+    assert app.get_config("d3_xc") is None
+    assert app.get_config("d3_damping") is None
+    assert app.get_config("inference_mode") is None
+    assert app.get_config("activation_checkpointing") is None
+    for flag in (
+        "--head",
+        "--d3",
+        "--d3-xc",
+        "--d3-damping",
+        "--inference-mode",
+        "--activation-checkpointing",
+    ):
+        assert flag not in command

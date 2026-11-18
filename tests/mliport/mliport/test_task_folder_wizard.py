@@ -30,7 +30,9 @@ from mliport.task_folder import (
     remaining_placeholders,
     run_task_folder,
     structure_target_name,
+    submit_task_folder,
     task_folder_command,
+    task_folder_readiness,
 )
 
 CIF_TEXT = """data_test
@@ -159,6 +161,73 @@ def test_a_task_or_head_supplied_by_the_caller_is_written(tmp_path: Path) -> Non
     assert "TASK = bulk" in text
     assert "HEAD = Omat24" in text
     assert remaining_placeholders(text) == []
+
+
+def test_a_head_is_recorded_even_when_the_template_only_comments_it(
+    tmp_path: Path,
+) -> None:
+    """MACE's template keeps HEAD optional; an explicit head must still land.
+
+    Silently dropping the wizard's head field would execute the checkpoint's
+    own default head and record a different model identity than the CLI.
+    """
+    text = incar_text_for(
+        "sp",
+        model_type="mace",
+        model_path=_write_model(tmp_path),
+        task="bulk",
+        head="omat_pbe",
+    )
+    assert "HEAD = omat_pbe" in text
+    # The template's optional hint is replaced, not duplicated.
+    assert "# HEAD" not in text
+    from mliport.config.settings import load_settings
+
+    effective = resolve_config(
+        calc_type="sp",
+        incar=IncarConfig.from_string(text),
+        settings=load_settings(cwd=tmp_path),
+    )
+    assert effective.calculator_options.get("head") == "omat_pbe"
+
+
+def test_an_explicit_device_is_written_and_an_unknown_one_fails_closed(
+    tmp_path: Path,
+) -> None:
+    text = incar_text_for(
+        "sp", model_type="mace", model_path=_write_model(tmp_path), device="cuda:0"
+    )
+    assert "DEVICE = cuda:0" in text
+    assert IncarConfig.from_string(text).get_str("DEVICE") == "cuda:0"
+    with pytest.raises(TaskFolderError, match="Unsupported device"):
+        incar_text_for(
+            "sp",
+            model_type="mace",
+            model_path=_write_model(tmp_path),
+            device="cuda:bad",
+        )
+
+
+def test_the_wizard_command_is_accepted_by_the_real_run_parser(tmp_path: Path) -> None:
+    """A queued argv must parse: an unknown flag would fail every wizard job."""
+    from mliport.cli import create_parser
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "parser-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+        task="bulk",
+        device="cuda:0",
+    )
+    argv = task_folder_command(folder.path, structure=folder.structure)
+    argv += ["--device", "cuda:0"]
+    args = create_parser().parse_args(argv)
+    assert args.command == "run"
+    assert args.device == "cuda:0"
 
 
 def test_a_models_subdirectory_entry_is_resolved_inside_models(
@@ -290,8 +359,10 @@ def test_run_task_folder_delegates_to_mliport_run(tmp_path: Path, monkeypatch) -
         structure=structure,
         model_type="mace",
         model_path=model,
+        task="bulk",
     )
     calls: list[dict] = []
+    cwd_before = Path.cwd()
 
     def fake_main(argv):
         calls.append({"argv": argv, "cwd": Path.cwd()})
@@ -301,8 +372,14 @@ def test_run_task_folder_delegates_to_mliport_run(tmp_path: Path, monkeypatch) -
     assert run_task_folder(folder.path) == 0
     assert calls == [
         {
-            "argv": ["run", "--incar", str(folder.path / "INCAR.mliport")],
-            "cwd": folder.path,
+            "argv": [
+                "run",
+                "--incar",
+                str(folder.path / "INCAR.mliport"),
+                "--structure",
+                str(folder.structure),
+            ],
+            "cwd": cwd_before,
         }
     ]
 
@@ -367,10 +444,46 @@ async def test_wizard_creates_the_task_folder_and_shows_the_command(
 
 
 @pytest.mark.asyncio()
-async def test_wizard_create_and_run_uses_the_shared_entry_point(
+async def test_wizard_records_the_configured_device_in_the_task_folder(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from textual.widgets import Input
+    """The wizard must not silently choose a different device than the TUI."""
+    from textual.widgets import Input, Select
+
+    from mliport.tui.app import MliportApp
+    from mliport.tui.wizard_screen import NewTaskScreen
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    app = MliportApp()
+    async with app.run_test(size=(120, 50)) as pilot:
+        app.update_config("device", "cuda:0")
+        screen = NewTaskScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#wizard-structure", Input).value = str(structure)
+        screen.query_one("#wizard-model-path", Input).value = str(model)
+        screen.query_one("#wizard-task", Select).value = "bulk"
+        screen.query_one("#wizard-folder", Input).value = str(tmp_path / "gpu-task")
+        await pilot.pause()
+        await pilot.click("#wizard-create")
+        await pilot.pause()
+        status = str(screen.query_one("#wizard-status").render())
+
+    incar = (tmp_path / "gpu-task" / "INCAR.mliport").read_text(encoding="utf-8")
+    assert "DEVICE = cuda:0" in incar
+    assert "cuda:0" in status
+
+
+@pytest.mark.asyncio()
+async def test_wizard_create_and_run_submits_a_ready_folder_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from unittest.mock import Mock
+
+    from textual.widgets import Input, Select
 
     from mliport.tui import wizard_screen
     from mliport.tui.app import MliportApp
@@ -378,9 +491,11 @@ async def test_wizard_create_and_run_uses_the_shared_entry_point(
     structure = _write_structure(tmp_path)
     model = _write_model(tmp_path)
     monkeypatch.chdir(tmp_path)
-    calls: list[Path] = []
+    submitted: list[Path] = []
     monkeypatch.setattr(
-        wizard_screen, "run_task_folder", lambda path: calls.append(Path(path)) or 0
+        wizard_screen,
+        "submit_task_folder",
+        lambda path: submitted.append(Path(path)) or "job-123",
     )
 
     app = MliportApp()
@@ -390,14 +505,21 @@ async def test_wizard_create_and_run_uses_the_shared_entry_point(
         await pilot.pause()
         screen.query_one("#wizard-structure", Input).value = str(structure)
         screen.query_one("#wizard-model-path", Input).value = str(model)
+        screen.query_one("#wizard-task", Select).value = "bulk"
         screen.query_one("#wizard-folder", Input).value = str(tmp_path / "task")
         await pilot.pause()
+        push = Mock()
+        app.push_screen = push
         await pilot.click("#wizard-create-run")
         await pilot.pause()
         status = str(screen.query_one("#wizard-status").render())
+        # A second click cannot create or submit the same task twice.
+        await pilot.click("#wizard-create-run")
+        await pilot.pause()
 
-    assert calls == [(tmp_path / "task").resolve()]
-    assert "exited with code 0" in status
+    assert submitted == [(tmp_path / "task").resolve()]
+    assert "ready to run" in status
+    assert push.call_args.args[0]._monitor_job_id == "job-123"
 
 
 @pytest.mark.asyncio()
@@ -453,11 +575,356 @@ async def test_advanced_menu_keeps_the_previous_screens() -> None:
 
 
 def test_wizard_does_not_reimplement_the_run_command() -> None:
-    """The wizard module must call `run_task_folder`, never build an argv."""
+    """The wizard must use the shared task-folder submission, not an argv."""
     source = (
         Path(__file__).parents[3] / "mliport" / "mliport" / "tui" / "wizard_screen.py"
     ).read_text(encoding="utf-8")
-    assert "run_task_folder" in source
+    assert "submit_task_folder" in source
+    assert "run_task_folder" not in source
     assert "subprocess" not in source
     assert "build_mliport_command" not in source
     assert os.sep + "mliport" not in source.replace("mliport run", "")
+
+
+# ---------------------------------------------------------------------------
+# Creation vs. executability, and the background submission path (#124)
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_task_and_head_make_the_folder_runnable(tmp_path: Path) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "task",
+        calc_type="sp",
+        structure=structure,
+        model_type="dpa",
+        model_path=model,
+        task="bulk",
+        head="Omat24",
+    )
+
+    text = folder.incar.read_text(encoding="utf-8")
+    assert "TASK = bulk" in text
+    assert "HEAD = Omat24" in text
+    readiness = task_folder_readiness(folder.path)
+    assert readiness.runnable is True
+    assert readiness.placeholders == ()
+
+
+def test_missing_task_or_head_is_reported_and_never_runnable(tmp_path: Path) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    generic = create_task_folder(
+        tmp_path / "mace-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+    )
+    dpa = create_task_folder(
+        tmp_path / "dpa-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="dpa",
+        model_path=model,
+    )
+
+    generic_readiness = task_folder_readiness(generic.path)
+    assert generic_readiness.runnable is False
+    assert generic_readiness.placeholders == ("TASK",)
+    assert "TASK" in generic_readiness.explanation()
+
+    dpa_readiness = task_folder_readiness(dpa.path)
+    assert dpa_readiness.runnable is False
+    assert dpa_readiness.placeholders == ("HEAD", "TASK")
+
+
+def test_neb_and_confsearch_folders_are_not_claimed_runnable(tmp_path: Path) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    for calc_type in ("neb", "confsearch"):
+        folder = create_task_folder(
+            tmp_path / calc_type,
+            calc_type=calc_type,
+            structure=structure,
+            model_type="mace",
+            model_path=model,
+            task="bulk",
+        )
+        readiness = task_folder_readiness(folder.path)
+        assert readiness.runnable is False
+        assert readiness.placeholders, calc_type
+
+
+def test_submit_task_folder_refuses_an_unready_folder(tmp_path: Path) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+    )
+
+    with pytest.raises(TaskFolderError, match="REQUIRED"):
+        submit_task_folder(folder.path, manager=object())
+
+
+class _RecordingManager:
+    def __init__(self) -> None:
+        import uuid
+
+        self.job_id = str(uuid.uuid4())
+        self.submitted: dict | None = None
+
+    def new_job_id(self) -> str:
+        return self.job_id
+
+    def enqueue(
+        self,
+        job_id,
+        calc_type,
+        structure,
+        formula,
+        natoms,
+        device,
+        cmd,
+        python=None,
+        *,
+        display_name=None,
+        submit_cwd=None,
+    ):
+        self.submitted = {
+            "job_id": job_id,
+            "calc_type": calc_type,
+            "structure": structure,
+            "formula": formula,
+            "natoms": natoms,
+            "device": device,
+            "cmd": cmd,
+            "python": python,
+            "display_name": display_name,
+            "submit_cwd": submit_cwd,
+        }
+
+
+def test_submit_task_folder_uses_the_real_run_command_and_job_manager(
+    tmp_path: Path,
+) -> None:
+    import sys
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "my-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+        task="bulk",
+    )
+    manager = _RecordingManager()
+
+    job_id = submit_task_folder(folder.path, manager=manager)
+
+    assert job_id == manager.job_id
+    assert manager.submitted is not None
+    submitted = manager.submitted
+    assert submitted["calc_type"] == "sp"
+    assert submitted["structure"] == str(folder.structure)
+    assert submitted["formula"] == "He"
+    assert submitted["natoms"] == 1
+    assert submitted["device"] == "cpu"
+    assert submitted["cmd"] == [
+        sys.executable,
+        "-m",
+        "mliport.cli",
+        "run",
+        "--incar",
+        str(folder.incar),
+        "--structure",
+        str(folder.structure),
+        "--device",
+        "cpu",
+    ]
+    assert submitted["display_name"] == "my-task"
+    assert submitted["submit_cwd"] == folder.path
+
+
+def test_wizard_job_preserves_explicit_gpu_device_for_scheduler_lease(
+    tmp_path: Path,
+) -> None:
+    import re
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "gpu-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+        task="bulk",
+    )
+    incar_text = folder.incar.read_text(encoding="utf-8")
+    updated, count = re.subn(r"(?m)^DEVICE\s*=.*$", "DEVICE = cuda:1", incar_text)
+    if not count:
+        updated += "\nDEVICE = cuda:1\n"
+    folder.incar.write_text(updated, encoding="utf-8")
+    manager = _RecordingManager()
+    submit_task_folder(folder.path, manager=manager)
+    assert manager.submitted is not None
+    assert manager.submitted["device"] == "cuda:1"
+    assert manager.submitted["cmd"][-2:] == ["--device", "cuda:1"]
+    assert manager.submitted["submit_cwd"] == folder.path
+
+
+def test_wizard_submission_resolves_settings_from_task_folder(
+    tmp_path: Path,
+) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "settings-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+        task="bulk",
+    )
+    # CLI executes from the task folder, so settings.ini is searched there.
+    (folder.path / "settings.ini").write_text(
+        "[engine:mace]\ndefault_dtype = float32\n", encoding="utf-8"
+    )
+    from mliport.config.settings import load_settings
+
+    effective = resolve_config(
+        calc_type="sp",
+        incar=IncarConfig.from_file(folder.incar),
+        settings=load_settings(cwd=folder.path),
+    )
+    assert effective.calculator_options["default_dtype"] == "float32"
+    manager = _RecordingManager()
+    submit_task_folder(folder.path, manager=manager)
+    assert manager.submitted is not None
+    assert manager.submitted["submit_cwd"] == folder.path
+
+
+@pytest.mark.asyncio()
+async def test_wizard_create_and_run_does_not_start_an_unready_folder(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from textual.widgets import Input
+
+    from mliport.tui import wizard_screen
+    from mliport.tui.app import MliportApp
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    submitted: list[Path] = []
+    monkeypatch.setattr(
+        wizard_screen,
+        "submit_task_folder",
+        lambda path: submitted.append(Path(path)),
+    )
+
+    app = MliportApp()
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = wizard_screen.NewTaskScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#wizard-structure", Input).value = str(structure)
+        screen.query_one("#wizard-model-path", Input).value = str(model)
+        screen.query_one("#wizard-folder", Input).value = str(tmp_path / "task")
+        await pilot.pause()
+        await pilot.click("#wizard-create-run")
+        await pilot.pause()
+        status = str(screen.query_one("#wizard-status").render())
+
+    # The user's folder is kept, but no invalid run is claimed or started.
+    assert (tmp_path / "task" / "INCAR.mliport").is_file()
+    assert submitted == []
+    assert "did NOT start" in status
+    assert "TASK" in status
+
+
+@pytest.mark.asyncio()
+async def test_wizard_dpa_without_head_does_not_start(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from textual.widgets import Input, Select
+
+    from mliport.tui import wizard_screen
+    from mliport.tui.app import MliportApp
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    submitted: list[Path] = []
+    monkeypatch.setattr(
+        wizard_screen,
+        "submit_task_folder",
+        lambda path: submitted.append(Path(path)),
+    )
+
+    app = MliportApp()
+    async with app.run_test(size=(120, 50)) as pilot:
+        screen = wizard_screen.NewTaskScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#wizard-structure", Input).value = str(structure)
+        screen.query_one("#wizard-model-type", Select).value = "dpa"
+        screen.query_one("#wizard-model-path", Input).value = str(model)
+        screen.query_one("#wizard-task", Select).value = "bulk"
+        screen.query_one("#wizard-folder", Input).value = str(tmp_path / "task")
+        await pilot.pause()
+        await pilot.click("#wizard-create-run")
+        await pilot.pause()
+        status = str(screen.query_one("#wizard-status").render())
+
+    assert submitted == []
+    assert "HEAD" in status
+
+
+def test_wizard_dpa_runtime_is_written_and_reaches_the_resolver(
+    tmp_path: Path,
+) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "dpa-legacy",
+        calc_type="sp",
+        structure=structure,
+        model_type="dpa",
+        model_path=model,
+        task="bulk",
+        head="Omat24",
+        dpa_runtime="legacy",
+    )
+
+    text = folder.incar.read_text(encoding="utf-8")
+    assert "DPA_RUNTIME = legacy" in text
+    assert task_folder_readiness(folder.path).runnable is True
+    resolved = resolve_config(calc_type="sp", incar=IncarConfig.from_file(folder.incar))
+    assert resolved.calculator_options["dpa_runtime"] == "legacy"
+
+
+def test_wizard_dpa_without_a_runtime_keeps_the_cli_default(tmp_path: Path) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "dpa-default",
+        calc_type="sp",
+        structure=structure,
+        model_type="dpa",
+        model_path=model,
+        task="bulk",
+        head="Omat24",
+    )
+
+    assert "DPA_RUNTIME" not in folder.incar.read_text(encoding="utf-8")
+    resolved = resolve_config(calc_type="sp", incar=IncarConfig.from_file(folder.incar))
+    assert resolved.calculator_options["dpa_runtime"] == "current"

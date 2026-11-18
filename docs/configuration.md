@@ -278,20 +278,34 @@ that quietly lacks them.
 ## The TUI
 
 `mliport tui` opens on a new-task wizard, because that is the common case: pick a
-calculation type, a structure file and a model - the backend first, then a file
-from `models/` - and it writes a task folder with `INCAR.mliport` and a
-byte-for-byte copy of the structure, then prints `cd <folder> && mliport run`.
-"Create & Run" executes `mliport run` itself, not a second run path. The wizard
-leaves `TASK` (and `HEAD` for a multi-branch checkpoint) as `REQUIRED`
-placeholders: the UMA task family and the other backends' `bulk`/`molecule`
-semantic are model decisions, so it says what is still to fill in instead of
-running with a template default.
+calculation type, a structure file, a model - the backend first, then a file
+from `models/` - and an explicit model task (plus a head for a multi-branch
+checkpoint). It writes a task folder with `INCAR.mliport` and a byte-for-byte
+copy of the structure, then prints `cd <folder> && mliport run`.
+
+Creating a folder and running it are separate facts. "Create folder" always
+keeps the folder, even if `TASK`, `HEAD`, `NEB_INITIAL`/`NEB_FINAL` or
+confsearch's start inputs are still `REQUIRED`. "Create & Run" refuses to start
+an unready folder and says exactly what is missing. A ready folder is added
+as **pending** to the shared `JobManager`/scheduler queue, honoring pause,
+concurrency and GPU leases. The scheduler must be running (start it from the
+Jobs screen or with `mliport queue start`); closing the TUI does not cancel a
+queued or running job. A repeated click cannot submit the same folder twice.
+The worker executes from the task folder, preserving local settings and the
+same relative-path semantics as `cd <folder> && mliport run`. The wizard also
+records the configuration screen's device as `DEVICE` in the folder's INCAR, so
+the folder reproduces the same device later; `mliport run --device` overrides it
+for one run, which is how the queue pins a worker to its leased GPU.
 
 Everything else stays available under "Advanced": the manual configuration
 screens for SP, OPT, MD, NEB and CONFSEARCH, the template generator (which uses
 the same generator as `mliport template`), background jobs and analysis. They
-expose the same configuration, including an explicit backend choice, and will
-not start a run until a backend and a model are chosen. They submit through the
-same queue helper as the CLI, so the two cannot drift apart. The analysis screen
-offers every `analyze` task with the common options; the less common ones (for
-example GEMDAT site discovery) are command-line only.
+expose the same configuration, including an explicit backend choice, DPA's
+`current`/`legacy` runtime, and the full isotropic MTK NPT set (pressure,
+damping, chain lengths and Suzuki-Yoshida substeps). They will not start a run
+until a backend and a model are chosen, and they submit through the same queue
+helper as the CLI, so the two cannot drift apart. confsearch resume/extend/
+merge/export remain CLI-only and the screen says so rather than showing inert
+controls. The analysis screen offers every `analyze` task with the common
+options; the less common ones (for example GEMDAT site discovery) are
+command-line only.
