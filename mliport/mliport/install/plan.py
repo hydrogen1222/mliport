@@ -697,7 +697,7 @@ def generate_plan(
         for step in plan.steps[first_pip + 1 :]:
             if step.stage == "pip":
                 step.argv.extend(["--constraint", constraint_path])
-        python = f"{backend.venv_name}/bin/python"
+        python = _venv_python_path(backend)
         plan.steps.append(
             InstallStep(
                 stage="check",
