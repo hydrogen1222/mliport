@@ -92,7 +92,7 @@ mliport prints a summary and writes results to `runs/lgps-sp/`:
 |---|---|
 | `mliport_results.json` | Energy, forces, stress, timing, provenance |
 | `resolved_config.json` | Every configuration value and where it came from |
-| `OUTCAR` | VASP-compatible output (energy, forces, stress) |
+| `OUTCAR` | VASP-style output (energy, forces, stress) |
 | `CONTCAR` | Final structure in POSCAR format |
 | `run.log` | Full run log |
 
