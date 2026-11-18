@@ -509,6 +509,19 @@ class CalculationEngine:
         else:
             raise ValueError(f"Unknown calc_type: {self.config.calc_type}")
 
+    def preflight_input(self, atoms: Atoms) -> None:
+        """Early MD structure gate, before any backend or output is created."""
+        if self.config.calc_type != "md":
+            return
+        from mliport.runners.md import MDRunner  # noqa: PLC0415
+
+        opts = self._effective_run_options()
+        MDRunner.preflight_nhc_constraints(
+            atoms,
+            ensemble=opts.get("ensemble", BUILTIN_DEFAULTS["md"]["ensemble"]),
+            thermostat=opts.get("thermostat", BUILTIN_DEFAULTS["md"]["thermostat"]),
+        )
+
     def run(
         self,
         atoms: Atoms,
@@ -529,6 +542,7 @@ class CalculationEngine:
         Returns:
             Results dictionary.
         """
+        self.preflight_input(atoms)
         with self.output_directory_claim():
             return self._run_claimed(
                 atoms,
@@ -547,6 +561,7 @@ class CalculationEngine:
         log_fn: Any | None,
         started_at: float | None,
     ) -> dict[str, Any]:
+        self.preflight_input(atoms)
         with LiveRunLogger(self.run_log_path, callback=log_fn) as run_logger:
             run_logger(f"Output directory: {self.output_dir.resolve()}")
             run_logger(f"Live log: {self.run_log_path}")

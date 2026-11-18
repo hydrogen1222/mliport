@@ -282,6 +282,50 @@ class TestCalculationEngineSetup:
         assert runner.friction * units.fs == pytest.approx(0.001)
 
 
+@pytest.mark.parametrize(
+    ("thermostat", "constrained"),
+    [("NHC", True), ("NHC", False), ("LANGEVIN", True)],
+)
+def test_md_early_constraint_gate_before_load_and_output(
+    tmp_path, monkeypatch, thermostat, constrained
+):
+    from ase import Atoms
+    from ase.constraints import FixAtoms
+
+    from mliport.calculators.factory import CalculatorFactory
+    from mliport.engine import CalculationEngine, EngineConfig
+
+    atoms = Atoms("Li2", positions=[[0, 0, 0], [2, 0, 0]], cell=[8, 8, 8], pbc=True)
+    if constrained:
+        atoms.set_constraint(FixAtoms(indices=[0]))
+    target = tmp_path / "output"
+    engine = CalculationEngine.from_config(
+        EngineConfig(
+            calc_type="md",
+            model_type="mace",
+            model_path=Path("unused.model"),
+            output_dir=target,
+            run_options={
+                "ensemble": "NVT",
+                "thermostat": thermostat,
+                "pre_relax": False,
+            },
+        )
+    )
+
+    def forbidden_load(*args, **kwargs):
+        pytest.fail("model was loaded during input-only preflight")
+
+    monkeypatch.setattr(CalculatorFactory, "create", forbidden_load)
+    if thermostat == "NHC" and constrained:
+        with pytest.raises(ValueError, match="NHC.*FixAtoms.*unsupported"):
+            engine.run(atoms)
+        assert not target.exists()
+    else:
+        engine.preflight_input(atoms)
+        assert not target.exists()
+
+
 def test_engine_creates_live_log_and_tail_hint(tmp_path):
     from mliport.engine import CalculationEngine, EngineConfig
 
