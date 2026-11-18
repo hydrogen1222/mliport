@@ -268,8 +268,8 @@ own record, and its first frame equals the last frame of the previous leg.
 |---|---|---|
 | `trajectory.traj` | `raw/` | Full ASE trajectory with positions, velocities, cell |
 | `md.csv` | `raw/` | Per-frame energy, temperature, pressure, volume |
-| `OUTCAR`, `OSZICAR` | `vasp/` | VASP-compatible energy and force records |
-| `XDATCAR` | `vasp/` | VASP-compatible trajectory (NVT/NVE only, fixed cell) |
+| `OUTCAR`, `OSZICAR` | `vasp/` | VASP-style energy and force records |
+| `XDATCAR` | `vasp/` | VASP-style trajectory (NVT/NVE only, fixed cell) |
 | `mliport_results.json` | `.` | Summary: temperature, energy, timing |
 | `resolved_config.json` | `.` | Complete resolved configuration |
 | `run_context.json` | `.` | Model identity and provenance |
