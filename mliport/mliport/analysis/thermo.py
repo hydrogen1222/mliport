@@ -48,7 +48,14 @@ def _finite_integrity(values: np.ndarray) -> dict[str, Any]:
 
 
 def block_statistics(values: np.ndarray, *, block_size_frames: int) -> dict[str, Any]:
-    """Return reproducible non-overlapping block means and their spread."""
+    """Return reproducible non-overlapping block means and their spread.
+
+    A block mean is computed over that block's **finite** frames: ``NaN``,
+    ``+Inf`` and ``-Inf`` are all excluded, so a single unphysical value cannot
+    turn its block into ``inf`` (``np.nanmean`` alone would only drop NaN).  A
+    block with no finite frame contributes no mean; the counts below say how
+    many values were skipped and how many blocks were unusable.
+    """
 
     if block_size_frames < 1:
         raise ValueError("block_size_frames must be >= 1")
@@ -58,18 +65,29 @@ def block_statistics(values: np.ndarray, *, block_size_frames: int) -> dict[str,
         raise ValueError("block_size_frames is longer than the selected trajectory")
     trimmed = values[: n_blocks * block_size_frames]
     blocks = trimmed.reshape(n_blocks, block_size_frames)
-    means = np.nanmean(blocks, axis=1)
+    finite_blocks = np.isfinite(blocks)
+    finite_counts = finite_blocks.sum(axis=1)
+    usable = finite_counts > 0
+    means = np.full(n_blocks, np.nan, dtype=float)
+    if usable.any():
+        # ``nanmean`` over only the blocks that have a finite value keeps the
+        # arithmetic identical to the previous implementation for clean data
+        # and never warns about an empty slice.
+        means[usable] = np.nanmean(
+            np.where(finite_blocks[usable], blocks[usable], np.nan), axis=1
+        )
     finite = means[np.isfinite(means)]
     return {
         "block_size_frames": int(block_size_frames),
         "number_of_complete_blocks": int(n_blocks),
         "discarded_tail_frames": int(len(values) - len(trimmed)),
         "block_means": means,
+        "block_finite_counts": finite_counts.astype(int),
         "mean_of_block_means": float(np.mean(finite)) if len(finite) else np.nan,
         "std_of_block_means": (
             float(np.std(finite, ddof=1)) if len(finite) > 1 else 0.0
         ),
-        # Block means skip non-finite frames within a block (``nanmean``), so
+        # Every non-finite value (NaN and Inf) is skipped within its block, so
         # the number of skipped values and of unusable blocks is recorded
         # rather than left implicit.
         "non_finite_frames": int(np.count_nonzero(~np.isfinite(trimmed))),

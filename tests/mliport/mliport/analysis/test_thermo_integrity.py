@@ -151,3 +151,63 @@ def test_corrupted_md_csv_is_visible_in_the_analysis_output(tmp_path: Path) -> N
     assert summary["data_integrity"]["columns_with_non_finite_values"] == [
         "temperature_K"
     ]
+
+
+def test_block_statistics_drops_inf_as_well_as_nan():
+    """``nanmean`` alone keeps ±Inf; block means are finite-value means."""
+
+    values = np.array([1.0, np.inf, -np.inf, 2.0, np.nan, np.nan], dtype=float)
+    stats = block_statistics(values, block_size_frames=2)
+    # Blocks [1.0, inf] -> 1.0, [-inf, 2.0] -> 2.0, [nan, nan] -> no mean.
+    np.testing.assert_allclose(stats["block_means"][:2], [1.0, 2.0])
+    assert np.isnan(stats["block_means"][2])
+    np.testing.assert_array_equal(stats["block_finite_counts"], [1, 1, 0])
+    assert stats["mean_of_block_means"] == pytest.approx(1.5)
+    assert stats["std_of_block_means"] == pytest.approx(np.std([1.0, 2.0], ddof=1))
+    assert stats["non_finite_frames"] == 4
+    assert stats["blocks_without_finite_values"] == 1
+    assert stats["blocks_used_for_mean"] == 2
+
+
+def test_block_statistics_counts_match_the_means_it_publishes():
+    """Counts and block means must describe the same set of values."""
+
+    values = np.array(
+        [1.0, 2.0, np.inf, -np.inf, np.nan, np.inf, 3.0, 4.0, 5.0, 6.0],
+        dtype=float,
+    )
+    stats = block_statistics(values, block_size_frames=2)
+    counts = stats["block_finite_counts"]
+    blocks = values.reshape(5, 2)
+    assert counts.tolist() == [2, 0, 0, 2, 2]
+    assert stats["non_finite_frames"] == int(np.count_nonzero(~np.isfinite(blocks)))
+    assert stats["blocks_without_finite_values"] == int(np.count_nonzero(counts == 0))
+    assert stats["blocks_used_for_mean"] == int(np.count_nonzero(counts > 0))
+    published = stats["block_means"][np.isfinite(stats["block_means"])]
+    assert published.shape[0] == stats["blocks_used_for_mean"]
+    assert stats["mean_of_block_means"] == pytest.approx(published.mean())
+
+
+def test_all_non_finite_blocks_produce_no_published_mean():
+    values = np.array([np.nan, np.inf, -np.inf, np.nan], dtype=float)
+    stats = block_statistics(values, block_size_frames=2)
+    assert stats["blocks_used_for_mean"] == 0
+    assert stats["blocks_without_finite_values"] == 2
+    assert np.all(np.isnan(stats["block_means"]))
+    assert np.isnan(stats["mean_of_block_means"])
+
+
+def test_inf_temperature_is_not_a_valid_thermodynamic_mean():
+    dataset = _dataset(6)
+    temperature = np.full(6, 300.0)
+    temperature[[1, 4]] = np.inf
+    dataset.temperature_K = temperature
+    result = thermodynamic_diagnostics(dataset, block_size_frames=2)
+    summary = result["summary"]
+    assert summary["temperature_mean_K"] == pytest.approx(300.0)
+    integrity = summary["data_integrity"]["columns"]["temperature_K"]
+    assert integrity["non_finite_frames"] == 2
+    assert result["blocks"]["temperature_K"]["blocks_used_for_mean"] == 3
+    np.testing.assert_allclose(
+        result["blocks"]["temperature_K"]["block_means"], [300.0, 300.0, 300.0]
+    )

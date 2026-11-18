@@ -1631,6 +1631,7 @@ def test_transport_provenance_records_the_publication_grade_scope(
     )
     assert transport["statistical_adequacy"] == "not_assessed"
 
+
 @pytest.mark.parametrize(
     "sidecar", ["artifacts.json", "resolved_config.json", "raw/md.csv"]
 )

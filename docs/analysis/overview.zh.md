@@ -44,7 +44,8 @@ mliport analyze <RUN_DIR|trajectory> <task> [task options]
 信息有问题时会报告出来，避免后续分析用了有问题的轨迹。
 
 **`thermo`** 报告温度、能量漂移和压强。`--block-size-frames` 设置分块统计的块大小。NVE 计算首先要看
-能量漂移。统计量只用有限值计算，因此结果里还有 `summary.data_integrity`：逐列给出总帧数、有限帧数，
+能量漂移。统计量只用有限值计算（NaN 与 ±Inf 都排除，汇总统计与分块均值一致），因此结果里还有
+`summary.data_integrity`：逐列给出总帧数、有限帧数，
 以及哪些列含非有限值（`raw/md.csv` 里空格或无法解析的单元会变成 NaN）。由部分损坏的列算出的均值
 因此能被看见，而不会显得正常。
 
