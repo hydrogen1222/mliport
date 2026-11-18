@@ -10,9 +10,8 @@ Three questions, then a confirmation:
 The confirmation shows the derived folder and the exact command
 ``cd <folder> && mliport run``. Both buttons write the same folder; "Create &
 Run" only starts a job when the folder has no unresolved ``REQUIRED`` value,
-and then submits it through the shared background job manager (the same
-worker/status/log path as every queued TUI job) instead of running the CLI on
-the Textual event loop.
+and then enqueues it through the shared scheduler-controlled JobManager
+(worker/status/log path) instead of running the CLI on the Textual event loop.
 """
 
 from __future__ import annotations
@@ -379,7 +378,11 @@ class NewTaskScreen(Screen):
         self._submitted_folder = folder.path
         for button_id in ("wizard-create", "wizard-create-run"):
             self.query_one(f"#{button_id}", Button).disabled = True
-        self.app.notify(f"Started background job: {job_id}", title="Running")
+        self.app.notify(
+            f"Queued background job: {job_id}. Start the scheduler from Jobs "
+            "or with `mliport queue start` if it is not running.",
+            title="Queued",
+        )
         self.app.push_screen(RunScreen(monitor_job_id=job_id))
 
 
