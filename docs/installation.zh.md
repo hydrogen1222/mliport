@@ -196,6 +196,12 @@ PyTorch 和 TensorFlow 为不同 GPU 代际提供不同的 CUDA 构建版本。�
 - **Volta**（V100）：使用 `cu126`，兼容较旧的驱动。
 - **Maxwell 和 Pascal**：`cu126` 遗留通道；上游标记为 `experimental`。
 
+当同时可见多张 NVIDIA GPU 时，安装器会检查所选框架 wheel 是否覆盖**全部**可见 GPU。
+如果不存在共同的兼容路线，`--device cuda` 会在创建环境前拒绝执行，
+`--device auto` 则回退到 CPU。可以通过 `CUDA_VISIBLE_DEVICES` 只暴露兼容的 GPU 子集。
+GRACE 使用的官方 TensorFlow 2.20 wheel 不包含 Maxwell GPU 内核，因此 Maxwell 上的
+GRACE 也遵循相同的拒绝/CPU 回退规则；其他仅标记为实验性的架构不会被一概视为不可用。
+
 CUDA 13 通道（`cu130`，UMA 的 torch 2.13 使用）需要 580+ 驱动，且不包含 Turing 以下的核函数，因此 Volta 保持在 `cu126`。
 
 <!-- BEGIN GENERATED: gpu-routes -->
