@@ -19,6 +19,11 @@ evidence about how thoroughly it was searched".
   --cycles 5 --output runs/lds-on-lpsc
 ```
 
+All computing subcommands (`confsearch run`, `resume` and `extend`) accept
+`--device cpu|cuda|cuda:N`; omit it to use the configured device (default CPU).
+For `resume` and `extend`, the recorded model/device identity remains subject
+to checkpoint validation; changing it is not a silent restart or CPU fallback.
+
 Mode A takes structures you prepared; mode B places a molecule above a slab for
 you:
 

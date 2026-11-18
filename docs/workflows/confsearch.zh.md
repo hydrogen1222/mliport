@@ -16,6 +16,10 @@
   --cycles 5 --output runs/lds-on-lpsc
 ```
 
+计算子命令 `confsearch run`、`resume` 和 `extend` 均支持 `--device cpu|cuda|cuda:N`。
+省略时采用已有配置（默认 CPU）。续算或扩展时仍会验证已记录的模型和设备身份，
+不允许静默切换 GPU 或退回 CPU。
+
 上面是模式 A，用你自己准备的结构作起点。模式 B 让程序把分子随机摆到 slab 上方：
 
 ```bash
