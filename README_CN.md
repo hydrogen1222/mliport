@@ -86,8 +86,17 @@ cd mliport
 | UMA | `.venv` | `bin/mliport-uma` |
 | NEP | `.venv-nep` | `bin/mliport-nep` |
 
+也可以不使用启动器，直接调用对应环境里的命令：
+
+```bash
+.venv-mace/bin/mliport sp structure.cif --model model.model --model-type mace
+.venv/bin/mliport sp structure.cif --model uma.pt --model-type uma
+# Windows
+.venv-mace\\Scripts\\mliport.exe sp structure.cif --model model.model --model-type mace
+```
+
 安装脚本会锁定各后端的上游版本，装好分析用的依赖，并对每个后端运行 `mliport doctor`。默认
-Python 3.12；支持 3.10–3.13（UMA 需要 ≥ 3.11）。在驱动 580.173.02 的 V100 上验证过。
+Python 3.12；支持 3.10-3.13（UMA 需要 ≥ 3.11）。在驱动 580.173.02 的 V100 上验证过。
 其他 GPU 架构的安装包和 CPU / 离线 / 代理 / 卸载等见 [安装](docs/installation.md)。
 
 <details>
@@ -254,7 +263,7 @@ result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device=
 当前版本是 beta candidate（2.0.0b5）。我们在一台全新的 V100 机器上按上面的步骤安装，跑通了 LGPS 的各个
 工作流和分析。下面这段由验证报告自动生成。
 
-INCAR 风格输入只支持常用参数。API、命令行、INCAR 和 TUI 各自支持哪些参数，记录在
+INCAR 风格输入只支持常用参数。显式原子映射和 image-shift 控制只能通过 API、直接 CLI 或 TUI 设置。API、命令行、INCAR 和 TUI 各自支持哪些参数，记录在
 `validation/science/capability_matrix.json` 里；标为 `no` 或 `partial` 的项在该入口无法设置，程序也不会
 自动换成别的设置。
 
