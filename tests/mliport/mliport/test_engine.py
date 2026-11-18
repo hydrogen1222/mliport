@@ -503,7 +503,7 @@ class TestMaceDtypeDefaults:
         "CUDA error: invalid device ordinal",
     ],
 )
-def test_known_cuda_load_failures_get_actionable_diagnostic(reason):
+def test_known_cuda_load_failures_get_actionable_diagnostic(reason, monkeypatch):
     from mliport.engine import CalculationEngine, EngineConfig
 
     engine = CalculationEngine.from_config(
@@ -516,17 +516,21 @@ def test_known_cuda_load_failures_get_actionable_diagnostic(reason):
         )
     )
     original = RuntimeError(reason)
-    with (
-        patch("mliport.calculators.factory.CalculatorFactory.create", side_effect=original),
-        pytest.raises(RuntimeError, match=r"mliport doctor.*cuda:1") as exc,
-    ):
+
+    def fail_create(*args, **kwargs):
+        raise original
+
+    monkeypatch.setattr(
+        "mliport.calculators.factory.CalculatorFactory.create", fail_create
+    )
+    with pytest.raises(RuntimeError, match=r"mliport doctor.*cuda:1") as exc:
         engine._create_calculator()
     assert exc.value.__cause__ is original
     assert reason in str(exc.value)
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda:0"])
-def test_unrelated_model_load_errors_are_not_rewritten(device):
+def test_unrelated_model_load_errors_are_not_rewritten(device, monkeypatch):
     from mliport.engine import CalculationEngine, EngineConfig
 
     engine = CalculationEngine.from_config(
@@ -539,9 +543,13 @@ def test_unrelated_model_load_errors_are_not_rewritten(device):
         )
     )
     original = RuntimeError("wrong checkpoint head for this task")
-    with (
-        patch("mliport.calculators.factory.CalculatorFactory.create", side_effect=original),
-        pytest.raises(RuntimeError) as exc,
-    ):
+
+    def fail_create(*args, **kwargs):
+        raise original
+
+    monkeypatch.setattr(
+        "mliport.calculators.factory.CalculatorFactory.create", fail_create
+    )
+    with pytest.raises(RuntimeError) as exc:
         engine._create_calculator()
     assert exc.value is original
