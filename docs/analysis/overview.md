@@ -58,7 +58,11 @@ from a trajectory it should not trust.
 
 **`thermo`** reports temperature, energy drift and pressure. `--block-size-frames`
 sets the block size for the block statistics, and for an NVE run the energy drift
-is the thing to look at first.
+is the thing to look at first. The summary statistics use the finite frames only,
+so the result also carries `summary.data_integrity`: per column, how many frames
+existed, how many were finite, and which columns had non-finite values at all
+(`raw/md.csv` cells that are empty or unparsable become NaN). A mean computed
+from a partially corrupted column is visible instead of looking healthy.
 
 **`rmsd`** computes RMSD and RMSF from periodic displacements, a quick check
 that a crystal stays a crystal. `--species` restricts it to one species and

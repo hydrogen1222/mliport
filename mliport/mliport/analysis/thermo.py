@@ -26,6 +26,27 @@ def _statistics(values: np.ndarray) -> dict[str, float] | None:
     }
 
 
+def _finite_integrity(values: np.ndarray) -> dict[str, Any]:
+    """Count the frames a summary statistic was actually computed from.
+
+    ``_statistics`` drops non-finite values instead of propagating them, which
+    is the documented behaviour, but it must not be silent: a trajectory whose
+    ``raw/md.csv`` lost most of a column (empty or unparsable cells become NaN)
+    would otherwise still show a plausible-looking mean.
+    """
+
+    array = np.asarray(values, dtype=float)
+    total = int(array.size)
+    finite = int(np.count_nonzero(np.isfinite(array)))
+    return {
+        "frames": total,
+        "finite_frames": finite,
+        "non_finite_frames": total - finite,
+        "non_finite_fraction": (total - finite) / total if total else 0.0,
+        "statistics_available": finite > 0,
+    }
+
+
 def block_statistics(values: np.ndarray, *, block_size_frames: int) -> dict[str, Any]:
     """Return reproducible non-overlapping block means and their spread."""
 
@@ -48,6 +69,12 @@ def block_statistics(values: np.ndarray, *, block_size_frames: int) -> dict[str,
         "std_of_block_means": (
             float(np.std(finite, ddof=1)) if len(finite) > 1 else 0.0
         ),
+        # Block means skip non-finite frames within a block (``nanmean``), so
+        # the number of skipped values and of unusable blocks is recorded
+        # rather than left implicit.
+        "non_finite_frames": int(np.count_nonzero(~np.isfinite(trimmed))),
+        "blocks_without_finite_values": int(n_blocks - len(finite)),
+        "blocks_used_for_mean": int(len(finite)),
     }
 
 
@@ -114,6 +141,33 @@ def thermodynamic_diagnostics(
         unit = column.removeprefix(prefix + "_")
         for statistic, value in stats.items():
             summary[f"{prefix}_{statistic}_{unit}"] = value
+
+    # Statistics above are computed over the finite values only. Record what
+    # that means per column, so a trajectory whose md.csv lost frames cannot
+    # present a plausible mean without the loss being visible.
+    integrity_columns = {
+        name: _finite_integrity(values)
+        for name, values in columns.items()
+        if name not in {"time_ps", "absolute_time_ps", "step", "phase"}
+    }
+    summary["data_integrity"] = {
+        "n_frames": int(view.nframes),
+        "columns": integrity_columns,
+        "columns_with_non_finite_values": sorted(
+            name
+            for name, record in integrity_columns.items()
+            if record["non_finite_frames"]
+        ),
+        "columns_without_finite_values": sorted(
+            name
+            for name, record in integrity_columns.items()
+            if not record["statistics_available"]
+        ),
+        "interpretation": (
+            "summary_* values are computed over finite frames only; the counts "
+            "above say how many frames each column actually contributed"
+        ),
+    }
 
     ensemble = str(
         dataset.metadata.get("resolved_config", {})
