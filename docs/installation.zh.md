@@ -53,6 +53,22 @@ mliport 的解决方案是**为每个后端构建独立的虚拟环境**。每�
 
 CPU 安装体积更小（无 CUDA 库），适用于所有机器，但推理速度较慢。适合后处理、分析和笔记本电脑上的测试。
 
+### Windows（PowerShell）
+
+`scripts/install_mliport.sh` 是 Bash 脚本，不能直接在原生 PowerShell 中运行。
+在仓库根目录下，使用 Python 原生安装器：
+
+```powershell
+$env:PYTHONPATH = Join-Path $PWD "mliport"
+uv run --no-project --with packaging --python 3.12 -- python -m mliport.install --engines mace --device auto
+```
+
+安装器会在 `.venv-*/Scripts/` 下创建 Windows 虚拟环境，并生成原生
+`bin/mliport-*.cmd` 启动器。运行 MACE 可以使用
+`.venv-mace\Scripts\mliport.exe` 或 `bin\mliport-mace.cmd`。
+具体后端能否在 Windows 上构建、使用 GPU，仍取决于各上游项目的支持情况；
+存在启动器不代表该后端的 GPU 运行时一定可用。
+
 ### 安装器的工作流程
 
 对于你指定的每个引擎，安装器会：
