@@ -57,7 +57,10 @@ jobs:
           .venv-analysis/bin/python -c "import gemdat, kinisi; assert gemdat.__version__.startswith('1.'); assert kinisi.__version__.startswith('2.')"
       - name: Run real kinisi and GEMDAT integration tests
         run: |
-          .venv-analysis/bin/python -m pytest tests/mliport/mliport/analysis/test_analysis_backends_integration.py -q
+          .venv-analysis/bin/python -m pytest \
+            tests/mliport/mliport/analysis/test_analysis_backends_integration.py \
+            tests/mliport/mliport/analysis/test_electrolyte_nearest_site.py \
+            -q
 
   # The built wheel must install and import on every supported Python, not
   # just the runner that happens to build/test. Smoke only -- the heavy

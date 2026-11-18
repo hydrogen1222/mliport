@@ -278,6 +278,76 @@ def test_t7_gemdat_diagnostic_refuses_backend_error(monkeypatch):
     assert reason == {}
 
 
+def test_nearest_site_crosscheck_uses_the_true_minimum_image():
+    """Skewed cell: per-component wrapping picks the wrong site.
+
+    Kept free of pymatgen so the core CI job (which installs only
+    ``mliport[dev]``) still guards the cross-check; the real-pymatgen known
+    answers live in ``test_electrolyte_nearest_site.py``.
+    """
+
+    cell = [[10.0, 0, 0], [9.0, 10.0, 0], [0, 0, 10.0]]
+    sites = _FakeStructure(
+        lattice=cell, species=["Li", "Li"], coords=[[0.0, 0, 0], [5.0, 0, 0]]
+    )
+    # Position (9, 5, 0) is fractional (0.45, 0.5, 0).  Component rounding
+    # leaves it 10.3 A from site 0 and 6.4 A from site 1, but its minimum image
+    # is 5.1 A from site 0, so the atom never leaves site 0.
+    positions = np.array(
+        [[[0.5, 0.5, 0.0], [8.0, 8.0, 8.0]], [[9.0, 5.0, 0.0], [8.0, 8.0, 8.0]]]
+    )
+    frames = [Atoms("LiS", positions=frame, cell=cell, pbc=True) for frame in positions]
+    dataset = TrajectoryDataset.from_frames(
+        frames,
+        times_fs=np.arange(len(frames), dtype=float) * 100.0,
+        positions_convention="unwrapped",
+        phases=["production"] * len(frames),
+    )
+    view = dataset.analysis_view(include_equilibration=False)
+    assert (
+        electrolyte._nearest_site_change_count(
+            view=view,
+            corrected_positions_A=positions,
+            mobile=view.select("Li"),
+            sites=sites,
+        )
+        == 0
+    )
+
+
+def test_nearest_site_crosscheck_counts_a_cubic_hop():
+    """A real hop must be counted, not lost in distance ties."""
+
+    sites = _FakeStructure(
+        lattice=[[10.0, 0, 0], [0, 10.0, 0], [0, 0, 10.0]],
+        species=["Li", "Li"],
+        coords=[[1.0, 1.0, 1.0], [5.0, 1.0, 1.0]],
+    )
+    positions = np.array(
+        [[[1.0, 1.0, 1.0], [8.0, 8.0, 8.0]], [[5.0, 1.0, 1.0], [8.0, 8.0, 8.0]]]
+    )
+    frames = [
+        Atoms("LiS", positions=frame, cell=[10.0, 10.0, 10.0], pbc=True)
+        for frame in positions
+    ]
+    dataset = TrajectoryDataset.from_frames(
+        frames,
+        times_fs=np.arange(len(frames), dtype=float) * 100.0,
+        positions_convention="unwrapped",
+        phases=["production"] * len(frames),
+    )
+    view = dataset.analysis_view(include_equilibration=False)
+    assert (
+        electrolyte._nearest_site_change_count(
+            view=view,
+            corrected_positions_A=positions,
+            mobile=view.select("Li"),
+            sites=sites,
+        )
+        == 1
+    )
+
+
 def test_gemdat_site_discovery_failure_is_backend_error(monkeypatch):
     """A failed site segmentation must not become a physical no-jump result."""
     _install_fakes(
