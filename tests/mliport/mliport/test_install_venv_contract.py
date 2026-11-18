@@ -12,7 +12,6 @@ without network access and without ``uv``.
 
 from __future__ import annotations
 
-import shutil
 import sys
 import venv
 from pathlib import Path
@@ -186,7 +185,7 @@ def test_regular_file_at_the_environment_path_is_refused(tmp_path: Path) -> None
 
 def test_venv_without_interpreter_is_refused(tmp_path: Path) -> None:
     venv = _make_venv(tmp_path / ".venv-nep")
-    (venv / "bin" / "python").unlink()
+    _venv_interpreter(venv).unlink()
     state = _inspect(venv)
     assert state.verdict is Verdict.INCOMPATIBLE
     assert state.reason == "no_interpreter"
