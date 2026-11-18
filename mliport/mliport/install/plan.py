@@ -332,7 +332,7 @@ def _grace_steps(
     cpu: bool,
 ) -> list[InstallStep]:
     """GRACE (TensorFlow) install steps."""
-    python = f"{backend.venv_name}/bin/python"
+    python = _venv_python_path(backend)
     tf_ver = bp.framework_version
     extra_pkgs = bp.extra_packages
 
@@ -520,29 +520,6 @@ def generate_plan(
                 is_cpu = False
                 arch_name = arch.name
 
-    plan = InstallPlan(
-        gpu_arch=arch_name,
-        gpu_cc=cc_str,
-        source=src.name,
-        python_version=py_ver,
-    )
-
-    if device == "auto" and not is_cpu and not gpus:
-        # Shouldn't happen (auto with gpus sets is_cpu False), kept for safety.
-        pass
-    if arch is None and device == "auto" and gpus:
-        plan.warnings.append(
-            f"GPU compute capability {cc_str} is unsupported; falling back "
-            f"to CPU-only installation. Use device=cuda to fail instead."
-        )
-    if route_fallback_warning:
-        plan.warnings.append(route_fallback_warning)
-    if src.offline:
-        plan.warnings.append(
-            "Source profile 'offline': no network access will be used. "
-            "Only locally cached wheels are consulted."
-        )
-
     route_fallback_warning: str | None = None
     if not is_cpu and gpus:
         incompatible_routes: list[str] = []
@@ -594,6 +571,25 @@ def generate_plan(
                 "No compatible CUDA wheel route exists for every visible GPU and "
                 f"selected Torch backend; --device auto is falling back to CPU. {detail}"
             )
+
+    plan = InstallPlan(
+        gpu_arch=arch_name,
+        gpu_cc=cc_str,
+        source=src.name,
+        python_version=py_ver,
+    )
+    if arch is None and device == "auto" and gpus:
+        plan.warnings.append(
+            f"GPU compute capability {cc_str} is unsupported; falling back "
+            f"to CPU-only installation. Use device=cuda to fail instead."
+        )
+    if route_fallback_warning:
+        plan.warnings.append(route_fallback_warning)
+    if src.offline:
+        plan.warnings.append(
+            "Source profile 'offline': no network access will be used. "
+            "Only locally cached wheels are consulted."
+        )
 
     # ---- Build steps per engine ----
     for engine in engine_list:
