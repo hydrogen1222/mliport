@@ -36,6 +36,33 @@ jobs:
         run: |
           .venv-dev/bin/python -m pytest tests -q
 
+  installer-windows-contract:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "mliport/pyproject.toml"
+      - name: Install the package and focused test dependencies
+        run: |
+          uv venv .venv-installer --python 3.12
+          uv pip install --python .venv-installer/Scripts/python.exe -e ./mliport pytest
+      - name: Test installer contracts on native Windows paths
+        run: |
+          .venv-installer/Scripts/python.exe -m pytest `
+            tests/mliport/mliport/test_install_plan.py `
+            tests/mliport/mliport/test_install_venv_contract.py `
+            tests/mliport/mliport/test_install_cli.py `
+            tests/mliport/mliport/test_install_launcher.py `
+            tests/mliport/mliport/test_install_compatibility.py -q
+      - name: Exercise the PowerShell installer dry run
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = Join-Path $PWD "mliport"
+          uv run --no-project --with packaging --python 3.12 -- python -m mliport.install --engines nep --device cpu --dry-run
+
   analysis-backends:
     runs-on: ubuntu-latest
     steps:
