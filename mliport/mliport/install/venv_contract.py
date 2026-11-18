@@ -33,7 +33,7 @@ This module turns that flag into an explicit, fail-closed decision
 
 The check never mutates the filesystem and never imports anything from the
 target environment: it only reads ``pyvenv.cfg``, lists ``site-packages`` and
-asks ``<venv>/bin/python`` for ``major.minor``.
+asks the platform-specific venv interpreter for ``major.minor``.
 """
 
 from __future__ import annotations
