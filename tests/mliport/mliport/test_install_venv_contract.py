@@ -12,7 +12,9 @@ without network access and without ``uv``.
 
 from __future__ import annotations
 
+import shutil
 import sys
+import venv
 from pathlib import Path
 
 import pytest
@@ -30,8 +32,25 @@ _ACTUAL = f"{sys.version_info.major}.{sys.version_info.minor}"
 _OTHER = "3.11" if _ACTUAL != "3.11" else "3.12"
 
 
+def _venv_interpreter(venv_path: Path) -> Path:
+    if sys.platform == "win32":
+        return venv_path / "Scripts" / "python.exe"
+    return venv_path / "bin" / "python"
+
+
+def _site_packages(venv_path: Path) -> Path:
+    if sys.platform == "win32":
+        return venv_path / "Lib" / "site-packages"
+    return venv_path / "lib" / f"python{_ACTUAL}" / "site-packages"
+
+
 def _make_venv(path: Path, *, python: Path | None = None) -> Path:
     """A venv-shaped directory whose interpreter reports ``sys.version_info``."""
+    if sys.platform == "win32":
+        # Use the platform's real venv layout so Scripts/python.exe is runnable.
+        venv.EnvBuilder(with_pip=False).create(path)
+        return path
+
     (path / "bin").mkdir(parents=True)
     (path / "pyvenv.cfg").write_text(
         f"home = {sys.base_prefix}\n"
@@ -39,14 +58,14 @@ def _make_venv(path: Path, *, python: Path | None = None) -> Path:
         f"version = {sys.version.split()[0]}\n",
         encoding="utf-8",
     )
-    interpreter = path / "bin" / "python"
+    interpreter = _venv_interpreter(path)
     interpreter.symlink_to(python or Path(sys.executable))
-    (path / "lib" / f"python{_ACTUAL}" / "site-packages").mkdir(parents=True)
+    _site_packages(path).mkdir(parents=True)
     return path
 
 
 def _install_package(venv: Path, name: str, *, dist_info: bool = True) -> None:
-    site_packages = venv / "lib" / f"python{_ACTUAL}" / "site-packages"
+    site_packages = _site_packages(venv)
     if dist_info:
         (site_packages / f"{name}-1.0.dist-info").mkdir()
     else:
@@ -176,7 +195,7 @@ def test_venv_without_interpreter_is_refused(tmp_path: Path) -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX interpreter shim")
 def test_broken_interpreter_is_refused(tmp_path: Path) -> None:
     venv = _make_venv(tmp_path / ".venv-nep")
-    interpreter = venv / "bin" / "python"
+    interpreter = _venv_interpreter(venv)
     interpreter.unlink()
     interpreter.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
     interpreter.chmod(0o755)
