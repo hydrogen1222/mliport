@@ -377,7 +377,8 @@ def _nep_steps(
     framework, so there is no framework wheel to pin.  Like every other
     backend, the isolated environment gets the pinned backend package **and**
     an editable mliport in a single resolver run: the ``verify`` stage calls
-    ``<venv>/bin/mliport doctor``, which cannot exist unless mliport itself is
+    the platform-specific ``mliport`` console script, which cannot exist unless
+    mliport itself is
     installed into that environment.  One resolve (rather than separate
     ``calorine`` / ``mliport`` installs) keeps ASE and NumPy consistent between
     the two; NumPy is deliberately left to the resolver because neither mliport
