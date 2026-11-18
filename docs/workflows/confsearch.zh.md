@@ -1,16 +1,17 @@
 # 构型搜索
 
-`mliport confsearch` 用来找**周期性 slab 一侧单个吸附分子**的低能构型。需要先装好对应后端
-并准备模型，见[后端](../backends/index.md)和[安装](../installation.md)。程序会从多个起点各跑
-一条 MD 链，把途中的结构做局部优化，去掉重复的极小值，最后导出一份候选结构，留给 DFT
-复核。
+`mliport confsearch` 搜索**一个吸附分子在周期性 slab 一侧**的低能构型。它通过在升高温度下运行多条独立的 MD 链，对发现的结构做淬火处理、去重，然后导出排序后的候选列表供 DFT 复核。
 
-它只做构型筛选：吸附能、自由能和 Boltzmann 分布都不在它的计算范围内，晶胞也保持不变。
-结果里给出的是"这次搜索找到的能量最低的几个结构"，同时附上判断搜索是否充分的统计数据。
-有限次数的搜索没法证明找到的就是全局最小。
+## 它做什么——以及不做什么
+
+构型搜索是一个**筛选**工具。它报告自己找到的最低能量极小值，并给出搜索充分程度的统计证据，但它从不声称找到了全局最小值。它不计算吸附能、自由能或 Boltzmann 分布，也从不改变晶胞。最终产出是一份排好序的候选列表，交给 DFT 做进一步排序。
+
+## 两种启动模式
+
+**模式 A — 预先准备好的起点：** 你提供已构建好的 slab+吸附分子结构：
 
 ```bash
-.venv-mace/bin/mliport confsearch run starts/*.extxyz \
+mliport confsearch run starts/*.extxyz \
   --adsorbate-indices 300-341 \
   --model mace-omat-0-medium.model --model-type mace --task bulk \
   --cycles 5 --output runs/lds-on-lpsc
@@ -23,135 +24,23 @@
 上面是模式 A，用你自己准备的结构作起点。模式 B 让程序把分子随机摆到 slab 上方：
 
 ```bash
-.venv-mace/bin/mliport confsearch run \
+mliport confsearch run \
   --slab slab.vasp --molecule conformers.xyz --n-starts 20 \
   --model mace-omat-0-medium.model --model-type mace --task bulk \
   --output runs/placed
 ```
 
-`cs_adsorbate_indices` **和 ASE 一样从 0 开始编号**，CP2K 和 VMD 是从 1 开始的。编号填错是最
-常见的问题，所以程序会检查：选中的原子必须能连成**一个完整的共价分子**，否则直接报错退出。
-
-## 搜索过程
-
-每个起点先做一次结构优化，这一步的结果就是"只做多起点优化"的对照组。然后每条 replica
-重复 `--cycles` 轮"升温、保温、降温"：
-
-- 用 Langevin 热浴升到 `CS_TEMPERATURE_HIGH` 并保温；
-- 保温期间定时取几帧，然后线性降温到 `CS_TEMPERATURE_LOW`；
-- 每个取出的帧和本轮最后一帧都在固定晶胞下用 FIRE 做局部优化；
-- 对得到的每个极小值做分类和去重；
-- 用 `CS_ACCEPT_TEMPERATURE` 下的 Metropolis 判据，决定是否把本轮最后的极小值作为下一轮的
-  起点。
-
-各条 replica 互不影响。程序轮流推进它们（先每条跑第 1 轮，再每条跑第 2 轮），所以任何时候
-停下来都有一份可用的结果。默认 MD 期间 slab 原子全部固定（`CS_MD_MOBILE = adsorbate`）。
-设成 `adsorbate_and_top` 会把表面以下 `CS_TOP_DEPTH` Å 内的原子也放开，设成 `all_free` 则放开
-所有没被固定的原子。局部优化时，输入里没有固定的原子都会参与优化。
-
-## 开始前的检查
-
-只有当力等于能量的负梯度时，按能量排序才有意义。所以在跑任何 MD 之前，程序会先记录模型
-信息，并在第一个起点上检查能量和力是否一致：
-
-- 模型信息（后端、版本、task、head、精度、推理模式、设备、是否加了 DFT-D3）写进
-  `run_context.json`；
-- 如果模型声明自己的力是直接预测的（`direct_forces = true`），程序拒绝运行。确实要用的话加
-  `--allow-direct-forces`，这时每条结果都会附上"排序不可靠"的警告；
-- 其余模型用有限差分抽查：沿几个方向比较 `-F·u` 和能量的数值导数，结果存为
-  `gradient_preflight`。
-
-步长也会检查：可动原子里有氢时，步长不能超过 1.0 fs，默认是 0.5 fs。
-
-## 自动摆放
-
-模式 B 下，每个起点的生成步骤是：随机选一个构象，以几何中心为原点做一次随机旋转，在面内
-随机选一个位置，再用二分法调整高度，直到分子和 slab 之间最近的一对原子距离达到设定值。距离
-用"两原子共价半径之和"的倍数来表示：
-
-| 选项 | 默认值 | 含义 |
-|---|---|---|
-| `CS_PLACE_CONTACT_SCALE` | 1.5 | 普通摆放：最近原子对贴近但不成键 |
-| `CS_PLACE_ANCHOR` | 不设置 | 分子文件里的锚点原子编号（从 0 开始） |
-| `CS_PLACE_ANCHOR_SCALE` | 1.1 | 设了锚点时，锚点和表面原子直接以成键距离摆放 |
-| `CS_PLACE_OTHER_MIN_SCALE` | 1.3 | 锚点以外的原子离表面都要大于这个倍数 |
-| `CS_PLACE_ANCHOR_TARGETS` | 不设置 | 限定锚点只和这几种表面元素成键 |
-
-锚点摆放用于优先考虑化学吸附。程序会旋转分子，直到锚点原子处在最下方，再把它放到
-`CS_PLACE_ANCHOR_SCALE` 倍共价半径和的位置。这个距离已经满足分类时的成键判据，所以起点
-本身就是成键的。默认情况下锚点只和非离子原子成键，Li 这类离子不算。
-
-## 去重
-
-两个极小值的能量差不超过 `CS_DEDUP_ENERGY_TOL`，并且满足下面任意一条，就算作同一个结构：
-
-- `G`，几何直接比对：slab 有固定原子作锚定，原子顺序也不变，所以可以逐个原子比较吸附物的
-  位置，每个原子的位移都不超过 `CS_DEDUP_GEOM_TOL` 就算相同。平缓势能面上优化留下的微小
-  差别由这一条处理；
-- `D`，指纹比对：吸附物周围环境的 Oganov–Valle 指纹距离不超过 `CS_DEDUP_FP_TOL`。这一条用来
-  识别对称等价的吸附位点，以及甲基转了一下这种本质相同的构象。
-
-指纹的离散方式和 ASE 完全一致，可以逐个 bin 和 `OFPComparator` 对照。（它和
-[NEB](neb.md) 里检查能量和力是否一致的预检是两回事。）容差按照"宁可多留一个重复，也不错删
-一个结构"来设定：错把两个不同结构合并，可能正好删掉 DFT 复核后排第一的那个；多留一个重复，
-代价只是多算一次 DFT。
-
-**标定的局限。** 默认的 `CS_DEDUP_FP_TOL` 来自
-`tests/mliport/mliport/confsearch/test_fingerprint_calibration.py` 里的标定。标定用的是
-LGPS **体相**晶胞里的甲醇；"同一个极小值"那一类样本是随机扰动出来的，没有真正做优化；
-"对称等价"那一类是严格的刚性对称拷贝，`D` 几乎为 0。所以这个容差能保证不会错误合并，但对
-"带一点噪声的等价结构"还没有实测数据。实际使用中，`D` 基本只会合并完全对称的拷贝，同一
-个极小值的合并主要靠 `G` 和 `CS_DEDUP_ENERGY_TOL`。这样做的后果是可能多出一些重复结构，不会
-丢掉候选。在真实 slab 和真实模型上重新标定，是验证脚本
-`validation/science/scripts/confsearch_suite.py` 要做的事。
-
-## 输出
-
-一次运行会写出 `resolved_config.json`、`run_context.json`、`run.log`、
-`search_results.json`、`artifacts.json`、`starts/`、`raw/`、`minima/`、
-`diagnostics/discovery.csv`、`top/rank_NNN/` 和 `checkpoints/`。各文件的通用约定见
-[输出文件](../outputs.md)。
-
-每个导出的结构目录里有 `POSCAR`（分数坐标，固定原子带 selective dynamics）、
-`structure.extxyz`、`cp2k_coord.xyz`、`cp2k_cell.inc`、`cp2k_fixed_atoms.inc` 和
-`minimum.json`。CP2K 的固定原子文件按 `&MOTION/&CONSTRAINT/&FIXED_ATOMS` 的 `LIST` 格式写，
-原子编号从 1 开始，连续编号写成 `a..b`。导出时 slab 原子会放回晶胞内，吸附分子按最近镜像
-拼成完整的分子，和原始极小值只差一个晶格平移。
-
-`search_results.json` 里有排序结果、发现曲线、饱和程度的统计（最低结构被找到几次、被几条
-replica 找到、第一次出现在搜索的什么阶段），以及和"只做多起点优化"对照组的比较。相关验证
-记录见[验证](../validation.md)。
-
-## 续算
+你可以在不加载模型的情况下预览放置结果：
 
 ```bash
-.venv-mace/bin/mliport confsearch resume runs/lds-on-lpsc
+mliport confsearch place --slab slab.vasp \
+  --molecule conformers.xyz --n-starts 20 --output runs/placement-check
 ```
 
-起点优化完成后、以及每条 replica 每跑完一轮，都会写一次检查点。续算时程序会核对模型、输入
-结构、原子分区、随机种子和各项参数（输出相关的设置除外），有任何一项变了就拒绝续算。核对
-通过后，程序从中断前保存的随机数状态重跑被打断的那一轮。在 CPU 上，中断后续算的结果和一口
-气跑完的结果逐位相同。被打断那一轮留下的原始文件会移到 `incomplete_attempt_N/`，不会删除。
-
-## 风险和注意事项
-
-- 基础模型大多只用体相无机材料训练，描述硫化物表面上的有机分子可能很差，温度越高问题越
-  明显。`reacted`（分子骨架断键）的比例偏高就是信号。导出的候选一定要用 DFT 复核。
-- 烷基链是平躺还是竖立，取决于色散作用。如果模型的训练数据不含色散，请加 `--d3`。D3 会记
-  入模型信息，加 D3 和不加 D3 的搜索不能合并。
-- MD 期间固定 slab，会让搜索偏向初始的表面结构。`adsorbate_and_top` 可以缓解，但能量会更
-  嘈杂，注意诊断里的 `far_field_slab_changed`。
-- 晶胞必须已经用同一个模型优化过。confsearch 不检查这一点，也不会改变晶胞。
-- 分子与自身周期像的距离、真空层厚度的检查只是几何上的保护，不能说明模型在周期像之间完全
-  没有相互作用。
-- 短程 MLIP 不含长程静电。对单侧吸附的 slab 做 DFT 单点或优化时，记得加偶极修正。
-- 模型没见过的表面上形成的化学吸附键，是整个结果里最不可靠的部分。每个标为 `chemisorbed`
-  的候选都要用 DFT 确认。
-
-Python API 和命令行一一对应，返回值就是 `search_results.json` 的内容：
+## Python API
 
 ```python
-from mliport import run_confsearch
+from mliport.api import run_confsearch
 
 results = run_confsearch(
     starts=["starts/start_000.extxyz"],
@@ -166,12 +55,105 @@ results = run_confsearch(
 print(results["ranking"]["best_energy_eV"])
 ```
 
-终端界面（TUI）的配置页也支持这两种起点方式，可以设置锚点原子、锚点目标元素和随机种子；
-`resume`、`extend` 和 `merge` 只能在命令行里用。各个入口
-分别支持哪些功能，记录在能力矩阵里。`mliport confsearch place` 只做摆放、不加载模型，可以在
-花 GPU 时间之前先看看起点是否合理：
+该函数返回 `search_results.json` 的内容作为字典。
+
+## 搜索过程
+
+每个起点首先做一次淬火（固定晶胞下的仅原子位置 FIRE 优化），得到"仅多起点优化"的基线。然后每条 replica 运行 `--cycles` 轮加热–保温–冷却循环：
+
+1. 在 `CS_TEMPERATURE_HIGH` 下用 Langevin 恒温器**加热并保温**
+2. 在保温阶段**采样快照**，然后线性降温到 `CS_TEMPERATURE_LOW`
+3. 对每个快照和本轮末帧在固定晶胞下用 FIRE 做**淬火**
+4. 对每个极小值做**分类和去重**
+5. 在 `CS_ACCEPT_TEMPERATURE` 下做 **Metropolis 判断**，决定是否接受本轮末尾的极小值作为下一轮的起点
+
+各 replica 独立运行，轮转调度意味着搜索在每轮结束后都有可用的结果。
+
+### slab 原子的活动性
+
+默认情况下 MD 期间 slab 被冻结（`CS_MD_MOBILE = adsorbate`）：
+
+- `adsorbate`：仅吸附分子在 MD 中运动（默认）
+- `adsorbate_and_top`：同时解冻表面以下 `CS_TOP_DEPTH` Å 范围内的原子
+- `all_free`：解冻输入中所有未被固定的原子
+
+淬火步骤中，无论 `CS_MD_MOBILE` 如何设置，所有未被固定的原子都参与优化。
+
+## 搜索前检查
+
+在任何动力学开始之前，mliport 会验证模型：
+
+- **模型身份**（后端、版本、task、head、dtype、推理模式、设备以及任何 DFT-D3 校正）记录在 `run_context.json` 中。
+- 声明 `direct_forces = true` 的模型会被拒绝，除非你传入 `--allow-direct-forces`；此时每个结果都附带排序不可靠的警告。
+- 在第一个预备起点上运行**梯度预检**（能量-力一致性的有限差分检查）。
+- 如果可活动原子中有氢，超过 1.0 fs 的步长会被拒绝。默认值为 0.5 fs。
+
+## 自动放置（模式 B）
+
+每个起点随机选择一个构象异构体，将其居中，施加均匀随机旋转，抽取面内坐标，然后通过二分法求解高度，使最近的吸附分子–slab 原子对达到共价半径之和的目标比例。
+
+| 选项 | 默认值 | 含义 |
+|---|---|---|
+| `CS_PLACE_CONTACT_SCALE` | 1.5 | 非键合放置的接触距离比例 |
+| `CS_PLACE_ANCHOR` | 未设置 | 分子文件中的锚点原子索引（0-based） |
+| `CS_PLACE_ANCHOR_SCALE` | 1.1 | 有锚点时，直接以成键距离放置 |
+| `CS_PLACE_OTHER_MIN_SCALE` | 1.3 | 其他所有原子对必须超过此比例 |
+| `CS_PLACE_ANCHOR_TARGETS` | 未设置 | 要求最近的 slab 原子为这些元素之一 |
+
+**锚点放置**是化学吸附优先模式：旋转后分子最低位置的原子从锚点集合中选取，高度设置为成键距离（在分类器使用的成键判据范围内）。
+
+## 去重
+
+两个极小值在以下条件同时满足时被视为同一结构：能量差不超过 `CS_DEDUP_ENERGY_TOL`，且满足下列任一条件：
+
+- **G（几何同一性）：** 固定原子为 slab 提供锚定，每个吸附分子原子在两个极小值中的距离不超过 `CS_DEDUP_GEOM_TOL`（吸收平坦势能盆中淬火噪声）。
+- **D（指纹距离）：** 聚焦的 Oganov–Valle 指纹距离不超过 `CS_DEDUP_FP_TOL`（捕捉对称等价位点和排列等价的构象，如旋转的甲基）。
+
+容差被有意设为保守值：**错误合并**会默默删掉一个 DFT 复核后可能排第一的候选，而错误分裂只多付出一次重复的代价。
+
+## 吸附分子索引
+
+`cs_adsorbate_indices` 使用 **0-based 索引**（与 ASE 一致）。CP2K 和 VMD 从 1 开始计数。索引填错是最常见的错误——选中的原子如果不能构成一个连通的共价分子，程序会直接报错而不是继续搜索。
+
+## 输出文件
+
+一次运行会写出：
+
+| 文件 | 内容 |
+|---|---|
+| `search_results.json` | 排名、发现曲线、饱和度诊断 |
+| `run_context.json` | 模型身份和梯度预检 |
+| `resolved_config.json` | 完整的已解析配置 |
+| `artifacts.json` | 文件列表及哈希 |
+| `run.log` | 人类可读的日志 |
+| `starts/` | 预备/放置的起始结构 |
+| `raw/` | 原始 MD 轨迹 |
+| `minima/` | 去重后的极小值 |
+| `diagnostics/discovery.csv` | 每轮发现统计 |
+| `top/rank_NNN/` | 导出的候选（见下文） |
+| `checkpoints/` | 每条 replica 每轮的检查点 |
+
+每个导出的排名目录包含：
+
+- `POSCAR` — 分数坐标，固定原子带 selective dynamics
+- `structure.extxyz` — ASE 可读的结构
+- `cp2k_coord.xyz`、`cp2k_cell.inc`、`cp2k_fixed_atoms.inc` — CP2K 输入片段（1-based 原子索引，连续编号用 `a..b` 范围表示）
+- `minimum.json` — 该极小值的元信息
+
+## 续算
 
 ```bash
-.venv-mace/bin/mliport confsearch place --slab slab.vasp \
-  --molecule conformers.xyz --n-starts 20 --output runs/placement-check
+mliport confsearch resume runs/lds-on-lpsc
 ```
+
+在起点淬火阶段完成后以及每个 (replica, cycle) 单元完成后都会写入检查点。续算时会检查身份是否发生变化——模型、输入、区域划分、种子以及除输出和详细程度外的所有选项。在 CPU 上，中断后续算的结果与一次不间断运行按位一致。被中断尝试的原始文件被移动到 `incomplete_attempt_N/`，不会被删除。
+
+## 风险和注意事项
+
+- **模型质量：** 以无机 bulk 数据训练的基础模型可能对硫化物表面上的有机吸附分子描述不佳。高温会放大这个问题。`reacted`（分子断键）比例过高是症状——请用 DFT 复核导出的结构。
+- **色散：** 色散作用决定了烷基链是平躺还是竖立。当模型的训练数据缺乏色散时请使用 `--d3`。D3 校正是模型身份的一部分，带 D3 的搜索不能与不带 D3 的合并。
+- **冻结 slab 偏差：** MD 期间冻结 slab 会使搜索偏向初始表面几何结构。`adsorbate_and_top` 可以缓解这一点，但代价是更嘈杂的能量；请检查诊断中的 `far_field_slab_changed`。
+- **晶胞质量：** 晶胞必须已经是同一模型的优化结果；confsearch 不检查这一点，也从不改变晶胞。
+- **周期性：** 自映像和真空距离的保护是几何性的。它们不能证明模型的感受野在周期像之间完全解耦。
+- **静电：** 短程 MLIP 没有长程静电。对单侧 slab 做 DFT 单点计算时需要偶极校正。
+- **化学吸附：** 在模型未经训练的表面上形成的化学键是结果中最不可靠的部分。请用 DFT 确认每个标记为 `chemisorbed` 的候选。

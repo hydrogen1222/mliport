@@ -1,66 +1,102 @@
 # 安装
 
-各后端（MACE、DPA、GRACE、UMA，以及需要显式选择的 NEP）各自依赖不同的运行时栈，放在同一个环境里经常
-冲突。所以安装脚本给**每个后端单独建一个环境**，每个环境里各装一份 mliport。`.venv-mace`
-里的 `mliport` 只能跑 MACE，`.venv` 里的只能跑 UMA，其余类推。需要哪个后端就装哪个，用的
-时候从对应环境里调用 `mliport`。
+## 为什么每个后端一个环境？
 
-## 安装脚本
+机器学习原子间势依赖深度学习框架（PyTorch、TensorFlow、JAX），而这些框架会锁定特定版本的 CUDA 库、NumPy 等底层包。当两个后端需要*不同*版本的同一个库时（MACE 需要 PyTorch 2.8，DPA 需要 2.11，GRACE 运行在 TensorFlow 上），把它们放在同一个环境中会产生无法解决的版本冲突。
 
-先装好 [uv](https://docs.astral.sh/uv/)，再克隆仓库：
+mliport 的解决方案是**为每个后端构建独立的虚拟环境**。每个环境包含 mliport 本身以及该后端的依赖栈，其中的 `mliport` 命令只能调用对应的后端。这确保了每条依赖链的清洁和每次运行的可重现性。
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone https://github.com/hydrogen1222/mliport
-cd mliport
-```
+| 后端 | 环境 | 可运行的内容 |
+|---|---|---|
+| UMA (FAIRChem) | `.venv` | 仅 UMA 检查点 |
+| MACE | `.venv-mace` | 仅 MACE 检查点 |
+| DPA (DeePMD-kit) | `.venv-dpa` | 仅 DPA 检查点 |
+| GRACE | `.venv-grace` | 仅 GRACE 检查点 |
+| NEP (Calorine / GPUMD) | `.venv-nep` | 仅 NEP 势函数 |
 
-有 NVIDIA GPU 且驱动正常的机器（在 V100-SXM2-16GB、驱动 580.173.02 上测试过）：
+你只需要安装自己使用的后端。如果只用 MACE，就只安装 MACE。
+
+## 前置条件
+
+运行安装器之前需要两样东西：
+
+1. **uv** — 一个快速的 Python 包管理器，集虚拟环境管理和依赖解析于一体，比 `pip` + `venv` 快得多：
+
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+2. **mliport 仓库**：
+
+    ```bash
+    git clone https://github.com/hydrogen1222/mliport
+    cd mliport
+    ```
+
+在 GPU 机器上还需要可用的 NVIDIA 驱动。安装器在 V100-SXM2-16GB（驱动 580.173.02）上经过测试。
+
+## 运行安装器
+
+### GPU 机器（推荐）
 
 ```bash
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device auto
 ```
 
-没有 GPU 的机器：
+`--device auto` 会自动检测 GPU 并选择对应的 CUDA wheel 通道。你可以只安装部分后端——`--engines mace dpa` 会跳过 GRACE 和 UMA。
+
+### 仅 CPU 机器
 
 ```bash
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
-NEP 需要显式选择：它不在默认引擎列表里，因为它的原生路径还需要你自己编译的 `gpumd`
-（见 [NEP](backends/nep.md)）：
+CPU 安装体积更小（无 CUDA 库），适用于所有机器，但推理速度较慢。适合后处理、分析和笔记本电脑上的测试。
+
+### 安装器的工作流程
+
+对于你指定的每个引擎，安装器会：
+
+1. 创建虚拟环境（`.venv-mace`、`.venv-dpa` 等）。
+2. 以可编辑模式安装 mliport 及分析扩展。
+3. 安装该后端的框架（锁定版本）。
+4. 在 `./bin/` 下写入启动器脚本（如 `./bin/mliport-mace`）。
+5. 运行 `mliport doctor` 验证安装（除非指定了 `--skip-doctor`）。
+
+整个过程是确定性的：同一命令在同一机器上产生相同的环境，因为框架版本锁定在兼容性注册表（`mliport/mliport/install/compatibility.py`）中。
+
+### 常用安装器选项
+
+| 选项 | 作用 |
+|---|---|
+| `--dry-run` | 打印每个步骤但不执行 |
+| `--clean` | 删除并重建指定引擎的环境 |
+| `--skip-doctor` | 跳过最后的验证步骤 |
+| `--python 3.12` | 强制使用特定 Python 版本（必须满足所有指定的后端） |
+| `--source offline` | 使用预先准备的 wheel 缓存 |
+
+## NEP：可选后端
+
+NEP 不在默认引擎列表中，因为其原生 GPU 运行时需要单独编译的 `gpumd` 二进制文件，安装器无法自动构建。
+
+**仅 CPU 的 NEP** 可以直接使用——Calorine ASE 运行时无需编译：
 
 ```bash
-./scripts/install_mliport.sh --engines nep --device cpu     # CPU 的 ASE 路径（Calorine CPUNEP）
-./scripts/install_mliport.sh --engines nep --device auto    # 有 GPU 的机器；结尾的 doctor 需要你编译的 gpumd
+./scripts/install_mliport.sh --engines nep --device cpu
 ```
 
-与其他后端一样，`.venv-nep` 在同一次依赖解析里装入固定版本的 `calorine` 和可编辑安装的
-mliport，所以 `.venv-nep/bin/mliport` 一定存在，`doctor` 才能运行。安装脚本不会编译
-`gpumd`。用 `--device cpu` 安装时不需要 `gpumd`，CPU 的 ASE 路径装好即可使用。用 `--device cuda`，或者在
-有 NVIDIA GPU 的机器上用 `--device auto`，结尾的 `doctor` 会检查 CUDA 路径，在 `PATH` 或
-`MLIPORT_GPUMD_COMMAND` 里找不到 `gpumd` 时会报错并点名 `gpumd`。此时环境已经装好，但
-`bin/mliport-nep` 启动器要等所有步骤都成功才会写出；可以编译好 `gpumd` 后重新运行安装脚本，也可以改用
-`--device cpu` 或 `--skip-doctor` 安装（期间直接用 `.venv-nep/bin/mliport`）。
-
-环境已经存在时重新运行安装脚本，会在执行任何步骤之前先做一次明确的判定。**兼容**的环境（真正的虚拟环境、
-Python 版本符合要求、且不含其他后端的软件包）会被复用，其中的固定版本依赖就地重新解析安装；其他情况一律**拒绝**：
-路径上是普通目录、解释器无法报告版本、用别的 Python 版本建的 venv，或者环境里已经装了其他后端的框架（例如
-`.venv-nep` 里有 `torch`）。拒绝时会说明原因、不改动任何东西，并提示你加 `--clean`；`--clean` 只会删除并重建
-你所指定后端的环境（只动这些）。只要部分后端时，`--engines` 后面少写几个就行。`--dry-run` 只打印要执行的步骤，不真正安装。
-安装结束时脚本会在每个环境里运行一次 `mliport doctor`（加 `--skip-doctor` 可以跳过）。分析、
-输运和电解质相关的依赖会一起装好，不用另外安装。
-
-安装脚本还会在 `./bin/` 里生成几个启动脚本：
+**GPU NEP** 需要你自行用 CUDA Toolkit 12.9（或兼容版本）编译 `gpumd`，然后将其放到 `PATH` 上或设置 `MLIPORT_GPUMD_COMMAND`：
 
 ```bash
-./bin/mliport-mace sp structure.cif --model model.model --model-type mace
-./bin/mliport-uma  sp structure.cif --model uma.pt --model-type uma
+./scripts/install_mliport.sh --engines nep --device auto
+# 结尾的 doctor 检查会失败，直到 gpumd 可用。
+# 编译 gpumd 后重新运行安装器，或使用 --skip-doctor
+# 并直接调用 .venv-nep/bin/mliport。
 ```
 
-启动脚本只负责选对 Python 环境，模型、精度等计算参数仍要你自己指定。
+详见 [NEP](backends/nep.md) 的构建说明和运行时细节。
 
-## 哪个环境跑什么
+## 各环境运行什么
 
 <!-- BEGIN GENERATED: backend-matrix -->
 | 后端 | 环境 | Python | 运行时 |
@@ -72,36 +108,29 @@ Python 版本符合要求、且不含其他后端的软件包）会被复用，�
 | GRACE | `.venv-grace` | 3.10, 3.11, 3.12, 3.13 | `tensorpotential==0.6.0` (tensorflow 2.20.0) |
 <!-- END GENERATED -->
 
-NEP 一行括号里的两个东西不是同一个版本：Calorine 运行在 NumPy 和 ASE 之上，二者由安装器与
-mliport 一起解析（不单独锁定）；`CUDA Toolkit 12.9` 则是单独编译的 `gpumd` 二进制所验证过的
-工具包版本。
+`Python` 列显示安装器对该后端接受的版本范围，是 mliport 自身 `requires-python`、后端约束和可用框架 wheel 的交集。此表由兼容性注册表自动生成。
 
-`Python` 一列是该后端可用的 Python 版本，取 mliport、后端本身和所需框架三者支持范围的交集。
-这张表由兼容性注册表（`mliport/mliport/install/compatibility.py`）自动生成，具体的版本锁定
-也写在那里。
+可以用 `--python` 强制指定版本，但它必须满足*所有*指定的后端。不可能的组合如 `--python 3.10 --engines uma`（UMA 需要 3.11+）会在安装前被拒绝。
 
-可以用 `--python` 指定解释器版本，但它必须同时满足所选的*每一个*后端。像
-`--python 3.10 --engines uma` 这种装不上的组合，会在开始安装前就报错，脚本不会自作主张换
-版本。
+## 验证安装
 
-## 检查安装
+安装完成后，验证每个后端：
 
 ```bash
 .venv-mace/bin/mliport doctor --engine mace --device auto
 .venv-dpa/bin/mliport  doctor --engine dpa  --device auto
 .venv-grace/bin/mliport doctor --engine grace --device auto
 .venv/bin/mliport       doctor --engine uma  --device auto
-.venv-nep/bin/mliport   doctor --engine nep  --device cpu     # 若安装了 NEP
+.venv-nep/bin/mliport   doctor --engine nep  --device cpu     # 如果安装了 NEP
 ```
 
-必需的检查都通过时，命令以 0 退出，最后一行类似 `Environment checks passed for MACE on CUDA.`。
-报告里还会列出可选功能（TUI、分析、输运、电解质、绘图）是否可用。想顺便用真实模型试算一次，
-加上 `--model PATH --task TASK --structure FILE`。`doctor --json` 输出同样内容的 JSON，方便在
-集群上做自动化部署。
+每个命令在检查通过时返回 0，并报告可选功能（TUI、分析、输运、电解质、绘图）。要用真实模型测试，添加 `--model PATH --task TASK --structure FILE`。机器可读输出用 `doctor --json`，便于集群部署脚本使用。
 
 ## 运行 mliport
 
-从对应后端的环境里调用命令：
+### 直接使用环境路径
+
+从拥有该后端的环境调用 `mliport`：
 
 ```bash
 .venv-mace/bin/mliport  sp structure.cif --model model.model --model-type mace
@@ -111,37 +140,47 @@ mliport 一起解析（不单独锁定）；`CUDA Toolkit 12.9` 则是单独编�
 .venv-nep/bin/mliport   sp structure.cif --model nep.txt    --model-type nep --nep-runtime ase --device cpu
 ```
 
-`./bin/` 里的启动脚本执行的就是这些命令。Windows 上每个环境里有一个 `Scripts\mliport.exe`，
-安装脚本也会在 `bin\` 里生成 `mliport-*.cmd`：
+### 使用启动器
 
-```bat
-.venv-mace\Scripts\mliport.exe sp structure.cif --model model.model --model-type mace
+安装器在 `./bin/` 下生成的便捷脚本会为你选择正确的环境：
+
+```bash
+./bin/mliport-mace sp structure.cif --model model.model --model-type mace
+./bin/mliport-uma  sp structure.cif --model uma.pt --model-type uma
 ```
 
-### DPA、GRACE 与 GPU
+启动器只选择 Python 环境，不设置模型、精度或任何科学选项。
 
-DPA 和 GRACE 的框架一旦加载，就不能再换 GPU。如果没有设置 `CUDA_VISIBLE_DEVICES`，命令行
-会新开一个进程，只让你指定的那块 GPU 可见，再重新执行同一条命令，并打印一行说明。Python
-API 没法重启调用它的程序，所以在 Python 里用 DPA 或 GRACE 时，请在导入框架之前自己设置
-`CUDA_VISIBLE_DEVICES`（设为 `""` 表示用 CPU）。
+在 Windows 上，每个环境有 `Scripts\mliport.exe`，安装器会同时生成 `bin\mliport-*.cmd` 启动器。
+
+### DPA 和 GRACE：GPU 设备隔离
+
+DPA（DeePMD-kit）和 GRACE（TensorFlow）的框架一旦加载就无法迁移 CUDA 上下文。当 `CUDA_VISIBLE_DEVICES` 未设置时，CLI 会自动在新进程中重启相同命令并使请求的 GPU 可见，同时打印说明。
+
+Python API 无法重启调用者。如果从 Python 使用 DPA 或 GRACE，需要在导入框架前设置 `CUDA_VISIBLE_DEVICES`：
+
+```bash
+export CUDA_VISIBLE_DEVICES=0          # 使用 GPU
+export CUDA_VISIBLE_DEVICES=""         # 使用 CPU
+```
+
+GPU 的 UUID 可通过 `nvidia-smi --query-gpu=uuid --format=csv,noheader` 获取。
 
 ## 模型
 
-mliport 不负责下载模型。请用上游工具下载模型文件，再用 `--model` 传入路径；本地文件离线也
-能用。下载地址、验证时用到的文件名和 SHA-256 见[模型](models.md)。
+mliport 不下载检查点。从上游项目获取所需模型，通过 `--model` 传入路径即可；本地文件无需网络。检查点来源和验证套件使用的锁定文件名见[模型](models.md)页面。
 
-如果要通过 SOCKS 代理从 Hugging Face 下载，请在用来下载的环境里装 `httpx[socks]`，并且
-`NO_PROXY` 里不要有 `[::1]` 这种带方括号的写法，httpx 不认。设置
-`HF_ENDPOINT=https://hf-mirror.com` 可以改用镜像站。安装脚本通过 `uv` 联网，读取的是同样的
-代理变量。
+如果通过 SOCKS 代理从 Hugging Face 下载，需在下载环境中安装 `httpx[socks]`，并确保 `NO_PROXY` 中没有方括号条目如 `[::1]`。`HF_ENDPOINT=https://hf-mirror.com` 可选择部分站点使用的 Hugging Face 镜像。
 
 ## GPU 架构
 
-PyTorch 和 TensorFlow 针对不同代的 GPU 提供不同的 CUDA 版本，安装脚本会自动选择：
-Maxwell、Pascal、Volta 用 cu126，Turing 及更新的用 cu128 或更高。CUDA 13 频道（`cu130`，
-UMA 运行时从 torch 2.13 起使用）需要 **580 或更新**的 NVIDIA 驱动，而且该构建不包含 Turing
-以下的内核，所以 Volta 继续留在 `cu126`，老驱动也能用。`mliport setup` 会打印检测到的 GPU
-和准备采用的安装方案。
+PyTorch 和 TensorFlow 为不同 GPU 代际提供不同的 CUDA 构建版本。安装器会检测你的 GPU 并自动选择正确的 wheel 通道：
+
+- **Turing 及更新**（RTX 20xx/30xx/40xx、A100、H100）：使用 `cu128` 或 `cu130`。
+- **Volta**（V100）：使用 `cu126`，兼容较旧的驱动。
+- **Maxwell 和 Pascal**：`cu126` 遗留通道；上游标记为 `experimental`。
+
+CUDA 13 通道（`cu130`，UMA 的 torch 2.13 使用）需要 580+ 驱动，且不包含 Turing 以下的核函数，因此 Volta 保持在 `cu126`。
 
 <!-- BEGIN GENERATED: gpu-routes -->
 | 引擎 | Maxwell | Pascal | Volta / V100 | Ada / RTX 4090 | Other Turing+ | Hopper / Blackwell |
@@ -153,32 +192,52 @@ UMA 运行时从 torch 2.13 起使用）需要 **580 或更新**的 NVIDIA 驱�
 | GRACE | 实验性 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 需运行时冒烟测试 | 实验性 |
 <!-- END GENERATED -->
 
-表中的标记含义：`实验性` 表示上游框架不测试这一代 GPU；`需运行时冒烟测试` 表示有可用的安装
-方案，但 mliport 还没在这类硬件上实际跑过。这两种都还没验证。目前只有 V100 有实测记录，其
-他型号的分类是检查 wheel 和原生扩展得出的（编译进去的架构列表、`+cu126`/`+cu128` wheel 的
-哈希、`cuobjdump` 输出），详见
-[架构报告](https://github.com/hydrogen1222/mliport/blob/main/validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md)。
-`mliport doctor` 会对检测到的 GPU 打印这个分类。
+仔细阅读表格中的状态：`experimental` 意味着上游框架未在该 GPU 系列上测试，`needs runtime smoke test` 意味着路径存在但 mliport 尚无该硬件上的实际运行记录。只有 V100 有硬件证据。详细的架构分析见[架构报告](https://github.com/hydrogen1222/mliport/blob/main/validation/compatibility/GPU_ARCHITECTURE_THEORY_REPORT.md)。
 
-Turing 之前的 GPU 依赖 CUDA 12.6 版本，而 PyTorch 从 2.15 起不再提供。这类机器上请保持安装
-脚本装的版本，不要升级框架；CUDA 13 的构建在这里也帮不上忙，因为它不包含 Turing 以下的内核。
+Turing 之前的 GPU 依赖 CUDA 12.6 通道。PyTorch 从 2.15 起停止发布该通道，因此在这些环境中请保持安装器的锁定版本，不要升级框架。
+
+`mliport setup` 会打印检测到的 GPU 和将要使用的路线。
+
+## 重新运行安装器
+
+安装器对已存在的环境有明确的处理约定：
+
+- **兼容环境**（请求的 Python 版本的真实 venv，不含其他后端的包）：复用；锁定包就地重新解析。
+- **不兼容环境**（普通目录、错误的 Python、或已包含其他后端的框架）：**拒绝**。拒绝信息会说明原因并建议添加 `--clean` 来删除重建。
+
+`--clean` 只删除指定引擎的环境。如果只需重建 MACE，`--clean --engines mace` 不会影响其他环境。
 
 ## 离线机器
 
-用 `--source offline` 指向事先准备好的 wheel 缓存，或者在联网机器上装好再把环境拷过去。需要
-拷贝的只有 uv 的缓存（`UV_CACHE_DIR`）和模型目录。设置 `UV_PYTHON_DOWNLOADS=never` 可以禁止
-安装脚本下载 Python 解释器。
+对于隔离网络的集群，在联网机器上准备 wheel 缓存，然后指向它：
 
-## 磁盘占用与卸载
+```bash
+./scripts/install_mliport.sh --engines mace --device cpu --source offline
+```
 
-四个后端都装 GPU 版大约占 25–35 GB，大部分是 PyTorch 和 TensorFlow；CPU 版小一些。要删掉
-某个后端，直接删除它的环境目录（`.venv-mace`、`.venv-dpa`、`.venv-grace`、`.venv-nep` 或 `.venv`）即可，
-仓库和模型文件不受影响。`./bin/mliport-*` 启动脚本可以连同 `bin/` 目录一起删。需要时重新
-运行安装脚本即可恢复。
+只需要搬运两样东西：uv 的 wheel 缓存（`UV_CACHE_DIR`）和模型文件。设置 `UV_PYTHON_DOWNLOADS=never` 阻止安装器获取托管的解释器。
+
+## 磁盘空间与卸载
+
+四引擎 GPU 安装大约占 25–35 GB，主要是 PyTorch 和 TensorFlow。CPU 安装更小。要移除某个后端，删除其环境目录（`.venv-mace`、`.venv-dpa`、`.venv-grace`、`.venv-nep` 或 `.venv`）即可。仓库和模型文件不受影响。启动器随 `bin/` 目录一起删除。
 
 ## 手动安装
 
-每个后端环境里都要装 mliport 和该后端的依赖。准确的版本锁定在
-`mliport/mliport/install/compatibility.py`，安装脚本会按你的 GPU 型号选对版本，所以推荐用脚本
-安装。如果一定要手动装：每个后端建一个环境，在每个环境里都装一次 `./mliport`，然后运行
-`mliport doctor`，全部检查通过后再开始计算。只在一个环境里装 mliport，其他环境是用不了的。
+每个后端环境需要 mliport 本身加上该引擎的依赖栈。权威的版本锁定在 `mliport/mliport/install/compatibility.py` 中。如果手动安装：
+
+1. 为每个后端创建独立环境。
+2. 在每个环境中安装 `./mliport`。
+3. 在每个环境中运行 `mliport doctor`。
+4. 所有检查通过前不要信任结果。
+
+只安装一次 mliport 然后期望它能访问其他环境是行不通的——每个环境都是独立设计的。
+
+## 常见问题
+
+**"安装器未安装任何东西就退出了。"** 未知的引擎名、某后端不支持的 `--python` 版本、或在没有 GPU 的机器上使用 `--device cuda`。使用 `--dry-run` 查看计划和失败的约束。
+
+**"启动器缺失或指向了错误的环境。"** 安装器未完成，或 mliport 是手动安装的。用 `ls bin/` 和 `readlink -f bin/mliport-mace` 检查。为该引擎重新运行安装器。
+
+**"无法安装所有后端——版本冲突。"** 这正是独立环境存在的原因。每个后端独立安装即可；它们不需要共存于同一环境。
+
+更多安装问题见[故障排除](troubleshooting.md)。

@@ -1,22 +1,28 @@
-# 队列
+# 任务队列
 
-队列可以一次提交多个计算，交给本地调度器依次运行。调度器会给每个作业分配单独的 GPU（避免两个作业
-挤在同一张卡上），记录作业状态，也支持取消。
+队列允许你提交多个计算、启动一个本地调度器，然后无需值守。每个作业获得自己的 GPU 租约，两个作业绝不会争用同一块显卡。调度器跟踪状态并处理取消操作。
+
+## 快速开始
 
 ```bash
-.venv-mace/bin/mliport queue submit tasks.json
-.venv-mace/bin/mliport queue start
-.venv-mace/bin/mliport jobs
-.venv-mace/bin/mliport queue stop
+# 从任务文件提交作业
+mliport queue submit tasks.json
+
+# 启动调度器（默认后台运行）
+mliport queue start
+
+# 查看进度
+mliport jobs          # 或：mliport queue status
+
+# 完成后停止调度器
+mliport queue stop
 ```
 
-`queue start` 在后台启动调度器后立即返回。用 `mliport jobs`（或 `queue status`）查看状态，等作业变成
-`done` 或 `failed` 后再停止调度器。TUI 的 Run 页面和命令行用同一套代码提交作业，行为一致。
+`queue start` 启动一个后台调度器并立即返回。轮询 `mliport jobs` 直到你的作业变为 `done` 或 `failed`。TUI 的运行界面通过同一个辅助组件提交作业，因此从两个界面提交的作业行为完全一致。
 
 ## 任务文件
 
-任务文件是一个 JSON 对象，包含一个 `tasks` 列表。`calc_type` 可以是 `sp`、`opt`、`md` 或 `neb`，文件
-路径必须存在：
+任务文件是一个包含 `tasks` 列表的 JSON 对象。每个任务指定工作流、结构、模型及其后端：
 
 ```json
 {
@@ -41,40 +47,58 @@
       "model_type": "uma",
       "task": "omat",
       "device": "cuda",
-      "options": {"ensemble": "NVT", "temperature": 800, "steps": 50000}
+      "options": {
+        "ensemble": "NVT",
+        "temperature": 800,
+        "steps": 50000
+      }
     }
   ]
 }
 ```
 
-计算参数写在 `options` 里。`python` 字段可以让某个任务用另一个后端的环境运行，这样同一个队列里可以
-混用不同后端。模型路径和后端每个任务都必须写明。
+### 关键字段
 
-## 控制调度器
+- `calc_type`：`sp`、`opt`、`md` 或 `neb` 之一
+- `options`：传递给工作流的运行选项（与 CLI 标志相同）
+- `python`：可选，指定另一个后端的 Python 解释器路径，使单个队列可以混用不同引擎（例如 MACE 在一个 venv 中、DPA 在另一个中）
+- 模型路径和后端必须始终显式指定
+
+## 调度器命令
 
 | 命令 | 选项 | 含义 |
 |---|---|---|
-| `queue submit` | 任务文件 | 把文件里的所有任务加入队列 |
-| `queue start` | `--max-concurrent N` | 同时最多运行几个作业（默认 1，适用于单 GPU） |
-| `queue start` | `--max-jobs-per-gpu N` | 一块 GPU 上最多同时跑几个作业（默认 1，即独占）；只有小体系、显存够用时才调大 |
-| `queue start` | `--poll SECONDS` | 调度器轮询间隔（默认 5） |
-| `queue start` | `--foreground` | 在前台运行调度器（Ctrl-C 停止） |
-| `queue status` | | 等待中、运行中和已结束的作业，以及各自分配的 GPU |
-| `queue stop` | | 停止后台调度器 |
-| `queue pause` / `queue resume` | 可选的作业 id | 暂停或恢复某个等待中的作业；不写 id 则作用于全部 |
+| `queue submit` | 任务文件 | 将文件中的所有任务排入队列 |
+| `queue start` | `--max-concurrent N` | 同时运行的最大作业数（默认 1） |
+| `queue start` | `--max-jobs-per-gpu N` | 共享一块物理 GPU 的作业数（默认 1 = 独占） |
+| `queue start` | `--poll SECONDS` | 轮询间隔（默认 5 秒） |
+| `queue start` | `--foreground` | 前台运行（Ctrl-C 停止） |
+| `queue status` | — | 显示待处理、运行中和已完成的作业 |
+| `queue stop` | — | 停止后台调度器 |
+| `queue pause` / `resume` | 可选的作业 ID | 暂停/恢复单个作业或所有待分发的作业 |
 
-`kill` 和 `clean` 用于单个作业。
+`mliport kill` 和 `mliport clean` 用于操作单个作业记录。
 
-## 文件位置
+## GPU 管理
 
-作业记录保存在 `MLIPORT_JOBS_DIR` 下（默认在用户目录里）。每个作业有自己的运行目录，里面有 `run.log`
-和 `mliport_results.json`；每个作业用的是哪块 GPU 也有记录。
+每个作业获得一个物理 GPU 的租约。调度器将 `CUDA_VISIBLE_DEVICES` 设置为租借的 GPU——不要在作业内部覆盖它。
 
-## 出问题时
+- 无法获得设备的作业保持 pending 状态；它不会挤进超出 `--max-jobs-per-gpu` 限制的 GPU。
+- 崩溃或异常会将作业标记为 failed、记录原因并释放租约。
+- 重启的调度器会恢复过时的声明。
 
-没有空闲 GPU 时，作业会一直等待，不会超出 `--max-jobs-per-gpu` 的限制。作业崩溃或出错时会标记为失败
-并写明原因，同时释放 GPU。调度器重启后会清理失效的占用。队列会把 `CUDA_VISIBLE_DEVICES` 设为分配到
-的那块 GPU，不要在作业里修改它。
+仅当小体系可以在 GPU 显存中共存时，才提高 `--max-jobs-per-gpu`。
 
-作业的执行顺序不影响计算结果。做一组输运或 NEB 计算时，请在任务里写明模型、步长和保存间隔，保证
-各次结果可以比较。
+## 文件存储位置
+
+作业注册表存储在 `MLIPORT_JOBS_DIR`（默认为用户级目录）下。每个作业也有自己标准的运行目录，包含 `run.log` 和 `mliport_results.json`。
+
+## 错误处理
+
+失败的作业被标记为 failed 并记录原因，租约随即释放。队列继续处理下一个作业。调度器本身具有韧性：杀掉并重启它会接续上次的进度。
+
+## 大规模计算活动建议
+
+- 队列顺序不影响科学结论，但同一队列中的作业共享一个配置空间。对于输运或 NEB 系列计算，在任务规格中保持模型身份、步长和保存间隔一致，以确保结果可比。
+- 对于大规模活动，使用 `--max-concurrent` 匹配可用 GPU 数量，`--max-jobs-per-gpu 1`（默认值）避免显存争用。
+- `mliport state` 命令显示所有队列中作业注册表的当前状态。

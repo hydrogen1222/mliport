@@ -1,11 +1,22 @@
 # Quickstart
 
-In about ten minutes you will install one backend, run a single-point
-calculation and a short relaxation, and know where to look for the result.
-We use MACE because its checkpoint is open and small; the other backends are at
-the end. You do not need all four to get started.
+This guide walks you from a fresh clone to a working single-point, relaxation
+and short MD run in about ten minutes. We use **MACE** as the first backend
+because its checkpoint is openly licensed and small; the other four backends
+are at the end.
 
-## 1. Install one backend
+## Prerequisites
+
+You need a Linux machine (or WSL2 on Windows) with:
+
+- **git** — to clone the repository.
+- **[uv](https://docs.astral.sh/uv/)** — the Python environment manager that
+  the installer uses. Install it with
+  `curl -LsSf https://astral.sh/uv/install.sh | sh` if you don't have it.
+- **NVIDIA GPU + CUDA driver** (optional) — for GPU-accelerated calculations.
+  CPU-only works fine for small test structures.
+
+## 1. Clone and install
 
 ```bash
 git clone https://github.com/hydrogen1222/mliport
@@ -13,79 +24,152 @@ cd mliport
 ./scripts/install_mliport.sh --engines mace --device auto
 ```
 
-The installer builds a separate Python environment for the backend
-(`.venv-mace`), installs mliport into it, writes a launcher in `bin/` and runs
-`mliport doctor` as a last step. Use `--device cpu` if the machine has no
-NVIDIA GPU. Offline hosts, several backends at once and manual installs are in
-[Installation](installation.md).
+The installer creates a dedicated Python environment (`.venv-mace/`), installs
+mliport and the MACE backend into it, writes a launcher script at
+`bin/mliport-mace`, and runs `mliport doctor` as a sanity check. The whole
+process takes a few minutes.
 
-## 2. Check that it works
+Use `--device cpu` if the machine has no NVIDIA GPU. For multiple backends at
+once, pass `--engines mace dpa grace uma`. Full details — offline installs,
+proxy setups, disk space, manual installs — are in [Installation](installation.md).
 
-```bash
-.venv-mace/bin/mliport doctor --engine mace --device auto
-```
-
-`doctor` exits non-zero when the environment cannot actually run the backend.
-If a check fails, fix that first; [Troubleshooting](troubleshooting.md) lists
-the usual causes.
-
-## 3. Get a model and a structure
-
-You need a periodic structure (CIF, POSCAR or XYZ) and a MACE checkpoint.
-mliport never downloads or bundles weights: fetch
-`mace-omat-0-medium.model` from the upstream release (links in
-[Models](models.md)) and note where you saved it.
-
-Don't have a structure at hand? The repository ships a 50-atom Li₁₀GeP₂S₁₂
-(LGPS) cell at `examples/structures/li10gep2s12_primitive.vasp`. It is a real
-periodic cell and small enough for a CPU.
-
-## 4. Run a single point
+## 2. Verify the installation
 
 ```bash
-.venv-mace/bin/mliport sp structure.cif \
-  --model mace-omat-0-medium.model \
-  --model-type mace \
-  --output runs/mace-sp
+./bin/mliport-mace doctor --engine mace --device auto
 ```
 
-The run prints an energy and force summary and fills `runs/mace-sp/` with
-`OUTCAR`, `OSZICAR`, `CONTCAR`, `mliport_results.json`, `resolved_config.json`
-and `run.log`. [Output files](outputs.md) explains each of them.
+A healthy install ends with:
 
-If `runs/mace-sp` already holds results, mliport refuses to write there; pass
-`--overwrite` when you really mean to replace them.
+```
+Environment checks passed for MACE on CUDA.
+```
+
+(or `on CPU` if you installed with `--device cpu`). If a check fails, see
+[Troubleshooting](troubleshooting.md) for the common fixes.
+
+!!! tip "JSON output for scripts"
+    `mliport doctor --json` prints machine-readable results, useful for CI
+    pipelines and automated setup scripts.
+
+## 3. Get a model checkpoint
+
+mliport never downloads or bundles model weights — you fetch them from the
+upstream project. For MACE-OMAT-0 (a general-purpose foundation model trained
+on OMat24 data):
+
+```bash
+# Option A: download from the GitHub release page
+wget https://github.com/ACEsuit/mace-foundations/releases/download/mace_omat_0/mace-omat-0-medium.model
+
+# Option B: from Hugging Face (if you have huggingface-cli)
+huggingface-cli download ACEsuit/MACE-OMAT-0 mace-omat-0-medium.model
+```
+
+Put the file somewhere convenient. In the examples below, replace
+`/path/to/mace-omat-0-medium.model` with the actual path.
+
+!!! note "Which checkpoint to use"
+    The [Models](models.md) page lists all supported checkpoints, their
+    download links, hashes, and license terms. MACE-OMAT-0-medium is a good
+    starting point for periodic bulk materials.
+
+## 4. Run a single-point calculation
+
+The repository ships a 50-atom Li₁₀GeP₂S₁₂ (LGPS) cell for testing. Let's
+calculate its energy and forces:
+
+```bash
+./bin/mliport-mace sp examples/structures/li10gep2s12_primitive.vasp \
+  --model /path/to/mace-omat-0-medium.model \
+  --model-type mace --task bulk \
+  --output runs/lgps-sp
+```
+
+mliport prints a summary and writes results to `runs/lgps-sp/`:
+
+| File | Contents |
+|---|---|
+| `mliport_results.json` | Energy, forces, stress, timing, provenance |
+| `resolved_config.json` | Every configuration value and where it came from |
+| `OUTCAR` | VASP-style output (energy, forces, stress) |
+| `CONTCAR` | Final structure in POSCAR format |
+| `run.log` | Full run log |
+
+With the MACE-OMAT-0 checkpoint on the LGPS cell, you should see an energy
+around −216 eV and the formula `Ge2Li20P4S24` (50 atoms).
+
+!!! warning "Output directory protection"
+    If `runs/lgps-sp/` already contains results, mliport refuses to overwrite
+    them. Use `--overwrite` to replace them deliberately, or choose a different
+    `--output` path.
 
 ## 5. Relax the structure
 
 ```bash
-.venv-mace/bin/mliport opt structure.cif \
-  --model mace-omat-0-medium.model \
-  --model-type mace \
-  --fmax 0.05 --max-steps 50 \
-  --output runs/mace-opt
+./bin/mliport-mace opt examples/structures/li10gep2s12_primitive.vasp \
+  --model /path/to/mace-omat-0-medium.model \
+  --model-type mace --task bulk \
+  --fmax 0.05 --max-steps 200 \
+  --output runs/lgps-opt
 ```
 
-Fifty steps may not be enough, and that is fine: the result says so. Whether
-the relaxation converged is recorded in `mliport_results.json`, and a run that
-did not converge is reported as such rather than dressed up as a success. The
-relaxed structure is in `CONTCAR`.
+`--fmax` is the force convergence threshold in eV/Å; `--max-steps` caps the
+optimization. Whether the relaxation actually converged is recorded in
+`mliport_results.json` — a run that did not converge says so honestly. The
+relaxed structure is saved as `CONTCAR`.
 
-## 6. Read the result
+To relax the cell shape and volume together with the atomic positions, add
+`--cell-opt`.
+
+## 6. Run a short MD
+
+```bash
+./bin/mliport-mace md examples/structures/li10gep2s12_primitive.vasp \
+  --model /path/to/mace-omat-0-medium.model \
+  --model-type mace --task bulk \
+  --ensemble NVT --thermostat LANGEVIN --temp 600 \
+  --timestep 1.0 --steps 1000 --save-interval 10 \
+  --output runs/lgps-md
+```
+
+This runs 1000 steps of NVT Langevin dynamics at 600 K, saving a frame every
+10 steps. The trajectory is written as `XDATCAR` (readable by VESTA, OVITO,
+etc.), and thermodynamic quantities are logged in `OSZICAR`.
+
+!!! tip "Choosing an ensemble"
+    mliport supports three MD ensembles: `NVE` (microcanonical), `NVT`
+    (canonical, with Langevin/Bussi/NHC thermostats), and `NPT` (isothermal-
+    isobaric, ASE backends only). See [MD workflow](workflows/md.md) for the
+    full options.
+
+## 7. Read the results from Python
+
+Every result lives in `mliport_results.json`. Here is how to load it:
 
 ```python
 import json
+from pathlib import Path
 
-with open("runs/mace-opt/mliport_results.json") as handle:
-    record = json.load(handle)
+# Read the single-point result
+with open("runs/lgps-sp/mliport_results.json") as f:
+    record = json.load(f)
 
-calculation = record["calculation"]
-print(calculation["optimization"]["converged"], calculation["results"]["energy"])
+calc = record["calculation"]
+print(f"Energy:  {calc['results']['energy']:.4f} eV")
+print(f"Device:  {record['environment']['actual_device_type']}")
+print(f"Model:   {record['model']['path']}")
+print(f"SHA-256: {record['model']['sha256'][:16]}...")
+
+# Read the optimization result
+with open("runs/lgps-opt/mliport_results.json") as f:
+    opt = json.load(f)
+
+print(f"Converged: {opt['calculation']['optimization']['converged']}")
+print(f"Steps:     {opt['calculation']['optimization']['steps']}")
 ```
 
-Everything needed to reproduce the run is next to it: the model identity,
-where each configuration value came from, the requested and the actual device,
-and the mliport version.
+For calculations inside larger workflows, the Python API is more convenient:
 
 ## 7. The task folder way
 
@@ -110,46 +194,107 @@ in the repository's `models/` directory, so `MODEL_PATH = mace-omat-0-medium.mod
 works once the file is in `models/`. Every key is documented in the
 [INCAR key reference](incar.md).
 
-## The other backends
+## 8. Python API
 
-Install the backend you want with `--engines dpa`, `grace` or `uma`, then use
-its own environment:
+For calculations inside larger workflows:
 
-```bash
-# DPA — multi-task checkpoints need the branch you intend to use
-.venv-dpa/bin/mliport sp structure.cif --model DPA-3.1-3M.pt \
-  --model-type dpa --head Omat24 --output runs/dpa-sp
+```python
+from mliport.api import calculate_energy, run_single_point
 
-# GRACE — the model is a SavedModel directory
-.venv-grace/bin/mliport sp structure.cif --model saved_model \
-  --model-type grace --output runs/grace-sp
+# Just the energy (eV)
+energy = calculate_energy(
+    "examples/structures/li10gep2s12_primitive.vasp",
+    "/path/to/mace-omat-0-medium.model",
+    model_type="mace", task="bulk"
+)
 
-# UMA — say which task family you want
-.venv/bin/mliport sp structure.cif --model uma.pt \
-  --model-type uma --task omat --output runs/uma-sp
+# Full result dict
+result = run_single_point(
+    "examples/structures/li10gep2s12_primitive.vasp",
+    "/path/to/mace-omat-0-medium.model",
+    model_type="mace", task="bulk",
+    output_dir="runs/api-sp"
+)
 ```
 
-There is no default backend. Leaving out `--model-type` (when no model alias
-supplies one) is an error, so you always know which model produced a number.
+See [Python API](api.md) for the complete reference.
 
-## A complete run on the LGPS cell
+## Try the other backends
 
-```bash
-.venv-mace/bin/mliport sp examples/structures/li10gep2s12_primitive.vasp \
-  --model /path/to/mace-omat-0-medium.model \
-  --model-type mace --task bulk --device cuda --output runs/lgps-mace-sp
-```
+Each backend has its own Python environment and launcher. Install with
+`--engines <name>` and run through its launcher:
 
-With the MACE-OMAT-0 checkpoint you should see a finite energy of about
-−216 eV, finite forces, the formula `Ge2Li20P4S24` (50 atoms) and, when a GPU
-was requested, `actual_device_type: cuda` in `mliport_results.json`. The cell
-comes from a 2×2×2 LGPS supercell; `examples/structures/README.md` records its
-provenance and hashes.
+=== "DPA"
 
-## What next
+    ```bash
+    ./scripts/install_mliport.sh --engines dpa --device auto
 
-- Choose a model with care: [Models](models.md).
-- Control runs and strictness: [Configuration](configuration.md).
-- MD, NEB and batch runs: [Workflows](workflows/index.md).
-- Analyze a trajectory: [Analysis](analysis/index.md).
-- See how far the claims are backed by tests: [Validation](validation.md).
+    ./bin/mliport-dpa sp examples/structures/li10gep2s12_primitive.vasp \
+      --model DPA-3.1-3M.pt --model-type dpa \
+      --task bulk --head Omat24 \
+      --output runs/lgps-dpa-sp
+    ```
+
+    DPA uses multi-task checkpoints — you must specify `--head` to select the
+    branch. See [DPA backend](backends/dpa.md).
+
+=== "GRACE"
+
+    ```bash
+    ./scripts/install_mliport.sh --engines grace --device auto
+
+    ./bin/mliport-grace sp examples/structures/li10gep2s12_primitive.vasp \
+      --model GRACE-2L-OMAT-medium-base --model-type grace \
+      --task bulk \
+      --output runs/lgps-grace-sp
+    ```
+
+    GRACE models are TensorFlow SavedModel directories, not single files. See
+    [GRACE backend](backends/grace.md).
+
+=== "UMA"
+
+    ```bash
+    ./scripts/install_mliport.sh --engines uma --device auto
+
+    ./bin/mliport-uma sp examples/structures/li10gep2s12_primitive.vasp \
+      --model uma-s-1p2.pt --model-type uma \
+      --task omat \
+      --output runs/lgps-uma-sp
+    ```
+
+    UMA uses `--task omat` for bulk materials, `--task omol` for molecules.
+    Its checkpoint is under a non-commercial research license. See
+    [UMA backend](backends/uma.md).
+
+=== "NEP"
+
+    ```bash
+    ./scripts/install_mliport.sh --engines nep --device cpu
+
+    ./bin/mliport-nep sp examples/structures/li10gep2s12_primitive.vasp \
+      --model /path/to/nep.txt --model-type nep \
+      --nep-runtime ase --task bulk \
+      --output runs/lgps-nep-sp
+    ```
+
+    NEP requires you to supply your own `nep.txt` trained for your system, and
+    you must explicitly choose `--nep-runtime ase` or `--nep-runtime gpumd`.
+    See [NEP backend](backends/nep.md).
+
+!!! info "No default backend"
+    Leaving out `--model-type` (when no model alias supplies one) is always an
+    error. mliport never guesses which model to use — you always know exactly
+    which model produced a number.
+
+## What's next
+
+| Topic | Page |
+|---|---|
+| Understand which model fits your system | [Models](models.md) |
+| Configure runs, INCAR files and `settings.ini` | [Configuration](configuration.md) |
+| Run MD, NEB, configuration search, batch sweeps | [Workflows](workflows/index.md) |
+| Analyze a trajectory (MSD, diffusion, RDF, …) | [Analysis](analysis/index.md) |
+| Use mliport from Python | [Python API](api.md) |
+| Check what has been validated | [Validation](validation.md) |
+| Fix an error | [Troubleshooting](troubleshooting.md) |

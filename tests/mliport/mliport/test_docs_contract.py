@@ -29,6 +29,8 @@ DOCS = REPO / "docs"
 PAGES = (
     "index",
     "quickstart",
+    "api",
+    "faq",
     "test-systems",
     "installation",
     "configuration",

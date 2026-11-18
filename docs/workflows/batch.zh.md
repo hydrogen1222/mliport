@@ -1,39 +1,31 @@
-# 批量
+# 批量计算
 
-`mliport batch` 对一个目录里的所有结构做同一种计算（默认是单点），用同一个模型和同一套参数。
+`mliport batch` 对一个目录下的每个结构执行同一种计算——单点计算或结构优化。模型只加载一次并复用于所有结构，因此启动开销只付出一次。
+
+## 何时使用批量模式
+
+批量模式面向**吞吐量**：你有许多结构和一个模型，想要所有结构的结果。常见用例包括：
+
+- 筛选结构预测产生的一组候选结构
+- 对训练集或验证集计算单点能量
+- 用另一个模型重新优化一组结构
+- 对照数据集基准测试一个模型
+
+## 命令行
 
 ```bash
-.venv-mace/bin/mliport batch structures/ \
+# 对目录中所有结构做单点计算
+mliport batch structures/ \
   --model mace-omat-0-medium.model --model-type mace \
   --calc-type sp --pattern "*.cif" \
   --output batch_results
-```
 
-模型只加载一次，所有结构共用，省去了每次加载模型的时间。
-
-## 常用选项
-
-| 选项 | 含义 |
-|---|---|
-| `--calc-type` | 计算类型：`sp`（默认）或 `opt` |
-| `--pattern` | 相对输入目录的通配符，可以跨子目录（`'*/rank_*/1.cif'`、`'**/*.cif'`）；不写时只在输入目录本层查找 `*.cif`、`*.xyz`、`*.vasp` 和 `POSCAR*` |
-| `--output` | 输出目录（默认 `batch_results`） |
-| `--fmax`、`--max-steps`、`--optimizer`、`--cell-opt`、`--fix-symmetry` | `--calc-type opt` 的优化参数，含义和默认值与 `mliport opt` 相同；`--calc-type sp` 时给出会直接报错 |
-| `--resume` | 在同一个 `--output` 目录里接着跑中断的批量任务 |
-| `--model`、`--model-type`、`--task`、`--head`、`--device` | 模型和后端 |
-
-## 优化分散在多个目录里的结构
-
-生成的结构经常文件名相同、只是目录不同，例如 `ML-OPT/<组成>/rank_0001/1.cif`。
-把顶层目录交给 batch，再用通配符选文件：
-
-```bash
+# 针对嵌套目录的优化
 mliport batch ML-OPT/ \
   --model my-grace-model --model-type grace --device cuda \
   --calc-type opt --pattern '*/rank_*/1.cif' \
   --fmax 0.05 --max-steps 1000 --optimizer FIRE --no-cell-opt \
   --output runs/ml-opt
-```
 
 通配符要加引号，避免被 shell 展开。每个结构的输出目录对应它在输入目录下的路径
 （`runs/ml-opt/<组成>/rank_0001/1/`），同名文件不会互相覆盖。如果仍有两个输入会落到同一个
@@ -83,3 +75,58 @@ head 或 task 的结构要分开跑，并在记录里写清楚。
   --model DPA-3.1-3M.pt --model-type dpa --head Omat24 \
   --calc-type sp --output runs/dpa-batch
 ```
+
+`--pattern` 需要加引号以防止 shell 展开。每个结构的输出目录镜像其在输入目录下的相对路径，因此同名文件不会互相覆盖。
+
+## 选项
+
+| 选项 | 默认值 | 含义 |
+|---|---|---|
+| `--calc-type` | `sp` | 对每个结构执行的计算类型：`sp` 或 `opt` |
+| `--pattern` | `*.cif`, `*.xyz`, `*.vasp`, `POSCAR*` | 文件 glob 模式；可跨子目录（`'*/rank_*/1.cif'`、`'**/*.cif'`） |
+| `--output` | `batch_results` | 批量输出目录 |
+| `--resume` | — | 继续被中断的批量计算 |
+| `--fmax` | 0.05 eV/Å | 优化力收敛阈值（仅 `--calc-type opt`） |
+| `--max-steps` | 500 | 优化步数上限（仅 `--calc-type opt`） |
+| `--optimizer` | `FIRE` | 优化器（仅 `--calc-type opt`） |
+| `--cell-opt` | 关闭 | 晶胞优化（仅 `--calc-type opt`） |
+| `--fix-symmetry` | 关闭 | 保持对称性（仅 `--calc-type opt`） |
+| `--model`、`--model-type`、`--task`、`--head`、`--device` | — | 模型与后端选择 |
+
+优化选项（`--fmax`、`--max-steps`、`--optimizer`、`--cell-opt`、`--fix-symmetry`）在 `--calc-type` 为 `sp` 时会被拒绝。
+
+## 输出结构
+
+`--output` 目录下每个结构对应一个子目录，各自包含标准的单点或优化输出文件。每个结构保留自己的模型身份和解析后的配置。在批量层面：
+
+| 文件 | 内容 |
+|---|---|
+| `batch_summary.json` | 总览状态：已完成、失败和未收敛的计数 |
+| `batch_progress.jsonl` | 每个结构完成后追加一行 |
+| `batch_manifest.json` | 定义批量的设置（模型、选项、文件哈希） |
+
+`batch_summary.json` 中每条记录的 `status` 为 `completed`、`not_converged` 或 `failed`。只有 completed 的运行才有 `success: true`；未收敛的优化同时计入 `failed` 和 `not_converged`。
+
+## 错误处理
+
+失败的结构会被报告为 failed——永远不会变成零能量条目。批量计算继续处理下一个结构。空的或不存在的输入目录会在任何计算开始之前就报错。两个输入结构若映射到同一个输出目录，会在批量开始前被检测到并拒绝。
+
+## 续算
+
+每个结构在完成时立即记录结果：自身目录中的 `batch_status.json` 和 `batch_progress.jsonl` 中追加的一行。中断后继续：
+
+```bash
+mliport batch structures/ --model ... --calc-type sp \
+  --output batch_results --resume
+```
+
+续算规则：
+
+- **已完成**和**未收敛**的结构会被复用（不重新计算），但前提是输入文件的 sha256 相同且所有输出文件完好。
+- **失败**的结构以及中断时正在运行的结构会从输入几何结构重新运行。
+- 如果 `batch_manifest.json` 中的任何设置不同，批量计算**拒绝续算**——不同设置的结果绝不混合。
+- `--resume` 不能与 `--overwrite` 组合使用。
+
+## 重要注意事项
+
+批量模式是为吞吐量设计的，而非一致性保证。请确保每个结构与后端的 task（周期性 vs 分子）相匹配，不要在同一批量中混用需要不同 head 或 task 的结构——请分开运行。

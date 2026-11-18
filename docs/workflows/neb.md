@@ -1,120 +1,197 @@
 # NEB and CI-NEB
 
-`mliport neb` finds a minimum-energy path between two endpoint structures with a
-fixed-cell nudged elastic band, optionally refined by a climbing image, and
-reports the barrier it found.
+`mliport neb` finds a **minimum-energy path** between two endpoint structures
+using the nudged elastic band (NEB) method, and reports the energy barrier
+between them. The optional climbing-image (CI-NEB) variant refines the
+saddle-point estimate.
+
+## The physics
+
+The nudged elastic band method (Henkelman et al., J. Chem. Phys. **113**,
+9901, 2000) threads a chain of images between two relaxed endpoints and
+optimizes them simultaneously. Spring forces keep the images evenly spaced
+along the path, while the component of the true force perpendicular to the
+path drives each image toward the minimum-energy path.
+
+In **CI-NEB** (Henkelman et al., J. Chem. Phys. **113**, 9978, 2000), the
+highest image is freed from the spring forces and instead climbs along the
+path direction to approach the saddle point. This gives a better
+barrier estimate without needing more images.
+
+The barrier is defined as:
+
+$$E_\text{barrier} = E_\text{saddle} - E_\text{reactant}$$
+
+where $E_\text{saddle}$ is the energy of the highest image on the converged
+band. mliport reports the **sampled** barrier (the highest image minus the
+end state), not a fitted saddle.
+
+## Command line
 
 ```bash
-.venv-mace/bin/mliport neb --initial initial.vasp --final final.vasp \
-  --model mace-omat-0-medium.model --model-type mace --images 7 \
-  --climb --output runs/neb
+mliport neb --initial initial.vasp --final final.vasp \
+  --model mace-omat-0-medium.model --model-type mace \
+  --images 7 --climb --output runs/neb
 ```
 
-You supply two structures with the same atoms in the same order (or an explicit
-`--atom-map` when the order differs), a model on an explicit backend, and enough
-memory for `images + 2` copies of the calculator.
+You supply two structures with the same atoms in the same order (or an
+explicit `--atom-map` when the order differs), a model on an explicit backend,
+and enough memory for `images + 2` copies of the calculator.
 
-## What happens before the band moves
+### With IDPP interpolation
+
+```bash
+mliport neb --initial initial.vasp --final final.vasp \
+  --model mace-omat-0-medium.model --model-type mace \
+  --images 7 --climb --interpolation idpp \
+  --output runs/neb-idpp
+```
+
+IDPP (image-dependent pair potential) interpolation (Smidstrup et al.,
+J. Chem. Phys. **140**, 214106, 2014) builds a better initial path than
+linear interpolation by minimizing changes in interatomic distances. It is
+recommended for complex rearrangements where linear interpolation would cause
+atoms to overlap.
+
+## Python API
+
+```python
+from mliport.api import run_neb
+
+results = run_neb(
+    initial="initial.vasp",
+    final="final.vasp",
+    model_path="mace-omat-0-medium.model",
+    model_type="mace",
+    n_intermediate_images=7,
+    climb=True,
+    output_dir="runs/neb",
+)
+print(f"Forward barrier: {results['barrier_forward_sampled_eV']:.3f} eV")
+print(f"Reverse barrier: {results['barrier_reverse_sampled_eV']:.3f} eV")
+print(f"Reaction energy: {results['reaction_energy_eV']:.3f} eV")
+```
+
+## Gradient preflight: why it checks before running
 
 A NEB only makes sense if the model's forces are the gradient of its energy.
-Otherwise the band is optimized against forces that do not describe the surface
-it is supposed to be walking along, and the barrier is meaningless without any
-sign that something is wrong. So mliport checks first.
+Otherwise the band is optimized against forces that do not describe the energy
+surface, and the barrier is meaningless. So mliport checks first.
 
-On the band it is about to optimize, both endpoints and interpolated images, it
-compares the force projection `-F·u` along a few directions (the force
-direction and random ones) with central finite differences of the model energy.
-Two step sizes are combined by Richardson extrapolation, and the tolerance
-includes the rounding noise of the model's dtype. The run is refused when:
+On the endpoints and interpolated images, it compares the force projection
+$-\mathbf{F} \cdot \hat{\mathbf{u}}$ along several directions with central
+finite differences of the model energy. Two step sizes are combined by
+Richardson extrapolation, and the tolerance accounts for the rounding noise
+of the model's dtype. The run is refused when:
 
-- the forces are not the gradient of the energy,
-- a value is not finite,
-- the energy resolution cannot settle the question (a large float32 cell, for
-  instance), or
-- the model predicts forces directly rather than differentiating its energy
-  (the predictor reports `direct_forces = true`; such models are always
-  refused).
+- The forces are not the gradient of the energy
+- A value is not finite
+- The energy resolution cannot settle the question (e.g. a large float32 cell)
+- The model predicts forces directly (`direct_forces = true`; always refused)
 
 The measurement is stored as `gradient_preflight` in `run_context.json` and
-`neb_results.json`. It is a spot check of consistency on the sampled structures
-and directions, not a proof over the whole energy surface and not a statement
-about how accurate the model is.
+`neb_results.json`. It is a spot check, not a proof over the whole surface.
 
-## Options you will use
+## Options
 
-| Option | Meaning |
-|---|---|
-| `--initial`, `--final` | the endpoint structures (required unless resuming) |
-| `--images` | number of intermediate images, endpoints not counted (default 7) |
-| `--climb` | refine the saddle with a climbing image (default off) |
-| `--fmax`, `--max-steps` | convergence threshold in eV/Å (default 0.03) and step limit (default 1000) |
-| `--pre-fmax`, `--pre-max-steps` | with `--climb`, the looser first stage before the climbing image switches on (default 0.1 eV/Å, 300 steps) |
-| `--spring`, `--maxstep` | spring constant (default 0.1 eV/Å²) and largest optimizer step (default 0.1 Å) |
-| `--interpolation` | `linear` (default) or `idpp` for the initial path; tune IDPP with `--idpp-fmax`, `--idpp-steps`, `--idpp-mic` |
-| `--path-convention` | `mic` (default) or `unwrapped` |
-| `--endpoint-policy` | `validate` (default) or `relax`, see below |
-| `--endpoint-fmax`, `--endpoint-steps` | the endpoint force threshold (default 0.02 eV/Å) and relaxation budget (default 500) |
-| `--min-distance` | refuse images with atoms closer than this (default 0.5 Å) |
-| `--atom-map` | 0-based final indices in initial-atom order, comma-separated |
-| `--image-shifts` | integer lattice shifts per atom, such as `0,0,0;1,0,0` |
-| `--checkpoint-interval` | save the whole band every N steps (default 10) |
-| `--resume` | continue from a checkpoint or a NEB run directory |
+### Band setup
 
-Atom maps and lattice shifts must use integer arrays, including when constructing
-`BandInput` directly in Python. Float and boolean arrays are rejected rather than
-silently converted to different atom identities or winding paths.
+| Option | Default | Meaning |
+|---|---|---|
+| `--initial`, `--final` | *(required)* | Endpoint structures |
+| `--images` | 7 | Number of intermediate images (endpoints not counted) |
+| `--climb` | off | Enable climbing image for saddle refinement |
+| `--interpolation` | `linear` | `linear` or `idpp` for the initial path |
+| `--path-convention` | `mic` | `mic` (minimum image convention) or `unwrapped` |
+| `--spring` | 0.1 eV/Å² | Spring constant between images |
+| `--atom-map` | — | 0-based final indices in initial-atom order, comma-separated |
+| `--image-shifts` | — | Integer lattice shifts per atom, e.g. `0,0,0;1,0,0` |
 
-### Endpoints: validate or relax
+### Convergence
 
-With the default `--endpoint-policy validate`, the endpoints must already be
+| Option | Default | Meaning |
+|---|---|---|
+| `--fmax` | 0.03 eV/Å | Force convergence threshold |
+| `--max-steps` | 1000 | Step limit |
+| `--pre-fmax` | 0.1 eV/Å | First-stage threshold (before CI switches on) |
+| `--pre-max-steps` | 300 | First-stage step limit |
+| `--maxstep` | 0.1 Å | Largest optimizer step |
+| `--min-distance` | 0.5 Å | Refuse images with atoms closer than this |
+
+### Endpoints
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--endpoint-policy` | `validate` | `validate` (check endpoints are relaxed) or `relax` (relax them first) |
+| `--endpoint-fmax` | 0.02 eV/Å | Endpoint force threshold |
+| `--endpoint-steps` | 500 | Endpoint relaxation budget (with `relax`) |
+
+### IDPP tuning
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--idpp-fmax` | — | IDPP convergence threshold |
+| `--idpp-steps` | — | IDPP step limit |
+| `--idpp-mic` | — | Use minimum image convention for IDPP |
+
+## Endpoint policy: validate or relax
+
+With `--endpoint-policy validate` (default), the endpoints must already be
 relaxed: if either has a force above `--endpoint-fmax`, mliport stops and says
-which one. With `relax` it relaxes both endpoints first and builds the band
-afterwards. Either way, the endpoint treatment changes your reference, so
-record it. `relax` cannot rewrite a band that was supplied explicitly.
+which one. With `relax`, it relaxes both endpoints first, then builds the band.
+Either way, the endpoint treatment changes your reference energy, so always
+record which policy you used.
 
-With `--interpolation idpp`, convergence is checked against the full IDPP NEB
-band force, including its spring term, using `--idpp-fmax`. Small raw pair forces
-alone do not establish convergence; an unfinished IDPP optimization is refused.
+## Output files
 
-## What you get
+| File | Contents |
+|---|---|
+| `neb_results.json` | Energies, forces, convergence, barrier numbers |
+| `run_context.json` | Model identity and gradient preflight |
+| `resolved_config.json` | Resolved configuration |
+| `artifacts.json` | File listing with hashes |
+| `checkpoints/` | Complete-band checkpoints at regular intervals |
+| `vasp_path/` | One `POSCAR` per image (VASP NEB layout) |
 
-`neb_results.json` holds the energies, forces, convergence state and the
-barrier numbers (`barrier_forward_sampled_eV`, `barrier_reverse_sampled_eV`,
-`reaction_energy_eV`, and a `barrier_status` that says whether an interior peak
-was found). Next to it are `run_context.json`, `resolved_config.json`,
-`artifacts.json`, a `checkpoints/` directory with complete-band checkpoints, and
-a `vasp_path/` directory with one `POSCAR` per image for tools that expect
-VASP's NEB layout.
+The barrier fields in `neb_results.json`:
 
-The barrier is the *sampled* one: the highest image on the band minus the end
-state. mliport does not fit a saddle and leaves the fitted fields empty.
+- `barrier_forward_sampled_eV`: highest image minus initial state
+- `barrier_reverse_sampled_eV`: highest image minus final state
+- `reaction_energy_eV`: final minus initial energy
+- `barrier_status`: whether an interior peak was found
 
-Checkpoints preserve `atom_id` / `atom_ids` from custom ASE arrays in each image's
-`info`, because ASE trajectory files do not store custom arrays. The caller's
-arrays are unchanged. The corrected IDPP convergence rule uses NEB scientific
-revision 2; checkpoints from revision 1 cannot be resumed under this revision.
+## Resuming
 
-## When it fails or does not converge
+```bash
+mliport neb --resume runs/neb --output runs/neb
+```
 
-A band that does not converge is reported as such, with the best band so far and
-a reason. It is not a converged barrier. A bad atom mapping or inconsistent
-endpoints fail before the band is built. A resume locks the original run
-directory, so the band cannot be restarted with different settings by accident.
+A resume continues in the original run directory and checks the recorded
+identity: model, task, head and dtype, cell and PBC, constraints, band setup and
+options. Step budgets are part of that identity in this beta, so a resume that
+changes `--max-steps` is rejected with `Resume fingerprint is incompatible`, and
+the message names the fields that differ (for example
+`neb_options.max_steps (checkpoint 200 != requested 123)`). Omit an option to
+inherit the checkpointed value; passing the same value explicitly is allowed.
+The checkpoint is left untouched when a resume is refused.
 
-## What a barrier is worth
+A resume restores the band geometry but restarts the optimizer; it does not
+replay the previous optimizer state. Convergence and the final barrier can
+differ from an uninterrupted run, so always verify convergence.
 
-- A converged NEB saddle candidate is not a verified transition state. Checking
-  it with a Hessian (frequency) calculation is a separate analysis that a
-  converged band does not imply.
-- A barrier compares only within one model and head identity and one NEB
-  protocol (images, interpolation, endpoint policy, spring).
-- It is meaningful only if the endpoints are the states you intended and the
-  atom mapping is chemically right.
+## Interpreting the barrier
 
-## Which entry point can express what
+- A converged NEB saddle candidate is not a verified transition state. A
+  Hessian (frequency) calculation would be needed to confirm it has exactly
+  one imaginary mode along the reaction coordinate.
+- A barrier is meaningful only within one model identity and one NEB protocol
+  (images, interpolation, endpoint policy, spring).
+- The atom mapping must be chemically correct — wrong mappings produce
+  spurious barriers.
 
-Not every NEB option can be set from every interface. This table is generated
-from `validation/science/capability_matrix.json`.
+## Capability matrix
+
+Not every NEB option is available from every interface. This table is generated from `validation/science/capability_matrix.json`. 
 
 <!-- BEGIN GENERATED: neb-capability -->
 | Feature | API | direct CLI | INCAR | TUI |
@@ -130,29 +207,3 @@ from `validation/science/capability_matrix.json`.
 | min distance guard | yes | yes | yes | yes |
 <!-- END GENERATED -->
 
-`yes` means that entry point can express the feature; it is not an equivalence
-or validation claim. A `no` or `partial` entry has a note in that file, and
-nothing is translated silently: the atom mapping and image shifts, for example,
-are available through the API, the direct CLI and the TUI only, not through an
-INCAR file.
-
-## Resuming
-
-```bash
-.venv-mace/bin/mliport neb --resume runs/neb --output runs/neb
-```
-
-A resume continues in the original run directory and checks the recorded
-identity: model, task, head and dtype, cell and PBC, constraints, band setup and
-options. Step budgets are part of that identity in this beta, so a resume that
-changes `--max-steps` is rejected with `Resume fingerprint is incompatible`, and
-the message names the fields that differ (for example
-`neb_options.max_steps (checkpoint 200 != requested 123)`). Omit an option to
-inherit the checkpointed value; passing the same value explicitly is allowed.
-The checkpoint is left untouched when a resume is refused.
-
-A resume restores the band geometry recorded in the checkpoint but restarts
-NEB optimisation from there (`geometry_resume_only`); it does not replay the
-previous optimiser state. Convergence, the final saddle and the barrier can
-differ from an uninterrupted run, so verify convergence and compare the
-results before interpreting them. Every earlier checkpoint and export is kept.
