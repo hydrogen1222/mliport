@@ -523,9 +523,37 @@ def generate_plan(
     route_fallback_warning: str | None = None
     if not is_cpu and gpus:
         incompatible_routes: list[str] = []
+        unknown_gpus = [
+            gpu for gpu in gpus if classify_gpu(gpu.cc_major, gpu.cc_minor) is None
+        ]
+        if unknown_gpus:
+            devices = ", ".join(
+                f"{gpu.name} (CC {gpu.cc_major}.{gpu.cc_minor})"
+                for gpu in unknown_gpus
+            )
+            incompatible_routes.append(
+                f"unrecognized GPU compute capability for {devices}"
+            )
+
         for engine in engine_list:
             backend = lookup_backend(engine)
             assert backend is not None
+            for gpu in gpus:
+                gpu_arch = classify_gpu(gpu.cc_major, gpu.cc_minor)
+                if gpu_arch is None:
+                    continue
+                gpu_profile = get_backend_arch_profile(engine, gpu_arch.name)
+                if gpu_profile is None:
+                    incompatible_routes.append(
+                        f"{backend.label} has no compatibility profile for "
+                        f"{gpu.name} ({gpu_arch.name})"
+                    )
+                elif not gpu_profile.gpu_runtime_available:
+                    incompatible_routes.append(
+                        f"{backend.label} has no usable GPU runtime wheel for "
+                        f"{gpu_arch.label} ({gpu.name})"
+                    )
+
             if backend.framework != "torch":
                 continue
             profile = get_backend_arch_profile(engine, arch_name)
@@ -557,19 +585,19 @@ def generate_plan(
                     f"{backend.label} wheel {channel_name} does not cover {devices}"
                 )
         if incompatible_routes:
-            detail = "; ".join(incompatible_routes)
+            detail = "; ".join(dict.fromkeys(incompatible_routes))
             if device == "cuda":
                 raise InstallPlanError(
-                    "No compatible CUDA wheel route exists for every visible GPU "
-                    f"and selected Torch backend: {detail}. Use --device cpu or "
-                    "select a compatible GPU visibility set with CUDA_VISIBLE_DEVICES."
+                    "No compatible GPU runtime route exists for every visible GPU "
+                    f"and selected backend: {detail}. Use --device cpu or select "
+                    "a compatible GPU visibility set with CUDA_VISIBLE_DEVICES."
                 )
             is_cpu = True
             arch_name = "cpu"
             arch = None
             route_fallback_warning = (
-                "No compatible CUDA wheel route exists for every visible GPU and "
-                f"selected Torch backend; --device auto is falling back to CPU. {detail}"
+                "No compatible GPU runtime route exists for every visible GPU and "
+                f"selected backend; --device auto is falling back to CPU. {detail}"
             )
 
     plan = InstallPlan(
@@ -578,7 +606,7 @@ def generate_plan(
         source=src.name,
         python_version=py_ver,
     )
-    if arch is None and device == "auto" and gpus:
+    if arch is None and device == "auto" and gpus and not route_fallback_warning:
         plan.warnings.append(
             f"GPU compute capability {cc_str} is unsupported; falling back "
             f"to CPU-only installation. Use device=cuda to fail instead."
