@@ -160,6 +160,14 @@ class CudaChannel:
 
 
 CUDA_CHANNELS: dict[str, CudaChannel] = {
+    # DPA-2 legacy runtime is pinned to torch 2.3.1+cu121; this wheel
+    # carries SASS through Hopper but has no Blackwell kernel.
+    "cu121": CudaChannel(
+        name="cu121",
+        label="CUDA 12.1 (DPA-2 legacy)",
+        sm_min=(5, 0),
+        sm_max=(9, 0),
+    ),
     "cu126": CudaChannel(
         name="cu126",
         label="CUDA 12.6 (Legacy)",
