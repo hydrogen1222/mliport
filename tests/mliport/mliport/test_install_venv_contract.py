@@ -222,7 +222,7 @@ def test_messages_name_the_environment_and_the_way_out(tmp_path: Path) -> None:
     assert "Nothing was changed" in message
 
     ok = _inspect(_make_venv(tmp_path / ".venv-ok"))
-    reused = reuse_message(ok, backend=BACKENDS["nep"])
+    reused = reuse_message(ok, backend=ALL_BACKENDS["nep"])
     assert "Reusing existing" in reused
     assert "NEP" in reused
 
