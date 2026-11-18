@@ -34,7 +34,7 @@ def test_create_launcher_returns_the_native_executable_path(tmp_path) -> None:
     assert path == launcher_path("mace", tmp_path)
     if os.name == "nt":
         assert path.name == "mliport-mace.cmd"
-        assert r"Scripts\\mliport.exe" in path.read_text(encoding="utf-8")
+        assert r"Scripts\mliport.exe" in path.read_text(encoding="utf-8")
     else:
         assert path.name == "mliport-mace"
         assert path.stat().st_mode & 0o111
