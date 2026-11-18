@@ -92,7 +92,7 @@ cd mliport
 .venv-mace/bin/mliport sp structure.cif --model model.model --model-type mace
 .venv/bin/mliport sp structure.cif --model uma.pt --model-type uma
 # Windows
-.venv-mace\\Scripts\\mliport.exe sp structure.cif --model model.model --model-type mace
+.venv-mace\Scripts\mliport.exe sp structure.cif --model model.model --model-type mace
 ```
 
 安装脚本会锁定各后端的上游版本，装好分析用的依赖，并对每个后端运行 `mliport doctor`。默认
