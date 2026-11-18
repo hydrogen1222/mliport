@@ -581,7 +581,7 @@ class _RecordingManager:
     def new_job_id(self) -> str:
         return self.job_id
 
-    def submit(
+    def enqueue(
         self,
         job_id,
         calc_type,
@@ -593,6 +593,7 @@ class _RecordingManager:
         python=None,
         *,
         display_name=None,
+        submit_cwd=None,
     ):
         self.submitted = {
             "job_id": job_id,
@@ -604,6 +605,7 @@ class _RecordingManager:
             "cmd": cmd,
             "python": python,
             "display_name": display_name,
+            "submit_cwd": submit_cwd,
         }
 
 
@@ -643,8 +645,72 @@ def test_submit_task_folder_uses_the_real_run_command_and_job_manager(
         str(folder.incar),
         "--structure",
         str(folder.structure),
+        "--device",
+        "cpu",
     ]
     assert submitted["display_name"] == "my-task"
+    assert submitted["submit_cwd"] == folder.path
+
+
+def test_wizard_job_preserves_explicit_gpu_device_for_scheduler_lease(
+    tmp_path: Path,
+) -> None:
+    import re
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "gpu-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+        task="bulk",
+    )
+    incar_text = folder.incar.read_text(encoding="utf-8")
+    updated, count = re.subn(
+        r"(?m)^DEVICE\\s*=.*$", "DEVICE = cuda:1", incar_text
+    )
+    if not count:
+        updated += "\\nDEVICE = cuda:1\\n"
+    folder.incar.write_text(updated, encoding="utf-8")
+    manager = _RecordingManager()
+    submit_task_folder(folder.path, manager=manager)
+    assert manager.submitted is not None
+    assert manager.submitted["device"] == "cuda:1"
+    assert manager.submitted["cmd"][-2:] == ["--device", "cuda:1"]
+    assert manager.submitted["submit_cwd"] == folder.path
+
+
+def test_wizard_submission_honors_project_settings_when_resolving_device(
+    tmp_path: Path,
+) -> None:
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "settings-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+        task="bulk",
+    )
+    # CLI executes from the task folder, so settings.ini is searched there.
+    (folder.path / "settings.ini").write_text(
+        "[engine:mace]\\ndefault_dtype = float32\\n", encoding="utf-8"
+    )
+    from mliport.config.settings import load_settings
+
+    effective = resolve_config(
+        calc_type="sp",
+        incar=IncarConfig.from_file(folder.incar),
+        settings=load_settings(cwd=folder.path),
+    )
+    assert effective.calculator_options["default_dtype"] == "float32"
+    manager = _RecordingManager()
+    submit_task_folder(folder.path, manager=manager)
+    assert manager.submitted is not None
+    assert manager.submitted["submit_cwd"] == folder.path
 
 
 @pytest.mark.asyncio()
