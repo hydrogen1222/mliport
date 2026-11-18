@@ -51,7 +51,7 @@ mliport 的解决方案是**为每个后端构建独立的虚拟环境**。每�
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
-CPU 安装体积更小（无 CUDA 库），适用于所有机器，但推理速度较慢。适合后处理、分析和笔记本电脑上的测试。
+CPU 安装会使用 CPU 版 PyTorch wheel，适用于所有机器，但推理速度较慢。由于 TensorPotential 的依赖约束，即使选择 CPU 执行，GRACE 的 TensorFlow 运行栈仍可能安装 CUDA 运行库。CPU 安装适合后处理、分析和笔记本电脑上的测试。
 
 ### Windows（PowerShell）
 
