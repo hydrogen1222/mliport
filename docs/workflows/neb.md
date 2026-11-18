@@ -145,8 +145,11 @@ INCAR file.
 A resume continues in the original run directory and checks the recorded
 identity: model, task, head and dtype, cell and PBC, constraints, band setup and
 options. Step budgets are part of that identity in this beta, so a resume that
-changes `--max-steps` is rejected with `Resume fingerprint is incompatible`. The
-checkpoint is left untouched when that happens.
+changes `--max-steps` is rejected with `Resume fingerprint is incompatible`, and
+the message names the fields that differ (for example
+`neb_options.max_steps (checkpoint 200 != requested 123)`). Omit an option to
+inherit the checkpointed value; passing the same value explicitly is allowed.
+The checkpoint is left untouched when a resume is refused.
 
 A resume restores the band geometry recorded in the checkpoint but restarts
 NEB optimisation from there (`geometry_resume_only`); it does not replay the

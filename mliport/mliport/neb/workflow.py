@@ -605,10 +605,24 @@ def _run_neb_workflow_locked(
         recorded_digest = checkpoint_record.get("resume_fingerprint_sha256")
         recorded_fingerprint = checkpoint_record.get("resume_fingerprint")
         if recorded_digest != fingerprint_sha256 or recorded_fingerprint != fingerprint:
+            # Name the differing fields: with the checkpoint layer supplying
+            # every option the user did not pass, "it is incompatible" alone
+            # leaves the user guessing which explicit argument conflicted.
+            details = ""
+            if isinstance(recorded_fingerprint, Mapping):
+                differences = _fingerprint_differences(
+                    recorded_fingerprint, fingerprint
+                )
+                if differences:
+                    details = (
+                        " Differences: " + "; ".join(differences) + "."
+                        " Omit an option to inherit the checkpointed value."
+                    )
             raise NEBPreparationError(
                 "Resume fingerprint is incompatible with this model, backend, "
                 "task/head/dtype, cell/PBC, identity, constraints, or band setup; "
                 "start a new run instead"
+                f"{details}"
             )
 
     output.mkdir(parents=True, exist_ok=True)
@@ -865,6 +879,44 @@ def checkpoint_resolved_layer(path: str | Path) -> dict[str, Any]:
             )
         layer.update(values)
     return {key: value for key, value in layer.items() if value is not None}
+
+
+def _fingerprint_differences(
+    recorded: Any, current: Any, *, prefix: str = "", limit: int = 6
+) -> list[str]:
+    """Return the fingerprint paths whose values differ, as ``path (a != b)``.
+
+    The resume error must name what changed instead of listing everything the
+    fingerprint covers; a user who changed one option should not have to guess.
+    Comparisons are made on the already JSON-normalised fingerprint values, so no
+    numpy/ASE types reach this function.
+    """
+    differences: list[str] = []
+
+    def walk(left: Any, right: Any, path: str) -> None:
+        if len(differences) >= limit:
+            return
+        if isinstance(left, Mapping) and isinstance(right, Mapping):
+            for key in sorted(set(left) | set(right), key=str):
+                if len(differences) >= limit:
+                    return
+                child = f"{path}.{key}" if path else str(key)
+                if key not in left:
+                    differences.append(f"{child} (only in request: {right[key]!r})")
+                elif key not in right:
+                    differences.append(f"{child} (only in checkpoint: {left[key]!r})")
+                else:
+                    walk(left[key], right[key], child)
+            return
+        try:
+            same = bool(left == right)
+        except Exception:  # noqa: BLE001 - never mask the real error
+            same = False
+        if not same:
+            differences.append(f"{path} (checkpoint {left!r} != requested {right!r})")
+
+    walk(recorded, current, prefix)
+    return differences
 
 
 __all__ = [
