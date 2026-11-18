@@ -65,6 +65,10 @@ GRACE publication the upstream project gives for your checkpoint.
 
 > <https://github.com/ICAMS/grace-tensorpotential>
 
+`tensorpotential` is licensed under the Academic Software Licence (ASL): academic,
+non-commercial use only. mliport calls it as a separately installed package and
+redistributes none of it; see [the GRACE backend page](backends/grace.md).
+
 ### kinisi
 
 `mliport analyze transport` uses kinisi for covariance-aware Bayesian tracer and

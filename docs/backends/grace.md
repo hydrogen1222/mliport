@@ -70,5 +70,16 @@ channels; point `--model` (`MODEL_PATH`) at the directory you unpack.
   default build and an fp64 build, as listed above.
 - **Stress** depends on the checkpoint.
 
-mliport is MIT-licensed. The upstream software and model must be cited
-separately; see [Citations](../citations.md).
+mliport is MIT-licensed and only calls GRACE as a separately installed package; it
+does not bundle or redistribute GRACE code or weights. The upstream software and model
+must be cited separately; see [Citations](../citations.md).
+
+**Licence of the GRACE software itself.** `tensorpotential` is published under the
+[Academic Software Licence (ASL)](https://github.com/ICAMS/grace-tensorpotential/blob/master/LICENSE.md),
+not an open-source licence: it permits academic, non-commercial use only, and it is
+reciprocal (GPLv2-like) for derivative works. Its PyPI metadata declares
+`License: Academic Software License (ASL)`. Installing the `grace` environment means
+running that software, so a commercial or commercial-research use needs a commercial
+licence from the rights holder (ACEworks GmbH), independently of the checkpoint's own
+licence. mliport does not vendor GRACE, so this restriction does not change mliport's
+MIT licence - it changes what you may do with this backend.

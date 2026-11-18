@@ -56,6 +56,9 @@ mliport 用 ASE 处理结构、计算器、优化器、MD 积分器和文件格�
 
 > <https://github.com/ICAMS/grace-tensorpotential>
 
+`tensorpotential` 采用 Academic Software Licence（ASL）：仅限学术、非商业用途。mliport 只把它当作
+另外安装的软件调用，不再分发其中任何部分；见 [GRACE 后端页](backends/grace.md)。
+
 ### kinisi
 
 `mliport analyze transport` 用 kinisi 做示踪扩散和集体输运的贝叶斯分析（考虑了数据之间的相关性）。请
