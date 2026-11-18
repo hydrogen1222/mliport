@@ -115,7 +115,7 @@ ASE 的轨迹文件不保存自定义数组，所以检查点会把 `atom_id` / 
 
 续算在原来的目录里继续，并核对记录下来的信息：模型、task、head、精度，晶胞和 PBC，约束，能带
 设置和各项参数。当前 beta 版本里步数上限也在核对范围内，续算时改 `--max-steps` 会报
-`Resume fingerprint is incompatible` 并拒绝运行，检查点保持不变。
+`Resume fingerprint is incompatible` 并拒绝运行，错误信息会列出不一致的字段（例如 `neb_options.max_steps (checkpoint 200 != requested 123)`）。省略某个选项表示沿用检查点记录的值，显式传入相同的值则允许；被拒绝时检查点保持不变。
 
 续算会恢复检查点里记录的能带几何结构，并从这里重新开始 NEB 优化（`geometry_resume_only`），
 不会重放上一次的优化器状态。因此，续算不保证与一次跑完收敛到相同鞍点；是否收敛、最终鞍点和

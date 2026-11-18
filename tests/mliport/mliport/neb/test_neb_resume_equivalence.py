@@ -94,10 +94,10 @@ def _wrapper():
     return FakeMACEWrapper(_CurvedMEP())
 
 
-def _resolved(model: Path):
+def _resolved(model: Path, **overrides):
     from tests.mliport.mliport.neb.test_neb_workflow import _resolved as resolve
 
-    return resolve(model, **_CLI)
+    return resolve(model, **{**_CLI, **overrides})
 
 
 def _output_for(tmp_path: Path) -> Path:
@@ -107,9 +107,18 @@ def _output_for(tmp_path: Path) -> Path:
     return tmp_path / "run"
 
 
-def _run(tmp_path: Path, *, interrupt_after_checkpoints: int | None = None) -> dict:
+def _run(
+    tmp_path: Path,
+    *,
+    interrupt_after_checkpoints: int | None = None,
+    climb: bool = False,
+) -> dict:
     output = _output_for(tmp_path)
-    resolved = _resolved(tmp_path / "model.pt")
+    resolved = (
+        _resolved(tmp_path / "model.pt", climb=True)
+        if climb
+        else _resolved(tmp_path / "model.pt")
+    )
     initial, final = _endpoints()
 
     if interrupt_after_checkpoints is None:
@@ -241,3 +250,130 @@ def test_geometry_resume_only_is_recorded_not_implicit(tmp_path: Path) -> None:
 
     context = json.loads((output / "run_context.json").read_text(encoding="utf-8"))
     assert context["geometry_resume_only"] is True
+
+
+# --- R10-NEB-RESUME-01: explicit option changes are refused, and named --------
+#
+# A resume inherits every option the user did not pass (the checkpoint layer
+# supplies them), accepts an explicit value that matches the checkpoint, and
+# refuses an explicit value that differs.  The refusal must name the fields that
+# differ, not only say "incompatible".
+
+
+def _resume_with(tmp_path: Path, **overrides) -> dict:
+    """Resume the way the CLI does: checkpoint layer + explicit CLI overrides.
+
+    ``mliport neb --resume`` loads the checkpoint's resolved configuration as the
+    INCAR/job layer and lets explicit CLI arguments win.  Reproducing that here
+    is what makes "omitted" mean "inherit" and "explicit and different" mean
+    "conflict".
+    """
+    from mliport.config import resolve_config
+    from mliport.neb.workflow import checkpoint_resolved_layer
+
+    output = tmp_path / "run"
+    layer = checkpoint_resolved_layer(output / "checkpoints" / "latest")
+    cli = {"model_path": str(tmp_path / "model.pt")}
+    cli.update(overrides)
+    return run_neb_workflow(
+        _wrapper(),
+        resolve_config(calc_type="neb", incar=layer, cli=cli),
+        output_dir=output,
+        resume=output / "checkpoints" / "latest",
+        verbose=False,
+    )
+
+
+def test_resume_inherits_options_the_user_omitted(tmp_path: Path) -> None:
+    """Not passing max_steps/climb means "keep the checkpointed values"."""
+
+    _run(tmp_path, interrupt_after_checkpoints=3)
+    resumed = _resume_with(tmp_path)
+    assert resumed["status"] == "completed"
+    assert resumed["converged"] is True
+
+
+def test_resume_accepts_an_explicit_value_that_matches(tmp_path: Path) -> None:
+    """Explicitly repeating the checkpointed value is allowed."""
+
+    _run(tmp_path, interrupt_after_checkpoints=3)
+    resumed = _resume_with(tmp_path, max_steps=100, n_intermediate_images=6)
+    assert resumed["status"] == "completed"
+
+
+def test_resume_rejects_a_changed_step_budget_and_names_it(tmp_path: Path) -> None:
+    _run(tmp_path, interrupt_after_checkpoints=3)
+    with pytest.raises(Exception) as excinfo:
+        _resume_with(tmp_path, max_steps=17, n_intermediate_images=6)
+    message = str(excinfo.value)
+    assert "Resume fingerprint is incompatible" in message
+    assert "neb_options.max_steps" in message
+    assert "17" in message and "100" in message
+
+
+def test_resume_accepts_explicit_climb_when_the_band_climbs(tmp_path: Path) -> None:
+    """Explicit --climb identical to the recorded value is allowed."""
+
+    _run(tmp_path, interrupt_after_checkpoints=3, climb=True)
+    resumed = _resume_with(tmp_path, climb=True)
+    assert resumed["status"] == "completed"
+
+
+def test_resume_rejects_no_climb_on_a_climbing_image_band(tmp_path: Path) -> None:
+    """Explicit --no-climb against a recorded climbing band is a conflict."""
+
+    _run(tmp_path, interrupt_after_checkpoints=3, climb=True)
+    with pytest.raises(Exception) as excinfo:
+        _resume_with(tmp_path, climb=False)
+    message = str(excinfo.value)
+    assert "Resume fingerprint is incompatible" in message
+    assert "neb_options.climb" in message
+
+
+def test_resume_refusal_leaves_the_checkpoint_untouched(tmp_path: Path) -> None:
+    _run(tmp_path, interrupt_after_checkpoints=3)
+    output = tmp_path / "run"
+    before = {p.name: sorted(x.name for x in p.iterdir()) for p in _checkpoints(output)}
+    with pytest.raises(Exception):
+        _resume_with(tmp_path, max_steps=17, n_intermediate_images=6)
+    after = {p.name: sorted(x.name for x in p.iterdir()) for p in _checkpoints(output)}
+    assert after == before
+
+
+def test_resume_accepts_no_climb_when_the_band_does_not_climb(tmp_path: Path) -> None:
+    """Explicit --no-climb matching a plain band is allowed."""
+
+    _run(tmp_path, interrupt_after_checkpoints=3)
+    resumed = _resume_with(tmp_path, climb=False)
+    assert resumed["status"] == "completed"
+
+
+def test_fingerprint_differences_lists_nested_paths_and_limits_output() -> None:
+    from mliport.neb.workflow import _fingerprint_differences
+
+    recorded = {
+        "model": {"model_sha256": "aa", "task": "bulk"},
+        "neb_options": {"max_steps": 100, "climb": True, "fmax_eV_A": 0.05},
+        "band": {"image_count": 7},
+    }
+    current = {
+        "model": {"model_sha256": "aa", "task": "bulk"},
+        "neb_options": {"max_steps": 17, "climb": False, "fmax_eV_A": 0.05},
+        "band": {"image_count": 7},
+    }
+    differences = _fingerprint_differences(recorded, current)
+    assert len(differences) == 2
+    assert any(
+        "neb_options.max_steps" in d and "100" in d and "17" in d for d in differences
+    )
+    assert any("neb_options.climb" in d for d in differences)
+
+    # identical fingerprints produce no noise
+    assert _fingerprint_differences(recorded, recorded) == []
+
+    # keys present on only one side are reported too, and the list is bounded
+    only_one_side = {**recorded, "extra": 1}
+    one = _fingerprint_differences(recorded, only_one_side)
+    assert one and "extra" in one[0]
+    many = {"root": {f"k{i}": i for i in range(20)}}
+    assert len(_fingerprint_differences(many, {"root": {}})) == 6
