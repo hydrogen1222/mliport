@@ -50,6 +50,8 @@ mliport batch ML-OPT/ \
 
 某个结构算失败了，会标记为失败，不会记成能量为零，然后继续算下一个结构。输入目录不存在或为空时直接报错。
 
+后端返回不可用数值时同样如此：`energy` 或 `fmax` 是 NaN/无穷，或者根本不是数字，该结构记为 `failed`，被替换的字段列在 `non_finite_fields` / `unserialisable_fields`，原因写进 `error`；数值存为 `null`（或占位字符串）而绝不伪造为 `0`，其他结构和整批汇总仍会正常写出。
+
 ## 中断与 `--resume`
 
 每个结构一算完就记录结果：它自己目录下的 `batch_status.json`，以及批量目录下

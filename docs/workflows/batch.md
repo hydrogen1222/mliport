@@ -60,6 +60,13 @@ A structure that fails is reported as failed; it never turns into a zero-energy
 entry, and the batch carries on with the next structure. A missing or empty
 input directory fails closed.
 
+The same holds when a backend returns a value that is not a usable number. A
+non-finite `energy` or `fmax` (NaN, infinity) or a value that is not a number
+at all makes that structure `failed`, with the replaced fields listed in
+`non_finite_fields` / `unserialisable_fields` and the reason in `error`; the
+value is stored as `null` (or as a placeholder string) and never as `0`, and
+the other structures and the batch summary are still written.
+
 ## Interrupted batches and `--resume`
 
 Every structure records its outcome the moment it finishes:
