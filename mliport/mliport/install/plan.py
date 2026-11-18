@@ -392,7 +392,7 @@ def _nep_steps(
     and records the prerequisite for the native runtime in a warning, which
     ``doctor --engine nep`` re-checks afterwards.
     """
-    python = f"{backend.venv_name}/bin/python"
+    python = _venv_python_path(backend)
     argv = _uv_pip(
         profile,
         python,
