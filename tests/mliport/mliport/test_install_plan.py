@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from mliport.install.hardware import GpuInfo
 from mliport.install.plan import (
     InstallPlanError,
+    _venv_cli_path,
+    _venv_python_path,
     generate_plan,
     normalize_engines,
 )
@@ -150,6 +155,28 @@ def test_4090_plan_modern() -> None:
     assert any("DPA" in w and "needs smoke test" in w for w in plan.warnings)
 
 
+def test_mixed_pascal_and_blackwell_cuda_route_fails_closed() -> None:
+    gpus = [_gpu("P40", 6, 1), _gpu("RTX PRO 6000", 12, 0)]
+    with pytest.raises(InstallPlanError, match="does not cover"):
+        generate_plan(gpus, ["mace"], device="cuda", verify=False)
+
+    plan = generate_plan(gpus, ["mace"], device="auto", verify=False)
+    assert plan.gpu_arch == "cpu"
+    assert any("falling back to CPU" in warning for warning in plan.warnings)
+    assert "torch==2.8.0+cpu" in _all_argv(plan)
+
+
+def test_dpa_legacy_blackwell_route_falls_back_or_refuses() -> None:
+    blackwell = [_gpu("RTX PRO 6000", 12, 0)]
+    with pytest.raises(InstallPlanError, match="cu121"):
+        generate_plan(blackwell, ["dpa-legacy"], device="cuda", verify=False)
+
+    plan = generate_plan(blackwell, ["dpa-legacy"], device="auto", verify=False)
+    assert plan.gpu_arch == "cpu"
+    assert "torch==2.3.1+cpu" in _all_argv(plan)
+    assert "deepmd-kit==3.0.0b3" in _all_argv(plan)
+
+
 def test_mixed_gpu_uses_oldest() -> None:
     """4090 + P100 → conservative Pascal (cu126) selection."""
     plan = generate_plan(
@@ -158,6 +185,34 @@ def test_mixed_gpu_uses_oldest() -> None:
     assert plan.gpu_arch == "pascal"
     argv = _all_argv(plan)
     assert "cu126" in argv
+
+
+def test_dpa_legacy_cpu_install_plan_is_supported() -> None:
+    plan = generate_plan(
+        None,
+        ["dpa-legacy"],
+        python_version="3.12",
+        device="cpu",
+        verify=True,
+    )
+    argv = _all_argv(plan)
+    assert "torch==2.3.1+cpu" in argv
+    assert "deepmd-kit==3.0.0b3" in argv
+    assert ".venv-dpa-legacy/bin/python" in argv
+    assert plan.has_verify_steps
+    assert plan.steps[-1].argv[0] == ".venv-dpa-legacy/bin/mliport"
+
+
+def test_windows_venv_executable_paths_use_scripts_directory() -> None:
+    from mliport.install.compatibility import ALL_BACKENDS
+
+    backend = ALL_BACKENDS["dpa-legacy"]
+    assert _venv_python_path(backend, windows=True) == (
+        ".venv-dpa-legacy\\Scripts\\python.exe"
+    )
+    assert _venv_cli_path(backend, windows=True) == (
+        ".venv-dpa-legacy\\Scripts\\mliport.exe"
+    )
 
 
 def test_maxwell_experimental() -> None:
@@ -222,8 +277,24 @@ def test_clean_only_removes_target_venv() -> None:
     plan = generate_plan(None, ["mace"], device="cpu", clean=True, verify=False)
     clean_steps = [s for s in plan.steps if s.stage == "clean"]
     assert len(clean_steps) == 1
-    # Only the known .venv-mace path is removed.
-    assert clean_steps[0].argv == ["rm", "-rf", ".venv-mace"]
+    # Only the known .venv-mace path is passed to a cross-platform remover.
+    assert clean_steps[0].argv[0] == sys.executable
+    assert clean_steps[0].argv[1] == "-c"
+    assert clean_steps[0].argv[-1] == ".venv-mace"
+
+
+def test_clean_step_removes_only_its_target_and_is_idempotent(tmp_path) -> None:
+    plan = generate_plan(None, ["mace"], device="cpu", clean=True, verify=False)
+    clean = next(step for step in plan.steps if step.stage == "clean")
+    target = tmp_path / ".venv-mace"
+    target.mkdir()
+    (target / "user-file.txt").write_text("remove with --clean", encoding="utf-8")
+
+    subprocess.run(clean.argv, cwd=tmp_path, check=True)
+
+    assert not target.exists()
+    subprocess.run(clean.argv, cwd=tmp_path, check=True)
+    assert not target.exists()
 
 
 def test_skip_doctor_removes_verify_steps() -> None:
@@ -432,7 +503,9 @@ def test_nep_official_plan_has_no_mirror_flags() -> None:
 def test_nep_clean_removes_only_its_own_environment() -> None:
     plan = generate_plan(None, ["nep"], device="cpu", clean=True)
     clean = [s for s in plan.steps if s.stage == "clean"]
-    assert [s.argv for s in clean] == [["rm", "-rf", ".venv-nep"]]
+    assert len(clean) == 1
+    assert clean[0].argv[0] == sys.executable
+    assert clean[0].argv[-1] == ".venv-nep"
 
 
 def test_nep_is_opt_in_and_isolated_from_other_backends() -> None:
