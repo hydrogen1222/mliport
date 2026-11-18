@@ -234,6 +234,14 @@ installer detects your GPU and picks the right wheel channel automatically:
 - **Volta** (V100): stays on `cu126`, which works with older drivers.
 - **Maxwell and Pascal**: `cu126` legacy channel; marked `experimental` upstream.
 
+When more than one NVIDIA GPU is visible, the installer checks that the selected
+framework wheel covers **every** visible GPU. If no single route covers the full
+set, `--device cuda` fails before creating environments and `--device auto`
+falls back to CPU. Use `CUDA_VISIBLE_DEVICES` to expose only a compatible subset.
+The official TensorFlow 2.20 wheel used by GRACE has no Maxwell GPU kernel, so
+GRACE follows the same fail-closed/CPU-fallback rule on Maxwell; other experimental
+profiles are not automatically treated as unsupported.
+
 The CUDA 13 channel (`cu130`, used by UMA's torch 2.13) requires driver 580+ and
 carries no kernels below Turing, so Volta stays on `cu126`.
 
