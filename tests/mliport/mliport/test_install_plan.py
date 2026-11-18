@@ -174,7 +174,9 @@ def test_mixed_known_and_unknown_future_gpu_fails_closed() -> None:
 
     plan = generate_plan(gpus, ["mace"], device="auto", verify=False)
     assert plan.gpu_arch == "cpu"
-    assert any("unrecognized GPU compute capability" in warning for warning in plan.warnings)
+    assert any(
+        "unrecognized GPU compute capability" in warning for warning in plan.warnings
+    )
     assert "torch==2.8.0+cpu" in _all_argv(plan)
 
 
@@ -185,8 +187,12 @@ def test_mixed_architecture_warnings_cover_every_visible_gpu() -> None:
         device="auto",
         verify=False,
     )
-    assert any("GRACE on turing: needs smoke test" in warning for warning in plan.warnings)
-    assert any("GRACE on blackwell: EXPERIMENTAL" in warning for warning in plan.warnings)
+    assert any(
+        "GRACE on turing: needs smoke test" in warning for warning in plan.warnings
+    )
+    assert any(
+        "GRACE on blackwell: EXPERIMENTAL" in warning for warning in plan.warnings
+    )
 
 
 def test_nep_blackwell_architecture_is_reported_as_experimental() -> None:
