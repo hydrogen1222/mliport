@@ -537,3 +537,63 @@ class TestMaceDtypeDefaults:
         ):
             engine._create_calculator()
         assert captured.get("default_dtype") == "float64"
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Torch not compiled with CUDA enabled",
+        "Found no NVIDIA driver on your system",
+        "CUDA error: invalid device ordinal",
+    ],
+)
+def test_known_cuda_load_failures_get_actionable_diagnostic(reason, monkeypatch):
+    from mliport.engine import CalculationEngine, EngineConfig
+
+    engine = CalculationEngine.from_config(
+        EngineConfig(
+            calc_type="sp",
+            model_type="mace",
+            model_path=Path("missing.model"),
+            task="bulk",
+            device="cuda:1",
+        )
+    )
+    original = RuntimeError(reason)
+
+    def fail_create(*args, **kwargs):
+        raise original
+
+    monkeypatch.setattr(
+        "mliport.calculators.factory.CalculatorFactory.create", fail_create
+    )
+    with pytest.raises(RuntimeError, match=r"mliport doctor.*cuda:1") as exc:
+        engine._create_calculator()
+    assert exc.value.__cause__ is original
+    assert reason in str(exc.value)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda:0"])
+def test_unrelated_model_load_errors_are_not_rewritten(device, monkeypatch):
+    from mliport.engine import CalculationEngine, EngineConfig
+
+    engine = CalculationEngine.from_config(
+        EngineConfig(
+            calc_type="sp",
+            model_type="mace",
+            model_path=Path("missing.model"),
+            task="bulk",
+            device=device,
+        )
+    )
+    original = RuntimeError("wrong checkpoint head for this task")
+
+    def fail_create(*args, **kwargs):
+        raise original
+
+    monkeypatch.setattr(
+        "mliport.calculators.factory.CalculatorFactory.create", fail_create
+    )
+    with pytest.raises(RuntimeError) as exc:
+        engine._create_calculator()
+    assert exc.value is original
