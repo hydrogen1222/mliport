@@ -144,6 +144,12 @@ def test_cuda_channel_supports_arch() -> None:
                 )
 
 
+def test_grace_maxwell_profile_marks_missing_gpu_wheel() -> None:
+    assert not BACKENDS["grace"].arch_profiles["maxwell"].gpu_runtime_available
+    assert BACKENDS["grace"].arch_profiles["hopper"].gpu_runtime_available
+    assert BACKENDS["grace"].arch_profiles["blackwell"].gpu_runtime_available
+
+
 def test_dpa_legacy_channel_excludes_blackwell() -> None:
     backend = ALL_BACKENDS["dpa-legacy"]
     profile = backend.arch_profiles["blackwell"]
