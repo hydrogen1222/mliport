@@ -55,6 +55,38 @@ def _gpumd_manifest(run_dir: Path) -> dict[str, Any] | None:
     return manifest if manifest.get("schema") == _GPUMD_MANIFEST_SCHEMA else None
 
 
+#: Trajectory files accepted inside a run directory, in discovery order.
+_TRAJECTORY_CANDIDATES = (
+    "raw/trajectory.traj",
+    "trajectory.traj",
+    "vasp/XDATCAR",
+    "XDATCAR",
+)
+
+
+def discover_trajectory_file(directory: Path) -> Path | None:
+    """Return the trajectory file inside ``directory``, or ``None``.
+
+    Single source of truth for directory discovery: the analysis cache identity
+    and the dataset loader must agree on which file a run directory means,
+    otherwise a cache key could be built from something the loader never reads.
+    """
+    for relative in _TRAJECTORY_CANDIDATES:
+        candidate = directory / relative
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def no_trajectory_message(directory: Path) -> str:
+    """Actionable error text for a run directory without a trajectory."""
+    expected = ", ".join(_TRAJECTORY_CANDIDATES)
+    return (
+        f"No supported trajectory found. Expected {expected}, or a native "
+        f"GPUMD run directory (manifest.json + trajectory.extxyz) under {directory}"
+    )
+
+
 def _discover_source(source: str | Path) -> tuple[Path, Path]:
     path = Path(source).expanduser().resolve()
     if path.is_file():
@@ -69,19 +101,10 @@ def _discover_source(source: str | Path) -> tuple[Path, Path]:
         # The manifest, not the mere presence of a file, decides whether this
         # directory holds a trajectory; ``load`` verifies it before reading.
         return path, path / _GPUMD_TRAJECTORY_NAME
-    for candidate in (
-        path / "raw" / "trajectory.traj",
-        path / "trajectory.traj",
-        path / "vasp" / "XDATCAR",
-        path / "XDATCAR",
-    ):
-        if candidate.is_file():
-            return path, candidate
-    raise FileNotFoundError(
-        "No supported trajectory found. Expected raw/trajectory.traj, "
-        "trajectory.traj, vasp/XDATCAR, XDATCAR, or a native GPUMD run "
-        "directory (manifest.json + trajectory.extxyz) under " + str(path)
-    )
+    candidate = discover_trajectory_file(path)
+    if candidate is not None:
+        return path, candidate
+    raise FileNotFoundError(no_trajectory_message(path))
 
 
 @dataclass(frozen=True, slots=True)
