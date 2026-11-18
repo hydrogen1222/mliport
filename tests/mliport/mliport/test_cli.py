@@ -12,6 +12,7 @@ import textwrap
 import time
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from mliport.cli import create_parser, main
@@ -907,6 +908,16 @@ def test_classify_result_defaults_to_not_converged_for_convergence_types():
     assert (
         classify_result({"converged": False}, calc_type="opt")
         is RunOutcome.NOT_CONVERGED
+    )
+    # np.bool_(False) is not the Python singleton False; a numpy-backed
+    # backend must not have its non-convergence promoted to success.
+    assert (
+        classify_result({"converged": np.False_}, calc_type="opt")
+        is RunOutcome.NOT_CONVERGED
+    )
+    assert (
+        classify_result({"converged": np.True_}, calc_type="opt")
+        is RunOutcome.COMPLETED
     )
     assert (
         classify_result({"status": "cancelled"}, calc_type="md") is RunOutcome.CANCELLED

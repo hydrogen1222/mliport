@@ -36,6 +36,10 @@ class _SyntheticOptimizationRunner:
     [
         ({"converged": True}, "completed", True),
         ({"converged": False}, "not_converged", False),
+        # numpy-backed backends (e.g. DeepMD/DP optimization) return
+        # ``np.bool_``: it is not the singleton ``False``, so a status check
+        # written as ``is False`` silently promotes it to success.
+        ({"converged": np.False_}, "not_converged", False),
         (
             {"converged": False, "status": "failed", "error": "backend crash"},
             "failed",
