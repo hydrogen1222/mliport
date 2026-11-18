@@ -271,3 +271,35 @@ def test_real_gemdat_immobile_trajectory_is_a_physical_no_events(
     np.testing.assert_array_equal(
         result.arrays["jump_matrix"], np.zeros((2, 2), dtype=int)
     )
+def test_short_trajectory_publication_grade_is_not_a_convergence_claim() -> None:
+    """``publication_grade=True`` must not be readable as "publishable".
+
+    A 30-frame (2.9 ps) trajectory is far too short for a converged transport
+    estimate, yet the exact-displacement adapter is verified, so the flag is
+    ``True``.  The result therefore has to state that statistical adequacy was
+    not assessed.
+    """
+
+    dataset = _brownian_dataset(
+        "independent", seed=7, n_frames=30, n_particles=4, frame_interval_fs=100.0
+    )
+    result = kinisi_transport(
+        dataset,
+        mobile_species="Li",
+        ionic_charge_e=1,
+        fit_start_ps=0.0,
+        lag_step_ps=0.2,
+        lag_stop_ps=2.0,
+        temperature_K=600.0,
+        random_seed=1,
+        n_samples=20,
+        n_walkers=8,
+        n_burn=10,
+        n_thin=1,
+    )
+    assert result["publication_grade"] is True
+    assert (
+        "does not assert statistical convergence" in result["publication_grade_scope"]
+    )
+    assert result["quality"]["statistical_adequacy"] == "not_assessed"
+    assert "diffusive regime" in result["quality"]["statistical_adequacy_reason"]

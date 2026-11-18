@@ -59,6 +59,29 @@ used only when you allow it, and it is recorded.
 - For *which* sites and jumps matter, use [GEMDAT](electrolyte-gemdat.md);
   transport gives rates, not mechanisms.
 
+## What `publication_grade` does and does not mean
+
+`publication_grade` is a provenance flag, not a verdict on the physics. On a
+transport result it is `true` only when the exact continuous displacement array
+was injected into kinisi and verified against the stored frames before the fit
+(`publication_grade_scope` spells this out in `results.json`). It is `false` for
+the `--allow-reconstructed-fallback` diagnostic path and for results that
+contain an experimental component.
+
+The nested `publication_grade` inside `collective_conductivity` and
+`jump_diffusion` answers a second, different question: the charge grouping was
+left as a single kinisi statistical group (`--collective-system-particles 1`),
+so cross-group correlations are preserved. Grouping `> 1` is an experimental
+diagnostic and is flagged as such.
+
+Neither flag says that the trajectory is long enough, that the fit window is in
+the diffusive regime, that the result transfers to another cell size or
+temperature, or that the MLIP is accurate. Those are not decided by this
+adapter, so every transport result records
+`quality.statistical_adequacy = "not_assessed"` with the reason. Publication
+readiness has to come from your own convergence checks (lag-window `alpha`,
+posterior width, replicas/windows, cell-size checks), not from this flag.
+
 ```bash
 mliport analyze runs/md-800K transport --mobile Li --charge 1 \
   --fit-start-ps 50 --lag-step-ps 5 --lag-stop-ps 500 \

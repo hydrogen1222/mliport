@@ -1102,6 +1102,12 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
                 "kinisi_position_semantics": result["kinisi_position_semantics"],
                 "displacement_input_class": result.get("displacement_input_class"),
                 "publication_grade": result.get("publication_grade"),
+                # Recorded next to the flag so an archived provenance file
+                # cannot be read as a convergence/publication claim.
+                "publication_grade_scope": result.get("publication_grade_scope"),
+                "statistical_adequacy": (result.get("quality") or {}).get(
+                    "statistical_adequacy"
+                ),
                 "temperature_source": result.get("temperature_source"),
                 "drift_correction": result.get("drift_correction"),
                 "dimensions": result.get("dimensions"),

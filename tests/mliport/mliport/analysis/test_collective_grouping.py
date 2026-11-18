@@ -190,3 +190,21 @@ def test_cli_help_does_not_call_groups_replicates():
     ).read_text(encoding="utf-8")
     assert "not independent MD replicas" in source
     assert "index-ordered statistical groups" in source
+
+
+def test_publication_grade_scope_is_explicit(monkeypatch):
+    """The flag only certifies displacement/native-adapter fidelity."""
+
+    result = _run(monkeypatch, system_particles=1, jump=True)
+    assert (
+        "does not assert statistical convergence" in result["publication_grade_scope"]
+    )
+    assert "MLIP accuracy" in result["publication_grade_scope"]
+    # Displacement fidelity and statistical adequacy are different claims.
+    assert result["quality"]["statistical_adequacy"] == "not_assessed"
+    assert "diffusive regime" in result["quality"]["statistical_adequacy_reason"]
+    for block in (result["collective_conductivity"], result["jump_diffusion"]):
+        assert "charge-grouping fidelity only" in block["publication_grade_scope"]
+        assert (
+            "does not assert a converged collective" in block["publication_grade_scope"]
+        )
