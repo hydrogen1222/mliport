@@ -669,10 +669,10 @@ def test_wizard_job_preserves_explicit_gpu_device_for_scheduler_lease(
     )
     incar_text = folder.incar.read_text(encoding="utf-8")
     updated, count = re.subn(
-        r"(?m)^DEVICE\\s*=.*$", "DEVICE = cuda:1", incar_text
+        r"(?m)^DEVICE\s*=.*$", "DEVICE = cuda:1", incar_text
     )
     if not count:
-        updated += "\\nDEVICE = cuda:1\\n"
+        updated += "\nDEVICE = cuda:1\n"
     folder.incar.write_text(updated, encoding="utf-8")
     manager = _RecordingManager()
     submit_task_folder(folder.path, manager=manager)
@@ -682,7 +682,7 @@ def test_wizard_job_preserves_explicit_gpu_device_for_scheduler_lease(
     assert manager.submitted["submit_cwd"] == folder.path
 
 
-def test_wizard_submission_honors_project_settings_when_resolving_device(
+def test_wizard_submission_resolves_settings_from_task_folder(
     tmp_path: Path,
 ) -> None:
     structure = _write_structure(tmp_path)
@@ -697,7 +697,7 @@ def test_wizard_submission_honors_project_settings_when_resolving_device(
     )
     # CLI executes from the task folder, so settings.ini is searched there.
     (folder.path / "settings.ini").write_text(
-        "[engine:mace]\\ndefault_dtype = float32\\n", encoding="utf-8"
+        "[engine:mace]\ndefault_dtype = float32\n", encoding="utf-8"
     )
     from mliport.config.settings import load_settings
 
