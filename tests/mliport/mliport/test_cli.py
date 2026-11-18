@@ -449,6 +449,29 @@ def test_device_accepts_cuda_n() -> None:
     assert args.device == "cuda:2"
 
 
+@pytest.mark.parametrize(
+    ("subcmd", "extra"),
+    [("run", ["--output", "tmp-run"]), ("resume", ["tmp-run"]),
+     ("extend", ["tmp-run", "--cycles", "2"])],
+)
+def test_confsearch_device_option_is_resolved_for_all_compute_subcommands(subcmd, extra):
+    from mliport.cli import _build_cli_opts
+
+    parser = create_parser()
+    args = parser.parse_args([
+        "confsearch", subcmd, *extra, "--model", "mock.model",
+        "--model-type", "mace", "--device", "cuda:1",
+    ])
+    assert args.device == "cuda:1"
+    assert _build_cli_opts(args, "confsearch")["device"] == "cuda:1"
+    omitted = parser.parse_args([
+        "confsearch", subcmd, *extra, "--model", "mock.model",
+        "--model-type", "mace",
+    ])
+    assert omitted.device is None
+    assert "device" not in _build_cli_opts(omitted, "confsearch")
+
+
 def test_model_optional_with_model_alias() -> None:
     """--model is not required when --model-alias is provided."""
     parser = create_parser()
