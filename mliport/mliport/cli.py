@@ -2477,12 +2477,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     engine = CalculationEngine.from_config(engine_config)
     try:
+        engine.preflight_input(atoms)
         with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(engine_config))
             return _run_product(
                 engine, atoms, calc_type=calc_type, started_at=started_at
             )
-    except OutputDirectoryInUseError as exc:
+    except (OutputDirectoryInUseError, ValueError) as exc:
         print(f"Error: {exc}")
         return EXIT_ERROR
 
@@ -2560,6 +2561,7 @@ def cmd_md(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
+        engine.preflight_input(atoms)
         with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
             return _run_product(engine, atoms, calc_type="md", started_at=started_at)
