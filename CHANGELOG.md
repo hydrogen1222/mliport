@@ -2,6 +2,100 @@
 
 ## Unreleased
 
+Nothing yet.
+
+## 2.0.0b5
+
+Stabilisation, whole-tree source audit and scientific-correctness beta. It is
+still a beta: the test suite and the audits cover *software* behaviour; how
+accurately a model reproduces DFT for your material remains the model's
+question, answered only by your own reference calculations.
+
+Highlights since `2.0.0b4`:
+
+- **Configuration search (`confsearch`).** `mliport confsearch run|resume|extend`
+  explores surface/intercalation minima with MD + quench + Metropolis over
+  several random starts, and writes resumable, fingerprinted checkpoints and
+  exports. It is covered by synthetic-model tests and has not been through a
+  real-model GPU campaign, so treat its ranking as a screening for DFT.
+- **NEP-ASE and native GPUMD.** A NEP potential can now run through Calorine in
+  the ASE engine, or natively through GPUMD (versioned `nep89` files, per-element
+  cutoffs, commit-verified native trajectory and provenance). The installer
+  refuses a pre-existing environment that does not satisfy the pinned contract.
+- **Dispersion correction.** `--d3` adds DFT-D3 through `torch-dftd` inside the
+  existing MLIP environment; it is opt-in and recorded in provenance.
+- **Task folders and INCAR-style input.** `mliport run` reads `INCAR.mliport`
+  from a task folder, the TUI has a three-question new-task wizard, and the
+  option table, templates and generated key reference all come from one schema.
+  Name-only `MODEL_PATH` values resolve through `models/` (two matches refuse
+  rather than pick one). `OUTPUT_DIR = .` is a real opt-out.
+- **ASE isotropic MTK NPT** for the four ASE engines: volume-only degrees of
+  freedom, per-frame cells in the trajectory, MTK options validated before any
+  output or model load, keyword-only placement so the historical positional
+  `MDRunner` order keeps working (Issue #102), and fixed-cell XDATCAR/transport
+  use refused for a variable cell.
+- **Backend compatibility and runtime reliability.** UMA moved to
+  `fairchem-core 2.25.0`; MACE refuses checkpoints that are not potential-energy
+  models instead of mispredicting; DPA accepts lossless dtype widths and gained
+  a legacy runtime for DPA-2 checkpoints such as DPA-SSE; GRACE has a Verlet
+  neighbour cache that keeps every periodic image; the runtime probe works on
+  CPU and on any structure.
+- **Failure states that used to look like success.** A `numpy` boolean can no
+  longer decide "converged"; a NEB resume that changes a physics option is
+  refused and names the conflicting field; one bad structure cannot abort a
+  batch, and an unserialisable value (NaN/Inf/object) no longer truncates
+  `batch_summary.json`; MD/CLI errors report the actual problem instead of a
+  POSIX errno.
+- **GEMDAT site analysis.** The "is this really a zero-transition trajectory?"
+  cross-check now compares atoms and sites in one coordinate frame and uses the
+  true triclinic minimum image; unresolved or non-finite geometry fails closed
+  instead of reporting a physical zero.
+- **kinisi transport credibility.** `publication_grade` now carries an explicit
+  scope and every result records `quality.statistical_adequacy = "not_assessed"`;
+  neither flag claims statistical convergence, and both are written to
+  `provenance.json`.
+- **Thermodynamics and provenance.** `thermo` reports per-column frame counts
+  (total / finite / non-finite) so a partially corrupted `md.csv` cannot look
+  healthy, block statistics now drop `±Inf` as well as `NaN`, and the analysis
+  cache identity uses exactly the files the loader reads (with an actionable
+  error when a run directory has no trajectory).
+- **Cleanup, dependencies and licences.** Unreferenced inherited modules were
+  removed (see the compatibility table below), the `transport`/`electrolyte`
+  extras now declare `scipp`/`pymatgen` because they are imported directly, the
+  installer texts say Python 3.10–3.13, and the GRACE backend page states that
+  `tensorpotential` is academic/non-commercial only.
+
+**Python API compatibility.** `mliport.utils` (whole module),
+`mliport.logger.setup_logger`, `mliport.logger.CalculationLogger`,
+`mliport.cli._model_layer_from_context`, `mliport.calculators.nep_calc._parse_cutoff_row`,
+`mliport.neb.results._max_atom_force`,
+`mliport.analysis.electrolyte.GEMDAT_STATUS_UNSUPPORTED` and two unused constants
+in `mliport.analysis.units` were removed. The CLI, the documented Python API and
+every workflow are unaffected; an external script that imported those names must
+switch to the replacements listed below (section "Repository maintenance").
+
+**Scientific boundaries (unchanged by this release).**
+
+- Software correctness is not model accuracy: the validated surface is "the
+  workflow computes what it says it computes", not "the potential matches DFT
+  for your material".
+- NPT is isotropic MTK only (volume freedom); there is no fully flexible or
+  Parrinello–Rahman cell.
+- `publication_grade` does not mean the diffusion coefficient has converged;
+  statistical adequacy is not auto-certified, and a short trajectory cannot give
+  a reliable ionic conductivity.
+- A historical GEMDAT `no_events` result for a non-cubic cell (or one whose
+  nearest-site assignment is ambiguous) was decided by an unreliable check and
+  should be re-run with this version before it is cited.
+- GRACE/`tensorpotential` is under an Academic Software Licence: academic,
+  non-commercial use only.
+- Parts of the hardware matrix, the official long-running validation suites and
+  the MLIP-vs-DFT comparisons remain unrun; see the living ledger (#75).
+
+Detailed development log since `2.0.0b4` follows.
+
+### Detailed changes
+
 Repository maintenance (tracking: #75):
 
 **Removals that can break an out-of-tree `import`.** Nothing inside this
