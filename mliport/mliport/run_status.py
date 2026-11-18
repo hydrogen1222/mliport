@@ -57,6 +57,44 @@ _OUTCOME_TO_JOB_STATUS = {
 }
 
 
+_AMBIGUOUS_FLAG = object()
+
+
+def _boolean_flag(value: Any) -> bool | object:
+    """Interpret a reported boolean flag, or return a sentinel for ambiguity.
+
+    Only values that unambiguously *are* a boolean scalar are accepted:
+
+    * Python ``bool``;
+    * ``numpy.bool_`` (what ASE optimizers and DeepMD return);
+    * a 0-d ``numpy`` array with ``dtype=bool``;
+    * the integer ``0``/``1`` (a JSON round-trip of a boolean, e.g. a record
+      restored from disk).  Any other integer is not a boolean.
+
+    Everything else -- the strings ``"False"``/``"True"``, ``float`` (including
+    NaN), arrays with more than one element, ``None``, arbitrary objects -- is
+    reported as :data:`_AMBIGUOUS_FLAG`.  ``bool("False")`` is ``True`` and
+    ``bool(float("nan"))`` is ``True``, which is exactly why the caller must not
+    let ``bool()`` decide a scientific status.
+    """
+    import numpy as np  # noqa: PLC0415 - keep the module import-light
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0 and value.dtype == bool:
+            return bool(value)
+        return _AMBIGUOUS_FLAG
+    if isinstance(value, (int, np.integer)):
+        number = int(value)
+        if number in (0, 1):
+            return bool(number)
+        return _AMBIGUOUS_FLAG
+    return _AMBIGUOUS_FLAG
+
+
 def classify_result(result: Any, *, calc_type: str | None = None) -> RunOutcome:
     """Map a runner result dictionary to a terminal outcome."""
     if not isinstance(result, dict):
@@ -72,21 +110,29 @@ def classify_result(result: Any, *, calc_type: str | None = None) -> RunOutcome:
     converged = result.get("converged")
     if converged is not None:
         # A numpy-backed backend (e.g. a DeepMD/DP relaxation) reports the flag
-        # as ``np.bool_``, which is not the ``False`` singleton.  Normalise to
-        # a Python bool so an unconverged run cannot be promoted to success;
-        # a flag that cannot be interpreted as one boolean fails closed.
-        try:
-            converged = bool(converged)
-        except (TypeError, ValueError):
-            return RunOutcome.NOT_CONVERGED
+        # as ``np.bool_``, which is not the ``False`` singleton; a string or
+        # NaN must never be read as ``True`` either.  An uninterpretable flag is
+        # a runner-contract violation, so the run is FAILED rather than
+        # completed or merely "not converged".
+        flag = _boolean_flag(converged)
+        if flag is _AMBIGUOUS_FLAG:
+            return RunOutcome.FAILED
+        converged = flag
     if converged is False:
         return RunOutcome.NOT_CONVERGED
     if converged is None and calc_type in CONVERGENCE_CALC_TYPES:
         # A convergence-type run without an explicit flag must never be
         # promoted to success.
         return RunOutcome.NOT_CONVERGED
-    if result.get("success") is False:
-        return RunOutcome.FAILED
+    success = result.get("success")
+    if success is not None:
+        # Same contract for the success flag: ``np.False_`` must not slip past
+        # an ``is False`` test and an uninterpretable value is not success.
+        flag = _boolean_flag(success)
+        if flag is _AMBIGUOUS_FLAG:
+            return RunOutcome.FAILED
+        if flag is False:
+            return RunOutcome.FAILED
     return RunOutcome.COMPLETED
 
 
