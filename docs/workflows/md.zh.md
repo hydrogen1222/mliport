@@ -71,6 +71,11 @@ print(f"Final temperature: {results['temperature']:.1f} K")
 
 该函数接受 ASE `Atoms` 对象或文件路径。返回一个字典，包含温度、能量和轨迹元信息。
 
+!!! note "NPT 参数为关键字专用"
+    调用 `run_md` 进行 NPT 模拟时，NPT 参数必须以关键字形式传入：
+    `pressure_gpa=0.0`、`npt_tdamp=100.0` 等，不能按位置传入。
+    这避免了 `MDRunner` 历史上的位置参数歧义（Issue #102）。
+
 ## 选项
 
 ### 动力学参数
@@ -135,7 +140,7 @@ print(f"Final temperature: {results['temperature']:.1f} K")
 
 - **Langevin**（默认）：随机恒温器，添加摩擦力和随机力。简单且稳定。摩擦参数决定恒温器的耦合强度。*注意*：Langevin 动力学不是 Hamilton 的，因此从 Langevin 轨迹计算的速度自相关函数和振动光谱会带有恒温器伪影。计算光谱时请用 NVE 或 NHC。
 - **Bussi/CSVR**：确定性恒温器，通过缩放速度来匹配正则分布（Bussi, Donadio and Parrinello, J. Chem. Phys. **126**, 014101, 2007）。折中方案：对动力学的扰动最小，同时保证正确的温度分布。
-- **NHC**（Nosé–Hoover chain）：基于扩展系统动力学的确定性恒温器（Martyna et al., J. Chem. Phys. **97**, 2635, 1992）。产生真正的正则采样且不扰动动力学。计算振动光谱和扩散系数的最佳选择。**不能与 FixCom 或其他 ASE 约束共存。**
+- **NHC**（Nosé–Hoover chain）：基于扩展系统动力学的确定性恒温器（Martyna et al., J. Chem. Phys. **97**, 2635, 1992）。产生真正的正则采样且不扰动动力学。计算振动光谱和扩散系数的最佳选择。**不能与 FixCom 或其他 ASE 约束共存。** mliport 在加载模型*之前*就会检查约束——如果输入结构带有任何约束，运行会立即报错并给出说明，而不是在加载模型后才崩溃。
 
 **报告扩散系数时务必注明所用的恒温器。**同一温度下使用不同恒温器的两次模拟是不同的动力学体系。
 

@@ -85,6 +85,12 @@ print(f"Final temperature: {results['temperature']:.1f} K")
 The function accepts an ASE `Atoms` object or a file path. It returns a
 dictionary with temperature, energy, and trajectory metadata.
 
+!!! note "NPT arguments are keyword-only"
+    When calling `run_md` for NPT, pass NPT parameters as keyword arguments:
+    `pressure_gpa=0.0`, `npt_tdamp=100.0`, etc. They cannot be passed
+    positionally. This prevents the historical positional-argument ambiguity
+    with `MDRunner` (Issue #102).
+
 ## Options
 
 ### Dynamics
@@ -168,7 +174,10 @@ the dynamics and therefore the transport coefficients you extract.
   system dynamics (Martyna et al., J. Chem. Phys. **97**, 2635, 1992).
   Produces true canonical sampling with unperturbed dynamics. Best choice for
   vibrational spectra and diffusion coefficients. **Cannot coexist with
-  FixCom or other ASE constraints.**
+  FixCom or other ASE constraints.** mliport checks for constraints *before*
+  loading the model — if the input structure carries any constraint, the run
+  fails immediately with an actionable error rather than loading the model and
+  then crashing.
 
 **Always state the thermostat when reporting a diffusion coefficient.** Two
 simulations with different thermostats at the same temperature are different

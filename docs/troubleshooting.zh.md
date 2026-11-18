@@ -16,6 +16,24 @@ mliport 的大多数报错是故意设计的：在信息不足、只能靠猜的
 
 ## 设备与 GPU
 
+**"CUDA is unavailable or incompatible in this runtime" / CUDA 相关报错。**
+当你使用 `--device cuda`（或 `--device cuda:N`），而后端返回可识别的 CUDA 不可用信息时，mliport
+现在会给出清晰的诊断报错，而不是直接抛出框架的原始错误：
+
+```
+<BACKEND> was asked to use 'cuda', but CUDA is unavailable or incompatible
+in this runtime. Verify device visibility with nvidia-smi, and run
+'mliport doctor --engine <engine> --device cuda' in the same backend
+environment; check its CUDA-enabled framework installation.
+Original error: <原始错误>
+```
+
+排查步骤：
+1. 运行 `nvidia-smi`——如果失败或看不到设备，说明这台机器上 CUDA 不可用。
+2. 在后端环境（`.venv-mace/`、`.venv-dpa/` 等）中运行 `mliport doctor --engine <engine>
+   --device cuda`，它会独立检查框架的 CUDA 层，与模型无关。
+3. 如果框架 wheel 是为另一个 CUDA 版本或 GPU 架构编译的，请用安装脚本的 GPU 专用路线重新安装。
+
 **指定了 `--device cuda`，结果跑在 CPU 上，或者一开始计算就崩溃。** 要么框架没有编译适合你这块
 GPU 的代码，要么 GPU 不可见。运行 `mliport doctor --engine <engine> --device cuda` 和
 `nvidia-smi` 可以区分是哪种情况。请用安装脚本为你的 GPU 选的版本，并且不要在排队的作业里修改

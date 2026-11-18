@@ -127,3 +127,17 @@ or transient planning document ended up in the wheel.
   docs build.
 - Do not loosen a threshold or delete an honest `not_run` record to make a report
   look better.
+
+## Removed internals (v2.0.0b5)
+
+Two internal modules were removed in PR #118. If you have code that imports them,
+update as follows:
+
+| Removed | Replacement |
+|---|---|
+| `mliport.utils` (entire module) | No public replacement; the utilities were private helpers. Use ASE, pathlib, or standard-library equivalents directly. |
+| `mliport.logger.CalculationLogger` | No public replacement; run logging is handled internally by the runners. |
+
+Neither symbol appeared in the public API. If you were using either, your code was
+depending on a private implementation detail. The public entry-points (`mliport.api`,
+`mliport.config`, the CLI) are unaffected.

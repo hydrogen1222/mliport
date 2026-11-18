@@ -21,6 +21,27 @@ that engine; do not edit a launcher.
 
 ## Devices and GPUs
 
+**"CUDA is unavailable or incompatible in this runtime" / CUDA-related errors.**
+When you pass `--device cuda` (or `--device cuda:N`) and the backend reports a
+recognisable CUDA-unavailability message, mliport now surfaces a clear
+diagnostic instead of the raw framework error:
+
+```
+<BACKEND> was asked to use 'cuda', but CUDA is unavailable or incompatible
+in this runtime. Verify device visibility with nvidia-smi, and run
+'mliport doctor --engine <engine> --device cuda' in the same backend
+environment; check its CUDA-enabled framework installation.
+Original error: <original error>
+```
+
+Steps to follow:
+1. Run `nvidia-smi` — if it fails or shows no devices, CUDA is not available on this machine.
+2. Run `mliport doctor --engine <engine> --device cuda` inside the backend
+   environment (`.venv-mace/`, `.venv-dpa/`, etc.) — it checks the framework's
+   CUDA layer independently of the model.
+3. If the framework wheel was built for a different CUDA version or GPU arch,
+   reinstall with the installer's pinned route for your GPU.
+
 **The backend runs on the CPU although you asked for `--device cuda`, or crashes
 on the first kernel.** Either the framework wheel has no kernels for your GPU
 architecture or the GPU is not visible. `mliport doctor --engine <engine>
