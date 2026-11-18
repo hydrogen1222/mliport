@@ -216,6 +216,16 @@ _RUN_METADATA_FILES = (
     "manifest.json",
 )
 
+# Deliberately *not* fingerprinted: ``raw/mliport_results.json`` and
+# ``run.log``.  The analysis loader never reads them -- trajectory semantics
+# come from ``artifacts.json``, run options from ``resolved_config.json`` and
+# thermodynamics from ``raw/md.csv``/``md.csv`` -- so hashing them would only
+# force a full re-analysis whenever a log line or a non-scientific run record
+# changes.  A future loader step that starts reading another sidecar needs to
+# add it here, which
+# ``test_runner_kinisi.py::test_every_loader_consumed_sidecar_invalidates_the_cache``
+# (and its negative twin) is there to catch.
+
 
 def _run_dir_for(source: Path) -> Path | None:
     """Directory whose sidecar metadata belongs to this trajectory, if any."""

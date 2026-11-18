@@ -1630,3 +1630,35 @@ def test_transport_provenance_records_the_publication_grade_scope(
         in (transport["publication_grade_scope"])
     )
     assert transport["statistical_adequacy"] == "not_assessed"
+
+
+@pytest.mark.parametrize(
+    "sidecar", ["artifacts.json", "resolved_config.json", "raw/md.csv"]
+)
+def test_every_loader_consumed_sidecar_invalidates_the_cache(tmp_path, sidecar) -> None:
+    """Anything the loader reads is part of the analysis identity."""
+
+    run = tmp_path / "run"
+    _write_short_run(run)
+    first = run_analysis(AnalysisRequest("validate", str(run)))
+    assert first["reused"] is False
+    path = run / sidecar
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    second = run_analysis(AnalysisRequest("validate", str(run)))
+    assert second["analysis_id"] != first["analysis_id"]
+    assert second["reused"] is False
+
+
+def test_files_the_loader_never_reads_do_not_invalidate_the_cache(tmp_path) -> None:
+    """A log line or ``raw/mliport_results.json`` must not force re-analysis."""
+
+    run = tmp_path / "run"
+    _write_short_run(run)
+    first = run_analysis(AnalysisRequest("validate", str(run)))
+    (run / "raw" / "mliport_results.json").write_text(
+        '{"note": "run record, not an analysis input"}\n', encoding="utf-8"
+    )
+    (run / "run.log").write_text("a later log line\n", encoding="utf-8")
+    second = run_analysis(AnalysisRequest("validate", str(run)))
+    assert second["analysis_id"] == first["analysis_id"]
+    assert second["reused"] is True
