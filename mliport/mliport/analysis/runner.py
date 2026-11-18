@@ -19,7 +19,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from mliport.analysis.dataset import TrajectoryDataset, _gpumd_manifest
+from mliport.analysis.dataset import (
+    _GPUMD_TRAJECTORY_NAME,
+    TrajectoryDataset,
+    _gpumd_manifest,
+    discover_trajectory_file,
+    no_trajectory_message,
+)
 from mliport.analysis.schema import AnalysisRequest
 from mliport.analysis.validation import InvalidTrajectoryError, UnsupportedAnalysisError
 
@@ -252,17 +258,15 @@ def source_fingerprint(path: Path) -> dict[str, Any]:
             # A native GPUMD run directory is identified by its manifest; the
             # trajectory may legitimately be absent (a failed run), which the
             # loader then refuses with a precise message.
-            resolved = resolved / "trajectory.extxyz"
+            resolved = resolved / _GPUMD_TRAJECTORY_NAME
         else:
-            for candidate in (
-                resolved / "raw" / "trajectory.traj",
-                resolved / "trajectory.traj",
-                resolved / "vasp" / "XDATCAR",
-                resolved / "XDATCAR",
-            ):
-                if candidate.is_file():
-                    resolved = candidate
-                    break
+            # Same discovery as the loader.  Hashing the directory itself used
+            # to fail with a bare ``[Errno 21] Is a directory`` before the
+            # loader could say what was missing.
+            candidate = discover_trajectory_file(resolved)
+            if candidate is None:
+                raise FileNotFoundError(no_trajectory_message(resolved))
+            resolved = candidate
     if not resolved.exists():
         return {"path": str(resolved), "exists": False}
     stat = resolved.stat()
