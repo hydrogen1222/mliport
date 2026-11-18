@@ -147,7 +147,8 @@ DPA_RUNTIME=legacy ./bin/mliport-dpa-legacy sp structure.vasp \
 - `.venv-dpa-legacy` pins `deepmd-kit==3.0.0b3` — an upstream pre-release, and
   the newest release whose network layout matches the checkpoint — with
   `torch==2.3.1` (`+cu121` on a GPU host, which still ships sm_70 for Volta) and
-  Python 3.10 to 3.12.
+  Python 3.10 to 3.12. The cu121 wheel has no Blackwell kernel: `--device cuda`
+  is refused there, while `--device auto` installs the CPU runtime instead.
 - `DPA_RUNTIME` is `current` by default and never falls back in either
   direction. The legacy environment refuses DPA-3, DPA4 and DPA4C checkpoints
   and names the runtime to use instead; the current environment refuses the
