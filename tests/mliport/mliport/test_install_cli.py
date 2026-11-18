@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -353,7 +354,8 @@ def test_clean_skips_the_contract_and_rebuilds(monkeypatch, capsys) -> None:
         == 0
     )
     argv_list = [argv for argv, _env in calls]
-    assert argv_list[0][:2] == ["rm", "-rf"]
+    assert argv_list[0][0] == sys.executable
+    assert argv_list[0][1] == "-c"
     assert argv_list[0][-1] == ".venv-nep"
     assert not any(
         "Reusing existing" in line for line in capsys.readouterr().out.splitlines()
