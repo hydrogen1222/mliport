@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from mliport.install.compatibility import ALL_BACKENDS
 from mliport.install.launcher import (
     launcher_path,
@@ -10,6 +14,7 @@ from mliport.install.launcher import (
 )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX launcher is not created on Windows")
 def test_posix_launcher_selects_the_environment_without_changing_model_options(
     tmp_path,
 ) -> None:
