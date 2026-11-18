@@ -292,7 +292,10 @@ concurrency and GPU leases. The scheduler must be running (start it from the
 Jobs screen or with `mliport queue start`); closing the TUI does not cancel a
 queued or running job. A repeated click cannot submit the same folder twice.
 The worker executes from the task folder, preserving local settings and the
-same relative-path semantics as `cd <folder> && mliport run`.
+same relative-path semantics as `cd <folder> && mliport run`. The wizard also
+records the configuration screen's device as `DEVICE` in the folder's INCAR, so
+the folder reproduces the same device later; `mliport run --device` overrides it
+for one run, which is how the queue pins a worker to its leased GPU.
 
 Everything else stays available under "Advanced": the manual configuration
 screens for SP, OPT, MD, NEB and CONFSEARCH, the template generator (which uses

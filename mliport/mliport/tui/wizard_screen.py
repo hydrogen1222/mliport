@@ -220,15 +220,18 @@ class NewTaskScreen(Screen):
         calc_type = str(self.query_one("#wizard-calc-type", Select).value or "sp")
         field = self.query_one("#wizard-folder", Input)
         hint = self.query_one("#wizard-folder-hint", Static)
+        # The device comes from the configuration screen, exactly like the
+        # Advanced screens; name it so it is never a silent choice.
+        device = str(self.app.get_config("device", "cpu"))
         if field.value.strip():
-            hint.update(f"Create: {field.value.strip()}/INCAR.mliport")
+            hint.update(f"Create: {field.value.strip()}/INCAR.mliport ({device})")
             return
         if structure:
             suggested = default_folder_name(structure, calc_type)
             field.placeholder = f"Folder to create (default: {suggested})"
-            hint.update(f"Create: {suggested}/INCAR.mliport")
+            hint.update(f"Create: {suggested}/INCAR.mliport ({device})")
         else:
-            hint.update("Create: <structure>-<calc type>/INCAR.mliport")
+            hint.update(f"Create: <structure>-<calc type>/INCAR.mliport ({device})")
 
     def _refresh_run_note(self) -> None:
         """State honestly whether Create & Run can execute this calc type."""
@@ -300,6 +303,10 @@ class NewTaskScreen(Screen):
             runtime_selector = self.query_one("#wizard-dpa-runtime", Select)
             if runtime_selector.value is not Select.NULL:
                 dpa_runtime = str(runtime_selector.value)
+        # The device is a configuration-screen decision, exactly like the
+        # Advanced screens; the wizard records it in the task folder's INCAR so
+        # a later `cd <folder> && mliport run` reproduces the same device.
+        device = str(self.app.get_config("device", "cpu"))
         try:
             if not structure:
                 raise TaskFolderError("Choose a structure file first.")
@@ -316,6 +323,7 @@ class NewTaskScreen(Screen):
                 task=task,
                 head=head,
                 dpa_runtime=dpa_runtime,
+                device=device,
             )
         except TaskFolderError as exc:
             self._set_status(f"Error: {exc}")
@@ -326,12 +334,12 @@ class NewTaskScreen(Screen):
         readiness = task_folder_readiness(folder.path)
         if readiness.runnable:
             message = (
-                f"Created {folder.path} — ready to run.\n"
+                f"Created {folder.path} (DEVICE = {device}) — ready to run.\n"
                 f"Run it with: {folder.command}"
             )
         else:
             message = (
-                f"Created {folder.path} — NOT runnable yet.\n"
+                f"Created {folder.path} (DEVICE = {device}) — NOT runnable yet.\n"
                 f"{readiness.explanation()}\n"
                 f"After filling it in: {folder.command}"
             )

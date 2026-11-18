@@ -74,6 +74,23 @@ def test_real_worker_failure_is_not_reported_as_done(tmp_path: Path) -> None:
     assert "boom" in manager.tail_log(job_id, lines=50)
 
 
+def test_a_bad_command_line_is_failed_not_not_converged(tmp_path: Path) -> None:
+    """argparse's historical exit code 2 collided with "not converged".
+
+    A queued command that never starts must be reported as failed, not as a
+    calculation that ran and missed its criterion.
+    """
+    manager = JobManager(jobs_dir=tmp_path / "jobs")
+    job_id = _submit(
+        manager,
+        [sys.executable, "-m", "mliport.cli", "run", "--bogus-flag"],
+    )
+
+    job = _wait_for_status(manager, job_id, {"failed", "not_converged"})
+    assert job["status"] == "failed"
+    assert "unrecognized arguments" in manager.tail_log(job_id, lines=50)
+
+
 def test_pending_job_can_be_cancelled_without_spawning(tmp_path: Path) -> None:
     manager = JobManager(jobs_dir=tmp_path / "jobs")
     job_id = manager.new_job_id()
@@ -112,7 +129,6 @@ def test_pause_and_resume_only_affect_a_pending_job(tmp_path: Path) -> None:
     assert manager.resume_paused(job_id) is True
     assert manager.get_job(job_id)["status"] == "pending"
     assert manager.kill_job(job_id) is True
-
 
 
 def test_scheduler_respects_paused_task_folder_queue(tmp_path: Path) -> None:
@@ -182,9 +198,7 @@ def test_busy_gpu_lease_leaves_later_job_pending(tmp_path: Path) -> None:
     manager = JobManager(jobs_dir=tmp_path / "jobs")
     command = [sys.executable, "-c", "print('not spawned')"]
     occupied_id = manager.new_job_id()
-    manager.enqueue(
-        occupied_id, "sp", "/tmp/POSCAR", "He", 1, "cuda:0", command
-    )
+    manager.enqueue(occupied_id, "sp", "/tmp/POSCAR", "He", 1, "cuda:0", command)
     token = manager.new_job_id()
     claimed = manager.claim_job(
         occupied_id,
@@ -195,9 +209,7 @@ def test_busy_gpu_lease_leaves_later_job_pending(tmp_path: Path) -> None:
     assert claimed is not None
 
     queued_id = manager.new_job_id()
-    manager.enqueue(
-        queued_id, "sp", "/tmp/POSCAR", "He", 1, "cuda:1", command
-    )
+    manager.enqueue(queued_id, "sp", "/tmp/POSCAR", "He", 1, "cuda:1", command)
     scheduler = QueueScheduler(
         jobs_dir=manager.jobs_dir,
         max_concurrent=2,

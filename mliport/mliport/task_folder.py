@@ -163,6 +163,20 @@ def _model_reference_for_task_folder(model_path: str | Path) -> str:
     )
 
 
+def _validated_device(value: str) -> str:
+    """Normalise an explicit ``DEVICE`` value or fail closed.
+
+    The wizard must not write a device the CLI would reject later, and it must
+    not fall back to a different one when the value is malformed.
+    """
+    import re  # noqa: PLC0415
+
+    normalized = str(value).strip().lower()
+    if re.fullmatch(r"(?:cpu|gpu|cuda(?::\d+)?)", normalized) is None:
+        raise TaskFolderError(f"Unsupported device {value!r}; use cpu, cuda or cuda:N.")
+    return normalized
+
+
 def incar_text_for(
     calc_type: str,
     *,
@@ -171,6 +185,7 @@ def incar_text_for(
     task: str | None = None,
     head: str | None = None,
     dpa_runtime: str | None = None,
+    device: str | None = None,
 ) -> str:
     """The template for ``calc_type`` with the chosen model filled in.
 
@@ -197,9 +212,20 @@ def incar_text_for(
     resolved_model = _model_reference_for_task_folder(model_path)
 
     text = build_incar_default(calc, engine=engine)
+    # Some backends have no active HEAD line in the template (MACE keeps it as
+    # an optional comment).  An explicit head must still be recorded, or the
+    # run silently executes the model's own default head instead.
+    template_has_active_head = any(
+        line.strip().startswith("HEAD") and "=" in line for line in text.splitlines()
+    )
+    # An explicit head replaces the template's commented "optional" hint
+    # instead of being duplicated next to it.
+    drop_commented_head = bool(head) and not template_has_active_head
+    written_device = _validated_device(device) if device is not None else None
     lines: list[str] = []
     seen_model_type = False
     seen_model_path = False
+    seen_device = False
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("MODEL_TYPE"):
@@ -211,6 +237,8 @@ def incar_text_for(
             seen_model_path = True
             if engine == "dpa" and dpa_runtime:
                 lines.append(f"DPA_RUNTIME = {dpa_runtime}")
+            if head and not template_has_active_head:
+                lines.append(f"HEAD = {head.strip()}")
             continue
         if stripped.startswith("TASK") and "=" in stripped:
             lines.append(f"TASK = {task.strip() if task else 'REQUIRED'}")
@@ -218,12 +246,24 @@ def incar_text_for(
         if stripped.startswith("HEAD") and "=" in stripped:
             lines.append(f"HEAD = {head.strip() if head else 'REQUIRED'}")
             continue
+        if drop_commented_head and stripped.startswith("# HEAD"):
+            continue
+        if (
+            written_device is not None
+            and stripped.startswith("DEVICE")
+            and "=" in stripped
+        ):
+            lines.append(f"DEVICE = {written_device}")
+            seen_device = True
+            continue
         lines.append(line)
     if not (seen_model_type and seen_model_path):
         raise TaskFolderError(
             "The generated template does not declare MODEL_TYPE and MODEL_PATH; "
             "refusing to write an INCAR the wizard cannot fill in."
         )
+    if written_device is not None and not seen_device:
+        lines.append(f"DEVICE = {written_device}")
     return "\n".join(lines) + "\n"
 
 
@@ -237,6 +277,7 @@ def create_task_folder(
     task: str | None = None,
     head: str | None = None,
     dpa_runtime: str | None = None,
+    device: str | None = None,
     overwrite: bool = False,
 ) -> TaskFolder:
     """Create a task folder and return what was written.
@@ -253,6 +294,8 @@ def create_task_folder(
             ``REQUIRED`` placeholder when the template has that line.
         dpa_runtime: Explicit DPA runtime (``current``/``legacy``); ``None``
             keeps the CLI default strategy (``current``) without writing it.
+        device: Explicit compute device recorded as ``DEVICE``.  ``None`` keeps
+            the template's own value (the CLI built-in default, ``cpu``).
         overwrite: Allow writing into an existing directory (only when it holds
             neither an INCAR nor a structure of ours).
 
@@ -289,6 +332,7 @@ def create_task_folder(
         task=task,
         head=head,
         dpa_runtime=dpa_runtime,
+        device=device,
     )
     structure_copy = folder / target_name
     # Byte-for-byte copy: the wizard must never rewrite a structure.

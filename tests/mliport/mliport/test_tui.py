@@ -702,6 +702,46 @@ async def test_job_detail_screen_displays_log() -> None:
 
 
 @pytest.mark.asyncio()
+async def test_jobs_screen_enter_opens_the_selected_job_log(tmp_path: Path) -> None:
+    """A job's log must be reachable from the Jobs screen by keyboard.
+
+    With the default *cell* cursor, ``Enter`` posted no row selection, so
+    ``JobDetailScreen`` could never be opened from the list.
+    """
+    manager = JobManager(jobs_dir=tmp_path)
+    job_id = manager.new_job_id()
+    manager.enqueue(
+        job_id,
+        "sp",
+        "/tmp/POSCAR",
+        "H2",
+        2,
+        "cpu",
+        ["true"],
+        display_name="detail-test",
+    )
+
+    app = MliportApp()
+    jobs_screen = JobsScreen()
+    jobs_screen._job_manager = manager
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await app.push_screen(jobs_screen)
+        await pilot.pause()
+        table = jobs_screen.query_one("#jobs-table")
+        assert table.cursor_type == "row"
+        assert table.row_count == 1
+
+        table.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert isinstance(app.screen, JobDetailScreen)
+        assert app.screen.job_id == job_id
+
+
+@pytest.mark.asyncio()
 async def test_jobs_screen_handles_empty_store_and_remounts(tmp_path: Path) -> None:
     """An empty jobs screen mounts, refreshes, and remounts without crashing."""
     app = MliportApp()

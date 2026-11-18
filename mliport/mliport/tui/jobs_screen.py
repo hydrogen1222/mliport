@@ -57,7 +57,10 @@ class JobsScreen(Screen):
                 Button("Resume Queue", id="resume-queue-btn"),
                 id="scheduler-bar",
             ),
-            DataTable(id="jobs-table"),
+            # Row cursor: Enter must select a row (and open its log through
+            # ``on_data_table_row_selected``).  With the default cell cursor,
+            # Enter posts nothing and a job's log is unreachable from the UI.
+            DataTable(id="jobs-table", cursor_type="row"),
             Horizontal(
                 Button("Pause Job", id="pause-job-btn"),
                 Button("Resume Job", id="resume-job-btn"),

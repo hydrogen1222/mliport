@@ -163,6 +163,73 @@ def test_a_task_or_head_supplied_by_the_caller_is_written(tmp_path: Path) -> Non
     assert remaining_placeholders(text) == []
 
 
+def test_a_head_is_recorded_even_when_the_template_only_comments_it(
+    tmp_path: Path,
+) -> None:
+    """MACE's template keeps HEAD optional; an explicit head must still land.
+
+    Silently dropping the wizard's head field would execute the checkpoint's
+    own default head and record a different model identity than the CLI.
+    """
+    text = incar_text_for(
+        "sp",
+        model_type="mace",
+        model_path=_write_model(tmp_path),
+        task="bulk",
+        head="omat_pbe",
+    )
+    assert "HEAD = omat_pbe" in text
+    # The template's optional hint is replaced, not duplicated.
+    assert "# HEAD" not in text
+    from mliport.config.settings import load_settings
+
+    effective = resolve_config(
+        calc_type="sp",
+        incar=IncarConfig.from_string(text),
+        settings=load_settings(cwd=tmp_path),
+    )
+    assert effective.calculator_options.get("head") == "omat_pbe"
+
+
+def test_an_explicit_device_is_written_and_an_unknown_one_fails_closed(
+    tmp_path: Path,
+) -> None:
+    text = incar_text_for(
+        "sp", model_type="mace", model_path=_write_model(tmp_path), device="cuda:0"
+    )
+    assert "DEVICE = cuda:0" in text
+    assert IncarConfig.from_string(text).get_str("DEVICE") == "cuda:0"
+    with pytest.raises(TaskFolderError, match="Unsupported device"):
+        incar_text_for(
+            "sp",
+            model_type="mace",
+            model_path=_write_model(tmp_path),
+            device="cuda:bad",
+        )
+
+
+def test_the_wizard_command_is_accepted_by_the_real_run_parser(tmp_path: Path) -> None:
+    """A queued argv must parse: an unknown flag would fail every wizard job."""
+    from mliport.cli import create_parser
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    folder = create_task_folder(
+        tmp_path / "parser-task",
+        calc_type="sp",
+        structure=structure,
+        model_type="mace",
+        model_path=model,
+        task="bulk",
+        device="cuda:0",
+    )
+    argv = task_folder_command(folder.path, structure=folder.structure)
+    argv += ["--device", "cuda:0"]
+    args = create_parser().parse_args(argv)
+    assert args.command == "run"
+    assert args.device == "cuda:0"
+
+
 def test_a_models_subdirectory_entry_is_resolved_inside_models(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -374,6 +441,40 @@ async def test_wizard_creates_the_task_folder_and_shows_the_command(
     assert "cd " in status and "mliport run" in status
     # no run was started by "Create folder"
     assert not (task / "results").exists()
+
+
+@pytest.mark.asyncio()
+async def test_wizard_records_the_configured_device_in_the_task_folder(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The wizard must not silently choose a different device than the TUI."""
+    from textual.widgets import Input, Select
+
+    from mliport.tui.app import MliportApp
+    from mliport.tui.wizard_screen import NewTaskScreen
+
+    structure = _write_structure(tmp_path)
+    model = _write_model(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    app = MliportApp()
+    async with app.run_test(size=(120, 50)) as pilot:
+        app.update_config("device", "cuda:0")
+        screen = NewTaskScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+        screen.query_one("#wizard-structure", Input).value = str(structure)
+        screen.query_one("#wizard-model-path", Input).value = str(model)
+        screen.query_one("#wizard-task", Select).value = "bulk"
+        screen.query_one("#wizard-folder", Input).value = str(tmp_path / "gpu-task")
+        await pilot.pause()
+        await pilot.click("#wizard-create")
+        await pilot.pause()
+        status = str(screen.query_one("#wizard-status").render())
+
+    incar = (tmp_path / "gpu-task" / "INCAR.mliport").read_text(encoding="utf-8")
+    assert "DEVICE = cuda:0" in incar
+    assert "cuda:0" in status
 
 
 @pytest.mark.asyncio()
@@ -668,9 +769,7 @@ def test_wizard_job_preserves_explicit_gpu_device_for_scheduler_lease(
         task="bulk",
     )
     incar_text = folder.incar.read_text(encoding="utf-8")
-    updated, count = re.subn(
-        r"(?m)^DEVICE\s*=.*$", "DEVICE = cuda:1", incar_text
-    )
+    updated, count = re.subn(r"(?m)^DEVICE\s*=.*$", "DEVICE = cuda:1", incar_text)
     if not count:
         updated += "\nDEVICE = cuda:1\n"
     folder.incar.write_text(updated, encoding="utf-8")
