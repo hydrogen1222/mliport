@@ -106,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         with log_path.open("a", encoding="utf-8") as log_file:
             result = subprocess.run(
                 command,
+                cwd=data.get("submit_cwd") or None,
                 env=environment,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
