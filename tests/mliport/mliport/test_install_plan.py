@@ -202,8 +202,10 @@ def test_nep_blackwell_architecture_is_reported_as_experimental() -> None:
         device="auto",
         verify=False,
     )
-    assert any("NEP (Calorine / GPUMD) on blackwell: EXPERIMENTAL" in warning
-               for warning in plan.warnings)
+    assert any(
+        "NEP (Calorine / GPUMD) on blackwell: EXPERIMENTAL" in warning
+        for warning in plan.warnings
+    )
 
 
 def test_grace_maxwell_missing_gpu_wheel_falls_back_or_refuses() -> None:
