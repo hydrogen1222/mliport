@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from mliport.install.compatibility import BACKENDS
+from mliport.install.compatibility import ALL_BACKENDS
 from mliport.install.venv_contract import (
     Verdict,
     backend_for_venv,
@@ -55,7 +55,7 @@ def _install_package(venv: Path, name: str, *, dist_info: bool = True) -> None:
 
 def _inspect(venv: Path, backend: str = "nep", python: str | None = None):
     return inspect_target_venv(
-        venv, backend=BACKENDS[backend], python_version=python or _ACTUAL
+        venv, backend=ALL_BACKENDS[backend], python_version=python or _ACTUAL
     )
 
 
@@ -88,6 +88,33 @@ def test_own_backend_and_framework_packages_are_not_foreign(tmp_path: Path) -> N
     grace = _make_venv(tmp_path / ".venv-grace")
     _install_package(grace, "tensorflow", dist_info=False)
     assert _inspect(grace, "grace").verdict is Verdict.REUSE
+
+
+def test_dpa_legacy_venv_accepts_its_own_deepmd_and_torch_packages(
+    tmp_path: Path,
+) -> None:
+    venv = _make_venv(tmp_path / ".venv-dpa-legacy")
+    _install_package(venv, "deepmd_kit")
+    _install_package(venv, "deepmd", dist_info=False)
+    _install_package(venv, "torch", dist_info=False)
+
+    state = _inspect(venv, "dpa-legacy")
+
+    assert state.verdict is Verdict.REUSE
+    assert state.foreign == ()
+
+
+def test_dpa_legacy_venv_still_rejects_a_different_backend(
+    tmp_path: Path,
+) -> None:
+    venv = _make_venv(tmp_path / ".venv-dpa-legacy")
+    _install_package(venv, "mace")
+
+    state = _inspect(venv, "dpa-legacy")
+
+    assert state.verdict is Verdict.INCOMPATIBLE
+    assert state.reason == "foreign_packages"
+    assert "MACE" in state.detail
 
 
 def test_foreign_framework_is_refused(tmp_path: Path) -> None:
@@ -183,6 +210,6 @@ def test_messages_name_the_environment_and_the_way_out(tmp_path: Path) -> None:
 
 
 def test_every_backend_venv_name_maps_to_its_backend() -> None:
-    for engine, backend in BACKENDS.items():
+    for engine, backend in ALL_BACKENDS.items():
         assert backend_for_venv(backend.venv_name) is backend, engine
     assert backend_for_venv(".venv-not-a-backend") is None
