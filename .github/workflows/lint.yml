@@ -23,9 +23,6 @@ jobs:
       # rules (e.g. TCH003 -> TC003) that the 0.5.1 baseline never checks.
       - name: Generated docs are in sync
         run: uv run --no-project --with packaging python scripts/generate_docs.py --check
-      - name: Temporary Ruff formatting diff
-        run: |
-          uvx ruff@0.5.1 format --diff mliport/mliport/install/plan.py tests/mliport/mliport/test_install_compatibility.py tests/mliport/mliport/test_install_plan.py || true
       - name: Ruff check
         run: uvx ruff@0.5.1 check --output-format=github mliport/mliport tests scripts
       - name: Ruff format check
