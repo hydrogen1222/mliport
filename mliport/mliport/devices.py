@@ -10,6 +10,45 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 
+def cuda_failure_guidance(
+    error: BaseException, *, requested_device: str, backend: str
+) -> str | None:
+    """Clarify recognisable CUDA availability errors without guessing a fallback.
+
+    Return None for unrelated failures: model/chemistry errors must retain their
+    original exception type and message.
+    """
+    target = str(requested_device).strip().lower()
+    if not (target in {"cuda", "gpu"} or target.startswith(("cuda:", "gpu:"))):
+        return None
+    message = str(error).lower()
+    known_cuda_unavailable = (
+        "torch not compiled with cuda enabled",
+        "pytorch was compiled without cuda",
+        "found no nvidia driver",
+        "no nvidia driver on your system",
+        "cuda driver version is insufficient",
+        "cuda error: no device",
+        "cuda error: invalid device ordinal",
+        "cuda_error_no_device",
+        "cudaerrornodevice",
+        "no cuda gpus are available",
+        "cuda is not available",
+        "cuda not available",
+        "no gpu devices available",
+    )
+    if not any(fragment in message for fragment in known_cuda_unavailable):
+        return None
+    return (
+        f"{backend.upper()} was asked to use {requested_device!r}, but CUDA "
+        "is unavailable or incompatible in this runtime. Verify device "
+        "visibility with nvidia-smi, and run "
+        f"'mliport doctor --engine {backend} --device {requested_device}' "
+        "in the same backend environment; check its CUDA-enabled framework "
+        f"installation. Original error: {error}"
+    )
+
+
 @dataclass(frozen=True)
 class VisibleGpu:
     logical_index: int
