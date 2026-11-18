@@ -402,11 +402,12 @@ def submit_task_folder(
     python: str | None = None,
     display_name: str | None = None,
 ):
-    """Start a ready task folder as a persistent background job.
+    """Queue a ready task folder for persistent scheduler-controlled execution.
 
-    The job goes through the same :class:`mliport.jobs.JobManager` worker,
-    lease, status and log machinery as every other queued TUI job; it is not a
-    second execution engine.  The worker is detached, so leaving the TUI does
+    The job goes through the same :class:`mliport.jobs.JobManager` pending,
+    claim, lease, status and log machinery as every other TUI job; it is not a
+    second execution engine. The scheduler (not this UI call) starts it while
+    respecting queue pause and GPU/concurrency limits. Closing the TUI does
     not cancel it.
 
     Raises:
@@ -416,6 +417,7 @@ def submit_task_folder(
     from ase.io import read  # noqa: PLC0415
 
     from mliport.config.resolver import resolve_config  # noqa: PLC0415
+    from mliport.config.settings import load_settings  # noqa: PLC0415
     from mliport.jobs import JobManager  # noqa: PLC0415
 
     path = Path(folder).expanduser().resolve()
@@ -437,14 +439,23 @@ def submit_task_folder(
         raise TaskFolderError(
             f"Unknown calculation type {calc_type!r} in {incar}; cannot submit it."
         )
-    resolved = resolve_config(calc_type=calc_type, incar=config)
+    # The worker executes with cwd=path, exactly like `cd folder && mliport run`.
+    # Resolve settings from that same folder so its device/GPU lease agrees
+    # with the eventual CLI invocation (including per-engine settings.ini).
+    resolved = resolve_config(
+        calc_type=calc_type, incar=config, settings=load_settings(cwd=path)
+    )
     atoms = read(structure)
     command = task_folder_command(path, structure=structure)
+    # The leased worker maps a physical UUID to a logical cuda:0 by rewriting
+    # argv --device. Without an explicit flag an INCAR cuda:N would defeat
+    # that isolation and potentially execute on the wrong GPU.
+    command.extend(["--device", str(resolved.device)])
     argv = [python or sys.executable, "-m", "mliport.cli", *command]
     job_manager = manager if manager is not None else JobManager()
     job_id = job_manager.new_job_id()
     try:
-        job_manager.submit(
+        job_manager.enqueue(
             job_id,
             calc_type,
             str(structure),
@@ -454,11 +465,12 @@ def submit_task_folder(
             argv,
             python=python or sys.executable,
             display_name=display_name or path.name,
+            submit_cwd=path,
         )
     except Exception as exc:
         # Never let a failed claim/spawn escape into the Textual event loop as
         # an unhandled exception; the caller shows this as a creation result.
-        raise TaskFolderError(f"Could not start the background job: {exc}") from exc
+        raise TaskFolderError(f"Could not queue the background job: {exc}") from exc
     return job_id
 
 
