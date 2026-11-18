@@ -91,7 +91,7 @@ For each engine you name, the installer:
 1. Creates a virtual environment (`.venv-mace`, `.venv-dpa`, etc.).
 2. Installs mliport in editable mode with the analysis extras.
 3. Installs the backend's framework at the pinned version.
-4. Writes a launcher script into `./bin/` (e.g. `./bin/mliport-mace`).
+4. Writes a platform-native launcher into `./bin/` (e.g. `./bin/mliport-mace` on POSIX or `./bin/mliport-mace.cmd` on Windows).
 5. Runs `mliport doctor` to verify the installation (unless `--skip-doctor`).
 
 The whole process is deterministic: the same command on the same machine produces the
