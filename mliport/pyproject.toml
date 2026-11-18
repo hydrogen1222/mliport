@@ -36,15 +36,23 @@ analysis = [
 ]
 transport = [
     "kinisi>=2.0.5,<3",
+    # Imported directly by mliport/analysis/transport.py (``import scipp``);
+    # kinisi requires it, so this only makes the direct import explicit.
+    "scipp>=24.8",
 ]
 electrolyte = [
     "gemdat>=1.7.3,<2",
+    # Imported directly by mliport/analysis/electrolyte.py
+    # (``from pymatgen.core import Species, Structure``); gemdat requires it.
+    "pymatgen>=2024.1.26",
 ]
 analysis-all = [
     "scipy>=1.11",
     "matplotlib>=3.7",
     "kinisi>=2.0.5,<3",
+    "scipp>=24.8",
     "gemdat>=1.7.3,<2",
+    "pymatgen>=2024.1.26",
 ]
 dev = [
     "pytest",

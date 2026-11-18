@@ -2782,23 +2782,6 @@ def _load_confsearch_run(run_dir: Path) -> tuple[dict, dict, dict]:
     return context, results, dict(context.get("options") or {})
 
 
-def _model_layer_from_context(context: dict) -> dict:
-    model = context.get("model") or {}
-    layer: dict = {}
-    for key, value in (
-        ("model_type", model.get("model_type")),
-        ("model_path", model.get("model_path")),
-        ("task", model.get("task")),
-        ("device", context.get("device")),
-        ("head", model.get("head_requested")),
-        ("default_dtype", model.get("dtype_requested")),
-        ("inference_mode", model.get("inference_mode")),
-    ):
-        if value is not None:
-            layer[key] = value
-    return layer
-
-
 def _cmd_confsearch_extend(args: argparse.Namespace) -> int:
     """`extend RUN --cycles N`: add N cycles to every surviving replica."""
     from dataclasses import replace as _replace

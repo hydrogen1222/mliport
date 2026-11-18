@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+Repository maintenance (tracking: #75):
+
+- Removed `mliport/utils.py` (no importer, no test, not documented). Its helpers
+  were inherited from the FAIRChem code base and duplicated behaviour that lives
+  elsewhere with different rules (`calculate_pressure`/`stress_voigt_to_tensor`
+  take one specific Voigt order, `find_structure_file` has its own glob priority
+  next to the real resolver, `estimate_memory` is a fixed guess), so keeping two
+  versions invited divergence.
+- Removed the unused logging pair `mliport.logger.setup_logger` and
+  `mliport.logger.CalculationLogger`; every run uses `LiveRunLogger`.
+- Removed other unreferenced internals: `cli._model_layer_from_context`
+  (superseded by `_confsearch_layer_from_context`), `nep_calc._parse_cutoff_row`
+  (superseded by `nep_model_format.read_nep_model_metadata`, with *different*
+  cutoff rules), `neb.results._max_atom_force`,
+  `analysis.electrolyte.GEMDAT_STATUS_UNSUPPORTED` (never produced) and two
+  unused constants in `analysis/units.py`.
+- The `confsearch` discovery column now uses `DISCOVERY_WINDOW_EV` instead of a
+  second hard-coded `0.2` (same value, one source of truth).
+- The `transport` and `electrolyte` extras now declare `scipp` and `pymatgen`
+  explicitly: both are imported directly and were only available through
+  `kinisi`/`gemdat`.
+- The installer's usage text and docstring say Python 3.10–3.13, matching
+  `SUPPORTED_PYTHON_VERSIONS` (the error message derives the range from it).
+
 TUI new-task wizard (tracking: #61, R5):
 
 - `mliport tui` now opens on a wizard that asks three things - calculation type,

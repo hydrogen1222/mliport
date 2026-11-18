@@ -7,17 +7,6 @@ from dataclasses import dataclass
 import numpy as np
 
 
-def _max_atom_force(forces: np.ndarray) -> float:
-    values = np.asarray(forces, dtype=float)
-    if values.size == 0:
-        return 0.0
-    if values.ndim != 3 or values.shape[-1] != 3:
-        raise ValueError("forces must have shape (images, atoms, 3)")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("forces contain NaN or Inf")
-    return float(np.linalg.norm(values, axis=2).max())
-
-
 def barrier_metrics(energies_eV: np.ndarray) -> dict[str, float | int | str | None]:
     """Return sampled barriers without inventing a fitted saddle."""
 

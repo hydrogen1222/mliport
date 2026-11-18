@@ -9,9 +9,7 @@ from __future__ import annotations
 
 ANGSTROM_TO_M = 1.0e-10
 FS_TO_S = 1.0e-15
-PS_TO_S = 1.0e-12
 M2_S_TO_CM2_S = 1.0e4
-CM2_S_TO_M2_S = 1.0e-4
 S_M_TO_S_CM = 1.0e-2
 S_M_TO_MS_CM = 10.0
 EV_TO_J = 1.602176634e-19
