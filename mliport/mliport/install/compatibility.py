@@ -266,6 +266,9 @@ class BackendArchProfile:
     upstream_supported: bool = True
     extra_packages: tuple[str, ...] = ()
     notes: str = ""
+    # False only when the pinned framework wheel is known not to contain a
+    # usable GPU runtime for this architecture (not merely untested upstream).
+    gpu_runtime_available: bool = True
 
     @property
     def status(self) -> Status:
@@ -647,9 +650,10 @@ BACKENDS: dict[str, BackendSpec] = {
                 framework_version="2.20.0",
                 upstream_supported=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
-                notes="Experimental. TF 2.20 official wheel build target "
-                "starts at sm_60 (Pascal); Maxwell sm_50 not in the wheel. "
-                "May need source-built TF.",
+                notes="TF 2.20 official wheel build target starts at sm_60 "
+                "(Pascal); Maxwell sm_50 is not in the wheel. A source-built "
+                "TensorFlow is needed for Maxwell GPU execution.",
+                gpu_runtime_available=False,
             ),
             "pascal": BackendArchProfile(
                 framework_version="2.20.0",
