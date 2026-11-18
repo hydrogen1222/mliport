@@ -246,7 +246,7 @@ result = run_single_point("LGPS.vasp", "model.model", model_type="mace", device=
 
 ## 状态与限制
 
-当前版本是 beta candidate（2.0.0b4）。我们在一台全新的 V100 机器上按上面的步骤安装，跑通了 LGPS 的各个
+当前版本是 beta candidate（2.0.0b5）。我们在一台全新的 V100 机器上按上面的步骤安装，跑通了 LGPS 的各个
 工作流和分析。下面这段由验证报告自动生成。
 
 INCAR 风格输入只支持常用参数。API、命令行、INCAR 和 TUI 各自支持哪些参数，记录在
@@ -269,17 +269,18 @@ Status: beta validation completed at software commit `5f8d91d4e5fbe8d8d0aacce394
 
 Scientific campaign target: commit `5f8d91d4e5fbe8d8d0aacce39470757a72d5c74c` (campaign `20260913-current-head-5f8d91d`).
 LGPS fresh-install acceptance target: commit `51d2a78` ([acceptance report](validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)).
-Current release: 2.0.0b4 (package metadata; the release tag records the exact commit).
+Current release: 2.0.0b5 (package metadata; the release tag records the exact commit).
 
 Validated hardware: NVIDIA V100-SXM2-16GB (Volta, 16 GiB), driver 580.173.02, Rocky Linux 9.8. CPU installs are smoke-tested on the same host.
 
-Current status: 2.0.0b4 beta. The four backends are installed and exercised on an LGPS structure through single point, relaxation, MD, NEB, batch, INCAR-style runs, queue, TUI, the Python API and the analysis modules.
+Current status: 2.0.0b5 beta. The four backends are installed and exercised on an LGPS structure through single point, relaxation, MD, NEB, batch, INCAR-style runs, queue, TUI, the Python API and the analysis modules.
 
 - Full beta validation report: [BETA_VALIDATION.md](validation/science/reports/BETA_VALIDATION.md)
 - LGPS fresh-install acceptance: [LGPS_ACCEPTANCE_REPORT.md](validation/acceptance/LGPS_ACCEPTANCE_REPORT.md)
 - Model identities: [model_manifest.json](validation/science/model_manifest.json)
 
 Per-workload tables, tier scopes and limitations live in the reports; the README keeps only this status summary.
+
 <!-- END GENERATED -->
 
 ## 引用
