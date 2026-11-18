@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from mliport.install.compatibility import ALL_BACKENDS
 from mliport.install.hardware import GpuInfo
 from mliport.install.plan import (
     InstallPlanError,
@@ -242,9 +243,9 @@ def test_dpa_legacy_cpu_install_plan_is_supported() -> None:
     argv = _all_argv(plan)
     assert "torch==2.3.1+cpu" in argv
     assert "deepmd-kit==3.0.0b3" in argv
-    assert ".venv-dpa-legacy/bin/python" in argv
+    assert _venv_python_path(ALL_BACKENDS["dpa-legacy"]) in argv
     assert plan.has_verify_steps
-    assert plan.steps[-1].argv[0] == ".venv-dpa-legacy/bin/mliport"
+    assert plan.steps[-1].argv[0] == _venv_cli_path(ALL_BACKENDS["dpa-legacy"])
 
 
 def test_windows_venv_executable_paths_use_scripts_directory() -> None:
@@ -483,7 +484,7 @@ def test_nep_plan_installs_editable_mliport_with_pinned_calorine() -> None:
     step = _nep_install(plan)
     argv = step.argv
     assert tuple(argv[:3]) == _NEP_PIP_ARGV_START
-    assert argv[argv.index("--python") + 1] == ".venv-nep/bin/python"
+    assert argv[argv.index("--python") + 1] == _venv_python_path(ALL_BACKENDS["nep"])
     assert argv[argv.index("-e") + 1] == "./mliport[analysis-all]"
     assert "calorine==4.1" in argv
     # NumPy/ASE come from the resolver (mliport requires ase>=3.26), never from
@@ -504,7 +505,7 @@ def test_nep_plan_stage_order_ends_with_launchable_verify() -> None:
     assert stages == ["venv", "constraints", "pip", "check", "inventory", "verify"]
     # mliport is installed before anything that executes .venv-nep/bin/mliport
     verify = plan.steps[-1]
-    assert verify.argv[0] == ".venv-nep/bin/mliport"
+    assert verify.argv[0] == _venv_cli_path(ALL_BACKENDS["nep"])
     assert verify.argv[1:4] == ["doctor", "--engine", "nep"]
     first_mliport_install = stages.index("pip")
     assert first_mliport_install < stages.index("verify")
