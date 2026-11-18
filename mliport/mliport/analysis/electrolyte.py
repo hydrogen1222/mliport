@@ -62,7 +62,6 @@ def _require_gemdat():
 
 GEMDAT_STATUS_SUCCESS = "success"
 GEMDAT_STATUS_NO_EVENTS = "no_events"
-GEMDAT_STATUS_UNSUPPORTED = "unsupported"
 GEMDAT_STATUS_BACKEND_ERROR = "backend_error"
 GEMDAT_STATUS_INVALID_INPUT = "invalid_input"
 

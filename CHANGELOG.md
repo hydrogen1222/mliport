@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+Repository maintenance (tracking: #75):
+
+**Removals that can break an out-of-tree `import`.** Nothing inside this
+repository, its tests, `scripts/`, `validation/`, docs or entry points referenced
+any of the names below, and none is exported through `mliport.__all__` or
+documented as an API. Code outside this repository that imported them directly
+now fails:
+
+| removed | what you get now |
+| --- | --- |
+| `mliport/utils.py` (the whole module) | `ModuleNotFoundError: No module named 'mliport.utils'` |
+| `mliport.logger.setup_logger`, `mliport.logger.CalculationLogger` | `ImportError` / `AttributeError` |
+| `mliport.cli._model_layer_from_context` | `AttributeError` |
+| `mliport.calculators.nep_calc._parse_cutoff_row` | `AttributeError` |
+| `mliport.neb.results._max_atom_force` | `AttributeError` |
+| `mliport.analysis.electrolyte.GEMDAT_STATUS_UNSUPPORTED` | `AttributeError` |
+| `mliport.analysis.units.PS_TO_S`, `CM2_S_TO_M2_S` | `AttributeError` |
+
+The replacements exist and are what the product itself uses: `mliport.analysis`
+for trajectory/thermodynamics work instead of the old `utils` helpers,
+`LiveRunLogger` + `follow_log_command` for logging,
+`_confsearch_layer_from_context` for the confsearch config layer, and
+`nep_model_format.read_nep_model_metadata` for NEP model headers. The two unit
+constants are trivially re-derivable (`PS_TO_S = 1e-12`, `CM2_S_TO_M2_S = 1e-4`).
+
+Why the removed code was not worth keeping:
+
+- `mliport/utils.py` held 8 FAIRChem-inherited helpers that duplicated behaviour
+  living elsewhere with *different* rules (`calculate_pressure` /
+  `stress_voigt_to_tensor` assume one specific Voigt order, `find_structure_file`
+  has its own glob priority next to the real resolver, `estimate_memory` is a
+  fixed guess), so two versions of the same physics invited divergence;
+- `logger.CalculationLogger` was a second logging path nothing called (it created
+  its own `calculation.log`, a name the run-artifact scanner treats specially);
+- `nep_calc._parse_cutoff_row` was superseded by the shared parser but kept
+  *different* cutoff rules, and `cli._model_layer_from_context` was superseded by
+  `_confsearch_layer_from_context` (which also reconstructs `cs_starts`);
+- `GEMDAT_STATUS_UNSUPPORTED` was a status the adapter never produces.
+
+- The `confsearch` discovery column now uses `DISCOVERY_WINDOW_EV` instead of a
+  second hard-coded `0.2` (same value, one source of truth).
+- The `transport` and `electrolyte` extras now declare `scipp` and `pymatgen`
+  explicitly: both are imported directly and were only available through
+  `kinisi`/`gemdat`.
+- The installer's usage text and docstring say Python 3.10–3.13, matching
+  `SUPPORTED_PYTHON_VERSIONS` (the error message derives the range from it).
+
 TUI new-task wizard (tracking: #61, R5):
 
 - `mliport tui` now opens on a wizard that asks three things - calculation type,

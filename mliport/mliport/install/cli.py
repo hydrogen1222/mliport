@@ -10,7 +10,7 @@ This is the thin-but-complete CLI behind ``scripts/install_mliport.sh``.  It is
 responsible for argument parsing, GPU detection, plan generation, dry-run
 rendering, and (optionally) execution — with ``shell=False`` throughout.
 
-The shell wrapper only ensures ``uv`` exists and selects a Python 3.10–3.12
+The shell wrapper only ensures ``uv`` exists and selects a Python 3.10–3.13
 interpreter for this module (so it does not depend on the system ``python3``).
 """
 

@@ -86,53 +86,6 @@ def _distribution_version(name: str) -> str | None:
         return None
 
 
-def _parse_cutoff_row(
-    line: str,
-) -> tuple[float, float, float | None, float | None]:
-    """Parse one ``cutoff`` header row of a ``nep.txt`` file.
-
-    A modern row is ``cutoff <radial> <angular> <max_neighbours_radial>
-    <max_neighbours_angular>``; older/minimal rows stop after the two cutoffs.
-    The radial and angular cutoffs are the first two numbers after the keyword,
-    *not* the last two: the trailing pair are neighbour-list capacities, and
-    reporting them as cutoffs would misdescribe the model's interaction range.
-
-    Args:
-        line: One non-empty header line, already stripped.
-
-    Returns:
-        ``(cutoff_radial, cutoff_angular, max_neighbours_radial,
-        max_neighbours_angular)``; the neighbour entries are ``None`` when the
-        row does not carry them.
-
-    Raises:
-        ValueError: If the row carries fewer than two numbers or a non-number.
-    """
-    fields = line.split()
-    values: list[float] = []
-    for token in fields[1:]:
-        try:
-            values.append(float(token))
-        except ValueError as exc:
-            raise ValueError(
-                f"Malformed NEP cutoff row {line!r}: {token!r} is not a number."
-            ) from exc
-    if len(values) < 2:
-        raise ValueError(
-            f"Malformed NEP cutoff row {line!r}: expected radial and angular "
-            "cutoffs after the 'cutoff' keyword."
-        )
-    neighbours = (
-        values[2] if len(values) > 2 else None,
-        values[3] if len(values) > 3 else None,
-    )
-    if values[0] <= 0.0 or values[1] <= 0.0:
-        raise ValueError(
-            f"Malformed NEP cutoff row {line!r}: cutoffs must be positive."
-        )
-    return values[0], values[1], neighbours[0], neighbours[1]
-
-
 def parse_nep_model_header(path: str | Path) -> dict[str, Any]:
     """Inspect either the legacy or GPUMD format-versioned NEP model header.
 

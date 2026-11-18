@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -475,3 +476,19 @@ def test_log_reports_cycle_outcomes_md_heartbeat_and_progress(tmp_path):
     assert progress[-1].startswith("progress: 4/4 cycles done")
     assert "ETA 0:00:00" in progress[-1]
     assert all("best" in line and "elapsed" in line for line in progress)
+
+
+def test_discovery_window_constant_is_the_one_actually_used():
+    """The documented 0.2 eV window must not be a second, unused literal."""
+
+    source = (
+        Path(__file__).resolve().parents[4]
+        / "mliport"
+        / "mliport"
+        / "confsearch"
+        / "engine.py"
+    ).read_text(encoding="utf-8")
+    assert "DISCOVERY_WINDOW_EV = 0.2" in source
+    body = source.split("def _discovery_row", 1)[1].split("\n    def ", 1)[0]
+    assert "DISCOVERY_WINDOW_EV" in body
+    assert "<= 0.2" not in body

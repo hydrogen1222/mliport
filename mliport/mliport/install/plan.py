@@ -131,9 +131,12 @@ def validate_python_version(version: str) -> str:
     """Validate a Python version against mliport's supported range."""
     v = str(version).strip()
     if v not in SUPPORTED_PYTHON_VERSIONS:
+        supported = "–".join(
+            (SUPPORTED_PYTHON_VERSIONS[0], SUPPORTED_PYTHON_VERSIONS[-1])
+        )
         raise InstallPlanError(
             f"Python version '{v}' is not supported. mliport requires Python "
-            f"3.10–3.12; choose one of: {', '.join(SUPPORTED_PYTHON_VERSIONS)}"
+            f"{supported}; choose one of: {', '.join(SUPPORTED_PYTHON_VERSIONS)}"
         )
     return v
 
@@ -404,7 +407,7 @@ def generate_plan(
         source: Source profile name (``"auto"``, ``"official"``, one of the
             ``"china"`` / explicit ``"china-*"`` profiles, ``"offline"``,
             or ``"custom"``).
-        python_version: Python version for the isolated venvs (3.10–3.12).
+        python_version: Python version for the isolated venvs (3.10–3.13).
         device: ``"auto"``, ``"cuda"``, or ``"cpu"``.
         clean: If ``True``, remove each target venv before recreating it.
         verify: If ``True``, append a ``doctor`` verify step per engine.

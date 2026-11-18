@@ -528,7 +528,11 @@ class SearchEngine:
         energies = [unique.energy_eV for unique in valid]
         best = min(energies) if energies else None
         within = (
-            sum(1 for energy in energies if best is not None and energy - best <= 0.2)
+            sum(
+                1
+                for energy in energies
+                if best is not None and energy - best <= DISCOVERY_WINDOW_EV
+            )
             if best is not None
             else 0
         )

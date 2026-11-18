@@ -6,7 +6,7 @@
 # This wrapper only:
 #   1. verifies `uv` is available
 #   2. locates the repository root
-#   3. selects a Python 3.10–3.12 interpreter (via uv, never the old system
+#   3. selects a Python 3.10–3.13 interpreter (via uv, never the old system
 #      python3) so the modern mliport.install code can run
 #   4. delegates everything else to `python -m mliport.install`
 #
@@ -67,7 +67,7 @@ done
 bootstrap_help() {
     echo "Usage: install_mliport.sh [--engines mace dpa grace uma nep] [--device auto|cuda|cpu]"
     echo "       [--source auto|official|china|china-aliyun|china-ustc|china-tencent|custom|offline]"
-    echo "       [--python 3.10|3.11|3.12] [--dry-run] [--clean] [--skip-doctor] [--non-interactive]"
+    echo "       [--python 3.10|3.11|3.12|3.13] [--dry-run] [--clean] [--skip-doctor] [--non-interactive]"
     echo "UMA requires Python >=3.11. Help and dry-run never download Python."
 }
 
