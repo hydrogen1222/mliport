@@ -531,8 +531,7 @@ def generate_plan(
         ]
         if unknown_gpus:
             devices = ", ".join(
-                f"{gpu.name} (CC {gpu.cc_major}.{gpu.cc_minor})"
-                for gpu in unknown_gpus
+                f"{gpu.name} (CC {gpu.cc_major}.{gpu.cc_minor})" for gpu in unknown_gpus
             )
             incompatible_routes.append(
                 f"unrecognized GPU compute capability for {devices}"
@@ -587,9 +586,7 @@ def generate_plan(
             unsupported = [
                 gpu
                 for gpu in gpus
-                if not channel.sm_min
-                <= (gpu.cc_major, gpu.cc_minor)
-                <= channel.sm_max
+                if not channel.sm_min <= (gpu.cc_major, gpu.cc_minor) <= channel.sm_max
             ]
             if unsupported:
                 devices = ", ".join(
@@ -730,8 +727,7 @@ def generate_plan(
             i
             for i, step in enumerate(plan.steps)
             if step.stage == "pip"
-            and step.argv[step.argv.index("--python") + 1]
-            == _venv_python_path(backend)
+            and step.argv[step.argv.index("--python") + 1] == _venv_python_path(backend)
         )
         plan.steps.insert(
             first_pip,
