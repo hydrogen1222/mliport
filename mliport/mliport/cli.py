@@ -62,6 +62,21 @@ from mliport.run_status import (
 CANCEL_GRACE_SECONDS = float(os.environ.get("MLIPORT_CANCEL_GRACE_SECONDS", "30"))
 
 
+def _preflight_md_structure(atoms, config: EngineConfig) -> None:
+    """Reject unsupported NHC constraints before the CLI claims an output path."""
+    if config.calc_type != "md":
+        return
+    from mliport.config.defaults import BUILTIN_DEFAULTS  # noqa: PLC0415
+    from mliport.runners.md import MDRunner  # noqa: PLC0415
+
+    options = config.run_options
+    MDRunner.preflight_nhc_constraints(
+        atoms,
+        ensemble=options.get("ensemble", BUILTIN_DEFAULTS["md"]["ensemble"]),
+        thermostat=options.get("thermostat", BUILTIN_DEFAULTS["md"]["thermostat"]),
+    )
+
+
 def _run_product(
     engine: CalculationEngine, atoms, *, calc_type: str, started_at: float
 ):
@@ -2477,7 +2492,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     engine = CalculationEngine.from_config(engine_config)
     try:
-        engine.preflight_input(atoms)
+        _preflight_md_structure(atoms, engine_config)
         with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(engine_config))
             return _run_product(
@@ -2561,7 +2576,7 @@ def cmd_md(args: argparse.Namespace) -> int:
         print(f"Atoms: {len(atoms)}")
 
         engine = CalculationEngine.from_config(config)
-        engine.preflight_input(atoms)
+        _preflight_md_structure(atoms, config)
         with _output_claim(engine):
             _emit_resolved_config(resolved, _final_run_dir(config))
             return _run_product(engine, atoms, calc_type="md", started_at=started_at)
