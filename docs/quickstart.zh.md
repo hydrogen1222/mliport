@@ -182,8 +182,9 @@ mliport run
 `mace-omat-0-medium.model` 放进 `models/` 之后，`MODEL_PATH = mace-omat-0-medium.model`
 就能直接用。每个键的含义见 [INCAR 键参考](incar.md)。
 
-## 其他后端
+## 8. Python API
 
+```python
 # 只获取能量（eV）
 energy = calculate_energy(
     "examples/structures/li10gep2s12_primitive.vasp",
