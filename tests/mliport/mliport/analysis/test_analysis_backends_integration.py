@@ -217,3 +217,57 @@ def test_real_gemdat_mechanism_integration_smoke(tmp_path: Path) -> None:
     assert all(
         "path_integrated_free_energy_eV" not in path for path in result.paths.values()
     )
+
+
+def test_real_gemdat_immobile_trajectory_is_a_physical_no_events(
+    tmp_path: Path,
+) -> None:
+    """Upstream's empty event collection must only be accepted when it is true.
+
+    Real GEMDAT 1.x raises ``need at least one array to concatenate`` for a
+    trajectory without transitions.  The adapter may only relabel that as
+    ``no_events`` because an independent nearest-site check agrees, so this
+    known answer fails if the cross-check is fed mixed coordinate frames or a
+    non-minimum image.
+    """
+
+    from pymatgen.core import Lattice, Structure
+
+    frames = [
+        Atoms(
+            "LiS",
+            positions=[[2.0, 5.0, 5.0], [5.0, 1.0, 1.0]],
+            cell=[10.0, 10.0, 10.0],
+            pbc=True,
+        )
+        for _ in range(50)
+    ]
+    dataset = TrajectoryDataset.from_frames(
+        frames,
+        times_fs=np.arange(len(frames), dtype=float) * 100.0,
+        positions_convention="unwrapped",
+    )
+    sites_path = tmp_path / "li_sites.cif"
+    Structure(
+        Lattice.cubic(10.0),
+        ["Li", "Li"],
+        [[0.2, 0.5, 0.5], [0.8, 0.5, 0.5]],
+    ).to(filename=str(sites_path))
+
+    result = gemdat_electrolyte(
+        dataset,
+        mobile_species="Li",
+        sites_path=sites_path,
+        temperature_K=600.0,
+        resolution_A=1.0,
+        site_radius_A=0.8,
+        percolation_axes="x",
+    )
+
+    assert result.summary["gemdat_transition_status"] == "no_events"
+    assert result.summary["gemdat_transition_error"]["type"] == "ValueError"
+    assert result.summary["number_of_jumps"] == 0
+    assert result.summary["transition_events"] == 0
+    np.testing.assert_array_equal(
+        result.arrays["jump_matrix"], np.zeros((2, 2), dtype=int)
+    )

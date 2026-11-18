@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from ase.geometry import find_mic
 
 from mliport.analysis.drift import DRIFT_MODES, drift_semantics
 from mliport.analysis.msd import unwrap_positions
@@ -83,6 +84,12 @@ def _is_empty_event_collection_error(exc: BaseException) -> bool:
     return any(pattern in text for pattern in _EMPTY_EVENT_ERROR_PATTERNS)
 
 
+#: Two sites closer than this to the same mobile atom are treated as an
+#: unresolved assignment rather than as a nearest site.  It is far below any
+#: physical site separation and far above lattice-arithmetic round-off.
+_SITE_ASSIGNMENT_TIE_A = 1.0e-6
+
+
 def _nearest_site_change_count(
     *,
     view,
@@ -95,22 +102,47 @@ def _nearest_site_change_count(
     Cross-check for the "valid empty transition collection" claim: a backend
     that reports no events while atoms demonstrably change site is a backend
     error, not a physical zero (task book PR-C).
+
+    Both the mobile positions and the site centres are Cartesian
+    (``pymatgen``'s ``PeriodicSite.coords``/``Structure.cart_coords`` are
+    Cartesian, not fractional), and the distance is the true minimum image of
+    the lattice via ASE's general minimum-image construction.  Per-component
+    wrapping of fractional coordinates is only the minimum image for
+    orthogonal cells and is therefore not used here.
+
+    ``None`` also covers ambiguous assignments (two sites equidistant from an
+    atom within ``_SITE_ASSIGNMENT_TIE_A``): a label that flips because the
+    geometry is unresolved is not evidence of a physical zero either way, so
+    the caller must not claim a converged "no events" verdict.
     """
     try:
-        centers = np.asarray([site.coords for site in sites], dtype=float)
+        cell = np.asarray(view.cells[0], dtype=float)
+        centers = np.asarray(sites.cart_coords, dtype=float).reshape(-1, 3)
         if centers.size == 0:
             return 0
-        cell = np.asarray(view.cells[0], dtype=float)
-        inverse = np.linalg.inv(cell)
+        if not np.all(np.isfinite(cell)) or not np.all(np.isfinite(centers)):
+            return None
+        if abs(float(np.linalg.det(cell))) <= 1.0e-8:
+            return None
         positions = np.asarray(corrected_positions_A, dtype=float)[:, mobile, :]
+        if positions.ndim != 3 or positions.shape[2] != 3 or not positions.shape[1]:
+            return None
+        if not np.all(np.isfinite(positions)):
+            return None
+        pbc = np.asarray(getattr(view, "pbc", (True, True, True)), dtype=bool)
         previous = None
         changes = 0
         for frame in positions:
-            fractional = frame @ inverse
-            delta = fractional[:, None, :] - centers[None, :, :]
-            delta -= np.round(delta)
-            cartesian = delta @ cell
-            nearest = np.argmin(np.linalg.norm(cartesian, axis=-1), axis=1)
+            displacement = frame[:, None, :] - centers[None, :, :]
+            mic, _ = find_mic(displacement.reshape(-1, 3), cell=cell, pbc=pbc)
+            distances = np.linalg.norm(mic, axis=1).reshape(displacement.shape[:2])
+            if distances.shape[1] > 1:
+                two_nearest = np.partition(distances, 1, axis=1)[:, :2]
+                if np.any(
+                    two_nearest[:, 1] - two_nearest[:, 0] <= _SITE_ASSIGNMENT_TIE_A
+                ):
+                    return None
+            nearest = np.argmin(distances, axis=1)
             if previous is not None:
                 changes += int(np.count_nonzero(nearest != previous))
             previous = nearest
