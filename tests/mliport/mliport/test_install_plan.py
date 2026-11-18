@@ -166,6 +166,28 @@ def test_mixed_pascal_and_blackwell_cuda_route_fails_closed() -> None:
     assert "torch==2.8.0+cpu" in _all_argv(plan)
 
 
+def test_mixed_known_and_unknown_future_gpu_fails_closed() -> None:
+    gpus = [_gpu("RTX 2080 Ti", 7, 5), _gpu("Future GPU", 11, 0)]
+    with pytest.raises(InstallPlanError, match="unrecognized GPU compute capability"):
+        generate_plan(gpus, ["mace"], device="cuda", verify=False)
+
+    plan = generate_plan(gpus, ["mace"], device="auto", verify=False)
+    assert plan.gpu_arch == "cpu"
+    assert any("unrecognized GPU compute capability" in warning for warning in plan.warnings)
+    assert "torch==2.8.0+cpu" in _all_argv(plan)
+
+
+def test_grace_maxwell_missing_gpu_wheel_falls_back_or_refuses() -> None:
+    maxwell = [_gpu("GTX 980", 5, 2)]
+    with pytest.raises(InstallPlanError, match="no usable GPU runtime wheel"):
+        generate_plan(maxwell, ["grace"], device="cuda", verify=False)
+
+    plan = generate_plan(maxwell, ["grace"], device="auto", verify=False)
+    assert plan.gpu_arch == "cpu"
+    assert any("no usable GPU runtime wheel" in warning for warning in plan.warnings)
+    assert "tensorflow==2.20.0" in _all_argv(plan)
+
+
 def test_dpa_legacy_blackwell_route_falls_back_or_refuses() -> None:
     blackwell = [_gpu("RTX PRO 6000", 12, 0)]
     with pytest.raises(InstallPlanError, match="cu121"):
