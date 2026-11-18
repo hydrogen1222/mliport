@@ -377,7 +377,7 @@ class BatchRunner:
             "results": results_list,
         }
 
-        self._write_summary(summary)
+        summary["summary_status"] = self._write_summary(summary)
 
         return summary
 
@@ -433,9 +433,30 @@ class BatchRunner:
             and child.name != self.STATUS_NAME
             and not child.name.startswith(".")
         }
-        _atomic_write_json(
-            status_path, {**record, "outputs": outputs, "manifest": manifest}
-        )
+        record = _sanitise_record(record, outputs=outputs)
+        try:
+            _atomic_write_json(
+                status_path, {**record, "outputs": outputs, "manifest": manifest}
+            )
+        except Exception as exc:  # noqa: BLE001 - one structure never ends the batch
+            # The status file is the durable record of this structure.  If it
+            # cannot be written, keep the batch alive and say so: the structure
+            # is failed (never completed) and the reason is recorded.
+            record = {
+                **base,
+                "success": False,
+                "status": RunOutcome.FAILED.value,
+                "converged": None,
+                "error": f"status record could not be written: {type(exc).__name__}: {exc}",
+                "outputs": outputs,
+            }
+            try:
+                _atomic_write_json(status_path, {**record, "manifest": manifest})
+            except Exception as exc2:  # noqa: BLE001
+                if self.verbose:
+                    print(
+                        f"\nError recording status for {filepath}: {type(exc2).__name__}: {exc2}"
+                    )
         return record
 
     def _run_single(
@@ -498,14 +519,21 @@ class BatchRunner:
             "output_dir": str(sub_dir),
         }
 
-    def _write_summary(self, summary: dict[str, Any]) -> None:
-        """Write batch summary to file.
+    def _write_summary(self, summary: dict[str, Any]) -> str:
+        """Write the batch summary and report how it was written.
 
-        Args:
-            summary: Summary dictionary
+        Returns ``"written"`` for a complete summary, ``"degraded"`` when only
+        the minimal per-structure document could be written (the original error
+        is recorded in the file and in the returned batch summary), and
+        ``"disabled"`` when ``write_json`` is off.
+
+        Raises:
+            BatchSummaryWriteError: when both the full and the degraded summary
+                cannot be written.  A batch whose summary is unrecordable is not
+                a success, so the caller must see this instead of a warning.
         """
         if not self.calc_kwargs.get("write_json", True):
-            return
+            return "disabled"
 
         # Write JSON summary
         json_path = self.output_dir / "batch_summary.json"
@@ -520,17 +548,194 @@ class BatchRunner:
         }
         if self.job_name:
             metadata["job_name"] = self.job_name
-        writer.write_batch(
-            summary["results"],
-            json_path,
-            metadata=metadata,
-        )
+        # Write through a temporary file: a serialisation failure must not leave
+        # a half-written summary that later reads as if it were complete.
+        tmp_path = json_path.with_name(f".{json_path.name}.tmp-{os.getpid()}")
+        try:
+            writer.write_batch(summary["results"], tmp_path, metadata=metadata)
+            os.replace(tmp_path, json_path)
+        except Exception as exc:  # noqa: BLE001 - try the degraded document
+            full_error = f"{type(exc).__name__}: {exc}"
+            fallback = {
+                "mliport_version": _batch_version(),
+                "timestamp": _utc_timestamp(),
+                "batch_size": summary.get("total", 0),
+                "summary_status": "degraded",
+                "results": [],
+                "metadata": {
+                    **metadata,
+                    "summary_status": "degraded",
+                    "summary_write_error": full_error,
+                    "per_structure_status": [
+                        {
+                            "output_name": item.get("output_name"),
+                            "status": item.get("status"),
+                            "error": item.get("error"),
+                        }
+                        for item in summary.get("results", [])
+                    ],
+                },
+            }
+            try:
+                _atomic_write_json(json_path, fallback)
+            except Exception as exc2:  # noqa: BLE001
+                raise BatchSummaryWriteError(
+                    "batch summary could not be written: the full summary failed "
+                    f"with {full_error}; the degraded summary also failed with "
+                    f"{type(exc2).__name__}: {exc2}. The per-structure status "
+                    "files are unaffected."
+                ) from exc2
+            if self.verbose:
+                print(
+                    f"\nWarning: batch summary could not be written as a full "
+                    f"document ({full_error}); a degraded summary with "
+                    f"'summary_status: degraded' and the per-structure status "
+                    f"was written instead."
+                )
+            return "degraded"
+        finally:
+            # A failed or interrupted write must not leave a stray temp file,
+            # and a successful os.replace() has already consumed it.
+            tmp_path.unlink(missing_ok=True)
 
         if self.verbose:
             print(f"\nBatch summary written to: {json_path}")
             print(
                 f"Total: {summary['total']}, Success: {summary['success']}, Failed: {summary['failed']}"
             )
+        return "written"
+
+
+class BatchSummaryWriteError(RuntimeError):
+    """The batch summary could not be recorded at all.
+
+    Raised when both the full summary and the degraded per-structure summary
+    fail to write.  The individual ``batch_status.json`` files are already on
+    disk at that point; the batch itself must not be reported as a success.
+    """
+
+
+#: Record fields whose value is a scientific observable.  A record that reports
+#: one of them as a non-finite number (or as a non-number) can never be a
+#: success: the calculation did not produce a usable value, and inventing a zero
+#: or dropping the field would hide that.
+CORE_NUMERIC_FIELDS = ("energy", "fmax")
+
+
+def _batch_version() -> str:
+    try:
+        from mliport import __version__  # noqa: PLC0415
+
+        return __version__
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _utc_timestamp() -> str:
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or value is None:
+        return False
+    if isinstance(value, (int, np.integer)):
+        return True
+    if isinstance(value, (float, np.floating)):
+        return bool(np.isfinite(value))
+    return False
+
+
+def _sanitise_value(
+    value: Any,
+    path: str,
+    non_finite: list[str],
+    unserialisable: list[str],
+) -> Any:
+    """Return a JSON-safe copy of ``value`` and record what had to change.
+
+    Non-finite floats become ``None`` (unknown, never zero) and their paths are
+    collected, so the record says what happened instead of failing to serialise.
+    Anything that is not a JSON primitive, list or mapping is replaced by its
+    ``str()`` form and recorded as unserialisable.
+    """
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        number = float(value)
+        if np.isfinite(number):
+            return number
+        non_finite.append(path)
+        return None
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.ndarray):
+        return _sanitise_value(value.tolist(), path, non_finite, unserialisable)
+    if isinstance(value, dict):
+        return {
+            str(key): _sanitise_value(
+                item, f"{path}.{key}" if path else str(key), non_finite, unserialisable
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [
+            _sanitise_value(item, f"{path}[{index}]", non_finite, unserialisable)
+            for index, item in enumerate(value)
+        ]
+    unserialisable.append(path)
+    if isinstance(value, (bytes, os.PathLike)):
+        return str(value)
+    # Keep the type, not a memory address: the path above already says where.
+    return f"<unserialisable {type(value).__name__}>"
+
+
+def _sanitise_record(
+    record: dict[str, Any], *, outputs: dict[str, int] | None = None
+) -> dict[str, Any]:
+    """Make one structure record storeable without claiming anything is fine.
+
+    * non-finite numbers are stored as ``None`` and listed in
+      ``non_finite_fields``;
+    * values that are not JSON types are stringified and listed in
+      ``unserialisable_fields``;
+    * a *completed* record whose ``energy``/``fmax`` is not a finite number is
+      demoted to ``failed`` with the reason in ``error``.
+    """
+    non_finite: list[str] = []
+    unserialisable: list[str] = []
+    safe = _sanitise_value(record, "", non_finite, unserialisable)
+    if not isinstance(safe, dict):  # pragma: no cover - record is always a dict
+        safe = {"record": safe}
+    if non_finite:
+        safe["non_finite_fields"] = non_finite
+    if unserialisable:
+        safe["unserialisable_fields"] = unserialisable
+    if safe.get("status") == RunOutcome.COMPLETED.value:
+        invalid = [
+            field
+            for field in CORE_NUMERIC_FIELDS
+            if field in record
+            and record[field] is not None
+            and not _is_finite_number(record[field])
+        ]
+        if invalid:
+            safe["status"] = RunOutcome.FAILED.value
+            safe["success"] = False
+            safe["error"] = (
+                "backend reported a non-finite or non-numeric "
+                + ", ".join(invalid)
+                + "; the record is failed, not a completed calculation"
+            )
+            safe["invalid_numeric_fields"] = invalid
+    if outputs is not None:
+        safe["outputs"] = outputs
+    return safe
 
 
 def _json_default(value: Any) -> Any:

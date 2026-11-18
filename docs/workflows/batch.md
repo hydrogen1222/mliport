@@ -54,11 +54,25 @@ configuration. The `batch_summary.json` entries expose `status` as
 `success: true`; non-converged optimizations remain in the `failed`
 aggregate count and also increment `not_converged`.
 
+If the full summary cannot be serialised, a degraded document is written
+instead: it carries `"summary_status": "degraded"`, the original error in
+`metadata.summary_write_error`, and the per-structure status. If even that
+cannot be written, the batch fails with an error naming both problems instead
+of pretending the summary was saved; the per-structure `batch_status.json`
+files are unaffected either way.
+
 ## When something fails
 
 A structure that fails is reported as failed; it never turns into a zero-energy
 entry, and the batch carries on with the next structure. A missing or empty
 input directory fails closed.
+
+The same holds when a backend returns a value that is not a usable number. A
+non-finite `energy` or `fmax` (NaN, infinity) or a value that is not a number
+at all makes that structure `failed`, with the replaced fields listed in
+`non_finite_fields` / `unserialisable_fields` and the reason in `error`; the
+value is stored as `null` (or as a placeholder string) and never as `0`, and
+the other structures and the batch summary are still written.
 
 ## Interrupted batches and `--resume`
 

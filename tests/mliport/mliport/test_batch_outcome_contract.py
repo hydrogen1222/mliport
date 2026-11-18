@@ -66,7 +66,9 @@ def test_batch_optimization_reports_the_real_outcome(
 
     assert item["status"] == expected_status
     assert item["success"] is expected_success
-    assert item["converged"] is outcome["converged"]
+    # the stored flag keeps its value and is normalised to a plain JSON bool
+    assert item["converged"] == outcome["converged"]
+    assert isinstance(item["converged"], bool)
     assert item["energy"] == -1.0
     assert summary["success"] == int(expected_success)
     assert summary["failed"] == int(not expected_success)
