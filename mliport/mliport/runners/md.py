@@ -439,6 +439,21 @@ class MDRunner(BaseRunner):
         )
 
     @staticmethod
+    def preflight_nhc_constraints(
+        atoms: Atoms, *, ensemble: str, thermostat: str
+    ) -> None:
+        """Reject constrained NHC inputs before any model is loaded."""
+        if str(ensemble).lower() != "nvt" or str(thermostat).lower() != "nhc":
+            return
+        if atoms.constraints:
+            names = ", ".join(type(item).__name__ for item in atoms.constraints)
+            raise ValueError(
+                f"NHC with constraint {names} is unsupported: ASE NHC "
+                "maintains private 3N thermostat state; remove the constraints "
+                "or select a validated thermostat."
+            )
+
+    @staticmethod
     def _constraint_kind(constraint: object) -> str | None:
         if isinstance(constraint, FixCom):
             return "fixcom"
@@ -1332,6 +1347,9 @@ class MDRunner(BaseRunner):
         # trees. The capability preflight uses a second copy because auto COM
         # policy may add FixCom; pre-relaxation must see exactly the user's
         # original positional constraints.
+        self.preflight_nhc_constraints(
+            atoms, ensemble=self.ensemble, thermostat=self.thermostat
+        )
         atoms = atoms.copy()
         self._validate_npt_state(atoms, context="MD input")
         self._validate_atomic_state(atoms, context="MD input atoms")
