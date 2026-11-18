@@ -286,10 +286,13 @@ copy of the structure, then prints `cd <folder> && mliport run`.
 Creating a folder and running it are separate facts. "Create folder" always
 keeps the folder, even if `TASK`, `HEAD`, `NEB_INITIAL`/`NEB_FINAL` or
 confsearch's start inputs are still `REQUIRED`. "Create & Run" refuses to start
-an unready folder and says exactly what is missing. A ready folder is submitted
-to the same detached background `JobManager`/log path as other TUI jobs, so the
-Textual event loop is never blocked and closing the TUI does not cancel the
-job. A repeated click cannot submit the same created folder twice.
+an unready folder and says exactly what is missing. A ready folder is added
+as **pending** to the shared `JobManager`/scheduler queue, honoring pause,
+concurrency and GPU leases. The scheduler must be running (start it from the
+Jobs screen or with `mliport queue start`); closing the TUI does not cancel a
+queued or running job. A repeated click cannot submit the same folder twice.
+The worker executes from the task folder, preserving local settings and the
+same relative-path semantics as `cd <folder> && mliport run`.
 
 Everything else stays available under "Advanced": the manual configuration
 screens for SP, OPT, MD, NEB and CONFSEARCH, the template generator (which uses
