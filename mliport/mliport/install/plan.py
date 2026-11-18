@@ -521,8 +521,10 @@ def generate_plan(
                 arch_name = arch.name
 
     route_fallback_warning: str | None = None
+    route_profile_warnings: list[str] = []
     if not is_cpu and gpus:
         incompatible_routes: list[str] = []
+        profile_warnings: list[str] = []
         unknown_gpus = [
             gpu for gpu in gpus if classify_gpu(gpu.cc_major, gpu.cc_minor) is None
         ]
@@ -552,6 +554,18 @@ def generate_plan(
                     incompatible_routes.append(
                         f"{backend.label} has no usable GPU runtime wheel for "
                         f"{gpu_arch.label} ({gpu.name})"
+                    )
+                elif gpu_profile.status == "experimental":
+                    profile_warnings.append(
+                        f"{backend.label} on {gpu_arch.name}: EXPERIMENTAL — "
+                        f"upstream does not officially support this GPU. "
+                        f"{gpu_profile.notes}"
+                    )
+                elif gpu_profile.status == "needs_smoke_test":
+                    profile_warnings.append(
+                        f"{backend.label} on {gpu_arch.name}: needs smoke test — "
+                        "upstream constraints are satisfied but mliport has not "
+                        "yet verified this combination on real hardware."
                     )
 
             if backend.framework != "torch":
@@ -599,6 +613,8 @@ def generate_plan(
                 "No compatible GPU runtime route exists for every visible GPU and "
                 f"selected backend; --device auto is falling back to CPU. {detail}"
             )
+        else:
+            route_profile_warnings = list(dict.fromkeys(profile_warnings))
 
     plan = InstallPlan(
         gpu_arch=arch_name,
@@ -613,6 +629,7 @@ def generate_plan(
         )
     if route_fallback_warning:
         plan.warnings.append(route_fallback_warning)
+    plan.warnings.extend(route_profile_warnings)
     if src.offline:
         plan.warnings.append(
             "Source profile 'offline': no network access will be used. "
@@ -650,16 +667,20 @@ def generate_plan(
             else:
                 assert bp is not None, f"No profile for {backend.label} on {arch_name}"
                 if bp.status == "experimental":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: EXPERIMENTAL — "
                         f"upstream does not officially support this GPU. {bp.notes}"
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
                 elif bp.status == "needs_smoke_test":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: needs smoke test — "
-                        f"upstream constraints are satisfied but mliport has not "
-                        f"yet verified this combination on real hardware."
+                        "upstream constraints are satisfied but mliport has not "
+                        "yet verified this combination on real hardware."
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
             plan.steps.extend(_grace_steps(backend, bp, src, cpu=is_cpu))
         else:
             # torch backend (UMA / MACE / DPA)
@@ -670,16 +691,20 @@ def generate_plan(
                 assert bp is not None, f"No profile for {backend.label} on {arch_name}"
                 cuda_tag = effective_cuda_channel(backend, arch, bp)
                 if bp.status == "experimental":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: EXPERIMENTAL — "
                         f"upstream does not officially support this GPU. {bp.notes}"
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
                 elif bp.status == "needs_smoke_test":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: needs smoke test — "
-                        f"upstream constraints are satisfied but mliport has not "
-                        f"yet verified this combination on real hardware."
+                        "upstream constraints are satisfied but mliport has not "
+                        "yet verified this combination on real hardware."
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
             else:
                 # CPU: use the framework version from any arch profile
                 bp = next(iter(backend.arch_profiles.values()))
