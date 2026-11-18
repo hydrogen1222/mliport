@@ -51,6 +51,22 @@ mliport analyze runs/md transport --mobile Li --charge 1 \
 - 想知道离子经过*哪些*位点、怎么跳跃，用 [GEMDAT](electrolyte-gemdat.md)。输运分析只给出速率，不揭示
   机理。
 
+## `publication_grade` 的含义边界
+
+`publication_grade` 是来源（provenance）标记，不是对物理结论的判定。输运结果里的它为 `true`，只说明
+注入 kinisi 的是精确的连续位移数组，且在拟合前逐帧与保存的轨迹核对过（`results.json` 里的
+`publication_grade_scope` 写明了这一点）。`--allow-reconstructed-fallback` 诊断路径、以及包含实验性
+组件的结果，该标记为 `false`。
+
+`collective_conductivity` 和 `jump_diffusion` 里嵌套的 `publication_grade` 回答的是另一个问题：电荷分组
+没有被拆开（`--collective-system-particles 1`），所以跨组关联被保留。分组 `> 1` 属于实验性诊断，会被
+显式标记。
+
+两个标记都**不**表示：轨迹足够长、拟合区间处于扩散区间、结果可以外推到别的晶胞尺寸或温度、或者 MLIP
+本身准确。这些不是该适配器能判定的，因此每个输运结果都记录
+`quality.statistical_adequacy = "not_assessed"` 并给出原因。能否发表要由你自己的收敛检查（lag 窗口的
+`alpha`、后验宽度、多副本/多窗口、晶胞尺寸检查）决定，而不是这个标记。
+
 ```bash
 mliport analyze runs/md-800K transport --mobile Li --charge 1 \
   --fit-start-ps 50 --lag-step-ps 5 --lag-stop-ps 500 \

@@ -56,6 +56,46 @@ DISPLACEMENT_INSUFFICIENT = "insufficient_trajectory_information"
 #: cannot be uniquely unwrapped by the general minimum-image heuristic.
 _WRAPPED_UNWRAP_SAFETY_LIMIT = 0.8
 
+#: ``publication_grade`` in a transport result certifies *what was handed to
+#: kinisi*, nothing about the statistics: the exact continuous displacement
+#: array was injected and verified against the stored steps before the fit.
+#: Whether the sampled window is long enough, sits in the diffusive regime or
+#: transfers to another temperature/cell size is a separate question that a
+#: single trajectory cannot answer, so results carry an explicit
+#: ``statistical_adequacy`` status next to the flag (see ``quality`` below).
+PUBLICATION_GRADE_SCOPE = (
+    "displacement/adapter fidelity only: the exact continuous displacement "
+    "array was injected into kinisi and verified against the stored steps "
+    "before the fit. It does not assert statistical convergence, a diffusive "
+    "fit window, finite-size or temperature transferability, or MLIP "
+    "accuracy."
+)
+
+#: The nested ``publication_grade`` of the collective-conductivity and
+#: jump-diffusion blocks answers a different question than the top-level flag:
+#: did the charge grouping stay a single kinisi statistical group (so that
+#: cross-group correlations are preserved)?  It is not a convergence claim.
+COLLECTIVE_GRADE_SCOPE = (
+    "charge-grouping fidelity only: kinisi's index-ordered statistical groups "
+    "were not split (collective_system_particles == 1), so cross-group "
+    "correlations are preserved. It does not assert a converged collective "
+    "displacement, a diffusive fit window, or statistical precision for the "
+    "conductivity."
+)
+
+#: Honest default for the statistical questions the flag above does not cover.
+#: Never upgraded without evidence (multiple windows/replicas or an explicit
+#: diffusive-regime analysis); mliport does not certify publication readiness.
+STATISTICAL_ADEQUACY_NOT_ASSESSED = "not_assessed"
+STATISTICAL_ADEQUACY_REASON = (
+    "mliport verifies displacement reconstruction and adapters, not "
+    "statistical convergence: a single trajectory cannot show that the fit "
+    "window is in the diffusive regime, that the sampling error is small "
+    "enough for the claim, or that the value transfers to another cell size "
+    "or temperature. Check the lag-window alpha, the kinisi posterior width "
+    "and independent replicas/windows before publishing numbers."
+)
+
 
 def displacement_input_class(
     dataset: TrajectoryDataset, unwrap_diagnostics: dict[str, Any]
@@ -1173,6 +1213,7 @@ def kinisi_transport(
         "unwrap_diagnostics": unwrap_diagnostics,
         "displacement_input_class": input_class,
         "publication_grade": bool(position_semantics.get("publication_grade", False)),
+        "publication_grade_scope": PUBLICATION_GRADE_SCOPE,
         "kinisi_position_semantics": position_semantics,
         "kinisi_resource_diagnostics": {
             "n_lag_points_total": n_lag_points_total,
@@ -1204,6 +1245,11 @@ def kinisi_transport(
                 view.positions_convention == "wrapped"
                 and unwrap_diagnostics["unwrap_safety_ratio"] >= 0.5
             ),
+            # The top-level publication_grade covers displacement fidelity and
+            # adapter correctness only. Statistical adequacy is a separate
+            # claim that this adapter does not make for a single trajectory.
+            "statistical_adequacy": STATISTICAL_ADEQUACY_NOT_ASSESSED,
+            "statistical_adequacy_reason": STATISTICAL_ADEQUACY_REASON,
         },
     }
     if collective_conductivity:
@@ -1291,6 +1337,7 @@ def kinisi_transport(
             ),
             "experimental": grouping_experimental,
             "publication_grade": not grouping_experimental,
+            "publication_grade_scope": COLLECTIVE_GRADE_SCOPE,
             "warning": (
                 "cross-group correlations are not guaranteed to be preserved"
                 if grouping_experimental
@@ -1433,6 +1480,7 @@ def kinisi_transport(
             ),
             "experimental": grouping_experimental,
             "publication_grade": not grouping_experimental,
+            "publication_grade_scope": COLLECTIVE_GRADE_SCOPE,
             "warning": (
                 "cross-group correlations are not guaranteed to be preserved"
                 if grouping_experimental

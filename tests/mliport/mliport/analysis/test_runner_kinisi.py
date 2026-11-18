@@ -1582,3 +1582,51 @@ def test_cli_alpha_parameters_enter_request_and_result(tmp_path, capsys) -> None
         == 0
     )
     assert len(list((run / "analysis" / "msd").glob("*/request.json"))) == 2
+
+
+def test_transport_provenance_records_the_publication_grade_scope(
+    tmp_path, monkeypatch
+) -> None:
+    """An archived provenance file must not read as a convergence claim."""
+
+    run = tmp_path / "short-run"
+    _write_short_run(run)
+
+    def fake_dispatch(_request, _output_dir):
+        return (
+            {
+                "mobile_species": "Li",
+                "tracer_diffusion": {
+                    "fit_start_ps": 1.0,
+                    "fit_stop_ps": 2.0,
+                    "lag_grid": {},
+                },
+                "kinisi_position_semantics": {},
+                "publication_grade": True,
+                "publication_grade_scope": transport_module.PUBLICATION_GRADE_SCOPE,
+                "quality": {
+                    "statistical_adequacy": (
+                        transport_module.STATISTICAL_ADEQUACY_NOT_ASSESSED
+                    )
+                },
+            },
+            [],
+        )
+
+    monkeypatch.setattr(runner_module, "_dispatch", fake_dispatch)
+    outcome = run_analysis(
+        AnalysisRequest(
+            "transport",
+            str(run),
+            parameters={"lag_step_ps": 1.0, "lag_stop_ps": 2.0},
+        )
+    )
+    output = run / "analysis" / "transport" / outcome["analysis_id"]
+    provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
+    transport = provenance["transport"]
+    assert transport["publication_grade"] is True
+    assert (
+        "does not assert statistical convergence"
+        in (transport["publication_grade_scope"])
+    )
+    assert transport["statistical_adequacy"] == "not_assessed"
