@@ -138,8 +138,9 @@ class RunScreen(Screen):
             f"Follow live output: tail -f {shlex.quote(str(log_path))}\n"
         )
         self.log_widget.write(
-            "The job runs in a detached background worker; going Back or "
-            "closing the TUI does not cancel it. Use the Jobs screen to cancel.\n"
+            "The job is queued for the shared scheduler. If it is not running, "
+            "start it from Jobs or with: mliport queue start. Going Back or "
+            "closing the TUI does not cancel it.\n"
         )
         self._refresh_timer = self.set_interval(0.5, self._refresh_job)
         self._refresh_job()
