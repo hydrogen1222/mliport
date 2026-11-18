@@ -377,7 +377,7 @@ class BatchRunner:
             "results": results_list,
         }
 
-        self._write_summary(summary)
+        summary["summary_status"] = self._write_summary(summary)
 
         return summary
 
@@ -519,14 +519,21 @@ class BatchRunner:
             "output_dir": str(sub_dir),
         }
 
-    def _write_summary(self, summary: dict[str, Any]) -> None:
-        """Write batch summary to file.
+    def _write_summary(self, summary: dict[str, Any]) -> str:
+        """Write the batch summary and report how it was written.
 
-        Args:
-            summary: Summary dictionary
+        Returns ``"written"`` for a complete summary, ``"degraded"`` when only
+        the minimal per-structure document could be written (the original error
+        is recorded in the file and in the returned batch summary), and
+        ``"disabled"`` when ``write_json`` is off.
+
+        Raises:
+            BatchSummaryWriteError: when both the full and the degraded summary
+                cannot be written.  A batch whose summary is unrecordable is not
+                a success, so the caller must see this instead of a warning.
         """
         if not self.calc_kwargs.get("write_json", True):
-            return
+            return "disabled"
 
         # Write JSON summary
         json_path = self.output_dir / "batch_summary.json"
@@ -547,16 +554,18 @@ class BatchRunner:
         try:
             writer.write_batch(summary["results"], tmp_path, metadata=metadata)
             os.replace(tmp_path, json_path)
-        except Exception as exc:  # noqa: BLE001 - never abort the batch here
-            tmp_path.unlink(missing_ok=True)
+        except Exception as exc:  # noqa: BLE001 - try the degraded document
+            full_error = f"{type(exc).__name__}: {exc}"
             fallback = {
                 "mliport_version": _batch_version(),
                 "timestamp": _utc_timestamp(),
                 "batch_size": summary.get("total", 0),
+                "summary_status": "degraded",
                 "results": [],
                 "metadata": {
                     **metadata,
-                    "summary_write_error": f"{type(exc).__name__}: {exc}",
+                    "summary_status": "degraded",
+                    "summary_write_error": full_error,
                     "per_structure_status": [
                         {
                             "output_name": item.get("output_name"),
@@ -570,22 +579,40 @@ class BatchRunner:
             try:
                 _atomic_write_json(json_path, fallback)
             except Exception as exc2:  # noqa: BLE001
-                if self.verbose:
-                    print(
-                        f"\nError writing batch summary: {type(exc2).__name__}: {exc2}"
-                    )
+                raise BatchSummaryWriteError(
+                    "batch summary could not be written: the full summary failed "
+                    f"with {full_error}; the degraded summary also failed with "
+                    f"{type(exc2).__name__}: {exc2}. The per-structure status "
+                    "files are unaffected."
+                ) from exc2
             if self.verbose:
                 print(
                     f"\nWarning: batch summary could not be written as a full "
-                    f"document ({type(exc).__name__}: {exc}); a minimal summary "
-                    f"with the per-structure status was written instead."
+                    f"document ({full_error}); a degraded summary with "
+                    f"'summary_status: degraded' and the per-structure status "
+                    f"was written instead."
                 )
+            return "degraded"
+        finally:
+            # A failed or interrupted write must not leave a stray temp file,
+            # and a successful os.replace() has already consumed it.
+            tmp_path.unlink(missing_ok=True)
 
         if self.verbose:
             print(f"\nBatch summary written to: {json_path}")
             print(
                 f"Total: {summary['total']}, Success: {summary['success']}, Failed: {summary['failed']}"
             )
+        return "written"
+
+
+class BatchSummaryWriteError(RuntimeError):
+    """The batch summary could not be recorded at all.
+
+    Raised when both the full summary and the degraded per-structure summary
+    fail to write.  The individual ``batch_status.json`` files are already on
+    disk at that point; the batch itself must not be reported as a success.
+    """
 
 
 #: Record fields whose value is a scientific observable.  A record that reports

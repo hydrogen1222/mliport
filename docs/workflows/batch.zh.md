@@ -46,6 +46,11 @@ mliport batch ML-OPT/ \
 `completed`、`not_converged` 或 `failed`；只有真正完成的结果才标记 `success: true`。
 未收敛的优化计入 `failed` 总数，并单独计入 `not_converged`，不会被误报为成功。
 
+如果完整汇总无法序列化，会改写一份降级文档：带 `"summary_status": "degraded"`、
+`metadata.summary_write_error` 里的原始错误，以及每个结构的状态。若连降级文档也写不出来，
+整批会报错并同时给出两个错误，而不是假装汇总已保存；无论哪种情况，各结构自己的
+`batch_status.json` 都不受影响。
+
 ## 出错时
 
 某个结构算失败了，会标记为失败，不会记成能量为零，然后继续算下一个结构。输入目录不存在或为空时直接报错。

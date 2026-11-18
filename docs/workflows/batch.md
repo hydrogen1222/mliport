@@ -54,6 +54,13 @@ configuration. The `batch_summary.json` entries expose `status` as
 `success: true`; non-converged optimizations remain in the `failed`
 aggregate count and also increment `not_converged`.
 
+If the full summary cannot be serialised, a degraded document is written
+instead: it carries `"summary_status": "degraded"`, the original error in
+`metadata.summary_write_error`, and the per-structure status. If even that
+cannot be written, the batch fails with an error naming both problems instead
+of pretending the summary was saved; the per-structure `batch_status.json`
+files are unaffected either way.
+
 ## When something fails
 
 A structure that fails is reported as failed; it never turns into a zero-energy

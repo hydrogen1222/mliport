@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import math
+from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
@@ -29,7 +30,7 @@ from ase import Atoms
 from ase.io import write
 
 import mliport.runners.batch as batch_module
-from mliport.runners.batch import BatchRunner
+from mliport.runners.batch import BatchRunner, BatchSummaryWriteError
 from mliport.writers.json_writer import JsonWriter
 
 BAD_RESULTS = {
@@ -267,8 +268,13 @@ def test_summary_write_failure_keeps_an_auditable_minimal_summary(
     summary = runner.run_from_files(structures)
 
     assert summary["success"] == 3  # the calculations themselves did complete
+    assert summary["summary_status"] == "degraded"
     out = runner.output_dir
     minimal = _strict_load(out / "batch_summary.json")
+    # a degraded document must say so instead of looking like a full summary
+    assert minimal["summary_status"] == "degraded"
+    assert minimal["metadata"]["summary_status"] == "degraded"
+    assert minimal["results"] == []
     assert minimal["metadata"]["summary_write_error"].startswith("ValueError:")
     assert [item["status"] for item in minimal["metadata"]["per_structure_status"]] == [
         "completed"
@@ -305,4 +311,81 @@ def test_failed_structure_is_recomputed_on_resume(tmp_path):
     assert (
         _strict_load(runner.output_dir / "s0" / "batch_status.json")["status"]
         == "completed"
+    )
+
+
+def test_successful_summary_is_reported_as_written(tmp_path):
+    structures = _structures(tmp_path)
+    runner, summary = _batch(
+        tmp_path, structures, runner_results={"energy": -1.0, "converged": True}
+    )
+    assert summary["summary_status"] == "written"
+    document = _strict_load(runner.output_dir / "batch_summary.json")
+    assert "summary_status" not in document  # the full document is not degraded
+    assert len(document["results"]) == 3
+
+
+def test_both_summary_writes_failing_raises_and_keeps_structure_records(
+    tmp_path, monkeypatch
+):
+    """If nothing can be recorded, the caller must hear it — and records stay."""
+    structures = _structures(tmp_path)
+    _Runner.result = {"energy": -1.0, "converged": True}
+    original_write = batch_module._atomic_write_json
+
+    def exploding_write_batch(self, results_list, output_path, metadata=None):
+        raise ValueError("simulated encoder failure")
+
+    def failing_write(path, payload):
+        if path.name == "batch_summary.json":
+            raise OSError(28, "No space left on device")
+        return original_write(path, payload)
+
+    monkeypatch.setattr(JsonWriter, "write_batch", exploding_write_batch)
+    monkeypatch.setattr(batch_module, "_atomic_write_json", failing_write)
+    monkeypatch.setattr(batch_module, "OptimizationRunner", _Runner)
+    runner = BatchRunner(
+        object(), calc_type="opt", output_dir=tmp_path / "out", verbose=False
+    )
+
+    with pytest.raises(BatchSummaryWriteError) as excinfo:
+        runner.run_from_files(structures)
+
+    message = str(excinfo.value)
+    assert "full summary failed with ValueError: simulated encoder failure" in message
+    assert "degraded summary also failed with OSError" in message
+    assert "No space left on device" in message
+
+    # every structure still has its own valid, completed record
+    records = [
+        _strict_load(p) for p in sorted(runner.output_dir.rglob("batch_status.json"))
+    ]
+    assert [record["status"] for record in records] == ["completed"] * 3
+    assert all(record["success"] is True for record in records)
+    # nothing half-written is left behind
+    assert list(runner.output_dir.glob(".batch_summary.json.tmp-*")) == []
+    assert not (runner.output_dir / "batch_summary.json").exists()
+
+
+def test_no_temporary_summary_files_survive(tmp_path, monkeypatch):
+    structures = _structures(tmp_path)
+    _Runner.result = {"energy": -1.0, "converged": True}
+
+    def exploding_write_batch(self, results_list, output_path, metadata=None):
+        # write half a document, then fail, like a real encoder panic
+        Path(output_path).write_text('{"results": [')
+        raise ValueError("simulated encoder failure")
+
+    monkeypatch.setattr(JsonWriter, "write_batch", exploding_write_batch)
+    monkeypatch.setattr(batch_module, "OptimizationRunner", _Runner)
+    runner = BatchRunner(
+        object(), calc_type="opt", output_dir=tmp_path / "out", verbose=False
+    )
+    summary = runner.run_from_files(structures)
+
+    assert summary["summary_status"] == "degraded"
+    assert list(runner.output_dir.glob(".batch_summary.json.tmp-*")) == []
+    assert (
+        _strict_load(runner.output_dir / "batch_summary.json")["summary_status"]
+        == "degraded"
     )
