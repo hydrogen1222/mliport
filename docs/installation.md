@@ -195,7 +195,7 @@ A launcher only picks the Python environment. It never sets a model, a dtype or
 any scientific option for you.
 
 On Windows, each environment has `Scripts\mliport.exe`, and the installer writes
-`bin\mliport-*.cmd` launchers alongside the POSIX ones.
+native `bin\mliport-*.cmd` launchers. POSIX shell launchers are written only on POSIX.
 
 ### DPA and GRACE: GPU device isolation
 
