@@ -63,8 +63,10 @@ skips GRACE and UMA.
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
-CPU installs are smaller (no CUDA libraries) and work everywhere, but inference is
-slower. This is useful for post-processing, analysis, and testing on laptops.
+CPU installs use CPU PyTorch wheels and work everywhere, but inference is slower.
+The GRACE TensorFlow stack may still pull CUDA runtime libraries because of
+TensorPotential's dependency contract, even when selected for CPU execution. CPU
+installation is useful for post-processing, analysis, and testing on laptops.
 
 ### Windows (PowerShell)
 
