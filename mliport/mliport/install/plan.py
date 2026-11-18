@@ -22,7 +22,9 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sys
 from dataclasses import dataclass, field
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
 from mliport.install.compatibility import (
     ALL_BACKENDS,
     BACKENDS,
+    CUDA_CHANNELS,
     FRAMEWORK_PYTHON,
     PROJECT_REQUIRES_PYTHON,
     SUPPORTED_PYTHON_VERSIONS,
@@ -176,12 +179,34 @@ def _venv_step(backend: BackendSpec, python_version: str) -> InstallStep:
     )
 
 
+def _venv_python_path(backend: BackendSpec, *, windows: bool | None = None) -> str:
+    """Python executable path inside an installer-managed virtual environment."""
+    is_windows = os.name == "nt" if windows is None else windows
+    if is_windows:
+        return str(PureWindowsPath(backend.venv_name) / "Scripts" / "python.exe")
+    return f"{backend.venv_name}/bin/python"
+
+
+def _venv_cli_path(backend: BackendSpec, *, windows: bool | None = None) -> str:
+    """Console-script path inside an installer-managed virtual environment."""
+    is_windows = os.name == "nt" if windows is None else windows
+    if is_windows:
+        return str(PureWindowsPath(backend.venv_name) / "Scripts" / "mliport.exe")
+    return f"{backend.venv_name}/bin/mliport"
+
+
 def _clean_step(backend: BackendSpec) -> InstallStep:
+    """Remove only the matrix-owned venv, using the current Python on every OS."""
+    remove_path = (
+        "from pathlib import Path; import shutil,sys; "
+        "p=Path(sys.argv[1]); "
+        "shutil.rmtree(p) if p.is_dir() and not p.is_symlink() "
+        "else p.unlink(missing_ok=True)"
+    )
     return InstallStep(
         stage="clean",
         description=f"Remove existing {backend.venv_name} (--clean)",
-        # Only the known venv path from the compatibility matrix is removed.
-        argv=["rm", "-rf", backend.venv_name],
+        argv=[sys.executable, "-c", remove_path, backend.venv_name],
     )
 
 
@@ -190,7 +215,7 @@ def _verify_step(backend: BackendSpec, device: str) -> InstallStep:
         stage="verify",
         description=f"Verify {backend.label}",
         argv=[
-            f"{backend.venv_name}/bin/mliport",
+            _venv_cli_path(backend),
             "doctor",
             "--engine",
             backend.engine,
@@ -212,7 +237,7 @@ def _torch_steps(
     """Torch install steps (shared by UMA/MACE/DPA)."""
     steps: list[InstallStep] = []
     torch_ver = bp.framework_version
-    python = f"{backend.venv_name}/bin/python"
+    python = _venv_python_path(backend)
 
     if cpu:
         # CPU wheels also carry a PEP 440 local tag. Route them through the
@@ -510,11 +535,65 @@ def generate_plan(
             f"GPU compute capability {cc_str} is unsupported; falling back "
             f"to CPU-only installation. Use device=cuda to fail instead."
         )
+    if route_fallback_warning:
+        plan.warnings.append(route_fallback_warning)
     if src.offline:
         plan.warnings.append(
             "Source profile 'offline': no network access will be used. "
             "Only locally cached wheels are consulted."
         )
+
+    route_fallback_warning: str | None = None
+    if not is_cpu and gpus:
+        incompatible_routes: list[str] = []
+        for engine in engine_list:
+            backend = lookup_backend(engine)
+            assert backend is not None
+            if backend.framework != "torch":
+                continue
+            profile = get_backend_arch_profile(engine, arch_name)
+            if profile is None:
+                incompatible_routes.append(
+                    f"{backend.label} has no CUDA profile for {arch_name}"
+                )
+                continue
+            channel_name = effective_cuda_channel(backend, arch, profile)
+            channel = CUDA_CHANNELS.get(channel_name)
+            if channel is None:
+                incompatible_routes.append(
+                    f"{backend.label} selects unregistered CUDA channel {channel_name}"
+                )
+                continue
+            unsupported = [
+                gpu
+                for gpu in gpus
+                if not channel.sm_min
+                <= (gpu.cc_major, gpu.cc_minor)
+                <= channel.sm_max
+            ]
+            if unsupported:
+                devices = ", ".join(
+                    f"{gpu.name} (sm_{gpu.cc_major}{gpu.cc_minor})"
+                    for gpu in unsupported
+                )
+                incompatible_routes.append(
+                    f"{backend.label} wheel {channel_name} does not cover {devices}"
+                )
+        if incompatible_routes:
+            detail = "; ".join(incompatible_routes)
+            if device == "cuda":
+                raise InstallPlanError(
+                    "No compatible CUDA wheel route exists for every visible GPU "
+                    f"and selected Torch backend: {detail}. Use --device cpu or "
+                    "select a compatible GPU visibility set with CUDA_VISIBLE_DEVICES."
+                )
+            is_cpu = True
+            arch_name = "cpu"
+            arch = None
+            route_fallback_warning = (
+                "No compatible CUDA wheel route exists for every visible GPU and "
+                f"selected Torch backend; --device auto is falling back to CPU. {detail}"
+            )
 
     # ---- Build steps per engine ----
     for engine in engine_list:
@@ -579,7 +658,7 @@ def generate_plan(
                     )
             else:
                 # CPU: use the framework version from any arch profile
-                bp = next(iter(BACKENDS[engine].arch_profiles.values()))
+                bp = next(iter(backend.arch_profiles.values()))
             plan.steps.extend(
                 _torch_steps(backend, arch_name, bp, src, cuda_tag, cpu=is_cpu)
             )
@@ -602,7 +681,7 @@ def generate_plan(
             for i, step in enumerate(plan.steps)
             if step.stage == "pip"
             and step.argv[step.argv.index("--python") + 1]
-            == f"{backend.venv_name}/bin/python"
+            == _venv_python_path(backend)
         )
         plan.steps.insert(
             first_pip,
@@ -610,7 +689,7 @@ def generate_plan(
                 stage="constraints",
                 description=f"Freeze {backend.label} dependency contract",
                 argv=[
-                    f"{backend.venv_name}/bin/python",
+                    _venv_python_path(backend),
                     "-c",
                     "from pathlib import Path; import sys; "
                     "Path(sys.argv[1]).write_text(sys.argv[2], encoding='utf-8')",
