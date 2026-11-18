@@ -297,7 +297,9 @@ class JobsScreen(Screen):
         if row_key is not None:
             job_id = str(event.row_key.value)
             log_text = self._job_manager.tail_log(job_id, lines=200)
-            self.app.push_screen(JobDetailScreen(job_id, log_text))
+            self.app.push_screen(
+                JobDetailScreen(job_id, log_text, manager=self._job_manager)
+            )
 
     def _cancel_selected_job(self) -> None:
         table = self.query_one("#jobs-table", DataTable)
@@ -347,27 +349,70 @@ class JobsScreen(Screen):
 
 
 class JobDetailScreen(Screen):
-    """Screen for viewing job log output."""
+    """Screen for viewing live job log output."""
 
     BINDINGS: ClassVar[list] = [("escape", "back", "Back")]
 
-    def __init__(self, job_id: str, log_text: str, **kwargs):
+    def __init__(
+        self,
+        job_id: str,
+        log_text: str,
+        *,
+        manager: JobManager | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.job_id = job_id
         self.log_text = log_text
+        self.job_manager = manager if manager is not None else JobManager()
+        self._refresh_timer: Timer | None = None
+        self._displayed_log = ""
 
     def compose(self) -> ComposeResult:
         yield Container(
             Static(f"Job: {self.job_id}", id="title"),
+            Static("", id="job-detail-status"),
             Log(id="job-detail-log"),
             Button("Back", id="back-btn"),
             id="job-detail-container",
         )
 
     def on_mount(self) -> None:
+        self._write_log(self.log_text or "(no log output)")
+        self._refresh()
+        self._refresh_timer = self.set_interval(1.0, self._refresh)
+
+    def on_unmount(self) -> None:
+        if self._refresh_timer is not None:
+            self._refresh_timer.stop()
+            self._refresh_timer = None
+
+    def _write_log(self, text: str) -> None:
         log = self.query_one("#job-detail-log", Log)
-        text = self.log_text or "(no log output)"
-        log.write("\n".join(text.splitlines()))
+        log.clear()
+        log.write("\n".join(text.splitlines()[-500:]))
+        self._displayed_log = text
+
+    def _refresh(self) -> None:
+        """Follow the log while the job is active; stop on a terminal state."""
+        log_text = self.job_manager.tail_log(self.job_id, lines=500)
+        data = self.job_manager.get_job(self.job_id)
+        if log_text and log_text != self._displayed_log:
+            self._write_log(log_text)
+        elif not log_text and data is not None and not self._displayed_log:
+            self._write_log("(no log output)")
+        status = "unknown" if data is None else str(data.get("status", "unknown"))
+        elapsed = ""
+        if data is not None and data.get("started_at"):
+            elapsed = f" — started {data['started_at']}"
+        self.query_one("#job-detail-status", Static).update(
+            f"Status: {status}{elapsed}"
+        )
+        if status in {"done", "not_converged", "failed", "cancelled"} and (
+            self._refresh_timer is not None
+        ):
+            self._refresh_timer.stop()
+            self._refresh_timer = None
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "back-btn":

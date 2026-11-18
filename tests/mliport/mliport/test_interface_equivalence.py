@@ -539,3 +539,138 @@ async def test_tui_md_command_resolves_like_api_request(
         api_resolved.calculator_options
     )
     assert dict(tui_resolved.run_options) == dict(api_resolved.run_options)
+
+
+# ---------------------------------------------------------------------------
+# Runtime selectors: DPA current/legacy and NEP ase/gpumd (#124)
+# ---------------------------------------------------------------------------
+
+
+async def _tui_command(tmp_path: Path, config: dict[str, object]) -> list[str]:
+    from mliport.tui import MliportApp
+    from mliport.tui.run_screen import RunScreen
+
+    app = MliportApp()
+    app.config.update(config)
+    async with app.run_test(size=(100, 60)):
+        screen = RunScreen()
+        screen._job_id = "eq-runtime"
+        return screen._build_command()
+
+
+@pytest.mark.asyncio()
+@pytest.mark.parametrize("runtime", [None, "current", "legacy"])
+async def test_tui_dpa_runtime_resolves_like_api(
+    tmp_path: Path, runtime: str | None, monkeypatch
+) -> None:
+    from mliport.api import _api_resolve_full
+
+    # DPA needs isolated device visibility before its framework import; a CPU
+    # request is already isolated when CUDA_VISIBLE_DEVICES is empty.
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    structure = _make_structure(tmp_path)
+    model = _make_model(tmp_path)
+    command = await _tui_command(
+        tmp_path,
+        {
+            "calc_type": "sp",
+            "structure_file": str(structure),
+            "model_file": str(model),
+            "model_type": "dpa",
+            "task": "bulk",
+            "device": "cpu",
+            "output_dir": str(tmp_path / "out"),
+            "dpa_runtime": runtime,
+            "head": None,
+        },
+    )
+
+    args = create_parser().parse_args(command[3:])
+    tui_engine, tui_resolved, _settings = _resolve_engine_config(args, "sp")
+    cli = {
+        "model_type": "dpa",
+        "task": "bulk",
+        "device": "cpu",
+    }
+    if runtime is not None:
+        cli["dpa_runtime"] = runtime
+    api_engine, api_resolved = _api_resolve_full(
+        "sp",
+        str(model),
+        cli,
+        str(tmp_path / "out"),
+        "eq-runtime",
+        None,
+        None,
+        None,
+        None,
+    )
+
+    assert_equivalent(tui_engine, api_engine)
+    expected = runtime or "current"
+    assert tui_resolved.calculator_options["dpa_runtime"] == expected
+    assert api_resolved.calculator_options["dpa_runtime"] == expected
+    if runtime is None:
+        # Unset must keep the CLI default strategy, not write a runtime.
+        assert "--dpa-runtime" not in command
+    else:
+        assert command[command.index("--dpa-runtime") + 1] == runtime
+
+
+@pytest.mark.asyncio()
+@pytest.mark.parametrize(
+    ("runtime", "device", "gpumd_command"),
+    [
+        ("ase", "cpu", None),
+        ("gpumd", "cuda:0", "/bin/true"),
+    ],
+)
+async def test_tui_nep_runtime_resolves_like_api(
+    tmp_path: Path, runtime: str, device: str, gpumd_command: str | None
+) -> None:
+    from mliport.api import _api_resolve_full
+
+    structure = _make_structure(tmp_path)
+    model = _make_model(tmp_path)
+    command = await _tui_command(
+        tmp_path,
+        {
+            "calc_type": "sp",
+            "structure_file": str(structure),
+            "model_file": str(model),
+            "model_type": "nep",
+            "task": "bulk",
+            "device": device,
+            "output_dir": str(tmp_path / "out"),
+            "nep_runtime": runtime,
+            "nep_gpumd_command": gpumd_command,
+        },
+    )
+
+    args = create_parser().parse_args(command[3:])
+    tui_engine, tui_resolved, _settings = _resolve_engine_config(args, "sp")
+    cli = {
+        "model_type": "nep",
+        "task": "bulk",
+        "device": device,
+        "nep_runtime": runtime,
+    }
+    if gpumd_command is not None:
+        cli["nep_gpumd_command"] = gpumd_command
+    api_engine, api_resolved = _api_resolve_full(
+        "sp",
+        str(model),
+        cli,
+        str(tmp_path / "out"),
+        "eq-runtime",
+        None,
+        None,
+        None,
+        None,
+    )
+
+    assert_equivalent(tui_engine, api_engine)
+    assert tui_resolved.calculator_options["nep_runtime"] == runtime
+    assert command[command.index("--nep-runtime") + 1] == runtime
+    if gpumd_command is not None:
+        assert command[command.index("--gpumd-command") + 1] == gpumd_command

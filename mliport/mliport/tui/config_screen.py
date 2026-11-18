@@ -36,7 +36,11 @@ if TYPE_CHECKING:
 
     from textual.app import ComposeResult
 
-from mliport.backend_selection import canonical_model_type
+from mliport.backend_selection import (
+    GENERIC_TASK_OPTIONS,
+    UMA_TASK_OPTIONS,
+    canonical_model_type,
+)
 from mliport.tui.run_screen import RunScreen
 
 
@@ -191,6 +195,22 @@ class ConfigScreen(Screen):
                     id="head-input",
                 )
 
+                dpa_runtime = self.app.get_config("dpa_runtime")
+                yield Label(
+                    "DPA Runtime (blank = CLI default 'current'):",
+                    id="dpa-runtime-label",
+                )
+                yield Select(
+                    options=[
+                        ("current (pinned DPA-4-capable deepmd-kit)", "current"),
+                        ("legacy (DPA-2 pre-release runtime)", "legacy"),
+                    ],
+                    prompt="Use the CLI default (current)",
+                    value=dpa_runtime or Select.NULL,
+                    allow_blank=True,
+                    id="dpa-runtime-select",
+                )
+
                 yield Label(
                     "NEP Runtime (required for NEP; never inferred):",
                     id="nep-runtime-label",
@@ -332,19 +352,11 @@ class ConfigScreen(Screen):
                 yield Button("◀ Back", id="back-btn")
                 yield Button("🚀 Run", variant="success", id="run-btn")
 
-    # UMA-specific tasks vs generic bulk/molecule for other engines
-    UMA_TASKS: ClassVar = [
-        ("Inorganic Materials (omat)", "omat"),
-        ("Molecules (omol)", "omol"),
-        ("Catalysis OC20 (oc20)", "oc20"),
-        ("Catalysis OC25 (oc25)", "oc25"),
-        ("MOFs (odac)", "odac"),
-        ("Molecular Crystals (omc)", "omc"),
-    ]
-    GENERIC_TASKS: ClassVar = [
-        ("Bulk / Periodic (bulk)", "bulk"),
-        ("Molecule (molecule)", "molecule"),
-    ]
+    # UMA-specific tasks vs generic bulk/molecule for other engines.  The
+    # table lives in backend_selection so the wizard and this screen cannot
+    # drift apart.
+    UMA_TASKS: ClassVar = list(UMA_TASK_OPTIONS)
+    GENERIC_TASKS: ClassVar = list(GENERIC_TASK_OPTIONS)
 
     def _current_model_type(self) -> str:
         """Model type from the select widget (or app config fallback)."""
@@ -449,6 +461,26 @@ class ConfigScreen(Screen):
             yield Input(
                 value=str(self.app.get_config("npt_pdamp", 1000.0)),
                 id="npt-pdamp-input",
+            )
+            yield Label("NPT thermostat chain length:", id="npt-tchain-label")
+            yield Input(
+                value=str(self.app.get_config("npt_tchain", 3)),
+                id="npt-tchain-input",
+            )
+            yield Label("NPT barostat chain length:", id="npt-pchain-label")
+            yield Input(
+                value=str(self.app.get_config("npt_pchain", 3)),
+                id="npt-pchain-input",
+            )
+            yield Label("NPT thermostat Suzuki-Yoshida substeps:", id="npt-tloop-label")
+            yield Input(
+                value=str(self.app.get_config("npt_tloop", 1)),
+                id="npt-tloop-input",
+            )
+            yield Label("NPT barostat Suzuki-Yoshida substeps:", id="npt-ploop-label")
+            yield Input(
+                value=str(self.app.get_config("npt_ploop", 1)),
+                id="npt-ploop-input",
             )
 
             yield Label("Time Step (fs):")
@@ -852,6 +884,13 @@ class ConfigScreen(Screen):
             )
 
             yield Static(
+                "Resume, extend, merge and export of an existing search are "
+                "CLI-only: `mliport confsearch resume|extend|merge|export RUN`. "
+                "This screen creates new mode A/B searches only.",
+                id="confsearch-cli-note",
+            )
+
+            yield Static(
                 "The search reports the lowest minimum it found with saturation "
                 "evidence, never a global minimum. The exported candidates are a "
                 "screening list for DFT re-ranking: a one-sided slab needs a "
@@ -907,6 +946,7 @@ class ConfigScreen(Screen):
             task_select = self.query_one("#task-select", Select)
             task_select.set_options(self._task_options())
             task_select.value = self._default_task_value()
+            self._reset_backend_controls()
             self._update_engine_option_states()
         elif event.select.id == "task-select":
             self._update_molecular_option_states()
@@ -970,6 +1010,27 @@ class ConfigScreen(Screen):
             self._validate_path("final-structure-input", final_input.value)
             self._update_neb_option_states()
 
+    def _reset_backend_controls(self) -> None:
+        """Drop backend-specific values when the user switches the model.
+
+        A head, dtype, inference mode, DPA/NEP runtime or D3 request belongs to
+        the backend it was entered for.  Keeping it visible after a switch
+        would let ``_save_and_run`` forward a stale, incompatible request.
+        """
+        self.query_one("#head-input", Input).value = ""
+        self.query_one("#dpa-runtime-select", Select).value = Select.NULL
+        self.query_one("#dtype-select", Select).value = "float64"
+        self.query_one("#inference-mode-select", Select).value = "default"
+        self.query_one("#activation-checkpointing-select", Select).value = "auto"
+        self.query_one("#nep-runtime-select", Select).value = Select.NULL
+        self.query_one("#nep-command-input", Input).value = ""
+        with contextlib.suppress(Exception):
+            self.query_one("#d3-switch", Switch).value = False
+        with contextlib.suppress(Exception):
+            self.query_one("#d3-xc-input", Input).value = ""
+        with contextlib.suppress(Exception):
+            self.query_one("#d3-damping-select", Select).value = "bj"
+
     def _update_engine_option_states(self) -> None:
         """Show only controls consumed by the selected backend."""
         model_type = self._current_model_type()
@@ -986,6 +1047,8 @@ class ConfigScreen(Screen):
             self.query_one(selector).display = is_mace
         for selector in ("#head-label", "#head-input"):
             self.query_one(selector).display = has_head
+        for selector in ("#dpa-runtime-label", "#dpa-runtime-select"):
+            self.query_one(selector).display = model_type == "dpa"
         for selector in ("#inference-mode-label", "#inference-mode-select"):
             self.query_one(selector).display = is_uma
         for selector in (
@@ -1018,6 +1081,7 @@ class ConfigScreen(Screen):
 
         self.query_one("#dtype-select", Select).disabled = not is_mace
         self.query_one("#head-input", Input).disabled = not has_head
+        self.query_one("#dpa-runtime-select", Select).disabled = model_type != "dpa"
         self.query_one("#inference-mode-select", Select).disabled = not is_uma
         self.query_one("#activation-checkpointing-select", Select).disabled = not is_uma
         self.query_one("#torch-threads-input", Input).disabled = False
@@ -1069,6 +1133,14 @@ class ConfigScreen(Screen):
             "#npt-tdamp-input",
             "#npt-pdamp-label",
             "#npt-pdamp-input",
+            "#npt-tchain-label",
+            "#npt-tchain-input",
+            "#npt-pchain-label",
+            "#npt-pchain-input",
+            "#npt-tloop-label",
+            "#npt-tloop-input",
+            "#npt-ploop-label",
+            "#npt-ploop-input",
         ):
             widget = self.query_one(selector)
             widget.display = is_npt
@@ -1427,6 +1499,19 @@ class ConfigScreen(Screen):
         if model_type in {"mace", "dpa"}:
             head = self.query_one("#head-input", Input).value.strip()
             self.app.update_config("head", head or None)
+        else:
+            # Never carry a previous MACE/DPA head into another backend.
+            self.app.update_config("head", None)
+        if model_type == "dpa":
+            runtime_select = self.query_one("#dpa-runtime-select", Select)
+            runtime = (
+                None
+                if runtime_select.value is Select.NULL
+                else str(runtime_select.value)
+            )
+            self.app.update_config("dpa_runtime", runtime)
+        else:
+            self.app.update_config("dpa_runtime", None)
         if model_type == "nep":
             from mliport.backend_selection import (  # noqa: PLC0415
                 normalize_device_for_nep,
@@ -1473,6 +1558,10 @@ class ConfigScreen(Screen):
                 "activation_checkpointing",
                 None if checkpoint_value == "auto" else checkpoint_value == "on",
             )
+        else:
+            # UMA-only controls must not leak into another backend's argv.
+            self.app.update_config("inference_mode", None)
+            self.app.update_config("activation_checkpointing", None)
         threads_text = self.query_one("#torch-threads-input", Input).value.strip()
         if threads_text:
             try:
@@ -1640,6 +1729,21 @@ class ConfigScreen(Screen):
                         key != "pressure_gpa" and value <= 0
                     ):
                         self.notify(f"{key} must be finite and valid", severity="error")
+                        return
+                    self.app.update_config(key, value)
+                for key, widget_id in (
+                    ("npt_tchain", "npt-tchain-input"),
+                    ("npt_pchain", "npt-pchain-input"),
+                    ("npt_tloop", "npt-tloop-input"),
+                    ("npt_ploop", "npt-ploop-input"),
+                ):
+                    try:
+                        value = int(self.query_one(f"#{widget_id}", Input).value)
+                    except ValueError:
+                        self.notify(f"{key} must be an integer", severity="error")
+                        return
+                    if value < 1:
+                        self.notify(f"{key} must be >= 1", severity="error")
                         return
                     self.app.update_config(key, value)
 

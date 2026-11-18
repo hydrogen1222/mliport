@@ -172,7 +172,7 @@ class MliportApp(App):
 
         # Shared configuration state
         self.config: dict[str, Any] = {
-            "calc_type": "sp",  # sp, opt, md
+            "calc_type": "sp",  # sp, opt, md, neb, confsearch
             "structure_file": None,
             "model_file": None,
             # No implicit backend: the user must choose one explicitly.
@@ -193,6 +193,9 @@ class MliportApp(App):
             "neighbor_skin": 1.5,
             "default_dtype": "float64",
             "head": None,
+            # None means "use the CLI default": DPA_RUNTIME=current.  The TUI
+            # never selects a runtime on the user's behalf.
+            "dpa_runtime": None,
             "output_dir": "./results",
             "job_name": None,
             # OPT options
@@ -209,6 +212,13 @@ class MliportApp(App):
             "equilibration_steps": 0,
             "thermostat": "LANGEVIN",
             "friction": 0.001,
+            "pressure_gpa": 0.0,
+            "npt_tdamp": 100.0,
+            "npt_pdamp": 1000.0,
+            "npt_tchain": 3,
+            "npt_pchain": 3,
+            "npt_tloop": 1,
+            "npt_ploop": 1,
             "bussi_tau": 1000.0,
             "nhc_tdamp": 100.0,
             "nhc_tchain": 3,

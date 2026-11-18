@@ -139,6 +139,28 @@ def default_task_for(model_type: str) -> str:
     return "omat" if is_uma(model_type) else "bulk"
 
 
+#: UMA task families shown by the CLI help and both TUI entry points.
+UMA_TASK_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Inorganic Materials (omat)", "omat"),
+    ("Molecules (omol)", "omol"),
+    ("Catalysis OC20 (oc20)", "oc20"),
+    ("Catalysis OC25 (oc25)", "oc25"),
+    ("MOFs (odac)", "odac"),
+    ("Molecular Crystals (omc)", "omc"),
+)
+
+#: Generic task/system semantics for every non-UMA backend.
+GENERIC_TASK_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Bulk / Periodic (bulk)", "bulk"),
+    ("Molecule (molecule)", "molecule"),
+)
+
+
+def task_options_for(model_type: str | None) -> tuple[tuple[str, str], ...]:
+    """The task choices that belong to ``model_type`` (blank backend -> generic)."""
+    return UMA_TASK_OPTIONS if is_uma(model_type or "") else GENERIC_TASK_OPTIONS
+
+
 # ---------------------------------------------------------------------------
 # NEP dual-runtime contract (PR #61 §C / §B)
 # ---------------------------------------------------------------------------

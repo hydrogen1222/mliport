@@ -2095,6 +2095,13 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             if value is not None:
                 opts[key] = value
     elif calc_type == "confsearch":
+        # ``confsearch run`` takes mode-A starts positionally (argparse dest
+        # ``starts``); the resolver's option is ``cs_starts``.  Normalise here
+        # as well as in ``_cmd_confsearch_run`` so an argv built by the queue/
+        # TUI helper resolves identically through this helper.
+        starts = getattr(args, "starts", None)
+        if starts:
+            opts["cs_starts"] = os.pathsep.join(str(item) for item in starts)
         for key in _CONFSEARCH_CLI_KEYS:
             value = getattr(args, key, None)
             if value is not None:

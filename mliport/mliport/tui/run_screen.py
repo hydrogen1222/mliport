@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import shlex
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,10 +31,13 @@ if TYPE_CHECKING:
 class RunScreen(Screen):
     """Launch and monitor a calculation that survives screen/TUI exit."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, *, monitor_job_id: str | None = None, **kwargs):
         super().__init__(**kwargs)
         self._job_manager = JobManager()
         self._job_id: str | None = None
+        #: A job already submitted by another screen (the task-folder wizard).
+        #: When set, this screen only monitors it; it never submits a second job.
+        self._monitor_job_id = monitor_job_id
         self._refresh_timer: Timer | None = None
         self._displayed_log = ""
 
@@ -61,16 +64,20 @@ class RunScreen(Screen):
         self.log_widget = self.query_one("#run-log", Log)
         self.progress = self.query_one("#progress-bar", ProgressBar)
         self.status = self.query_one("#status-text", Static)
+        if self._monitor_job_id is not None:
+            self._monitor_existing_job(self._monitor_job_id)
+            return
         calc_type = self.app.get_config("calc_type", "sp")
+        resume_path = self.app.get_config("neb_resume") if calc_type == "neb" else None
+        structure_for_job = self.app.get_config("structure_file")
         try:
-            if calc_type == "neb" and self.app.get_config("neb_resume"):
+            if resume_path:
                 # Resume locks the original run directory; the band geometry
                 # comes from the checkpoint, not the structure input.
                 from mliport.neb.io import resolve_checkpoint_path
 
-                checkpoint_dir = resolve_checkpoint_path(
-                    str(self.app.get_config("neb_resume"))
-                )
+                checkpoint_dir = resolve_checkpoint_path(str(resume_path))
+                structure_for_job = str(resume_path)
                 atoms = read(checkpoint_dir / "band.traj")
             else:
                 atoms = read(self.app.get_config("structure_file"))
@@ -84,7 +91,7 @@ class RunScreen(Screen):
             self._job_manager.enqueue(
                 job_id=self._job_id,
                 calc_type=calc_type,
-                structure=self.app.get_config("structure_file"),
+                structure=structure_for_job,
                 formula=atoms.get_chemical_formula(),
                 natoms=len(atoms),
                 device=self.app.get_config("device", "cpu"),
@@ -110,6 +117,32 @@ class RunScreen(Screen):
             self.status.update("Failed to queue")
             self.progress.update(total=100, progress=0)
             self.query_one("#cancel-btn", Button).disabled = True
+
+    def _monitor_existing_job(self, job_id: str) -> None:
+        """Attach to a job another screen already submitted (no resubmission)."""
+        self._job_id = job_id
+        data = self._job_manager.get_job(job_id)
+        log_path = self._job_manager._log_file(job_id).resolve()
+        if data is None:
+            self.log_widget.write(f"ERROR: Job record {job_id} was not found.\n")
+            self.status.update("Job record not found")
+            self.query_one("#cancel-btn", Button).disabled = True
+            return
+        display_name = str(data.get("display_name") or job_id)
+        self.log_widget.write(
+            f"Background job: {display_name} [{job_id}] "
+            f"({str(data.get('status', 'unknown')).upper()})\n"
+        )
+        self.log_widget.write(f"Live log: {log_path}\n")
+        self.log_widget.write(
+            f"Follow live output: tail -f {shlex.quote(str(log_path))}\n"
+        )
+        self.log_widget.write(
+            "The job runs in a detached background worker; going Back or "
+            "closing the TUI does not cancel it. Use the Jobs screen to cancel.\n"
+        )
+        self._refresh_timer = self.set_interval(0.5, self._refresh_job)
+        self._refresh_job()
 
     def on_unmount(self) -> None:
         """Stop only the UI refresh; the background process keeps running."""
@@ -158,6 +191,7 @@ class RunScreen(Screen):
             "torch_num_threads",
             "default_dtype",
             "head",
+            "dpa_runtime",
             "nep_runtime",
             "nep_gpumd_command",
             "d3",
@@ -337,18 +371,62 @@ class RunScreen(Screen):
         data = self._job_manager.get_job(self._job_id)
         if data is None:
             return
-        status = data.get("status", "unknown")
+        status = str(data.get("status", "unknown"))
         if status == "pending":
+            self.progress.update(total=None)
             self.status.update("Pending — waiting for a scheduler slot")
-        elif status in {"done", "failed", "cancelled"}:
+        elif status == "paused":
+            self.progress.update(total=None)
+            self.status.update(
+                "Paused — waiting for resume (pending jobs do not start)"
+            )
+        elif status == "claimed":
+            self.progress.update(total=None)
+            self.status.update("Claimed — the background worker is starting")
+        elif status == "running":
+            self.progress.update(total=None)
+            elapsed = self._elapsed_text(data.get("started_at"))
+            self.status.update("Running" + (f" — {elapsed}" if elapsed else ""))
+        elif status in {"done", "not_converged", "failed", "cancelled"}:
             self.progress.update(total=100, progress=100 if status == "done" else 0)
-            self.status.update(status.capitalize())
+            if status == "done":
+                self.status.update("Done — completed successfully")
+            elif status == "not_converged":
+                self.status.update(
+                    "Done — NOT converged (exit code 2); resume from the "
+                    "latest checkpoint to continue"
+                )
+            elif status == "failed":
+                self.status.update("Failed — see the log for the reason")
+            else:
+                self.status.update("Cancelled")
             self.query_one("#cancel-btn", Button).disabled = True
             if self._refresh_timer is not None:
                 self._refresh_timer.stop()
                 self._refresh_timer = None
-        if self.app.get_config("calc_type") == "neb":
+        calc_type = str(data.get("calc_type") or self.app.get_config("calc_type"))
+        if calc_type == "neb":
             self._refresh_neb_status(status)
+
+    @staticmethod
+    def _elapsed_text(started_at: object) -> str:
+        """Wall-clock run time, or blank when there is no real start time."""
+        if not started_at:
+            return ""
+        try:
+            started = datetime.fromisoformat(str(started_at))
+        except (TypeError, ValueError):
+            return ""
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        seconds = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
+        hours, remainder = divmod(seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours:
+            return f"{hours}h {minutes:02d}m"
+        if minutes:
+            return f"{minutes}m {secs:02d}s"
+        return f"{secs}s"
 
     def _neb_artifacts_path(self) -> Path | None:
         """artifacts.json of this job's NEB run directory, if it exists."""
