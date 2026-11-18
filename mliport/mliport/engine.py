@@ -368,14 +368,24 @@ class CalculationEngine:
         for key, value in BUILTIN_DEFAULTS.get(f"calculator.{backend}", {}).items():
             if value is not None:
                 calc_opts.setdefault(key, value)
-        return CalculatorFactory.create(
-            model_type=self.config.model_type,
-            model_path=self.config.model_path,
-            device=self.config.device,
-            task=self.config.task,
-            strict=self.config.strict_config,
-            **calc_opts,
-        )
+        try:
+            return CalculatorFactory.create(
+                model_type=self.config.model_type,
+                model_path=self.config.model_path,
+                device=self.config.device,
+                task=self.config.task,
+                strict=self.config.strict_config,
+                **calc_opts,
+            )
+        except Exception as exc:
+            from mliport.devices import cuda_failure_guidance  # noqa: PLC0415
+
+            guidance = cuda_failure_guidance(
+                exc, requested_device=self.config.device, backend=backend
+            )
+            if guidance is None:
+                raise
+            raise RuntimeError(guidance) from exc
 
     @property
     def output_dir(self) -> Path:
