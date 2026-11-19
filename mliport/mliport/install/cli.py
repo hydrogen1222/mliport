@@ -29,6 +29,7 @@ from mliport.install.plan import (
     InstallPlan,
     InstallPlanError,
     generate_plan,
+    normalize_engines,
     render_plan_shell,
 )
 from mliport.install.sources import (
@@ -245,9 +246,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[mliport] Selected source: {resolve_source(source_name).label}")
 
         src = resolve_source(source_name)
+        # Use a single canonical list for planning, display, and launchers.
+        # The planner accepts the fairchem alias and deduplicates engines;
+        # passing raw args to create_launchers would fail after installation.
+        engine_list = normalize_engines(normalize_engine_args(args.engines))
         plan = generate_plan(
             gpus=gpus,
-            engines=normalize_engine_args(args.engines),
+            engines=engine_list,
             source=source_name,
             python_version=args.python,
             device=args.device,
@@ -271,8 +276,6 @@ def main(argv: list[str] | None = None) -> int:
         refused = _check_existing_venvs(plan, args.python)
         if refused:
             return refused
-
-    engine_list = normalize_engine_args(args.engines)
 
     if args.dry_run:
         print()
