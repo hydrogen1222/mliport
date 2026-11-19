@@ -195,7 +195,6 @@ def test_engines_accept_space_and_comma_separated_forms():
     assert normalize_engine_args(default.engines) == ["uma", "mace", "dpa", "grace"]
 
 
-
 def test_alias_duplicates_and_case_share_one_canonical_install_and_launcher(
     monkeypatch, tmp_path, capsys
 ) -> None:
@@ -224,8 +223,16 @@ def test_alias_duplicates_and_case_share_one_canonical_install_and_launcher(
 
     monkeypatch.setattr(cli.subprocess, "run", execute)
     monkeypatch.setattr(launcher, "create_launchers", fake_launchers)
-    requested = ["--engines", "fairchem,mace", "UMA", "MACE", "--device",
-                 "cpu", "--skip-doctor", "--non-interactive"]
+    requested = [
+        "--engines",
+        "fairchem,mace",
+        "UMA",
+        "MACE",
+        "--device",
+        "cpu",
+        "--skip-doctor",
+        "--non-interactive",
+    ]
     assert cli.main(requested) == 0
     assert launched == [(["uma", "mace"], tmp_path)]
     venv_steps = [argv for argv in commands if argv[:2] == ["uv", "venv"]]
@@ -237,7 +244,6 @@ def test_alias_duplicates_and_case_share_one_canonical_install_and_launcher(
     assert "would create bin/mliport-uma" in out
     assert "would create bin/mliport-mace" in out
     assert "mliport-fairchem" not in out
-
 
 
 def test_plan_installs_all_user_features_for_every_engine():
