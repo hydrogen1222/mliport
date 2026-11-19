@@ -196,6 +196,57 @@ def test_engines_accept_space_and_comma_separated_forms():
     assert normalize_engine_args(default.engines) == ["uma", "mace", "dpa", "grace"]
 
 
+def test_alias_duplicates_and_case_share_one_canonical_install_and_launcher(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    """A successful plan must not fail during launcher creation.
+
+    In particular, fairchem maps to uma, duplicate engines produce only one
+    target, and input casing is not a separate launcher identity.
+    """
+    from types import SimpleNamespace
+
+    from mliport.install import launcher
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "detect_gpus", lambda: None)
+    monkeypatch.setattr(cli, "inspect_target_venv", _absent_venv)
+    commands = []
+    launched = []
+
+    def execute(argv, **_kwargs):
+        commands.append(argv)
+        return SimpleNamespace(returncode=0)
+
+    def fake_launchers(engines, cwd):
+        launched.append((list(engines), Path(cwd)))
+        return [Path(cwd) / "bin" / f"mliport-{engine}" for engine in engines]
+
+    monkeypatch.setattr(cli.subprocess, "run", execute)
+    monkeypatch.setattr(launcher, "create_launchers", fake_launchers)
+    requested = [
+        "--engines",
+        "fairchem,mace",
+        "UMA",
+        "MACE",
+        "--device",
+        "cpu",
+        "--skip-doctor",
+        "--non-interactive",
+    ]
+    assert cli.main(requested) == 0
+    assert launched == [(["uma", "mace"], tmp_path)]
+    venv_steps = [argv for argv in commands if argv[:2] == ["uv", "venv"]]
+    assert len(venv_steps) == 2
+    assert {argv[-1] for argv in venv_steps} == {".venv", ".venv-mace"}
+
+    assert cli.main([*requested, "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "would create bin/mliport-uma" in out
+    assert "would create bin/mliport-mace" in out
+    assert "mliport-fairchem" not in out
+
+
 def test_plan_installs_all_user_features_for_every_engine():
     """INSTALL-003: one-command install must include analysis/transport/
     electrolyte/plotting features, not just the backend runtime."""
