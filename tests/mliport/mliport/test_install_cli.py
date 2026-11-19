@@ -242,8 +242,8 @@ def test_alias_duplicates_and_case_share_one_canonical_install_and_launcher(
 
     assert cli.main([*requested, "--dry-run"]) == 0
     out = capsys.readouterr().out
-    assert "would create bin/mliport-uma" in out
-    assert "would create bin/mliport-mace" in out
+    assert f"would create {launcher.launcher_path('uma', tmp_path)}" in out
+    assert f"would create {launcher.launcher_path('mace', tmp_path)}" in out
     assert "mliport-fairchem" not in out
 
 
