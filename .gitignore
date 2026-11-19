@@ -28,6 +28,7 @@ ENV/
 .env
 
 # Tool caches
+.cache/
 .ruff_cache/
 .pytest_cache/
 .uv/

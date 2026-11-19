@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mliport.literature-registry/1",
+  "title": "mliport literature benchmark registry",
+  "description": "Provenance, licence, DFT settings, units, checksums and deterministic selection rules for the literature benchmark (tier t9). Structural validation is executed by literature.datasets.validate_registry; this document is the machine-readable contract it implements.",
+  "type": "object",
+  "required": ["schema", "revision", "cache", "comparison_taxonomy", "datasets"],
+  "properties": {
+    "schema": { "const": "mliport.literature-registry/1" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "generated_utc": { "type": "string" },
+    "description": { "type": "string" },
+    "cache": {
+      "type": "object",
+      "required": ["env", "default", "policy"],
+      "properties": {
+        "env": { "type": "string" },
+        "default": { "type": "string" },
+        "policy": { "type": "string" }
+      }
+    },
+    "comparison_taxonomy": {
+      "type": "object",
+      "required": ["reference_matched", "cross_method"],
+      "properties": {
+        "reference_matched": { "type": "string" },
+        "cross_method": { "type": "string" }
+      }
+    },
+    "datasets": {
+      "type": "object",
+      "description": "dataset id -> entry; the entry id must equal its key",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "citation",
+          "reference_level",
+          "comparison_mode",
+          "license",
+          "provenance",
+          "dft",
+          "units",
+          "splits",
+          "selection",
+          "data_overlap"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "short_name": { "type": "string" },
+          "year": { "type": "integer" },
+          "citation": { "type": "string" },
+          "doi": { "type": ["string", "null"] },
+          "reference_level": { "type": "string" },
+          "comparison_mode": {
+            "enum": ["reference_matched", "cross_method", "unknown"]
+          },
+          "comparison_note": { "type": "string" },
+          "license": {
+            "type": "object",
+            "required": ["paper", "data"],
+            "properties": {
+              "paper": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "url": { "type": "string" },
+                  "evidence": { "type": "string" }
+                }
+              },
+              "data": {
+                "type": "object",
+                "required": ["id", "redistributable"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "redistributable": { "type": "boolean" },
+                  "evidence": { "type": "string" },
+                  "url": { "type": "string" }
+                }
+              },
+              "policy": { "type": "string" }
+            }
+          },
+          "provenance": { "type": "object" },
+          "dft": { "type": "object" },
+          "units": {
+            "type": "object",
+            "required": ["energy", "stress"],
+            "properties": {
+              "energy": { "type": "string" },
+              "forces": { "type": ["string", "null"] },
+              "stress": { "type": ["string", "null"] },
+              "virial": { "type": ["string", "null"] },
+              "note": { "type": "string" }
+            }
+          },
+          "splits": { "type": "object" },
+          "selection": {
+            "type": "object",
+            "required": ["tiers"],
+            "properties": {
+              "seed": { "type": "integer" },
+              "tiers": { "type": "object" },
+              "filters": { "type": "object" }
+            }
+          },
+          "data_overlap": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          },
+          "local_import": { "type": "object" }
+        }
+      }
+    }
+  }
+}

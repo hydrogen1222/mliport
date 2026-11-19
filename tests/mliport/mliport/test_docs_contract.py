@@ -60,6 +60,7 @@ PAGES = (
     "analysis/arrhenius",
     "outputs",
     "validation",
+    "science-benchmarks",
     "troubleshooting",
     "migration-from-mlipx",
     "citations",
