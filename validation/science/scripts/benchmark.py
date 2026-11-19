@@ -90,7 +90,10 @@ MANUAL_TASKS: dict[str, dict[str, Any]] = {
         ),
         "phases": ["md", "transport,gemdat"],
         "analysis_venv_env": "MLIPORT_SCIENCE_VENV_ANALYSIS",
-        "run_dir": "<out>/t7/t7_na3ps4_<engine>_T700K",
+        "run_dir": (
+            "<out>/t7/md_runs/<tag-or-default>/t7_na3ps4_<engine>_T700K "
+            "(analysis_suite._run_dir rule; <tag> is --tag when set)"
+        ),
         "note": (
             "A budget that runs out or a missing analysis dependency must be "
             "recorded as blocked/insufficient_sampling by the T7 script itself; "
@@ -163,7 +166,15 @@ def _manual_task_commands(
 ) -> dict[str, Any]:
     """Copy-pasteable phases for research tasks that are not automated."""
     analysis_python = os.environ.get("MLIPORT_SCIENCE_VENV_ANALYSIS")
-    run_dir = out_dir / "t7" / f"t7_na3ps4_{args.engine}_T700K"
+    # Mirror analysis_suite._run_dir() exactly: run_suite passes --out
+    # <out>/t7, so the MD phase writes to <out>/t7/md_runs/<tag|default>/<name>.
+    run_dir = (
+        out_dir
+        / "t7"
+        / "md_runs"
+        / (args.tag or "default")
+        / f"t7_na3ps4_{args.engine}_T700K"
+    )
     tasks: dict[str, Any] = {}
     for task_id, task in MANUAL_TASKS.items():
         phase_commands = [
@@ -204,8 +215,6 @@ def _manual_task_commands(
                     "transport,gemdat",
                     "--run-dir",
                     str(run_dir),
-                    "--backend-version",
-                    "<backend package version from the engine venv>",
                 ],
             },
         ]

@@ -1547,48 +1547,76 @@ def test_research_plan_does_not_automate_the_two_phase_transport_task():
     assert "analysis venv" in task["reason"]
 
 
-def test_research_tier_writes_manual_two_phase_commands(tmp_path, monkeypatch):
+def _run_research_benchmark(tmp_path, monkeypatch, tag: str | None = None):
     sys.path.insert(0, str(SCRIPTS))
     import benchmark
 
     monkeypatch.setattr(benchmark, "_run", lambda cmd, env=None: 0)
     monkeypatch.delenv("MLIPORT_SCIENCE_VENV_ANALYSIS", raising=False)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--tier",
-            "research",
-            "--datasets",
-            "omat24",
-            "--engine",
-            "mace",
-            "--profile-id",
-            "mace_omat",
-            "--model",
-            str(tmp_path / "weights.bin"),
-            "--manifest",
-            str(SCIENCE / "model_manifest.json"),
-            "--out",
-            str(tmp_path / "work"),
-            "--offline",
-            "--venv",
-            str(tmp_path / "python"),
-            "--skip-existing-tiers",
-        ],
-    )
+    argv = [
+        "benchmark.py",
+        "--tier",
+        "research",
+        "--datasets",
+        "omat24",
+        "--engine",
+        "mace",
+        "--profile-id",
+        "mace_omat",
+        "--model",
+        str(tmp_path / "weights.bin"),
+        "--manifest",
+        str(SCIENCE / "model_manifest.json"),
+        "--out",
+        str(tmp_path / "work"),
+        "--offline",
+        "--venv",
+        str(tmp_path / "python"),
+        "--skip-existing-tiers",
+    ]
+    if tag is not None:
+        argv += ["--tag", tag]
+    monkeypatch.setattr(sys, "argv", argv)
     assert benchmark.main() == 0
     resolved = json.loads(
         (tmp_path / "work" / "resolved.json").read_text(encoding="utf-8")
     )
     task = resolved["manual_tasks"]["t7"]
-    phases = {phase["phase"]: phase for phase in task["resolved_commands"]}
+    return {phase["phase"]: phase for phase in task["resolved_commands"]}
+
+
+def test_research_tier_writes_manual_two_phase_commands(tmp_path, monkeypatch):
+    import analysis_suite
+
+    phases = _run_research_benchmark(tmp_path, monkeypatch)
     assert set(phases) == {"md", "transport,gemdat"}
     assert "--cases" in phases["md"]["argv"]
     assert phases["md"]["argv"][phases["md"]["argv"].index("--cases") + 1] == "md"
     analysis = phases["transport,gemdat"]["argv"]
     assert analysis[0] == "<analysis venv python>"
     assert analysis[analysis.index("--cases") + 1] == "transport,gemdat"
-    assert "--run-dir" in analysis
-    assert analysis[analysis.index("--run-dir") + 1].endswith("t7_na3ps4_mace_T700K")
+    # the second phase must point at the directory the first phase really
+    # writes, using analysis_suite's own path rule rather than a local guess
+    expected_run_dir = analysis_suite._run_dir(
+        tmp_path / "work" / "t7", None, "t7_na3ps4_mace_T700K"
+    )
+    assert analysis[analysis.index("--run-dir") + 1] == str(expected_run_dir)
+    assert "md_runs" in expected_run_dir.parts
+    assert expected_run_dir.parent.name == "default"
+    # an unknown backend version is an optional argument: omit it entirely
+    assert "--backend-version" not in analysis
+
+
+def test_research_manual_run_dir_follows_the_tag(tmp_path, monkeypatch):
+    import analysis_suite
+
+    phases = _run_research_benchmark(tmp_path, monkeypatch, tag="smoke")
+    # the MD phase receives the tag, so its run directory is tag-qualified
+    md = phases["md"]["argv"]
+    assert md[md.index("--tag") + 1] == "smoke"
+    analysis = phases["transport,gemdat"]["argv"]
+    expected_run_dir = analysis_suite._run_dir(
+        tmp_path / "work" / "t7", "smoke", "t7_na3ps4_mace_T700K"
+    )
+    assert analysis[analysis.index("--run-dir") + 1] == str(expected_run_dir)
+    assert expected_run_dir.parent.name == "smoke"
