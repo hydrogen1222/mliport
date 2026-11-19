@@ -85,7 +85,7 @@ def test_absent_path_is_created_not_inspected(tmp_path: Path) -> None:
     assert not (tmp_path / ".venv-nep").exists(), "inspection must not create anything"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="symlink privilege is not guaranteed in Windows CI")
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows symlink permissions")
 def test_existing_environment_symlink_is_refused_without_following_target(
     tmp_path: Path,
 ) -> None:
@@ -99,7 +99,7 @@ def test_existing_environment_symlink_is_refused_without_following_target(
     assert target.joinpath("pyvenv.cfg").is_file()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="symlink privilege is not guaranteed in Windows CI")
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows symlink permissions")
 def test_dangling_environment_symlink_is_not_treated_as_absent(
     tmp_path: Path,
 ) -> None:
