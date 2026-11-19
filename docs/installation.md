@@ -63,8 +63,26 @@ skips GRACE and UMA.
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
-CPU installs are smaller (no CUDA libraries) and work everywhere, but inference is
-slower. This is useful for post-processing, analysis, and testing on laptops.
+CPU installs use CPU PyTorch wheels and work everywhere, but inference is slower.
+The GRACE TensorFlow stack may still pull CUDA runtime libraries because of
+TensorPotential's dependency contract, even when selected for CPU execution. CPU
+installation is useful for post-processing, analysis, and testing on laptops.
+
+### Windows (PowerShell)
+
+The `scripts/install_mliport.sh` bootstrap is Bash-only. From the repository root,
+run the Python-native installer directly in PowerShell:
+
+```powershell
+$env:PYTHONPATH = Join-Path $PWD "mliport"
+uv run --no-project --with packaging --python 3.12 -- python -m mliport.install --engines mace --device auto
+```
+
+This creates Windows virtual environments under `.venv-*/Scripts/` and native
+`bin/mliport-*.cmd` launchers. Use `.venv-mace\Scripts\mliport.exe` or
+`bin\mliport-mace.cmd` to run MACE. Backend build and GPU support remain subject
+to each upstream project's Windows support; the presence of a launcher alone is
+not evidence that a backend's GPU runtime is available.
 
 ### What the installer does
 
@@ -73,7 +91,7 @@ For each engine you name, the installer:
 1. Creates a virtual environment (`.venv-mace`, `.venv-dpa`, etc.).
 2. Installs mliport in editable mode with the analysis extras.
 3. Installs the backend's framework at the pinned version.
-4. Writes a launcher script into `./bin/` (e.g. `./bin/mliport-mace`).
+4. Writes a platform-native launcher into `./bin/` (e.g. `./bin/mliport-mace` on POSIX or `./bin/mliport-mace.cmd` on Windows).
 5. Runs `mliport doctor` to verify the installation (unless `--skip-doctor`).
 
 The whole process is deterministic: the same command on the same machine produces the
@@ -179,7 +197,7 @@ A launcher only picks the Python environment. It never sets a model, a dtype or
 any scientific option for you.
 
 On Windows, each environment has `Scripts\mliport.exe`, and the installer writes
-`bin\mliport-*.cmd` launchers alongside the POSIX ones.
+native `bin\mliport-*.cmd` launchers. POSIX shell launchers are written only on POSIX.
 
 ### DPA and GRACE: GPU device isolation
 
@@ -217,6 +235,14 @@ installer detects your GPU and picks the right wheel channel automatically:
 - **Turing and newer** (RTX 20xx/30xx/40xx, A100, H100): use `cu128` or `cu130`.
 - **Volta** (V100): stays on `cu126`, which works with older drivers.
 - **Maxwell and Pascal**: `cu126` legacy channel; marked `experimental` upstream.
+
+When more than one NVIDIA GPU is visible, the installer checks that the selected
+framework wheel covers **every** visible GPU. If no single route covers the full
+set, `--device cuda` fails before creating environments and `--device auto`
+falls back to CPU. Use `CUDA_VISIBLE_DEVICES` to expose only a compatible subset.
+The official TensorFlow 2.20 wheel used by GRACE has no Maxwell GPU kernel, so
+GRACE follows the same fail-closed/CPU-fallback rule on Maxwell; other experimental
+profiles are not automatically treated as unsupported.
 
 The CUDA 13 channel (`cu130`, used by UMA's torch 2.13) requires driver 580+ and
 carries no kernels below Turing, so Volta stays on `cu126`.

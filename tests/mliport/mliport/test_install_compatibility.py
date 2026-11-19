@@ -6,6 +6,7 @@ import pytest
 from packaging.specifiers import SpecifierSet
 
 from mliport.install.compatibility import (
+    ALL_BACKENDS,
     ARCH_PROFILES,
     BACKENDS,
     CUDA_CHANNELS,
@@ -141,6 +142,27 @@ def test_cuda_channel_supports_arch() -> None:
                     f"{backend.engine} x {arch_name} uses {tag} which does not "
                     f"support CC {cc}"
                 )
+
+
+def test_grace_maxwell_profile_marks_missing_gpu_wheel() -> None:
+    assert not BACKENDS["grace"].arch_profiles["maxwell"].gpu_runtime_available
+    assert BACKENDS["grace"].arch_profiles["hopper"].gpu_runtime_available
+    assert BACKENDS["grace"].arch_profiles["blackwell"].gpu_runtime_available
+
+
+def test_dpa_legacy_channel_excludes_blackwell() -> None:
+    backend = ALL_BACKENDS["dpa-legacy"]
+    profile = backend.arch_profiles["blackwell"]
+    channel = CUDA_CHANNELS[
+        effective_cuda_channel(backend, ARCH_PROFILES["blackwell"], profile)
+    ]
+
+    assert channel.name == "cu121"
+    assert channel.sm_max == (9, 0)
+    assert not (
+        channel.sm_min <= (10, 0) <= channel.sm_max
+        and channel.sm_min <= (12, 0) <= channel.sm_max
+    )
 
 
 def test_status_derivation() -> None:

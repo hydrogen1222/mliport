@@ -13,11 +13,12 @@ without network access and without ``uv``.
 from __future__ import annotations
 
 import sys
+import venv
 from pathlib import Path
 
 import pytest
 
-from mliport.install.compatibility import BACKENDS
+from mliport.install.compatibility import ALL_BACKENDS
 from mliport.install.venv_contract import (
     Verdict,
     backend_for_venv,
@@ -30,8 +31,25 @@ _ACTUAL = f"{sys.version_info.major}.{sys.version_info.minor}"
 _OTHER = "3.11" if _ACTUAL != "3.11" else "3.12"
 
 
+def _venv_interpreter(venv_path: Path) -> Path:
+    if sys.platform == "win32":
+        return venv_path / "Scripts" / "python.exe"
+    return venv_path / "bin" / "python"
+
+
+def _site_packages(venv_path: Path) -> Path:
+    if sys.platform == "win32":
+        return venv_path / "Lib" / "site-packages"
+    return venv_path / "lib" / f"python{_ACTUAL}" / "site-packages"
+
+
 def _make_venv(path: Path, *, python: Path | None = None) -> Path:
     """A venv-shaped directory whose interpreter reports ``sys.version_info``."""
+    if sys.platform == "win32":
+        # Use the platform's real venv layout so Scripts/python.exe is runnable.
+        venv.EnvBuilder(with_pip=False).create(path)
+        return path
+
     (path / "bin").mkdir(parents=True)
     (path / "pyvenv.cfg").write_text(
         f"home = {sys.base_prefix}\n"
@@ -39,14 +57,14 @@ def _make_venv(path: Path, *, python: Path | None = None) -> Path:
         f"version = {sys.version.split()[0]}\n",
         encoding="utf-8",
     )
-    interpreter = path / "bin" / "python"
+    interpreter = _venv_interpreter(path)
     interpreter.symlink_to(python or Path(sys.executable))
-    (path / "lib" / f"python{_ACTUAL}" / "site-packages").mkdir(parents=True)
+    _site_packages(path).mkdir(parents=True)
     return path
 
 
 def _install_package(venv: Path, name: str, *, dist_info: bool = True) -> None:
-    site_packages = venv / "lib" / f"python{_ACTUAL}" / "site-packages"
+    site_packages = _site_packages(venv)
     if dist_info:
         (site_packages / f"{name}-1.0.dist-info").mkdir()
     else:
@@ -55,7 +73,7 @@ def _install_package(venv: Path, name: str, *, dist_info: bool = True) -> None:
 
 def _inspect(venv: Path, backend: str = "nep", python: str | None = None):
     return inspect_target_venv(
-        venv, backend=BACKENDS[backend], python_version=python or _ACTUAL
+        venv, backend=ALL_BACKENDS[backend], python_version=python or _ACTUAL
     )
 
 
@@ -67,6 +85,7 @@ def test_absent_path_is_created_not_inspected(tmp_path: Path) -> None:
     assert not (tmp_path / ".venv-nep").exists(), "inspection must not create anything"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows symlink permissions")
 def test_existing_environment_symlink_is_refused_without_following_target(
     tmp_path: Path,
 ) -> None:
@@ -80,6 +99,7 @@ def test_existing_environment_symlink_is_refused_without_following_target(
     assert target.joinpath("pyvenv.cfg").is_file()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows symlink permissions")
 def test_dangling_environment_symlink_is_not_treated_as_absent(
     tmp_path: Path,
 ) -> None:
@@ -113,6 +133,33 @@ def test_own_backend_and_framework_packages_are_not_foreign(tmp_path: Path) -> N
     grace = _make_venv(tmp_path / ".venv-grace")
     _install_package(grace, "tensorflow", dist_info=False)
     assert _inspect(grace, "grace").verdict is Verdict.REUSE
+
+
+def test_dpa_legacy_venv_accepts_its_own_deepmd_and_torch_packages(
+    tmp_path: Path,
+) -> None:
+    venv = _make_venv(tmp_path / ".venv-dpa-legacy")
+    _install_package(venv, "deepmd_kit")
+    _install_package(venv, "deepmd", dist_info=False)
+    _install_package(venv, "torch", dist_info=False)
+
+    state = _inspect(venv, "dpa-legacy")
+
+    assert state.verdict is Verdict.REUSE
+    assert state.foreign == ()
+
+
+def test_dpa_legacy_venv_still_rejects_a_different_backend(
+    tmp_path: Path,
+) -> None:
+    venv = _make_venv(tmp_path / ".venv-dpa-legacy")
+    _install_package(venv, "mace")
+
+    state = _inspect(venv, "dpa-legacy")
+
+    assert state.verdict is Verdict.INCOMPATIBLE
+    assert state.reason == "foreign_packages"
+    assert "MACE" in state.detail
 
 
 def test_foreign_framework_is_refused(tmp_path: Path) -> None:
@@ -165,7 +212,7 @@ def test_regular_file_at_the_environment_path_is_refused(tmp_path: Path) -> None
 
 def test_venv_without_interpreter_is_refused(tmp_path: Path) -> None:
     venv = _make_venv(tmp_path / ".venv-nep")
-    (venv / "bin" / "python").unlink()
+    _venv_interpreter(venv).unlink()
     state = _inspect(venv)
     assert state.verdict is Verdict.INCOMPATIBLE
     assert state.reason == "no_interpreter"
@@ -174,7 +221,7 @@ def test_venv_without_interpreter_is_refused(tmp_path: Path) -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX interpreter shim")
 def test_broken_interpreter_is_refused(tmp_path: Path) -> None:
     venv = _make_venv(tmp_path / ".venv-nep")
-    interpreter = venv / "bin" / "python"
+    interpreter = _venv_interpreter(venv)
     interpreter.unlink()
     interpreter.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
     interpreter.chmod(0o755)
@@ -202,12 +249,12 @@ def test_messages_name_the_environment_and_the_way_out(tmp_path: Path) -> None:
     assert "Nothing was changed" in message
 
     ok = _inspect(_make_venv(tmp_path / ".venv-ok"))
-    reused = reuse_message(ok, backend=BACKENDS["nep"])
+    reused = reuse_message(ok, backend=ALL_BACKENDS["nep"])
     assert "Reusing existing" in reused
     assert "NEP" in reused
 
 
 def test_every_backend_venv_name_maps_to_its_backend() -> None:
-    for engine, backend in BACKENDS.items():
+    for engine, backend in ALL_BACKENDS.items():
         assert backend_for_venv(backend.venv_name) is backend, engine
     assert backend_for_venv(".venv-not-a-backend") is None

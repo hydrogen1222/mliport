@@ -22,7 +22,9 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sys
 from dataclasses import dataclass, field
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
 from mliport.install.compatibility import (
     ALL_BACKENDS,
     BACKENDS,
+    CUDA_CHANNELS,
     FRAMEWORK_PYTHON,
     PROJECT_REQUIRES_PYTHON,
     SUPPORTED_PYTHON_VERSIONS,
@@ -176,12 +179,34 @@ def _venv_step(backend: BackendSpec, python_version: str) -> InstallStep:
     )
 
 
+def _venv_python_path(backend: BackendSpec, *, windows: bool | None = None) -> str:
+    """Python executable path inside an installer-managed virtual environment."""
+    is_windows = os.name == "nt" if windows is None else windows
+    if is_windows:
+        return str(PureWindowsPath(backend.venv_name) / "Scripts" / "python.exe")
+    return f"{backend.venv_name}/bin/python"
+
+
+def _venv_cli_path(backend: BackendSpec, *, windows: bool | None = None) -> str:
+    """Console-script path inside an installer-managed virtual environment."""
+    is_windows = os.name == "nt" if windows is None else windows
+    if is_windows:
+        return str(PureWindowsPath(backend.venv_name) / "Scripts" / "mliport.exe")
+    return f"{backend.venv_name}/bin/mliport"
+
+
 def _clean_step(backend: BackendSpec) -> InstallStep:
+    """Remove only the matrix-owned venv, using the current Python on every OS."""
+    remove_path = (
+        "from pathlib import Path; import shutil,sys; "
+        "p=Path(sys.argv[1]); "
+        "shutil.rmtree(p) if p.is_dir() and not p.is_symlink() "
+        "else p.unlink(missing_ok=True)"
+    )
     return InstallStep(
         stage="clean",
         description=f"Remove existing {backend.venv_name} (--clean)",
-        # Only the known venv path from the compatibility matrix is removed.
-        argv=["rm", "-rf", backend.venv_name],
+        argv=[sys.executable, "-c", remove_path, backend.venv_name],
     )
 
 
@@ -190,7 +215,7 @@ def _verify_step(backend: BackendSpec, device: str) -> InstallStep:
         stage="verify",
         description=f"Verify {backend.label}",
         argv=[
-            f"{backend.venv_name}/bin/mliport",
+            _venv_cli_path(backend),
             "doctor",
             "--engine",
             backend.engine,
@@ -212,7 +237,7 @@ def _torch_steps(
     """Torch install steps (shared by UMA/MACE/DPA)."""
     steps: list[InstallStep] = []
     torch_ver = bp.framework_version
-    python = f"{backend.venv_name}/bin/python"
+    python = _venv_python_path(backend)
 
     if cpu:
         # CPU wheels also carry a PEP 440 local tag. Route them through the
@@ -307,7 +332,7 @@ def _grace_steps(
     cpu: bool,
 ) -> list[InstallStep]:
     """GRACE (TensorFlow) install steps."""
-    python = f"{backend.venv_name}/bin/python"
+    python = _venv_python_path(backend)
     tf_ver = bp.framework_version
     extra_pkgs = bp.extra_packages
 
@@ -352,7 +377,8 @@ def _nep_steps(
     framework, so there is no framework wheel to pin.  Like every other
     backend, the isolated environment gets the pinned backend package **and**
     an editable mliport in a single resolver run: the ``verify`` stage calls
-    ``<venv>/bin/mliport doctor``, which cannot exist unless mliport itself is
+    the platform-specific ``mliport`` console script, which cannot exist unless
+    mliport itself is
     installed into that environment.  One resolve (rather than separate
     ``calorine`` / ``mliport`` installs) keeps ASE and NumPy consistent between
     the two; NumPy is deliberately left to the resolver because neither mliport
@@ -367,7 +393,7 @@ def _nep_steps(
     and records the prerequisite for the native runtime in a warning, which
     ``doctor --engine nep`` re-checks afterwards.
     """
-    python = f"{backend.venv_name}/bin/python"
+    python = _venv_python_path(backend)
     argv = _uv_pip(
         profile,
         python,
@@ -495,21 +521,113 @@ def generate_plan(
                 is_cpu = False
                 arch_name = arch.name
 
+    route_fallback_warning: str | None = None
+    route_profile_warnings: list[str] = []
+    if not is_cpu and gpus:
+        incompatible_routes: list[str] = []
+        profile_warnings: list[str] = []
+        unknown_gpus = [
+            gpu for gpu in gpus if classify_gpu(gpu.cc_major, gpu.cc_minor) is None
+        ]
+        if unknown_gpus:
+            devices = ", ".join(
+                f"{gpu.name} (CC {gpu.cc_major}.{gpu.cc_minor})" for gpu in unknown_gpus
+            )
+            incompatible_routes.append(
+                f"unrecognized GPU compute capability for {devices}"
+            )
+
+        for engine in engine_list:
+            backend = lookup_backend(engine)
+            assert backend is not None
+            for gpu in gpus:
+                gpu_arch = classify_gpu(gpu.cc_major, gpu.cc_minor)
+                if gpu_arch is None:
+                    continue
+                gpu_profile = get_backend_arch_profile(engine, gpu_arch.name)
+                if gpu_profile is None:
+                    incompatible_routes.append(
+                        f"{backend.label} has no compatibility profile for "
+                        f"{gpu.name} ({gpu_arch.name})"
+                    )
+                elif not gpu_profile.gpu_runtime_available:
+                    incompatible_routes.append(
+                        f"{backend.label} has no usable GPU runtime wheel for "
+                        f"{gpu_arch.label} ({gpu.name})"
+                    )
+                elif gpu_profile.status == "experimental":
+                    profile_warnings.append(
+                        f"{backend.label} on {gpu_arch.name}: EXPERIMENTAL — "
+                        f"upstream does not officially support this GPU. "
+                        f"{gpu_profile.notes}"
+                    )
+                elif gpu_profile.status == "needs_smoke_test":
+                    profile_warnings.append(
+                        f"{backend.label} on {gpu_arch.name}: needs smoke test — "
+                        "upstream constraints are satisfied but mliport has not "
+                        "yet verified this combination on real hardware."
+                    )
+
+            if backend.framework != "torch":
+                continue
+            profile = get_backend_arch_profile(engine, arch_name)
+            if profile is None:
+                incompatible_routes.append(
+                    f"{backend.label} has no CUDA profile for {arch_name}"
+                )
+                continue
+            channel_name = effective_cuda_channel(backend, arch, profile)
+            channel = CUDA_CHANNELS.get(channel_name)
+            if channel is None:
+                incompatible_routes.append(
+                    f"{backend.label} selects unregistered CUDA channel {channel_name}"
+                )
+                continue
+            unsupported = [
+                gpu
+                for gpu in gpus
+                if not channel.sm_min <= (gpu.cc_major, gpu.cc_minor) <= channel.sm_max
+            ]
+            if unsupported:
+                devices = ", ".join(
+                    f"{gpu.name} (sm_{gpu.cc_major}{gpu.cc_minor})"
+                    for gpu in unsupported
+                )
+                incompatible_routes.append(
+                    f"{backend.label} wheel {channel_name} does not cover {devices}"
+                )
+        if incompatible_routes:
+            detail = "; ".join(dict.fromkeys(incompatible_routes))
+            if device == "cuda":
+                raise InstallPlanError(
+                    "No compatible GPU runtime route exists for every visible GPU "
+                    f"and selected backend: {detail}. Use --device cpu or select "
+                    "a compatible GPU visibility set with CUDA_VISIBLE_DEVICES."
+                )
+            is_cpu = True
+            arch_name = "cpu"
+            arch = None
+            route_fallback_warning = (
+                "No compatible GPU runtime route exists for every visible GPU and "
+                f"selected backend; --device auto is falling back to CPU. {detail}"
+            )
+        else:
+            route_profile_warnings = list(dict.fromkeys(profile_warnings))
+
     plan = InstallPlan(
         gpu_arch=arch_name,
         gpu_cc=cc_str,
         source=src.name,
         python_version=py_ver,
     )
-
-    if device == "auto" and not is_cpu and not gpus:
-        # Shouldn't happen (auto with gpus sets is_cpu False), kept for safety.
-        pass
-    if arch is None and device == "auto" and gpus:
+    if arch is None and device == "auto" and gpus and not route_fallback_warning:
         plan.warnings.append(
             f"GPU compute capability {cc_str} is unsupported; falling back "
             f"to CPU-only installation. Use device=cuda to fail instead."
         )
+    if route_fallback_warning:
+        plan.warnings.append(route_fallback_warning)
+    plan.warnings.extend(route_profile_warnings)
     if src.offline:
         plan.warnings.append(
             "Source profile 'offline': no network access will be used. "
@@ -547,16 +665,20 @@ def generate_plan(
             else:
                 assert bp is not None, f"No profile for {backend.label} on {arch_name}"
                 if bp.status == "experimental":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: EXPERIMENTAL — "
                         f"upstream does not officially support this GPU. {bp.notes}"
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
                 elif bp.status == "needs_smoke_test":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: needs smoke test — "
-                        f"upstream constraints are satisfied but mliport has not "
-                        f"yet verified this combination on real hardware."
+                        "upstream constraints are satisfied but mliport has not "
+                        "yet verified this combination on real hardware."
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
             plan.steps.extend(_grace_steps(backend, bp, src, cpu=is_cpu))
         else:
             # torch backend (UMA / MACE / DPA)
@@ -567,19 +689,23 @@ def generate_plan(
                 assert bp is not None, f"No profile for {backend.label} on {arch_name}"
                 cuda_tag = effective_cuda_channel(backend, arch, bp)
                 if bp.status == "experimental":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: EXPERIMENTAL — "
                         f"upstream does not officially support this GPU. {bp.notes}"
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
                 elif bp.status == "needs_smoke_test":
-                    plan.warnings.append(
+                    warning = (
                         f"{backend.label} on {arch_name}: needs smoke test — "
-                        f"upstream constraints are satisfied but mliport has not "
-                        f"yet verified this combination on real hardware."
+                        "upstream constraints are satisfied but mliport has not "
+                        "yet verified this combination on real hardware."
                     )
+                    if warning not in plan.warnings:
+                        plan.warnings.append(warning)
             else:
                 # CPU: use the framework version from any arch profile
-                bp = next(iter(BACKENDS[engine].arch_profiles.values()))
+                bp = next(iter(backend.arch_profiles.values()))
             plan.steps.extend(
                 _torch_steps(backend, arch_name, bp, src, cuda_tag, cpu=is_cpu)
             )
@@ -601,8 +727,7 @@ def generate_plan(
             i
             for i, step in enumerate(plan.steps)
             if step.stage == "pip"
-            and step.argv[step.argv.index("--python") + 1]
-            == f"{backend.venv_name}/bin/python"
+            and step.argv[step.argv.index("--python") + 1] == _venv_python_path(backend)
         )
         plan.steps.insert(
             first_pip,
@@ -610,7 +735,7 @@ def generate_plan(
                 stage="constraints",
                 description=f"Freeze {backend.label} dependency contract",
                 argv=[
-                    f"{backend.venv_name}/bin/python",
+                    _venv_python_path(backend),
                     "-c",
                     "from pathlib import Path; import sys; "
                     "Path(sys.argv[1]).write_text(sys.argv[2], encoding='utf-8')",
@@ -622,7 +747,7 @@ def generate_plan(
         for step in plan.steps[first_pip + 1 :]:
             if step.stage == "pip":
                 step.argv.extend(["--constraint", constraint_path])
-        python = f"{backend.venv_name}/bin/python"
+        python = _venv_python_path(backend)
         plan.steps.append(
             InstallStep(
                 stage="check",

@@ -33,7 +33,7 @@ This module turns that flag into an explicit, fail-closed decision
 
 The check never mutates the filesystem and never imports anything from the
 target environment: it only reads ``pyvenv.cfg``, lists ``site-packages`` and
-asks ``<venv>/bin/python`` for ``major.minor``.
+asks the platform-specific venv interpreter for ``major.minor``.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mliport.install.compatibility import BACKENDS
+from mliport.install.compatibility import ALL_BACKENDS
 
 if TYPE_CHECKING:
     from mliport.install.compatibility import BackendSpec
@@ -154,6 +154,18 @@ def _present(site_packages: list[Path], probe: str) -> bool:
     return False
 
 
+_BACKEND_FAMILIES = {
+    # Current and legacy DPA runtimes are separate environments but install
+    # the same import/distribution names; those packages are the owning
+    # backend in either environment, not foreign packages.
+    "dpa-legacy": "dpa",
+}
+
+
+def _backend_family(engine: str) -> str:
+    return _BACKEND_FAMILIES.get(engine, engine)
+
+
 def _foreign_probes(backend: BackendSpec) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Probes that must be absent for ``backend`` to reuse an environment.
 
@@ -162,8 +174,9 @@ def _foreign_probes(backend: BackendSpec) -> tuple[tuple[str, ...], tuple[str, .
     foreign.
     """
     packages: list[str] = []
+    own_family = _backend_family(backend.engine)
     for engine, probes in _BACKEND_PROBES.items():
-        if engine != backend.engine:
+        if _backend_family(engine) != own_family:
             packages.extend(probes)
     frameworks: list[str] = []
     for framework, probes in _FRAMEWORK_PROBES.items():
@@ -216,9 +229,8 @@ def inspect_target_venv(
         deleted or installed, and nothing is imported from the venv.
     """
     path = Path(venv)
-    # A symlink may point at a different checkout, shared environment, or
-    # even a missing target. Never re-resolve/install through that link.
-    # Path.exists() alone also mistakes dangling symlinks for absent paths.
+    # Reject links before exists(): dangling links otherwise look absent, and
+    # live links could lead installation into someone else's environment.
     if path.is_symlink():
         return VenvState(
             path=path,
@@ -248,7 +260,7 @@ def inspect_target_venv(
             path=path,
             verdict=Verdict.INCOMPATIBLE,
             reason="no_interpreter",
-            detail=f"{path} has no bin/python interpreter",
+            detail=f"{path} has no Python interpreter",
         )
     reported = _reported_python(interpreter)
     if reported is None:
@@ -312,7 +324,7 @@ def reuse_message(state: VenvState, *, backend: BackendSpec) -> str:
 
 def backend_for_venv(venv_name: str) -> BackendSpec | None:
     """The backend owning ``venv_name`` (``None`` when unknown)."""
-    for backend in BACKENDS.values():
+    for backend in ALL_BACKENDS.values():
         if backend.venv_name == venv_name:
             return backend
     return None

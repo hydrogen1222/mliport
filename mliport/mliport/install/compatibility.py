@@ -160,6 +160,14 @@ class CudaChannel:
 
 
 CUDA_CHANNELS: dict[str, CudaChannel] = {
+    # DPA-2 legacy runtime is pinned to torch 2.3.1+cu121; this wheel
+    # carries SASS through Hopper but has no Blackwell kernel.
+    "cu121": CudaChannel(
+        name="cu121",
+        label="CUDA 12.1 (DPA-2 legacy)",
+        sm_min=(5, 0),
+        sm_max=(9, 0),
+    ),
     "cu126": CudaChannel(
         name="cu126",
         label="CUDA 12.6 (Legacy)",
@@ -258,6 +266,9 @@ class BackendArchProfile:
     upstream_supported: bool = True
     extra_packages: tuple[str, ...] = ()
     notes: str = ""
+    # False only when the pinned framework wheel is known not to contain a
+    # usable GPU runtime for this architecture (not merely untested upstream).
+    gpu_runtime_available: bool = True
 
     @property
     def status(self) -> Status:
@@ -639,9 +650,10 @@ BACKENDS: dict[str, BackendSpec] = {
                 framework_version="2.20.0",
                 upstream_supported=False,
                 extra_packages=("nvidia-cudnn-cu12==9.3.0.75",),
-                notes="Experimental. TF 2.20 official wheel build target "
-                "starts at sm_60 (Pascal); Maxwell sm_50 not in the wheel. "
-                "May need source-built TF.",
+                notes="TF 2.20 official wheel build target starts at sm_60 "
+                "(Pascal); Maxwell sm_50 is not in the wheel. A source-built "
+                "TensorFlow is needed for Maxwell GPU execution.",
+                gpu_runtime_available=False,
             ),
             "pascal": BackendArchProfile(
                 framework_version="2.20.0",

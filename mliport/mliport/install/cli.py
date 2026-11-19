@@ -25,6 +25,7 @@ from pathlib import Path
 
 from mliport.install.compatibility import BackendSpec
 from mliport.install.hardware import detect_gpus
+from mliport.install.launcher import launcher_path
 from mliport.install.plan import (
     InstallPlan,
     InstallPlanError,
@@ -246,9 +247,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[mliport] Selected source: {resolve_source(source_name).label}")
 
         src = resolve_source(source_name)
-        # Use a single canonical list for planning, display, and launchers.
-        # The planner accepts the fairchem alias and deduplicates engines;
-        # passing raw args to create_launchers would fail after installation.
         engine_list = normalize_engines(normalize_engine_args(args.engines))
         plan = generate_plan(
             gpus=gpus,
@@ -281,7 +279,10 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(render_plan_shell(plan))
         for engine in engine_list:
-            print(f"[mliport] [launcher] would create bin/mliport-{engine.strip()}")
+            print(
+                f"[mliport] [launcher] would create "
+                f"{launcher_path(engine.strip(), Path.cwd())}"
+            )
         return 0
 
     # Execute

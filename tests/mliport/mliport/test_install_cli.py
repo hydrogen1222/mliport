@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -241,8 +242,8 @@ def test_alias_duplicates_and_case_share_one_canonical_install_and_launcher(
 
     assert cli.main([*requested, "--dry-run"]) == 0
     out = capsys.readouterr().out
-    assert "would create bin/mliport-uma" in out
-    assert "would create bin/mliport-mace" in out
+    assert f"would create {launcher.launcher_path('uma', tmp_path)}" in out
+    assert f"would create {launcher.launcher_path('mace', tmp_path)}" in out
     assert "mliport-fairchem" not in out
 
 
@@ -404,7 +405,8 @@ def test_clean_skips_the_contract_and_rebuilds(monkeypatch, capsys) -> None:
         == 0
     )
     argv_list = [argv for argv, _env in calls]
-    assert argv_list[0][:2] == ["rm", "-rf"]
+    assert argv_list[0][0] == sys.executable
+    assert argv_list[0][1] == "-c"
     assert argv_list[0][-1] == ".venv-nep"
     assert not any(
         "Reusing existing" in line for line in capsys.readouterr().out.splitlines()

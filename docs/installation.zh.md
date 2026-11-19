@@ -51,7 +51,23 @@ mliport 的解决方案是**为每个后端构建独立的虚拟环境**。每�
 ./scripts/install_mliport.sh --engines mace dpa grace uma --device cpu
 ```
 
-CPU 安装体积更小（无 CUDA 库），适用于所有机器，但推理速度较慢。适合后处理、分析和笔记本电脑上的测试。
+CPU 安装会使用 CPU 版 PyTorch wheel，适用于所有机器，但推理速度较慢。由于 TensorPotential 的依赖约束，即使选择 CPU 执行，GRACE 的 TensorFlow 运行栈仍可能安装 CUDA 运行库。CPU 安装适合后处理、分析和笔记本电脑上的测试。
+
+### Windows（PowerShell）
+
+`scripts/install_mliport.sh` 是 Bash 脚本，不能直接在原生 PowerShell 中运行。
+在仓库根目录下，使用 Python 原生安装器：
+
+```powershell
+$env:PYTHONPATH = Join-Path $PWD "mliport"
+uv run --no-project --with packaging --python 3.12 -- python -m mliport.install --engines mace --device auto
+```
+
+安装器会在 `.venv-*/Scripts/` 下创建 Windows 虚拟环境，并生成原生
+`bin/mliport-*.cmd` 启动器。运行 MACE 可以使用
+`.venv-mace\Scripts\mliport.exe` 或 `bin\mliport-mace.cmd`。
+具体后端能否在 Windows 上构建、使用 GPU，仍取决于各上游项目的支持情况；
+存在启动器不代表该后端的 GPU 运行时一定可用。
 
 ### 安装器的工作流程
 
@@ -60,7 +76,7 @@ CPU 安装体积更小（无 CUDA 库），适用于所有机器，但推理速�
 1. 创建虚拟环境（`.venv-mace`、`.venv-dpa` 等）。
 2. 以可编辑模式安装 mliport 及分析扩展。
 3. 安装该后端的框架（锁定版本）。
-4. 在 `./bin/` 下写入启动器脚本（如 `./bin/mliport-mace`）。
+4. 在 `./bin/` 下写入系统原生启动器（POSIX 上为 `./bin/mliport-mace`，Windows 上为 `./bin/mliport-mace.cmd`）。
 5. 运行 `mliport doctor` 验证安装（除非指定了 `--skip-doctor`）。
 
 整个过程是确定性的：同一命令在同一机器上产生相同的环境，因为框架版本锁定在兼容性注册表（`mliport/mliport/install/compatibility.py`）中。
@@ -151,7 +167,7 @@ NEP 不在默认引擎列表中，因为其原生 GPU 运行时需要单独编�
 
 启动器只选择 Python 环境，不设置模型、精度或任何科学选项。
 
-在 Windows 上，每个环境有 `Scripts\mliport.exe`，安装器会同时生成 `bin\mliport-*.cmd` 启动器。
+在 Windows 上，每个环境有 `Scripts\mliport.exe`，安装器会生成原生 `bin\mliport-*.cmd` 启动器；POSIX shell 启动器只会在 POSIX 系统上生成。
 
 ### DPA 和 GRACE：GPU 设备隔离
 
@@ -179,6 +195,12 @@ PyTorch 和 TensorFlow 为不同 GPU 代际提供不同的 CUDA 构建版本。�
 - **Turing 及更新**（RTX 20xx/30xx/40xx、A100、H100）：使用 `cu128` 或 `cu130`。
 - **Volta**（V100）：使用 `cu126`，兼容较旧的驱动。
 - **Maxwell 和 Pascal**：`cu126` 遗留通道；上游标记为 `experimental`。
+
+当同时可见多张 NVIDIA GPU 时，安装器会检查所选框架 wheel 是否覆盖**全部**可见 GPU。
+如果不存在共同的兼容路线，`--device cuda` 会在创建环境前拒绝执行，
+`--device auto` 则回退到 CPU。可以通过 `CUDA_VISIBLE_DEVICES` 只暴露兼容的 GPU 子集。
+GRACE 使用的官方 TensorFlow 2.20 wheel 不包含 Maxwell GPU 内核，因此 Maxwell 上的
+GRACE 也遵循相同的拒绝/CPU 回退规则；其他仅标记为实验性的架构不会被一概视为不可用。
 
 CUDA 13 通道（`cu130`，UMA 的 torch 2.13 使用）需要 580+ 驱动，且不包含 Turing 以下的核函数，因此 Volta 保持在 `cu126`。
 

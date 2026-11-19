@@ -125,7 +125,8 @@ DPA_RUNTIME=legacy ./bin/mliport-dpa-legacy sp structure.vasp \
 
 - `.venv-dpa-legacy` 固定 `deepmd-kit==3.0.0b3`（上游预发布版，也是网络布局与该检查点匹配的
   最新版本），配 `torch==2.3.1`（GPU 机器上是 `+cu121`，仍然带 Volta 的 sm_70 内核）和
-  Python 3.10 到 3.12。
+  Python 3.10 到 3.12。cu121 wheel 不包含 Blackwell 内核：在 Blackwell 上使用 `--device cuda`
+  会被拒绝，`--device auto` 则改装 CPU 运行时。
 - `DPA_RUNTIME` 默认是 `current`，两个方向都不会自动回退。旧环境会拒绝 DPA-3、DPA4 和 DPA4C
   检查点并告诉你该用哪个运行时；当前环境则会拒绝旧版 deepmd-kit。
 - 安全加载：旧运行时只接受能用 `torch.load(weights_only=True)` 加载的检查点。发布出去的是
