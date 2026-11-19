@@ -67,7 +67,6 @@ def test_absent_path_is_created_not_inspected(tmp_path: Path) -> None:
     assert not (tmp_path / ".venv-nep").exists(), "inspection must not create anything"
 
 
-
 def test_existing_environment_symlink_is_refused_without_following_target(
     tmp_path: Path,
 ) -> None:
@@ -91,7 +90,6 @@ def test_dangling_environment_symlink_is_not_treated_as_absent(
     assert state.verdict is Verdict.INCOMPATIBLE
     assert state.reason == "symlink_venv"
     assert link.is_symlink()
-
 
 
 def test_compatible_environment_is_reusable(tmp_path: Path) -> None:
