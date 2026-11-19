@@ -157,6 +157,15 @@ def main() -> int:
         help="t9: relax each structure before scoring (method-specific protocol)",
     )
     parser.add_argument(
+        "--max-structures",
+        type=int,
+        default=None,
+        help=(
+            "t9: cap the number of reference structures per split; forwarded "
+            "to literature_eval.py so the executed and recorded counts agree"
+        ),
+    )
+    parser.add_argument(
         "--workflows",
         default=None,
         help="comma list of workflow names forwarded to tier scripts that "
@@ -174,6 +183,8 @@ def main() -> int:
     )
     args = parser.parse_args()
     requested_tiers = [tier for tier in args.tiers.split(",") if tier]
+    if args.max_structures is not None and args.max_structures < 1:
+        parser.error("--max-structures must be a positive integer")
     if "t9" in requested_tiers and (not args.dataset or not args.split):
         parser.error(
             "--tiers t9 requires --dataset and --split (and --subset, the "
@@ -263,6 +274,8 @@ def main() -> int:
                 cmd += ["--dataset", args.dataset, "--split", args.split]
                 if args.relax:
                     cmd += ["--relax"]
+                if args.max_structures is not None:
+                    cmd += ["--max-structures", str(args.max_structures)]
             if args.workflows and script in WORKFLOW_SCRIPTS:
                 cmd += ["--workflows", args.workflows]
             print(f"[run_suite] {args.engine}/{tier}: {Path(script).name}")

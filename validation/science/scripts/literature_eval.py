@@ -219,7 +219,9 @@ def run_engine(args: argparse.Namespace) -> int:
     if args.max_structures:
         frames = frames[: int(args.max_structures)]
     labels = _labels_available(frames)
-    print(f"[t9] {args.dataset}/{args.split}: {len(frames)} structures, labels={labels}")
+    print(
+        f"[t9] {args.dataset}/{args.split}: {len(frames)} structures, labels={labels}"
+    )
 
     ctx = engines.build_engine(
         args.engine,
@@ -320,6 +322,7 @@ def run_engine(args: argparse.Namespace) -> int:
                 )
                 row["f_ref_norm_max_eV_A"] = float(ref_norm.max())
                 mask = ref_norm >= literature_metrics.COS_MIN_REF_FORCE_EV_A
+                mask &= np.linalg.norm(f_model, axis=1) > 0.0
                 if mask.any():
                     fr = ref_forces[mask]
                     fm = f_model[mask]
@@ -384,10 +387,8 @@ def run_engine(args: argparse.Namespace) -> int:
 
     if e_ref and split_entry.get("group_key"):
         try:
-            metrics["relative_energy"] = (
-                literature_metrics.group_relative_energy_stats(
-                    e_ref, model_energies, atom_counts, groups
-                )
+            metrics["relative_energy"] = literature_metrics.group_relative_energy_stats(
+                e_ref, model_energies, atom_counts, groups
             )
             metrics["relative_energy"]["group_key"] = split_entry["group_key"]
         except ValueError as exc:
@@ -450,9 +451,7 @@ def run_engine(args: argparse.Namespace) -> int:
         }
         reference_split = split_entry.get("relaxed_reference_split")
         reference_relaxed = (
-            subset.parent / f"{reference_split}.extxyz"
-            if reference_split
-            else None
+            subset.parent / f"{reference_split}.extxyz" if reference_split else None
         )
         if reference_relaxed is not None and reference_relaxed.exists():
             metrics["relaxation"]["lattice_vs_reference"] = _lattice_comparison(
@@ -476,13 +475,9 @@ def run_engine(args: argparse.Namespace) -> int:
         metrics.setdefault("limitations", []).append(
             "force labels were reported available but no frame could be compared"
         )
-    metrics.setdefault("limitations", []).extend(
-        _limitations(args, entry, split_entry)
-    )
+    metrics.setdefault("limitations", []).extend(_limitations(args, entry, split_entry))
 
-    formation_ok = bool(
-        metrics.get("formation_energy", {}).get("available") is True
-    )
+    formation_ok = bool(metrics.get("formation_energy", {}).get("available") is True)
     if not rows:
         status, reason = "fail", "no_reference_structures"
     elif n_ok == 0:
@@ -494,12 +489,19 @@ def run_engine(args: argparse.Namespace) -> int:
     else:
         status, reason = "unsupported", "no_reference_labels"
 
+    n_source_records = ((selection or {}).get("splits", {}).get(args.split, {})).get(
+        "selected_records"
+    )
     metrics["sampling"] = {
         "tier": (selection or {}).get("tier"),
         "n_structures": len(frames),
-        "n_source_records": (
-            (selection or {}).get("splits", {}).get(args.split, {})
-        ).get("selected_records"),
+        "n_source_records": n_source_records,
+        "requested_max_structures": args.max_structures,
+        "truncated": (
+            args.max_structures is not None
+            and n_source_records is not None
+            and int(args.max_structures) < int(n_source_records)
+        ),
         "statistical_convergence_claimed": False,
         "note": (
             "the reported errors describe the evaluated structures only; the "
@@ -639,9 +641,7 @@ def _tie_line_reference(subset: Path, split: str) -> dict[str, dict[str, Any]]:
     frames = ase_read(candidate, index=":", format="extxyz")
     out: dict[str, dict[str, Any]] = {}
     for atoms in frames:
-        label = str(
-            atoms.info.get("literature_phase", atoms.info.get("label", ""))
-        )
+        label = str(atoms.info.get("literature_phase", atoms.info.get("label", "")))
         key = _tie_line_key(label)
         if key is None:
             continue
@@ -682,7 +682,9 @@ def _formation_energy_block(
             model_energies[key] = float(relaxed["energy_eV"])
         else:
             model_energies[key] = float(row["e_model_eV"])
-    keys = sorted(set(reference) & set(model_energies), key=lambda k: LIPS25_TIE_LINE[k])
+    keys = sorted(
+        set(reference) & set(model_energies), key=lambda k: LIPS25_TIE_LINE[k]
+    )
     block: dict[str, Any] = {
         "protocol": (
             "Ef/atom = (E_cell/(7-4x) - x E_Li2S^fu - (1-x) E_P2S5^fu)/(7-4x); "

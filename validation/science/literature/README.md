@@ -93,6 +93,12 @@ sed -n '1,80p' .validation-work/literature/literature-report.md
 python -c "import json;d=json.load(open('.validation-work/literature/literature-summary.json'));print(d['entries'][0]['dataset'])"
 ```
 
+`--max-structures N` caps a smoke run; the record's `n_structures`,
+`sampling.n_structures` and the per-structure CSV all describe the structures
+that were actually evaluated. Post-processing exit codes are collected in
+`<out>/postprocess.json`; a failed aggregate/report makes the command exit
+non-zero without touching the stored t9 records.
+
 The engine is always started through its own virtualenv (`--venv`, or
 `MLIPORT_SCIENCE_VENV_<ENGINE>`, or `<repo>/.venv-<engine>`), exactly as
 `run_suite.py` already does. The orchestrator itself imports no backend.
@@ -103,7 +109,15 @@ The engine is always started through its own virtualenv (`--venv`, or
 | --- | --- | --- |
 | `core` | 10 relaxed crystals, 4 melt–quench snapshots, 24 test structures, 80 LiPS20 frames, 24 JARVIS structures, 32 OMat24 structures | none (CI-friendly) |
 | `standard` | larger deterministic selections (96 LiPS-25 test structures, 320 LiPS20 frames, 120 JARVIS structures, all 256 OMat24) | `t1` inference, `t4` relax/cellrelax/EOS, `t6` NVE drift |
-| `research` | full selections (384 LiPS-25 test structures, 800 LiPS20 frames, 640 JARVIS structures) | `t1`, `t2`, `t2fd`, `t4`, `t5`, `t6`, `t7`, `t8` with their own budgets |
+| `research` | full selections (384 LiPS-25 test structures, 800 LiPS20 frames, 640 JARVIS structures) | `t1`, `t2`, `t2fd`, `t4`, `t5`, `t6`, `t8` with their own budgets; **T7 transport is a separate manual two-phase task** (see below) |
+
+T7 is not launched by `benchmark.py`. It needs one MD phase in the engine
+virtualenv and one analysis phase (kinisi, Nernst-Einstein, GEMDAT) in the
+analysis environment, and `run_suite.py` has no analysis-venv channel. The
+orchestrator therefore writes both copy-pasteable phases to
+`resolved.json → manual_tasks.t7`, prints a notice, and never reports the
+research tier as fully green. `MLIPORT_SCIENCE_VENV_ANALYSIS` names the
+analysis interpreter; without it the template keeps an explicit placeholder.
 
 The exact selections are resolved from the registry, written to
 `<out>/resolved.json`, and repeated in each `<out>/data/<dataset>/selection.json`

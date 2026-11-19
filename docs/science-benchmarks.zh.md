@@ -37,7 +37,7 @@ python validation/science/scripts/benchmark.py \
 | --- | --- | --- |
 | `core` | 每个数据集的确定性小样本 | 无，适合 CI |
 | `standard` | 更大的确定性样本 | 推理、弛豫/EOS、短 NVE 漂移 |
-| `research` | 完整样本 | 完整 t1-t8 框架 |
+| `research` | 完整样本 | `t1`、`t2`、`t2fd`、`t4`、`t5`、`t6`、`t8`；T7 输运为独立的两阶段手动任务 |
 
 每个抽样都记录在 `resolved.json` 以及各 `data/<dataset>/selection.json` 中，包含种子、规则与上游文件哈希，因此报告中的数字可以追溯到产生它的确切结构。
 
@@ -49,6 +49,8 @@ python validation/science/scripts/benchmark.py \
 - 形成能遵循已发表的 LiPS-25 协议，包括相排序与凸包一致性。
 - 没有可靠 DFT 应力标签时，应力报告为不可用。
 - 被阻断的数据集与不支持的性质都会连同原因列出，绝不静默丢弃或伪造。
+- `--max-structures N` 可限制试跑规模；记录的 `n_structures`、
+  `sampling.n_structures` 与逐结构 CSV 始终对应真正被评估的结构。
 
 ## 数据、缓存与离线使用
 

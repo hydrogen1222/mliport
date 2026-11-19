@@ -69,6 +69,14 @@ aggregator, `engines.build_engine` and the per-engine venv isolation.
 - **Selections are deterministic and traced.** Per-tier rules resolve from
   the registry seed; `<out>/data/<dataset>/selection.json` records the rule,
   chosen source indices, upstream commit and input hashes.
+- **The research tier does not claim T7.** T7 is a two-phase task (MD in the
+  engine venv, transport/GEMDAT in the analysis venv) and `run_suite.py` has
+  no analysis-venv channel, so `benchmark.py` records both phases under
+  `resolved.json -> manual_tasks.t7` and leaves T7 to a deliberate manual run.
+- **Post-processing cannot fake success.** `aggregate.py` and
+  `literature_report.py` exit codes are collected in `postprocess.json` and
+  propagated; a failed roll-up returns non-zero while the already-written t9
+  records remain untouched.
 
 Quickstart for one engine:
 

@@ -21,7 +21,9 @@ Conventions (never changed silently):
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from itertools import pairwise
+from typing import Any
 
 import numpy as np
 
@@ -114,8 +116,7 @@ def force_stats(
         "component_mae_eV_A": float(np.abs(diff).mean()),
         "component_rmse_eV_A": float(np.sqrt((diff**2).mean())),
         "component_mae_by_axis_eV_A": {
-            axis: float(np.abs(diff[:, i]).mean())
-            for i, axis in enumerate("xyz")
+            axis: float(np.abs(diff[:, i]).mean()) for i, axis in enumerate("xyz")
         },
         "vector_norm_error_eV_A": vector_norm_stats(diff),
         "reference_force_norm_eV_A": {
@@ -131,6 +132,9 @@ def force_stats(
     }
 
     mask = ref_norm >= COS_MIN_REF_FORCE_EV_A
+    # a model that predicts exactly zero force has no defined direction; such
+    # atoms are excluded instead of producing a NaN cosine
+    mask = mask & (model_norm > 0.0)
     if mask.any():
         fr = ref[mask]
         fm = model[mask]
@@ -161,7 +165,7 @@ def force_stats(
 
     edges = [0.0, *FORCE_BINS, float("inf")]
     strata = []
-    for lo, hi in zip(edges[:-1], edges[1:]):
+    for lo, hi in pairwise(edges):
         selection = (ref_norm >= lo) & (ref_norm < hi)
         if not selection.any():
             continue
@@ -171,9 +175,7 @@ def force_stats(
                 "ref_force_hi_eV_A": None if np.isinf(hi) else hi,
                 "n_atoms": int(selection.sum()),
                 "component_mae_eV_A": float(np.abs(diff[selection]).mean()),
-                "component_rmse_eV_A": float(
-                    np.sqrt((diff[selection] ** 2).mean())
-                ),
+                "component_rmse_eV_A": float(np.sqrt((diff[selection] ** 2).mean())),
                 "vector_norm_mae_eV_A": float(
                     np.linalg.norm(diff[selection], axis=1).mean()
                 ),
@@ -203,20 +205,14 @@ def force_stats(
             per_element[label] = {
                 "n_atoms": int(selection.sum()),
                 "component_mae_eV_A": float(np.abs(diff[selection]).mean()),
-                "component_rmse_eV_A": float(
-                    np.sqrt((diff[selection] ** 2).mean())
-                ),
+                "component_rmse_eV_A": float(np.sqrt((diff[selection] ** 2).mean())),
                 "vector_norm_mae_eV_A": float(
                     np.linalg.norm(diff[selection], axis=1).mean()
                 ),
                 "vector_norm_p95_eV_A": float(
-                    np.percentile(
-                        np.linalg.norm(diff[selection], axis=1), 95
-                    )
+                    np.percentile(np.linalg.norm(diff[selection], axis=1), 95)
                 ),
-                "reference_force_norm_mean_eV_A": float(
-                    ref_norm[selection].mean()
-                ),
+                "reference_force_norm_mean_eV_A": float(ref_norm[selection].mean()),
             }
         metrics["by_element"] = per_element
     return metrics
@@ -247,15 +243,11 @@ def stress_stats(s_ref: np.ndarray, s_model: np.ndarray) -> dict[str, Any]:
         "component_rmse_eV_A3": float(np.sqrt((diff**2).mean())),
         "component_mae_GPa": float(np.abs(diff).mean() * EV_A3_TO_GPA),
         "component_rmse_GPa": float(np.sqrt((diff**2).mean()) * EV_A3_TO_GPA),
-        "hydrostatic_error_bias_eV_A3": float(
-            (hydro_model - hydro_ref).mean()
-        ),
+        "hydrostatic_error_bias_eV_A3": float((hydro_model - hydro_ref).mean()),
         "hydrostatic_error_mae_GPa": float(
             np.abs(hydro_model - hydro_ref).mean() * EV_A3_TO_GPA
         ),
-        "deviatoric_component_mae_eV_A3": float(
-            np.abs(dev_model - dev_ref).mean()
-        ),
+        "deviatoric_component_mae_eV_A3": float(np.abs(dev_model - dev_ref).mean()),
         "deviatoric_component_mae_GPa": float(
             np.abs(dev_model - dev_ref).mean() * EV_A3_TO_GPA
         ),
@@ -304,9 +296,7 @@ def group_relative_energy_stats(
                 "reference_offset_eV_per_atom": float(ref_mean),
                 "model_offset_eV_per_atom": float(model_mean),
                 "offset_eV_per_atom": float(model_mean - ref_mean),
-                "relative_rmse_eV_per_atom": float(
-                    np.sqrt((delta**2).mean())
-                ),
+                "relative_rmse_eV_per_atom": float(np.sqrt((delta**2).mean())),
                 "relative_mae_eV_per_atom": float(np.abs(delta).mean()),
             }
     delta_all = resid_model - resid_ref
@@ -366,9 +356,7 @@ def formation_energies(
         xv = float(x[key])
         n_fu = float(natoms[key]) / (7.0 - 4.0 * xv)
         energy_fu = float(energy) / n_fu
-        out[key] = float(
-            (energy_fu - xv * high - (1.0 - xv) * low) / (7.0 - 4.0 * xv)
-        )
+        out[key] = float((energy_fu - xv * high - (1.0 - xv) * low) / (7.0 - 4.0 * xv))
     return out
 
 
@@ -387,7 +375,9 @@ def _rankdata(values: np.ndarray) -> np.ndarray:
     return ranks
 
 
-def rank_agreement(reference: Sequence[float], model: Sequence[float]) -> dict[str, Any]:
+def rank_agreement(
+    reference: Sequence[float], model: Sequence[float]
+) -> dict[str, Any]:
     """Spearman rho and the maximum rank shift between two orderings.
 
     Used for phase-stability rankings (e.g. LiPS-25 formation energies across
@@ -427,14 +417,9 @@ def rank_agreement(reference: Sequence[float], model: Sequence[float]) -> dict[s
             else:
                 discordant += 1
     tau_denominator = np.sqrt(
-        (concordant + discordant + ties_ref)
-        * (concordant + discordant + ties_model)
+        (concordant + discordant + ties_ref) * (concordant + discordant + ties_model)
     )
-    tau = (
-        float((concordant - discordant) / tau_denominator)
-        if tau_denominator
-        else 0.0
-    )
+    tau = float((concordant - discordant) / tau_denominator) if tau_denominator else 0.0
     shift = np.abs(ref_ranks - mdl_ranks)
     return {
         "n": int(n),
@@ -445,7 +430,9 @@ def rank_agreement(reference: Sequence[float], model: Sequence[float]) -> dict[s
     }
 
 
-def convex_hull_keys(energies: Mapping[str, float], x: Mapping[str, float]) -> list[str]:
+def convex_hull_keys(
+    energies: Mapping[str, float], x: Mapping[str, float]
+) -> list[str]:
     """Compositions on the lower convex hull of (x, formation energy).
 
     Returns the keys forming the hull in increasing ``x`` order, using the

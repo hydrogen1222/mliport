@@ -233,7 +233,9 @@ def render_markdown(summary: dict[str, Any], lang: str = "en") -> str:
         "e_rel": "相对能量 MAE (eV/atom)" if cn else "Relative E MAE (eV/atom)",
         "force": "力分量 MAE (eV/A)" if cn else "Force comp. MAE (eV/A)",
         "force_p95": "力矢量 P95 (eV/A)" if cn else "Force vector P95 (eV/A)",
-        "formation": "形成能 RMSE (eV/atom)" if cn else "Formation energy RMSE (eV/atom)",
+        "formation": "形成能 RMSE (eV/atom)"
+        if cn
+        else "Formation energy RMSE (eV/atom)",
         "stress": "应力" if cn else "Stress",
         "mode": "比较模式" if cn else "Mode",
         "datasets": "数据集来源与许可" if cn else "Dataset provenance and licences",
@@ -467,9 +469,7 @@ def render_markdown(summary: dict[str, Any], lang: str = "en") -> str:
             lines.append("")
 
     blocked = [
-        entry
-        for entry in entries
-        if entry["status"] in NON_MEASUREMENT_STATUSES
+        entry for entry in entries if entry["status"] in NON_MEASUREMENT_STATUSES
     ]
     lines.append(f"## {t['not_run']}")
     lines.append("")
@@ -499,9 +499,7 @@ def render_markdown(summary: dict[str, Any], lang: str = "en") -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", required=True)
-    parser.add_argument(
-        "--registry", default=str(literature_datasets.registry_path())
-    )
+    parser.add_argument("--registry", default=str(literature_datasets.registry_path()))
     parser.add_argument("--out", required=True)
     parser.add_argument("--tier", default=None)
     parser.add_argument(

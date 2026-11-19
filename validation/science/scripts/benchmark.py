@@ -64,9 +64,39 @@ TIER_PLAN: dict[str, dict[str, Any]] = {
         "workflows": {"t4": "relax,cellrelax,eos", "t6": "nve_dt_sweep"},
     },
     "research": {
-        "tiers": ["t1", "t2", "t2fd", "t4", "t5", "t6", "t7", "t8"],
+        # T7 is deliberately NOT here: it is a two-phase task (MD in the engine
+        # venv, then kinisi/GEMDAT analysis in the analysis venv) and
+        # run_suite.py has no analysis-venv channel.  Claiming one automated
+        # invocation would either run the analysis in the wrong environment or
+        # silently skip it.  See MANUAL_TASKS["t7"].
+        "tiers": ["t1", "t2", "t2fd", "t4", "t5", "t6", "t8"],
         "workflows": {},
     },
+}
+
+#: Research-level tasks that cannot be launched reliably by this orchestrator.
+#: They are recorded in ``resolved.json`` with copy-pasteable phases instead of
+#: being silently omitted or executed in the wrong environment.
+MANUAL_TASKS: dict[str, dict[str, Any]] = {
+    "t7": {
+        "name": "transport analysis (alpha-Na3PS4, two-phase)",
+        "status": "manual",
+        "reason": (
+            "T7 requires (1) a completed MD phase through the engine venv and "
+            "(2) a separate analysis phase (kinisi + NERNST-Einstein + GEMDAT) "
+            "in the analysis venv on the saved trajectory. run_suite.py has no "
+            "analysis-venv channel, so neither phase is run automatically here "
+            "and no research-tier run claims T7 passed."
+        ),
+        "phases": ["md", "transport,gemdat"],
+        "analysis_venv_env": "MLIPORT_SCIENCE_VENV_ANALYSIS",
+        "run_dir": "<out>/t7/t7_na3ps4_<engine>_T700K",
+        "note": (
+            "A budget that runs out or a missing analysis dependency must be "
+            "recorded as blocked/insufficient_sampling by the T7 script itself; "
+            "this orchestrator does not extrapolate or fake transport results."
+        ),
+    }
 }
 
 #: Splits that are geometry-only inputs and must be relaxed before scoring.
@@ -83,7 +113,9 @@ def _venv_python(engine: str, override: str | None) -> str | None:
     env_key = f"MLIPORT_SCIENCE_VENV_{engine.upper()}"
     if os.environ.get(env_key):
         return os.environ[env_key]
-    candidate = Path(common.__file__).resolve().parents[3] / f".venv-{engine}/bin/python"
+    candidate = (
+        Path(common.__file__).resolve().parents[3] / f".venv-{engine}/bin/python"
+    )
     return str(candidate) if candidate.exists() else None
 
 
@@ -101,7 +133,9 @@ def _write_blocked(
         test_id=f"t9_{dataset}_{split}",
         status="blocked",
         engine=profile.get("engine", "unknown"),
-        model_identity=profile.get("identity", profile.get("upstream_model_id", "unknown")),
+        model_identity=profile.get(
+            "identity", profile.get("upstream_model_id", "unknown")
+        ),
         model_sha256=profile.get("model_sha256", "0" * 64),
         task=profile.get("task"),
         head=profile.get("head"),
@@ -120,6 +154,160 @@ def _write_blocked(
 def _run(cmd: list[str], env: dict[str, str] | None = None) -> int:
     print("[benchmark] $ " + " ".join(str(part) for part in cmd), flush=True)
     return subprocess.run(cmd, check=False, env=env).returncode  # noqa: S603
+
+
+def _manual_task_commands(
+    args: argparse.Namespace,
+    out_dir: Path,
+    common_args: list[str],
+) -> dict[str, Any]:
+    """Copy-pasteable phases for research tasks that are not automated."""
+    analysis_python = os.environ.get("MLIPORT_SCIENCE_VENV_ANALYSIS")
+    run_dir = out_dir / "t7" / f"t7_na3ps4_{args.engine}_T700K"
+    tasks: dict[str, Any] = {}
+    for task_id, task in MANUAL_TASKS.items():
+        phase_commands = [
+            {
+                "phase": "md",
+                "environment": f"engine venv ({args.engine})",
+                "argv": [
+                    sys.executable,
+                    str(SCRIPTS / "run_suite.py"),
+                    "--tiers",
+                    task_id,
+                    "--cases",
+                    "md",
+                    *common_args,
+                ],
+            },
+            {
+                "phase": "transport,gemdat",
+                "environment": (
+                    "$MLIPORT_SCIENCE_VENV_ANALYSIS"
+                    if analysis_python is None
+                    else analysis_python
+                ),
+                "argv": [
+                    analysis_python or "<analysis venv python>",
+                    str(SCRIPTS / "analysis_suite.py"),
+                    "--engine",
+                    args.engine,
+                    "--profile-id",
+                    args.profile_id,
+                    "--model",
+                    args.model,
+                    "--manifest",
+                    args.manifest,
+                    "--out",
+                    str(out_dir / task_id),
+                    "--cases",
+                    "transport,gemdat",
+                    "--run-dir",
+                    str(run_dir),
+                    "--backend-version",
+                    "<backend package version from the engine venv>",
+                ],
+            },
+        ]
+        tasks[task_id] = {**task, "resolved_commands": phase_commands}
+    return tasks
+
+
+def run_postprocessing(
+    out_dir: Path,
+    *,
+    manifest_path: str,
+    registry_path: str,
+    skip_report: bool = False,
+) -> tuple[dict[str, Any], int]:
+    """Run aggregate + report and never hide their exit codes.
+
+    The raw t9 records are valid evidence on their own, so a post-processing
+    failure does not delete or rewrite them; it is recorded in
+    ``postprocess.json`` and returned as a non-zero code so the caller cannot
+    report success.
+    """
+    stages: list[dict[str, Any]] = []
+    aggregate_cmd = [
+        sys.executable,
+        str(SCRIPTS / "aggregate.py"),
+        "--results",
+        str(out_dir),
+        "--manifest",
+        manifest_path,
+        "--out",
+        str(out_dir / "summary.json"),
+    ]
+    aggregate_code = _run(aggregate_cmd)
+    stages.append(
+        {
+            "stage": "aggregate",
+            "argv": aggregate_cmd,
+            "exit_code": aggregate_code,
+            "ok": aggregate_code == 0,
+            "artifacts": [str(out_dir / "summary.json")],
+            "note": (
+                None
+                if aggregate_code == 0
+                else "aggregation failed; raw t9 records are preserved unchanged"
+            ),
+        }
+    )
+    if not skip_report:
+        report_cmd = [
+            sys.executable,
+            str(SCRIPTS / "literature_report.py"),
+            "--results",
+            str(out_dir),
+            "--registry",
+            registry_path,
+            "--out",
+            str(out_dir),
+        ]
+        report_code = _run(report_cmd)
+        stages.append(
+            {
+                "stage": "report",
+                "argv": report_cmd,
+                "exit_code": report_code,
+                "ok": report_code == 0,
+                "artifacts": [
+                    str(out_dir / "literature-report.md"),
+                    str(out_dir / "literature-report_CN.md"),
+                    str(out_dir / "literature-summary.json"),
+                ],
+                "note": (
+                    None
+                    if report_code == 0
+                    else "report generation failed; raw t9 records are preserved"
+                ),
+            }
+        )
+    failed = [stage for stage in stages if not stage["ok"]]
+    document = {
+        "schema": "mliport.literature-postprocess/1",
+        "generated_utc": _now(),
+        "status": "ok" if not failed else "failed",
+        "stages": stages,
+        "failed_stages": [stage["stage"] for stage in failed],
+        "evidence_preserved": True,
+        "note": (
+            "post-processing (aggregate/report) does not modify the t9 result "
+            "records; a failure here is reported explicitly and never as a "
+            "successful benchmark run"
+        ),
+    }
+    (out_dir / "postprocess.json").write_text(
+        json.dumps(document, indent=2) + "\n", encoding="utf-8"
+    )
+    if failed:
+        names = ", ".join(stage["stage"] for stage in failed)
+        print(
+            f"[benchmark] POSTPROCESS FAILED ({names}); evidence kept under "
+            f"{out_dir}, details in postprocess.json",
+            file=sys.stderr,
+        )
+    return document, (0 if not failed else 1)
 
 
 def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
@@ -210,6 +398,8 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
         "cache": str(literature_datasets.cache_root(args.cache)),
         "offline": bool(args.offline),
         "backend_python": python,
+        "max_structures": args.max_structures,
+        "manual_tasks": {},
         "selections": {},
         "imports": [],
         "commands": [],
@@ -233,9 +423,17 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
         except literature_datasets.RegistryError as exc:
             reason = f"{type(exc).__name__}: {exc}"
             print(f"[benchmark] {dataset}: BLOCKED ({reason})", file=sys.stderr)
-            resolved["imports"].append({"dataset": dataset, "status": "blocked", "reason": reason})
+            resolved["imports"].append(
+                {"dataset": dataset, "status": "blocked", "reason": reason}
+            )
             _write_blocked(
-                tier_dir, dataset, "import", args.profile_id, profile, reason, args.device
+                tier_dir,
+                dataset,
+                "import",
+                args.profile_id,
+                profile,
+                reason,
+                args.device,
             )
             # a dataset that cannot be acquired is recorded, never faked
             exit_code = max(exit_code, 2)
@@ -253,7 +451,11 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
             },
         }
         resolved["imports"].append(
-            {"dataset": dataset, "status": "imported", "splits": list(document.get("splits", {}))}
+            {
+                "dataset": dataset,
+                "status": "imported",
+                "splits": list(document.get("splits", {})),
+            }
         )
         imported.append((dataset, document))
 
@@ -261,7 +463,9 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
         json.dumps(resolved, indent=2) + "\n", encoding="utf-8"
     )
     if args.import_only:
-        print(f"[benchmark] imported {len(imported)} dataset(s); resolved config at {out_dir / 'resolved.json'}")
+        print(
+            f"[benchmark] imported {len(imported)} dataset(s); resolved config at {out_dir / 'resolved.json'}"
+        )
         return exit_code
 
     if python is None:
@@ -270,14 +474,22 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
             f"MLIPORT_SCIENCE_VENV_{args.engine.upper()})"
         )
         print(f"[benchmark] BLOCKED: {reason}", file=sys.stderr)
-        resolved["imports"].append({"dataset": None, "status": "blocked", "reason": reason})
+        resolved["imports"].append(
+            {"dataset": None, "status": "blocked", "reason": reason}
+        )
         (out_dir / "resolved.json").write_text(
             json.dumps(resolved, indent=2) + "\n", encoding="utf-8"
         )
         for dataset, document in imported:
             for split in document.get("splits", {}):
                 _write_blocked(
-                    tier_dir, dataset, split, args.profile_id, profile, reason, args.device
+                    tier_dir,
+                    dataset,
+                    split,
+                    args.profile_id,
+                    profile,
+                    reason,
+                    args.device,
                 )
         return 2
 
@@ -313,9 +525,18 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
             subset = out_dir / "data" / dataset / output
             if not subset.exists():
                 reason = f"imported split file is missing: {subset}"
-                print(f"[benchmark] {dataset}/{split}: BLOCKED ({reason})", file=sys.stderr)
+                print(
+                    f"[benchmark] {dataset}/{split}: BLOCKED ({reason})",
+                    file=sys.stderr,
+                )
                 _write_blocked(
-                    tier_dir, dataset, split, args.profile_id, profile, reason, args.device
+                    tier_dir,
+                    dataset,
+                    split,
+                    args.profile_id,
+                    profile,
+                    reason,
+                    args.device,
                 )
                 exit_code = max(exit_code, 2)
                 continue
@@ -334,6 +555,8 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
             ]
             if split in RELAX_SPLITS:
                 command += ["--relax"]
+            if args.max_structures is not None:
+                command += ["--max-structures", str(args.max_structures)]
             resolved["commands"].append(
                 {"stage": f"t9/{dataset}/{split}", "argv": command}
             )
@@ -341,6 +564,13 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
             exit_code = max(exit_code, 0 if code == 0 else 1)
 
     plan = TIER_PLAN[args.tier]
+    if args.tier == "research":
+        resolved["manual_tasks"] = _manual_task_commands(args, out_dir, common_args)
+        print(
+            "[benchmark] research tier: T7 transport analysis is a manual "
+            "two-phase task; see resolved.json -> manual_tasks.t7",
+            file=sys.stderr,
+        )
     if plan["tiers"] and not args.skip_existing_tiers:
         # one invocation per tier so a tier-specific workflow budget can be
         # forwarded without inventing a per-tier syntax in run_suite.py
@@ -355,42 +585,27 @@ def main() -> int:  # noqa: PLR0915 - a single, explicit orchestration path
             workflow = plan["workflows"].get(tier)
             if workflow:
                 command += ["--workflows", workflow]
-            resolved["commands"].append(
-                {"stage": f"tiers/{tier}", "argv": command}
-            )
+            resolved["commands"].append({"stage": f"tiers/{tier}", "argv": command})
             code = _run(command)
             exit_code = max(exit_code, 0 if code == 0 else 1)
     (out_dir / "resolved.json").write_text(
         json.dumps(resolved, indent=2) + "\n", encoding="utf-8"
     )
 
-    aggregate = SCRIPTS / "aggregate.py"
-    _run(
-        [
-            sys.executable,
-            str(aggregate),
-            "--results",
-            str(out_dir),
-            "--manifest",
-            args.manifest,
-            "--out",
-            str(out_dir / "summary.json"),
-        ]
+    postprocess, postprocess_code = run_postprocessing(
+        out_dir,
+        manifest_path=args.manifest,
+        registry_path=str(literature_datasets.registry_path()),
+        skip_report=args.skip_report,
     )
-    if not args.skip_report:
-        report = SCRIPTS / "literature_report.py"
-        _run(
-            [
-                sys.executable,
-                str(report),
-                "--results",
-                str(out_dir),
-                "--registry",
-                str(literature_datasets.registry_path()),
-                "--out",
-                str(out_dir),
-            ]
-        )
+    resolved["postprocess"] = postprocess
+    (out_dir / "resolved.json").write_text(
+        json.dumps(resolved, indent=2) + "\n", encoding="utf-8"
+    )
+    if postprocess_code != 0:
+        # Evidence already written under <out>/t9 stays valid; the failure is
+        # explicit in postprocess.json and must not be reported as success.
+        exit_code = max(exit_code, 1)
     return exit_code
 
 

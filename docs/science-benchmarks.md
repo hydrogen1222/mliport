@@ -55,7 +55,7 @@ documents a stress label.
 | --- | --- | --- |
 | `core` | deterministic small selection per dataset | none, CI-friendly |
 | `standard` | larger deterministic selection | inference, relax/EOS, short NVE drift |
-| `research` | full selection | the complete t1-t8 harness |
+| `research` | full selection | `t1`, `t2`, `t2fd`, `t4`, `t5`, `t6`, `t8`; T7 transport is a separate two-phase manual task |
 
 Every selection is recorded in `resolved.json` and in each
 `data/<dataset>/selection.json` together with the seed, the rule and the
@@ -75,6 +75,9 @@ structures that produced it.
 - Stress is reported as unavailable when no verified DFT stress label exists.
 - Blocked datasets and unsupported properties are listed with their reason;
   they are never silently dropped or faked.
+- `--max-structures N` caps a smoke run; the record's `n_structures`,
+  `sampling.n_structures` and the per-structure CSV all describe the
+  structures that were actually evaluated.
 
 ## Data, cache and offline use
 

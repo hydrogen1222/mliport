@@ -58,6 +58,11 @@ sed -n '1,80p' .validation-work/literature/literature-report.md
 python -c "import json;d=json.load(open('.validation-work/literature/literature-summary.json'));print(d['entries'][0]['dataset'])"
 ```
 
+`--max-structures N` 可限制试跑规模；记录的 `n_structures`、
+`sampling.n_structures` 与逐结构 CSV 始终对应真正被评估的结构。后处理退出码
+记录在 `<out>/postprocess.json`；aggregate/report 失败会让命令以非零退出，
+但不会改动已写入的 t9 记录。
+
 引擎始终通过自己的虚拟环境启动（`--venv`、`MLIPORT_SCIENCE_VENV_<ENGINE>` 或 `<repo>/.venv-<engine>`），与 `run_suite.py` 现有行为一致；编排脚本本身不导入任何后端。
 
 ## 档位
@@ -66,7 +71,9 @@ python -c "import json;d=json.load(open('.validation-work/literature/literature-
 | --- | --- | --- |
 | `core` | 10 个弛豫晶体、4 个熔淬快照、24 个测试结构、80 帧 LiPS20、24 个 JARVIS 结构、32 个 OMat24 结构 | 无（适合 CI） |
 | `standard` | 更大的确定性抽样（96 个 LiPS-25 测试结构、320 帧 LiPS20、120 个 JARVIS 结构、全部 256 个 OMat24） | `t1` 推理、`t4` relax/cellrelax/EOS、`t6` NVE 漂移 |
-| `research` | 完整抽样（384 个 LiPS-25 测试结构、800 帧 LiPS20、640 个 JARVIS 结构） | `t1`、`t2`、`t2fd`、`t4`、`t5`、`t6`、`t7`、`t8`（各档位自身预算） |
+| `research` | 完整抽样（384 个 LiPS-25 测试结构、800 帧 LiPS20、640 个 JARVIS 结构） | `t1`、`t2`、`t2fd`、`t4`、`t5`、`t6`、`t8`（各档位自身预算）；**T7 输运是独立的两阶段手动任务**（见下） |
+
+`benchmark.py` 不会自动启动 T7。它需要先在引擎虚拟环境完成 MD 阶段，再在分析环境中完成分析阶段（kinisi、Nernst-Einstein、GEMDAT），而 `run_suite.py` 没有分析环境通道。因此编排器把两个可直接复制的阶段写入 `resolved.json → manual_tasks.t7`，打印提示，并且绝不会声称 research 档已完整通过。`MLIPORT_SCIENCE_VENV_ANALYSIS` 指定分析解释器；未设置时模板保留显式占位符。
 
 精确抽样从注册表解析，写入 `<out>/resolved.json`，并在每个 `<out>/data/<dataset>/selection.json` 中重复记录种子、规则、被选中的源索引、上游 commit 与每个输入文件的 SHA-256。
 
