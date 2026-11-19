@@ -166,14 +166,17 @@ the dynamics and therefore the transport coefficients you extract.
   Hamiltonian, so velocity autocorrelation functions and vibrational spectra
   computed from Langevin trajectories carry thermostat artifacts. For spectra,
   use NVE or NHC.
-- **Bussi/CSVR**: deterministic thermostat that rescales velocities to match
-  the canonical distribution (Bussi, Donadio and Parrinello, J. Chem. Phys.
-  **126**, 014101, 2007). A good middle ground: minimal perturbation to the
-  dynamics while enforcing the correct temperature distribution.
+- **Bussi/CSVR**: stochastic velocity rescaling thermostat that samples the
+  exact canonical kinetic-energy distribution (Bussi, Donadio and Parrinello,
+  J. Chem. Phys. **126**, 014101, 2007). A good middle ground: less
+  perturbation to the dynamics than Langevin while guaranteeing the correct
+  temperature distribution.
 - **NHC** (Nosé–Hoover chain): deterministic thermostat based on extended
   system dynamics (Martyna et al., J. Chem. Phys. **97**, 2635, 1992).
-  Produces true canonical sampling with unperturbed dynamics. Best choice for
-  vibrational spectra and diffusion coefficients. **Cannot coexist with
+  Produces true canonical sampling with deterministic, time-reversible
+  dynamics. Better than stochastic thermostats for computing dynamical
+  properties (diffusion, spectra), but the extended variables do modify the
+  equations of motion compared to NVE. **Cannot coexist with
   FixCom or other ASE constraints.** mliport checks for constraints *before*
   loading the model — if the input structure carries any constraint, the run
   fails immediately with an actionable error rather than loading the model and

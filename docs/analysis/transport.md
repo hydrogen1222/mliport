@@ -159,8 +159,8 @@ agree:
 | `--dimensions` | `xyz` | Which Cartesian axes contribute (subset of `xyz`) |
 | `--lag-step-ps` | — | Lag-time grid spacing (sparsifies the covariance matrix) |
 | `--lag-stop-ps` | — | Maximum lag time (give both or neither with `--lag-step-ps`) |
-| `--drift-reference` | `nonmobile` | Framework drift correction |
-| `--drift-mode` | `arithmetic_mean` | Drift calculation method |
+| `--drift-reference` | `none` | Framework drift correction: `none`, `nonmobile`, `all`, `indices` |
+| `--drift-mode` | `arithmetic_mean` | Drift calculation: `none`, `arithmetic_mean`, `mass_weighted_com` |
 
 ### Collective conductivity
 

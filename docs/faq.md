@@ -205,31 +205,36 @@ optimizes positions only — it does not relax the cell or eliminate stress.
 
 ### Which backends support NPT?
 
-NPT uses the ASE `IsotropicMTKNPT` integrator, so it works with all
-ASE-based backends: **MACE, DPA, GRACE, and UMA**. NEP with the `gpumd`
-runtime does not support NPT (it uses native GPUMD integrators that do not
-include this ensemble). NEP with `--nep-runtime ase` does support NPT.
+NPT uses the ASE `IsotropicMTKNPT` integrator and is available for
+**UMA, MACE, GRACE, and DPA** backends only. NEP is **not** supported for
+NPT — neither the GPUMD runtime nor the Calorine/ASE runtime — because the
+engine rejects any model type outside `{uma, mace, grace, dpa}` for NPT.
 
 ### What NPT parameters do I need?
 
 At minimum, you need:
 
 ```bash
---ensemble NPT --temperature 300 --pressure-gpa 0.0 \
---npt-tdamp 50 --npt-pdamp 500
+mliport md structure.vasp --model model.pt --model-type mace --task bulk \
+  --ensemble NPT --temp 300 --pressure-gpa 0.0 \
+  --npt-tdamp 100 --npt-pdamp 1000
 ```
 
+- `--temp`: target temperature in Kelvin
 - `--pressure-gpa`: target pressure in GPa (0 = ambient, positive =
   compressive)
-- `--npt-tdamp`: thermostat damping time in fs (typically 25–100 fs)
-- `--npt-pdamp`: barostat damping time in fs (typically 250–1000 fs, longer
-  than tdamp)
+- `--npt-tdamp`: MTK thermostat damping time in fs (default 100)
+- `--npt-pdamp`: MTK barostat damping time in fs (default 1000)
 
 ### Do NPT trajectories have variable cells?
 
-Yes. The cell shape and volume change at each step. The trajectory (`XDATCAR`)
-records the cell at each frame. Analysis tools that assume fixed cells (like
-standard RDF binning) should be used with care on NPT trajectories.
+Yes. The cell **volume** changes at each step (the `IsotropicMTKNPT`
+integrator rescales the cell isotropically — it does not allow the six
+cell-shape degrees of freedom to vary independently). The primary trajectory
+output is an ASE `.traj` file that records the cell at each frame; a standard
+`XDATCAR` with a fixed header is **not** produced for NPT runs. Analysis
+tools that assume a fixed cell should not be used directly on NPT
+trajectories.
 
 ---
 
@@ -245,30 +250,44 @@ returning an unreliable number. Run a longer trajectory or increase sampling.
 
 ### How do I analyze an MD trajectory?
 
+The syntax is `mliport analyze <RUN_DIR_OR_TRAJECTORY> <TASK> [OPTIONS]`.
+The source (run directory or trajectory file) always comes **before** the
+task name:
+
 ```bash
-# Mean squared displacement and tracer diffusivity
-mliport analyze msd runs/md/XDATCAR --timestep 2.0
+# Validate trajectory metadata and task eligibility
+mliport analyze runs/md validate
 
-# Radial distribution function
-mliport analyze rdf runs/md/XDATCAR --pairs Li-S --nbins 200
+# Thermodynamic diagnostics
+mliport analyze runs/md thermo
 
-# Velocity autocorrelation function and vibrational spectrum
-mliport analyze vacf runs/md/XDATCAR --timestep 2.0
+# Mean squared displacement — requires --mobile
+mliport analyze runs/md msd --mobile Li
 
-# Ionic conductivity and transport properties
-mliport analyze transport runs/md/XDATCAR --timestep 2.0 --temperature 600
+# Radial distribution function — requires --center and --neighbor
+mliport analyze runs/md rdf --center Li --neighbor S --bins 200
 
-# Arrhenius fit from multiple temperatures
-mliport analyze arrhenius results_300K results_400K results_500K
+# Velocity autocorrelation (requires real velocities in the trajectory)
+mliport analyze runs/md vacf
+
+# Tracer diffusivity and NE conductivity — all three flags required
+mliport analyze runs/md transport --mobile Li --charge 1 --fit-start-ps 5.0
+
+# Arrhenius fit from explicit temperature/diffusivity arrays
+mliport analyze runs/md arrhenius \
+  --temperature 600 --temperature 700 --temperature 800 \
+  --diffusivity 1.2e-10 --diffusivity 3.4e-10 --diffusivity 7.8e-10
 ```
 
-See [Analysis](analysis/index.md) for the full list of available analyses.
+See [Analysis](analysis/index.md) for the full list of 11 analysis tasks.
 
 ### Can I analyze trajectories from other codes?
 
-mliport reads `XDATCAR` files in VASP format. If your trajectory is in
-another format, convert it to XDATCAR first (for example with ASE's
-`write` function).
+mliport can analyze its own run directories (which contain provenance
+metadata) as well as external XDATCAR files and ASE `.traj` files. For
+external trajectories, you may need to specify `--positions-convention`
+(wrapped/unwrapped) and `--frame-interval-fs` when the trajectory lacks
+time metadata.
 
 ---
 
@@ -311,8 +330,8 @@ deliberately want to replace results, pass `--overwrite` on the CLI or
 NEP has two execution runtimes:
 
 - **`ase`** — uses the Calorine Python package to run NEP through ASE. Uses
-  `CPUNEP` on CPU and `GPUNEP` on CUDA. Supports all mliport features
-  including NPT.
+  `CPUNEP` on CPU and `GPUNEP` on CUDA. Supports most mliport features
+  but **not NPT** (the engine rejects all NEP model types for NPT).
 - **`gpumd`** — launches the native GPUMD executable directly. GPU-only,
   highest performance for large-scale MD, but does not support NPT and has
   a different feature set.

@@ -117,18 +117,16 @@ trajectory or updating the analysis code.
 
 These are rough guidelines. Slower diffusers need proportionally longer runs.
 
-## The tasks without their own page
+## Quick reference for shorter tasks
+
+Each task below also has its own full documentation page.
 
 ### validate
 
-**`thermo`** reports temperature, energy drift and pressure. `--block-size-frames`
-sets the block size for the block statistics, and for an NVE run the energy drift
-is the thing to look at first. The summary statistics use the finite frames only
-(NaN and ±Inf alike, in the summary and in the block means),
-so the result also carries `summary.data_integrity`: per column, how many frames
-existed, how many were finite, and which columns had non-finite values at all
-(`raw/md.csv` cells that are empty or unparsable become NaN). A mean computed
-from a partially corrupted column is visible instead of looking healthy.
+`validate` checks that the trajectory metadata is self-consistent and that the
+file is well-formed. It reports eligibility flags for downstream analyses (RDF,
+MSD, transport, VACF) based on the trajectory's properties: dimensionality,
+periodicity, cell shape, time uniformity, position convention, and completeness.
 
 ```bash
 mliport analyze runs/md validate
@@ -148,8 +146,10 @@ mliport analyze runs/md thermo --block-size-frames 100
 ```
 
 For an NVE run, the energy drift is the first thing to look at: it measures
-how well the integrator conserves energy. A drift above ~1 meV/atom/ps
-suggests the timestep is too large or the model's forces are noisy.
+how well the integrator conserves energy. The acceptable drift depends on
+the system size, timestep and the physics you are studying; compare against
+published MLIP benchmarks for your system rather than relying on a single
+threshold.
 
 For NVT, check that the temperature fluctuates around the target with the
 expected variance. For NPT, the pressure and volume traces show whether the
@@ -167,15 +167,17 @@ mliport analyze runs/md rmsd --drift-reference nonmobile
 ```
 
 `--species` restricts to one species and `--drift-reference
-none|nonmobile|indices` chooses how framework drift is removed. For solid
-electrolytes, `--drift-reference nonmobile` removes the slow drift of the
-immobile sublattice so that you see only the mobile-ion displacement.
+none|nonmobile|indices` (default `none`) chooses how framework drift is
+removed. For solid electrolytes, `--drift-reference nonmobile` removes the
+slow drift of the immobile sublattice so that you see only the mobile-ion
+displacement.
 
 ### density
 
 `density` builds a periodic 3-D number-density map of a mobile species.
-The output is a volumetric data file that can be visualized in VESTA or
-similar tools.
+The output is a NumPy `.npz` archive containing the occupancy probability
+and number-density arrays on a voxel grid, together with the cell vectors
+and grid shape.
 
 ```bash
 mliport analyze runs/md density --mobile Li --spacing 0.2 --stride 5
@@ -197,5 +199,7 @@ The LGPS acceptance suite exercises these on real trajectories:
 .venv-mace/bin/mliport analyze runs/lgps-md density --mobile Li
 ```
 
-`validate` and `thermo` work on short trajectories as well as long ones. Every
-task writes JSON plus CSV and, where useful, PNG and SVG figures, headlessly.
+`validate` and `thermo` work on short trajectories as well as long ones. Each
+task writes `results.json`; some also produce CSV tables, `.npz` archives
+(e.g. `density`), or PNG/SVG figures. The exact output format depends on the
+task — see each task's own documentation page.

@@ -1,17 +1,16 @@
 # 轨迹分析
 
 `mliport analyze <运行目录或轨迹> <任务>` 读取 mliport 的运行目录或独立的 ASE 轨迹，
-结果写到 `<run>/analysis/<task>/<analysis-id>/` 下。每项分析都输出 JSON 和 CSV；有图
-的任务还会输出 PNG 和 SVG。不需要图形显示器。
+结果写到 `<run>/analysis/<task>/<analysis-id>/` 下。每项分析都输出 JSON 摘要；大多数还会输出 CSV 或 NPZ 数据文件。有图的任务还会输出 PNG 和 SVG。不需要图形显示器。
 
 ## 可用任务
 
 | 任务 | 物理量 | 页面 |
 |---|---|---|
-| `validate` | 轨迹完整性：坐标约定、帧间隔、采样就绪状态 | [概览](overview.md) |
-| `thermo` | 温度、能量漂移和压强随时间的变化 | [概览](overview.md) |
-| `rmsd` | 均方根位移和均方根涨落（考虑周期性） | [概览](overview.md) |
-| `density` | 可移动物种的三维数密度 | [概览](overview.md) |
+| `validate` | 轨迹完整性：坐标约定、帧间隔、采样就绪状态 | [验证](validate.md) |
+| `thermo` | 温度、能量漂移和压强随时间的变化 | [热力学](thermo.md) |
+| `rmsd` | 均方根位移和均方根涨落（考虑周期性） | [RMSD](rmsd.md) |
+| `density` | 可移动物种的三维数密度 | [密度](density.md) |
 | `rdf` | 径向分布函数 g(r) 和配位数 | [RDF](rdf.md) |
 | `msd` | 均方位移和局部指数 α(t) | [MSD](msd.md) |
 | `vacf` | 速度自相关函数 | [VACF 与振动谱](vacf-spectrum.md) |

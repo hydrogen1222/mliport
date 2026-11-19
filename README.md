@@ -62,6 +62,10 @@ number was produced.
 | Know what each output file contains | [Output files](docs/outputs.md) |
 | Fix an error | [Troubleshooting](docs/troubleshooting.md) |
 | Cite mliport and the models | [Citations](docs/citations.md) |
+| All CLI flags and subcommands | [CLI reference](docs/cli.md) |
+| Navigate the terminal UI | [TUI reference](docs/tui.md) |
+| End-to-end LGPS workflow | [Tutorial: LGPS workflow](docs/tutorials/lgps-workflow.md) |
+| Reproduce published conductivity | [Tutorial: literature benchmark](docs/tutorials/literature-benchmark.md) |
 
 ## Install
 

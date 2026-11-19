@@ -2,17 +2,17 @@
 
 `mliport analyze <run-directory-or-trajectory> <task>` reads an mliport run
 directory or a standalone ASE trajectory and writes results to
-`<run>/analysis/<task>/<analysis-id>/`. Every analysis produces JSON and CSV
-files; tasks that plot also output PNG and SVG. No display server is needed.
+`<run>/analysis/<task>/<analysis-id>/`. Every analysis produces a JSON summary; most also output CSV
+or NPZ data files. Tasks that plot also output PNG and SVG. No display server is needed.
 
 ## Available tasks
 
 | Task | Physical quantity | Page |
 |---|---|---|
-| `validate` | Trajectory integrity: coordinate convention, frame interval, sampling readiness | [Overview](overview.md) |
-| `thermo` | Temperature, energy drift and pressure over time | [Overview](overview.md) |
-| `rmsd` | Root-mean-square displacement and fluctuation (periodic) | [Overview](overview.md) |
-| `density` | 3-D number density of a mobile species | [Overview](overview.md) |
+| `validate` | Trajectory integrity: coordinate convention, frame interval, sampling readiness | [Validate](validate.md) |
+| `thermo` | Temperature, energy drift and pressure over time | [Thermo](thermo.md) |
+| `rmsd` | Root-mean-square displacement and fluctuation (periodic) | [RMSD](rmsd.md) |
+| `density` | 3-D number density of a mobile species | [Density](density.md) |
 | `rdf` | Radial distribution function g(r) and coordination number | [RDF](rdf.md) |
 | `msd` | Mean-squared displacement and local exponent α(t) | [MSD](msd.md) |
 | `vacf` | Velocity autocorrelation function | [VACF & spectra](vacf-spectrum.md) |

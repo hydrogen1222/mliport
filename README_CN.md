@@ -56,6 +56,10 @@ slab 上吸附构型搜索、批量扫描和轨迹分析。所有结果以 VASP 
 | 了解每个输出文件的内容 | [输出文件](docs/outputs.md) |
 | 解决报错 | [排错](docs/troubleshooting.md) |
 | 引用 mliport 和模型 | [引用](docs/citations.md) |
+| 所有 CLI 参数和子命令 | [CLI 参考](docs/cli.md) |
+| 使用终端界面（TUI） | [TUI 参考](docs/tui.md) |
+| 完整 LGPS 工作流示例 | [教程：LGPS 工作流](docs/tutorials/lgps-workflow.md) |
+| 复现已发表的电导率数据 | [教程：文献对标](docs/tutorials/literature-benchmark.md) |
 
 ## 安装
 

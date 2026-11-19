@@ -94,15 +94,11 @@ mliport 也不保证它适合做体相 RDF/MSD 或输运分析。有条件时请
 
 这些只是粗略参考。扩散越慢的体系需要等比例更长的模拟。
 
-## 没有单独页面的任务
+## 各任务简介
 
 ### validate
 
-**`thermo`** 报告温度、能量漂移和压强。`--block-size-frames` 设置分块统计的块大小。NVE 计算首先要看
-能量漂移。统计量只用有限值计算（NaN 与 ±Inf 都排除，汇总统计与分块均值一致），因此结果里还有
-`summary.data_integrity`：逐列给出总帧数、有限帧数，
-以及哪些列含非有限值（`raw/md.csv` 里空格或无法解析的单元会变成 NaN）。由部分损坏的列算出的均值
-因此能被看见，而不会显得正常。
+`validate` 检查轨迹的完整性和一致性，报告哪些分析任务可以安全运行。
 
 ```bash
 mliport analyze runs/md validate
@@ -118,8 +114,7 @@ mliport analyze runs/md validate
 mliport analyze runs/md thermo --block-size-frames 100
 ```
 
-NVE 计算首先要看能量漂移：它衡量积分器守恒能量的好坏。漂移超过 ~1 meV/atom/ps 说明步长太大或
-模型的力噪声太高。
+NVE 计算首先要看能量漂移：它衡量积分器守恒能量的好坏。漂移大小应相对于所研究性质的能量尺度来评估；异常大的漂移通常表明步长过大或模型的力存在数值问题。
 
 NVT 计算要看温度是否在目标值附近以预期的方差波动。NPT 计算看压强和体积的轨迹，判断恒压器
 是否已经平衡。
@@ -131,7 +126,7 @@ RMSD 会无界增长。
 
 ```bash
 mliport analyze runs/md rmsd --species Li
-mliport analyze runs/md rmsd --drift-reference nonmobile
+mliport analyze runs/md rmsd --drift-reference none
 ```
 
 `--species` 只看某种元素，`--drift-reference none|nonmobile|indices` 选择怎样扣除整体漂移。
@@ -140,7 +135,7 @@ mliport analyze runs/md rmsd --drift-reference nonmobile
 
 ### density
 
-`density` 生成某种可移动离子的三维周期性数密度图。输出的体积数据文件可以在 VESTA 等软件中可视化。
+`density` 生成某种可移动离子的三维周期性数密度图。输出为 NumPy `.npz` 归档文件，包含体素网格和数密度数组。
 
 ```bash
 mliport analyze runs/md density --mobile Li --spacing 0.2 --stride 5
@@ -161,5 +156,5 @@ LGPS 验收测试在真实轨迹上运行过这些命令：
 .venv-mace/bin/mliport analyze runs/lgps-md density --mobile Li
 ```
 
-`validate` 和 `thermo` 对长短轨迹都能用。每个任务都输出 JSON 和 CSV，有图的还输出 PNG 和 SVG，
+`validate` 和 `thermo` 对长短轨迹都能用。每个任务都输出 JSON 摘要；大多数还写入 CSV 或 `.npz` 数据文件，有图的还输出 PNG 和 SVG，
 不需要显示器。
