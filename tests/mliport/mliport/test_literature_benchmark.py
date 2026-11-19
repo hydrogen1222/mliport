@@ -899,6 +899,45 @@ def test_run_suite_exposes_t9_and_requires_dataset_and_split():
     assert "--dataset and --split" in result.stderr
 
 
+def test_engine_context_artifact_hash_is_the_local_artifact(tmp_path):
+    """Provenance must hash the loaded artifact, not the manifest identity."""
+    import engines
+
+    artifact = tmp_path / "model.bin"
+    artifact.write_bytes(b"weights")
+    context = engines.EngineContext(
+        engine="mace",
+        profile_id="synthetic",
+        profile={"model_sha256": "0" * 64, "upstream_model_id": "x"},
+        wrapper=object(),
+        calculator=object(),
+        device="cpu",
+        dtype="float64",
+        task="bulk",
+        head=None,
+        backend_version="synthetic",
+        framework_version="synthetic",
+        model_path=str(artifact),
+    )
+    assert context.artifact_sha256 == datasets.sha256_file(artifact)
+    assert context.artifact_sha256 != context.model_sha256
+    empty = engines.EngineContext(
+        engine="mace",
+        profile_id="synthetic",
+        profile={"model_sha256": "0" * 64, "upstream_model_id": "x"},
+        wrapper=object(),
+        calculator=object(),
+        device="cpu",
+        dtype="float64",
+        task="bulk",
+        head=None,
+        backend_version="synthetic",
+        framework_version="synthetic",
+    )
+    with pytest.raises(RuntimeError, match="no model path"):
+        _ = empty.artifact_sha256
+
+
 def test_literature_engines_are_the_four_pinned_profiles():
     import engines
 

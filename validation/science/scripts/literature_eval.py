@@ -574,6 +574,17 @@ def run_engine(args: argparse.Namespace) -> int:
         wall_seconds=round(wall, 2),
         peak_vram=common.peak_vram_mib(),
     )
+    # complete provenance: backend/framework versions and the hash of the
+    # *local* artifact actually loaded (distinct from the manifest's
+    # distributed-archive identity, see engines.EngineContext)
+    record["backend_version"] = ctx.backend_version
+    record["framework_version"] = ctx.framework_version
+    try:
+        record["local_artifact_sha256"] = ctx.artifact_sha256
+    except (RuntimeError, OSError, ValueError) as exc:
+        record["local_artifact_sha256"] = None
+        record["diagnostics"]["local_artifact_hash_error"] = str(exc)[:200]
+
     path = common.write_result(record, out_dir, tag=args.tag)
     energy_block = metrics.get("energy_per_atom_eV", {})
     mae = energy_block.get("mae") if isinstance(energy_block, dict) else None
