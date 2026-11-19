@@ -35,7 +35,7 @@ from .identity import (
 #: first path component matching one of these names, which works both for the
 #: historical ``t4/t4/...`` layout and for per-campaign roots such as
 #: ``<campaign>/t1/...``.
-TIER_NAMES = ("t1", "t2", "t2fd", "t3", "t4", "t5", "t6", "t7", "t8")
+TIER_NAMES = ("t1", "t2", "t2fd", "t3", "t4", "t5", "t6", "t7", "t8", "t9")
 
 #: Canonical identity fields every normalized record must carry (task book
 #: section 1.3).  Some are derived from the stored record when the schema did

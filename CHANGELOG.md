@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-Nothing yet.
+- **Literature benchmark suite (tier `t9`).** `validation/science/scripts/benchmark.py`
+  imports published DFT references (LiPS-25, LiPS20, OMat24, JARVIS-DFT, and
+  local MS25 manifests) through a hash-pinned registry, evaluates a model
+  profile with `literature_eval.py`, and writes a bilingual report. It reuses
+  the existing result schema, evidence aggregator and backend venv isolation,
+  separates software verification from model accuracy, labels every record as
+  `reference_matched` or `cross_method`, and never converts a stored virial
+  into stress.
+- `run_suite.py` gained `t9` plus `--dataset/--split/--relax/--workflows`
+  forwarding; `evidence.loader.TIER_NAMES` knows `t9`. Both changes are
+  additive: existing tiers, records and history are untouched.
 
 ## 2.0.0b5
 

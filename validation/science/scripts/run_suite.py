@@ -42,7 +42,11 @@ TIER_COMMANDS: dict[str, list[str]] = {
     "t6": ["md_suite.py"],
     "t7": ["analysis_suite.py"],
     "t8": ["performance_suite.py"],
+    "t9": ["literature_eval.py"],
 }
+
+#: Tier scripts that accept ``--workflows`` (workflow subset selection).
+WORKFLOW_SCRIPTS = frozenset({"static_suite.py", "md_suite.py"})
 
 #: backend venvs live in the repository root, next to .venv-mace etc.
 DEFAULT_VENV_ROOT = str(Path(__file__).resolve().parents[3])
@@ -138,6 +142,36 @@ def main() -> int:
         "transport / gemdat)",
     )
     parser.add_argument(
+        "--dataset",
+        default=None,
+        help="t9 literature dataset id (e.g. lips25); forwarded to literature_eval.py",
+    )
+    parser.add_argument(
+        "--split",
+        default=None,
+        help="t9 literature split id (e.g. test); forwarded to literature_eval.py",
+    )
+    parser.add_argument(
+        "--relax",
+        action="store_true",
+        help="t9: relax each structure before scoring (method-specific protocol)",
+    )
+    parser.add_argument(
+        "--max-structures",
+        type=int,
+        default=None,
+        help=(
+            "t9: cap the number of reference structures per split; forwarded "
+            "to literature_eval.py so the executed and recorded counts agree"
+        ),
+    )
+    parser.add_argument(
+        "--workflows",
+        default=None,
+        help="comma list of workflow names forwarded to tier scripts that "
+        "support workflow selection (t4 static_suite.py, t6 md_suite.py)",
+    )
+    parser.add_argument(
         "--subset",
         default=None,
         help=(
@@ -148,7 +182,16 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
-    if "t3" in [tier for tier in args.tiers.split(",") if tier] and not args.subset:
+    requested_tiers = [tier for tier in args.tiers.split(",") if tier]
+    if args.max_structures is not None and args.max_structures < 1:
+        parser.error("--max-structures must be a positive integer")
+    if "t9" in requested_tiers and (not args.dataset or not args.split):
+        parser.error(
+            "--tiers t9 requires --dataset and --split (and --subset, the "
+            "imported reference extxyz). Import first with "
+            "`python validation/science/scripts/benchmark.py --import-only ...`."
+        )
+    if "t3" in requested_tiers and not args.subset:
         parser.error(
             "--tiers t3 requires --subset PATH: omat_eval.py has no default "
             "subset (it is pinned by omat_subset.py with an immutable seed). "
@@ -225,8 +268,16 @@ def main() -> int:
                 cmd += ["--cases", args.cases]
             # H-02: without this forwarding, `--tiers t3` started omat_eval.py
             # with its required --subset missing, so the tier could never run.
-            if args.subset and script == "omat_eval.py":
+            if args.subset and script in ("omat_eval.py", "literature_eval.py"):
                 cmd += ["--subset", args.subset]
+            if script == "literature_eval.py":
+                cmd += ["--dataset", args.dataset, "--split", args.split]
+                if args.relax:
+                    cmd += ["--relax"]
+                if args.max_structures is not None:
+                    cmd += ["--max-structures", str(args.max_structures)]
+            if args.workflows and script in WORKFLOW_SCRIPTS:
+                cmd += ["--workflows", args.workflows]
             print(f"[run_suite] {args.engine}/{tier}: {Path(script).name}")
             proc = subprocess.run(cmd, check=False, env=child_env)  # noqa: S603
             if proc.returncode != 0:

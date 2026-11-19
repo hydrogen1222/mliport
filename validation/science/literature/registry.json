@@ -1,0 +1,1249 @@
+{
+  "schema": "mliport.literature-registry/1",
+  "revision": 1,
+  "generated_utc": "2026-11-19",
+  "description": "Registry of literature DFT reference datasets used by the mliport literature benchmark (T9). Only provenance, checksums, licences and import rules live here; raw data is never committed unless a dataset is explicitly marked redistributable.",
+  "cache": {
+    "env": "MLIPORT_LITERATURE_CACHE",
+    "default": "~/.cache/mliport/literature",
+    "policy": "downloaded raw data and imported reference structures are cache artifacts; they are ignored by git and are never required for CPU-only tests"
+  },
+  "comparison_taxonomy": {
+    "reference_matched": "the model and the reference were produced at the same level of theory (same functional/pseudopotentials/settings) and absolute energies are comparable",
+    "cross_method": "the reference uses a different functional/settings than the model's training level; absolute energies are NOT compared, only forces, relative energies inside a group, geometry and rankings"
+  },
+  "datasets": {
+    "lips25": {
+      "id": "lips25",
+      "title": "Li-P-S Electrolyte Materials as a Benchmark for Machine-Learned Interatomic Potentials (LiPS-25)",
+      "short_name": "LiPS-25",
+      "year": 2026,
+      "authors": [
+        "Natascia L. Fragapane",
+        "Volker L. Deringer"
+      ],
+      "citation": "N. L. Fragapane, V. L. Deringer, J. Chem. Theory Comput. 22, 3646-3659 (2026), doi:10.1021/acs.jctc.5c02006; dataset: LiPS-25 v1.0.0, https://github.com/nfragapane/lips-25",
+      "doi": "10.1021/acs.jctc.5c02006",
+      "reference_level": "PBEsol (VASP 6.4.3, PAW PBE Li_sv/P/S)",
+      "comparison_mode": "cross_method",
+      "comparison_note": "The reference is PBEsol; the production MACE/DPA/UMA/GRACE checkpoints are PBE(+U) foundation models, so absolute total energies are never compared. Forces, formation energies along the Li2S-P2S5 tie line (a difference of reference totals at the same level) and relative energies within one composition are compared and labelled cross-method.",
+      "license": {
+        "paper": {
+          "id": "CC-BY-4.0",
+          "url": "https://creativecommons.org/licenses/by/4.0/",
+          "evidence": "Crossref licence metadata for doi:10.1021/acs.jctc.5c02006 (content-version vor)"
+        },
+        "data": {
+          "id": "NOASSERTION",
+          "redistributable": false,
+          "evidence": "https://github.com/nfragapane/lips-25 at commit 78c7bfa8 publishes data and code but carries no LICENSE file (only CITATION.cff and README.md instruct citation); the article's CC-BY-4.0 licence does not automatically extend to the repository data. Treated as 'no explicit data licence'."
+        },
+        "policy": "fetch at run time into the local cache; never copy raw LiPS-25 files into the mliport git repository"
+      },
+      "provenance": {
+        "repo": "https://github.com/nfragapane/lips-25",
+        "commit": "78c7bfa8519b5b40976aa3c779b198be6d482308",
+        "retrieved_utc": "2026-11-19",
+        "raw_url_prefix": "https://raw.githubusercontent.com/nfragapane/lips-25/78c7bfa8519b5b40976aa3c779b198be6d482308/"
+      },
+      "dft": {
+        "software": "VASP 6.4.3",
+        "functional": "PBEsol",
+        "pseudopotentials": [
+          "PAW PBE Li_sv 10Sep2004",
+          "PAW PBE P 06Sep2000",
+          "PAW PBE S 06Sep2000"
+        ],
+        "plane_wave_cutoff_eV": 1000,
+        "scf_energy_tolerance_eV_per_cell": 1e-08,
+        "kpoint_spacing_per_A": 0.2,
+        "relaxation": {
+          "force_tolerance_eV_per_A": 0.01,
+          "scf_energy_tolerance_eV_per_cell": 1e-06,
+          "cell": "variable cell (ExpCellFilter in the reference notebook)"
+        },
+        "aimd": {
+          "software": "VASP 6.3.2",
+          "plane_wave_cutoff_eV": 400,
+          "scf_energy_tolerance_eV_per_cell": 1e-05,
+          "kpoints": "Gamma only",
+          "ensemble": "NVT Nose-Hoover",
+          "timestep_fs": 1,
+          "purpose": "Iter0 structures"
+        },
+        "source": "paper Supporting Information S3.4.1 (arXiv:2511.16569v1)"
+      },
+      "units": {
+        "energy": "eV, total per cell (extxyz keys dft_energy / energy)",
+        "forces": "eV/Angstrom (extxyz arrays dft_forces / forces)",
+        "stress": null,
+        "virial": "eV, 9 components in extxyz 'virial'; the sign and normalisation convention is not documented by the dataset, so it is imported as provenance only and is never converted to stress"
+      },
+      "splits": {
+        "task1_relaxed": {
+          "description": "Task 1: ten DFT-relaxed crystals along the x Li2S-(1-x) P2S5 tie line (P2S5, Li2P2S6, Li4P2S7, Li7P3S11, alpha/beta/gamma-Li3PS4, high-T and low-T Li7PS6, Li2S), energy and forces",
+          "files": [
+            {
+              "id": "task1_relaxed",
+              "path": "benchmarking/task_1/crystals_relaxed.extxyz",
+              "sha256": "ab2deae59010fda60ef35dc7cca48ced07e58f38e79bff67906557f5f2f76a82",
+              "bytes": 36626,
+              "records": 10,
+              "labels": [
+                "energy",
+                "forces",
+                "virial"
+              ],
+              "role": "reference"
+            }
+          ],
+          "labels": {
+            "energy": true,
+            "forces": true,
+            "stress": false
+          },
+          "capabilities": [
+            "energy_per_atom",
+            "forces",
+            "formation_energy",
+            "rank_agreement",
+            "hull_agreement"
+          ],
+          "group_key": "composition"
+        },
+        "task1_unrelaxed": {
+          "description": "Task 1 input structures before DFT relaxation (no labels); used for MLIP relaxation and volume/lattice comparison against task1_relaxed",
+          "files": [
+            {
+              "id": "task1_unrelaxed",
+              "path": "benchmarking/task_1/crystals_unrelaxed.extxyz",
+              "sha256": "524737e328dd9db844c33f107060f2837e21994ee0fca0507267978dbd580023",
+              "bytes": 26584,
+              "records": 10,
+              "labels": [],
+              "role": "reference_geometry_input"
+            }
+          ],
+          "labels": {
+            "energy": false,
+            "forces": false,
+            "stress": false
+          },
+          "capabilities": [
+            "relaxation",
+            "lattice_vs_relaxed_reference"
+          ],
+          "relaxed_reference_split": "task1_relaxed"
+        },
+        "task2_mq": {
+          "description": "Task 2: 35 DFT single points sampled every 5 ps from a NequIP-driven melt-quench trajectory of a 672-atom Li7P3S11 supercell (300-1500 K); energy and forces",
+          "files": [
+            {
+              "id": "task2_mq_errors",
+              "path": "benchmarking/task_2/mq_errors.extxyz",
+              "sha256": "5cd7fb85c6d8e003706d648751f0036d2094878f02ce93f74b9d8e2ecb5aabf1",
+              "bytes": 2483290,
+              "records": 35,
+              "labels": [
+                "energy",
+                "forces",
+                "virial"
+              ],
+              "role": "reference"
+            }
+          ],
+          "labels": {
+            "energy": true,
+            "forces": true,
+            "stress": false
+          },
+          "capabilities": [
+            "energy_per_atom",
+            "forces",
+            "relative_energy"
+          ],
+          "group_key": "trajectory",
+          "mobile_elements": [
+            "Li"
+          ]
+        },
+        "test": {
+          "description": "Official LiPS-25 test split: 1256 structures over 39 iterated-training strata (crystalline to glassy), energy and forces",
+          "files": [
+            {
+              "id": "test",
+              "path": "data/lips-25/test.extxyz",
+              "sha256": "95f294f51ce9e71f6c35bb371a811447db2da623295813c4b29bcae39208ee0c",
+              "bytes": 5919599,
+              "records": 1256,
+              "labels": [
+                "energy",
+                "forces",
+                "virial"
+              ],
+              "role": "reference"
+            }
+          ],
+          "labels": {
+            "energy": true,
+            "forces": true,
+            "stress": false
+          },
+          "capabilities": [
+            "energy_per_atom",
+            "forces",
+            "relative_energy"
+          ],
+          "group_key": "label",
+          "mobile_elements": [
+            "Li"
+          ]
+        }
+      },
+      "selection": {
+        "seed": 20261119,
+        "tiers": {
+          "core": {
+            "task1_relaxed": {
+              "rule": "all"
+            },
+            "task1_unrelaxed": {
+              "rule": "all"
+            },
+            "task2_mq": {
+              "rule": "evenly_spaced",
+              "count": 4
+            },
+            "test": {
+              "rule": "stratified",
+              "count": 24
+            }
+          },
+          "standard": {
+            "task1_relaxed": {
+              "rule": "all"
+            },
+            "task1_unrelaxed": {
+              "rule": "all"
+            },
+            "task2_mq": {
+              "rule": "evenly_spaced",
+              "count": 12
+            },
+            "test": {
+              "rule": "stratified",
+              "count": 96
+            }
+          },
+          "research": {
+            "task1_relaxed": {
+              "rule": "all"
+            },
+            "task1_unrelaxed": {
+              "rule": "all"
+            },
+            "task2_mq": {
+              "rule": "evenly_spaced",
+              "count": 35
+            },
+            "test": {
+              "rule": "stratified",
+              "count": 384
+            }
+          }
+        }
+      },
+      "data_overlap": {
+        "status": "external",
+        "note": "LiPS-25 was released in 2026, after the public foundation-model checkpoints evaluated here; overlap with their training corpora is therefore unlikely but was not independently verified. The dataset's own published test split is used."
+      }
+    },
+    "lips20": {
+      "id": "lips20",
+      "title": "EGraFFBench: evaluation of equivariant graph neural network force fields for atomistic simulations (LiPS20 dataset)",
+      "short_name": "LiPS20",
+      "year": 2024,
+      "authors": [
+        "Vaibhav Bihani",
+        "Sajid Mannan",
+        "Utkarsh Pratiush",
+        "Tao Du",
+        "Zhimin Chen",
+        "Santiago Miret",
+        "Matthieu Micoulaut",
+        "Morten M. Smedskjaer",
+        "Sayan Ranu",
+        "N. M. Anoop Krishnan"
+      ],
+      "citation": "V. Bihani et al., Digital Discovery 3, 759-768 (2024), doi:10.1039/D4DD00027G; dataset: M3RG-IITD/MDBENCHGNN, Datasets/All_LiPS20",
+      "doi": "10.1039/D4DD00027G",
+      "reference_level": "PBE-D3 (CP2K GPW, GTH-PBE)",
+      "comparison_mode": "cross_method",
+      "comparison_note": "PBE-D3/CP2K total energies are not comparable with any foundation-model absolute energy; only forces and within-composition relative energies are interpreted. Absolute energy-per-atom numbers are recorded as diagnostics with an explicit non-comparability flag.",
+      "license": {
+        "paper": {
+          "id": "CC-BY-3.0",
+          "url": "https://creativecommons.org/licenses/by/3.0/",
+          "evidence": "Crossref licence metadata for doi:10.1039/D4DD00027G"
+        },
+        "data": {
+          "id": "NOASSERTION",
+          "redistributable": false,
+          "evidence": "https://github.com/M3RG-IITD/MDBENCHGNN at commit e4ee1e90 ships a LICENSE file that is empty (1 byte, no licence text) and a README with no data licence statement. Treated as 'no explicit data licence'."
+        },
+        "policy": "fetch at run time into the local cache; never copy raw LiPS20 arrays into the mliport git repository"
+      },
+      "provenance": {
+        "repo": "https://github.com/M3RG-IITD/MDBENCHGNN",
+        "commit": "e4ee1e9022186e27568df690913cfab2b12295b0",
+        "retrieved_utc": "2026-11-19",
+        "raw_url_prefix": "https://raw.githubusercontent.com/M3RG-IITD/MDBENCHGNN/e4ee1e9022186e27568df690913cfab2b12295b0/",
+        "layout": "Datasets/All_LiPS20/<composition>/3000K/deepmd/<formula>/set.000/{box,coord,energy,force,virial}.npy plus type.raw/type_map.raw"
+      },
+      "dft": {
+        "software": "CP2K (Quickstep, GPW)",
+        "functional": "PBE",
+        "dispersion": "D3 (Grimme)",
+        "pseudopotentials": [
+          "GTH-PBE"
+        ],
+        "basis_sets": {
+          "Li": "DZVP-MOLOPT-SR-GTH",
+          "P": "TZVP-MOLOPT-GTH",
+          "S": "TZVP-MOLOPT-GTH"
+        },
+        "plane_wave_cutoff_Ry": 500,
+        "relative_cutoff_Ry": 50,
+        "grid_levels": 4,
+        "aimd": {
+          "ensemble": "NVT",
+          "thermostat": "Nose-Hoover",
+          "temperature_K": 3000,
+          "timestep_fs": 0.5,
+          "length_ps": 2.5,
+          "note": "3000 K was chosen to sample melting; the same trajectory supplies crystal, glass and liquid-like configurations"
+        },
+        "source": "paper section A.2 and Table 11 (arXiv:2310.02428)"
+      },
+      "units": {
+        "energy": "eV, total per cell (DeePMD energy.npy)",
+        "forces": "eV/Angstrom (DeePMD force.npy)",
+        "box": "Angstrom, row-major 9 components",
+        "stress": null,
+        "virial": "DeePMD virial.npy in eV; the dataset ships no stress label and the paper does not document the virial sign/normalisation, so the array is verified, hashed and recorded but NEVER converted to stress"
+      },
+      "splits": {
+        "lips20_3000k": {
+          "description": "20 compositions (crystalline Li2S, Li3P, beta/gamma-Li3PS4, Li2PS3, Li4P2S6, Li2P2S6, Li7P3S11, Li7PS6, Li48P16S61; glasses g67/g70/g75/g80; pure Li, P, S, P2S5, P4S3), 1000 AIMD frames each",
+          "kind": "deepmd_npy",
+          "labels": {
+            "energy": true,
+            "forces": true,
+            "stress": false,
+            "virial": true
+          },
+          "capabilities": [
+            "energy_per_atom_diagnostic",
+            "forces",
+            "relative_energy"
+          ],
+          "group_key": "composition",
+          "mobile_elements": [
+            "Li"
+          ],
+          "compositions": {
+            "Li2P2S6": {
+              "composition": "Li2P2S6",
+              "formula": "Li16P16S48",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li2P2S6/3000K/deepmd/Li16P16S48/",
+              "sha256": {
+                "box.npy": "c03a4aaaeb0311541dc4c9dbff74e85505e964359dc1ccb794236c4e2d642952",
+                "coord.npy": "f54ee4abee758e7e959a7c72cbd298ba06880a719256052ff00d1a794ffd4818",
+                "energy.npy": "558ef96e53d26bb249e9263cb287cf90ade29224e437b02e47aee7d3519e3023",
+                "force.npy": "ffff4943f4980541700ca628fcb98e59e683cfe9b94396bc3632296a08aa2a0a",
+                "virial.npy": "ae02f6ca37c567e35b948de4761605be6f9ee4fea21902f205cf77c4c7a193aa"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 1920128,
+                "energy.npy": 8128,
+                "force.npy": 1920128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "c36410a0567fa6ba6d3ae4ab0392a288161bd4ed362f371c8d2d02289a5305cb",
+              "frames": 1000,
+              "natoms": 80
+            },
+            "Li2PS3-hex": {
+              "composition": "Li2PS3-hex",
+              "formula": "Li32P16S48",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li2PS3-hex/3000K/deepmd/Li32P16S48/",
+              "sha256": {
+                "box.npy": "5b9755d48933bce3c4273034d123bf54b8707a96cbdbc32faa6fb3f2a29b51da",
+                "coord.npy": "0345dfdcbc0cca805009b1a80edf5ce1ff515c2dd2c2b8467fd66b08df6ae1cd",
+                "energy.npy": "90006f0cb7034a8d3bf24b425cadfcafbce53c85d90d4bbd0ed8f0ac84e86307",
+                "force.npy": "a4fed27c68f273ff8e520fb1fd5ae4d970588f459b017e7e070c56033071e352",
+                "virial.npy": "709b735aff44bf2f5c263420df3d483ad2bd651b117b2f8e62300350fbdafcaf"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 2304128,
+                "energy.npy": 8128,
+                "force.npy": 2304128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "aa259250f16bffdf8b5744eb6d2121e5ce3142ecc8829dacf7641203f2649bd0",
+              "frames": 1000,
+              "natoms": 96
+            },
+            "Li2PS3-orth": {
+              "composition": "Li2PS3-orth",
+              "formula": "Li32P16S48",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li2PS3-orth/3000K/deepmd/Li32P16S48/",
+              "sha256": {
+                "box.npy": "76a3ab3dbc723b1a922e6e9d837d0a72d3bcdabcbc51f6f677bfc4e973ded53b",
+                "coord.npy": "808d8a9c9e45734291f6d25d57f329a9674426c9d589636c0c227b3fac01c09f",
+                "energy.npy": "66497e5c45ff5c2c67fda0ff0fdd50fda01e17c2a728fda11f8dbae604aca7b9",
+                "force.npy": "0a5612662283253c75b14d9dec65105c9aa0947af2ed051eb676666e5abd9642",
+                "virial.npy": "97571a949ab19da4f254f78f7646b178997681599158a47d69246ecfdf90f214"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 2304128,
+                "energy.npy": 8128,
+                "force.npy": 2304128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "aa259250f16bffdf8b5744eb6d2121e5ce3142ecc8829dacf7641203f2649bd0",
+              "frames": 1000,
+              "natoms": 96
+            },
+            "Li2S": {
+              "composition": "Li2S",
+              "formula": "Li64P0S32",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li2S/3000K/deepmd/Li64P0S32/",
+              "sha256": {
+                "box.npy": "8edf092a495279efe86562d87b2717b9d49e374a208eacf95db8e950761d704f",
+                "coord.npy": "2707f7881361d7ea040e5305557e604f31b1b86d41403b78065d9431f8b1cc44",
+                "energy.npy": "c61bee12245b6b0f9cfd4f65da49adb1ee228c38469cef90b0f4f45b91156de9",
+                "force.npy": "3cf375a82be2237e5ebe69a978f0bc73a75fade5b9e0f1f8022f746641afa8e5",
+                "virial.npy": "5382d56f0865737a617cdf449775d272a5a4d6c3940cad9cbddff55718d4212b"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 2304128,
+                "energy.npy": 8128,
+                "force.npy": 2304128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "76678359dee577a3a58bcc8ae3736ed5d922ba71cb6ae18170eb308e5097337c",
+              "frames": 1000,
+              "natoms": 96
+            },
+            "Li3P": {
+              "composition": "Li3P",
+              "formula": "Li48P16S0",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li3P/3000K/deepmd/Li48P16S0/",
+              "sha256": {
+                "box.npy": "7899581eb43a5ee3c198a2c2272b3471194d34d6239424b9f123b3c5a72e673e",
+                "coord.npy": "35a03c43b27efe97e0b137aebe2b53eccbcdf931ede362681f1a266e43b95171",
+                "energy.npy": "acea9ee2f6159a67b787098d1854336d61e85d7d726c305aa4c38180eb81feb1",
+                "force.npy": "a37bdb56a2baaadc9dd4cd68398002ebf1cf60c4f7e5fa8d54f3f2a0dc8359d2",
+                "virial.npy": "4a3c78f77bc6c1811122cca6c80101aa41cac0b3387c47add2c5c39407f08f06"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 1536128,
+                "energy.npy": 8128,
+                "force.npy": 1536128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "c74d0a6dc35007a9a29f0eab47f3c96e5e7b715a0a87ace6ae51ab28b0b143ad",
+              "frames": 1000,
+              "natoms": 64
+            },
+            "Li48P16S61": {
+              "composition": "Li48P16S61",
+              "formula": "Li48P16S61",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li48P16S61/3000K/deepmd/Li48P16S61/",
+              "sha256": {
+                "box.npy": "1e1bef2b7d431b42d5421c4caaa537c4789b266b83397cd00f00281f32e8ec6e",
+                "coord.npy": "e5434bb036ad8e4af0c5cd4aab23d27f6c19f511d933ff87783f19938c9668e6",
+                "energy.npy": "4898b197644cfad82978b8888c1b5c93cea41f539e7c019848a615913a854b10",
+                "force.npy": "fca2f83d5d875e40267fe6351c9a0ab15d6cc26977d12d777e06e56c54b8efd4",
+                "virial.npy": "f3203950a86ca9fa2b02fb21a22835ea0e2179f9c7342251d793c45c94800e3a"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 3000128,
+                "energy.npy": 8128,
+                "force.npy": 3000128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "f1c2f1fd6c5e6cc2c8126cfa749fe44f50a40fc67a9a12396dd76c98f21a811a",
+              "frames": 1000,
+              "natoms": 125
+            },
+            "Li4P2S6": {
+              "composition": "Li4P2S6",
+              "formula": "Li32P16S48",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li4P2S6/3000K/deepmd/Li32P16S48/",
+              "sha256": {
+                "box.npy": "ea3ed911137625ff0a3cbd17e6b3824bd27b59daa427527467679e8cea459fd2",
+                "coord.npy": "b67694cb15c2d42d21ff88348c8b11b900eea5645b98e14b4631dc8ebe427578",
+                "energy.npy": "7a3bce0abd6e433667e3f891beb3ba19f387bb2631acf6599a233506d3b22766",
+                "force.npy": "42bfcd36ba5e121a0a4ba4ed04e27585f8923783495384a5052a7f8f24ef6b55",
+                "virial.npy": "a823ff3043d85b2fe979b8ea7ad34478d2cad1f4d56ef1194f18c3a3414bffe5"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 2304128,
+                "energy.npy": 8128,
+                "force.npy": 2304128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "aa259250f16bffdf8b5744eb6d2121e5ce3142ecc8829dacf7641203f2649bd0",
+              "frames": 1000,
+              "natoms": 96
+            },
+            "Li7P3S11": {
+              "composition": "Li7P3S11",
+              "formula": "Li28P12S44",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li7P3S11/3000K/deepmd/Li28P12S44/",
+              "sha256": {
+                "box.npy": "181ababfc5bf252253750e73f54348d2bf59c8b3f92b9aa36446e6cd92a12473",
+                "coord.npy": "a464a9140f93b3d0e6e61e6c3108bf37243820cadb50abe4ad275c4f8e276bed",
+                "energy.npy": "17a860f48b3b10d3de04aa509fd3e3c5efbf42fdf2daeab63cb5493d9b3ad5da",
+                "force.npy": "4bd8221f0533ed6077f7e6382929a016ffff5a38df889b41f06844a035b4c193",
+                "virial.npy": "fb458f436893c88b3580cd4856432642be91bf388a9a50bf0c3df3408ddf3dcd"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 2016128,
+                "energy.npy": 8128,
+                "force.npy": 2016128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "d64d95e4fbe9380db78968b4f2bc0e8913ed4c1411cf654651bab7c3b06a7ba2",
+              "frames": 1000,
+              "natoms": 84
+            },
+            "Li7PS6": {
+              "composition": "Li7PS6",
+              "formula": "Li28P4S24",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li7PS6/3000K/deepmd/Li28P4S24/",
+              "sha256": {
+                "box.npy": "0e245d2fddfded5589414129b91db1cc989ac4fd3b2ef285dbe16d1ddf33f2f6",
+                "coord.npy": "d75c5f775dec9b2e4f54d5fd023ea0d94068e0d8bab27b6e432c29d650fd150e",
+                "energy.npy": "6849288c2c6dfd0369e63d928f36708f0827e2859fd25d15891c880c43520286",
+                "force.npy": "5ffa1d8b3a4c5429f66c8e420be0d1997289e9ce1ff378da7322615d58008d49",
+                "virial.npy": "507f6e1b0f30737952cd2576d90b40455f8c955082526d1a9cc7fc0b1e4509da"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 1344128,
+                "energy.npy": 8128,
+                "force.npy": 1344128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "65e9ce7e2e922cc2fd4fb06cb504ec351ef6fb3621f6267e415c5096ece345c1",
+              "frames": 1000,
+              "natoms": 56
+            },
+            "Li": {
+              "composition": "Li",
+              "formula": "Li54P0S0",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/Li/3000K/deepmd/Li54P0S0/",
+              "sha256": {
+                "box.npy": "5e8c6b3ea5308d372a4d54ee1d1d5454d13512c109f1d1c23a14558c7a66e6d7",
+                "coord.npy": "c62cc9755b9387c422bd6806c98232da4bc27f845dca33254e80f63bb7cf7aa4",
+                "energy.npy": "fedf2170ab3389b3614309951954062d09bfa4a655054feb58f16c24ac289651",
+                "force.npy": "6d07e5a447c0d7ac0d8624cf761dd39110a3812c7df206f6ebc35e20e1c14fff",
+                "virial.npy": "a608e2c226570d125a0472bcc1b264d5d02fed0f236c7bb60663a56cac6db171"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 1296128,
+                "energy.npy": 8128,
+                "force.npy": 1296128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "190a70b4572f1cfe81885848306a16bc087829694b93cfde67f9adfd2d4df80b",
+              "frames": 1000,
+              "natoms": 54
+            },
+            "P2S5": {
+              "composition": "P2S5",
+              "formula": "Li0P8S20",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/P2S5/3000K/deepmd/Li0P8S20/",
+              "sha256": {
+                "box.npy": "62b979a2803775cbf597ff76a1347d5013d4afacc3f7092d98af61be34b9f515",
+                "coord.npy": "da9a13772847a1e6bea4a48219fd87c81cc57b180f00b2ef44d0a8424e4946b4",
+                "energy.npy": "dd5d1e22b06317bdeaf40d1dd64ef1c9a504fba1b55c17da8337a384fbf14fd1",
+                "force.npy": "87e83199c9f5df84f27c151bec9ae1147afa2220beae99756b17aeba3ad7bfed",
+                "virial.npy": "9955ddd9920c9addc80c087c66243298d54a6e2f57c87cd4f4a427fd3fb467de"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 672128,
+                "energy.npy": 8128,
+                "force.npy": 672128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "11016786004962d2566a1c53ad32b9a477b24642536f9ef300a6e9a7a8de834d",
+              "frames": 1000,
+              "natoms": 28
+            },
+            "P4S3": {
+              "composition": "P4S3",
+              "formula": "Li0P32S24",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/P4S3/3000K/deepmd/Li0P32S24/",
+              "sha256": {
+                "box.npy": "57a0cbdb9b7109792588ab7254e2d7ef66d4fa9bcd3489b76ce06e15adf0f511",
+                "coord.npy": "5ce711aa4f08e2543643d5d494e4466daf308309108f42643b3116aeb6998148",
+                "energy.npy": "945a88caa7d68c05cc8c9bf590d66702494e5bd5755316b111129be82493e571",
+                "force.npy": "e6a0319d61aef5a8598ee2b97e4c368c56669844511ea1e37c25929c9fc3e0c4",
+                "virial.npy": "3c0b355ad2848f985e6d1457af6d6339d4ea841f7c5760b4057e8335c5ed9233"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 1344128,
+                "energy.npy": 8128,
+                "force.npy": 1344128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "1a0b3c1a40696b64d3bfb31fdf8ff3a91eade5f075f28de2e59f897c297a2370",
+              "frames": 1000,
+              "natoms": 56
+            },
+            "P": {
+              "composition": "P",
+              "formula": "Li0P48S0",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/P/3000K/deepmd/Li0P48S0/",
+              "sha256": {
+                "box.npy": "c912ccb1b64bb007e1a819715558c8fd504f2848440f49be9e5a335c8c26da61",
+                "coord.npy": "ffa4f4d068c29df2d81c4c811196dbdd5c25f417dc55d44f8c699f65e1023cc8",
+                "energy.npy": "c2c7248387c0a18f4568370988fba123f5dd454d2710f0617bbdea9296d71a8b",
+                "force.npy": "825e70bcd8c8a8a3ad7ae6b4c2b803ef68c8857e4f71ec3593c38b3c1d32a804",
+                "virial.npy": "6391d75ce7b526fa68e37315f362c0e37d15d8fdefacafccac51e530287f177e"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 1152128,
+                "energy.npy": 8128,
+                "force.npy": 1152128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "d88996323057f84dac5838a5a9b36d6de59c2899172553b57d9e820b0374dfa7",
+              "frames": 1000,
+              "natoms": 48
+            },
+            "S": {
+              "composition": "S",
+              "formula": "Li0P0S32",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/S/3000K/deepmd/Li0P0S32/",
+              "sha256": {
+                "box.npy": "e3d47ea0db587ff8e6d0487f83b1a5dcf628dd7660a6467d9528ff508cfbaeaf",
+                "coord.npy": "7f8e81b39938f6b54277c5dd20aacbcab852050994ad47c530df6c15dfa95895",
+                "energy.npy": "d18b5fcd2686ce95af1afdda3c4f611e2b39a1680bf45651a42dedd69655590a",
+                "force.npy": "ea793fc1e024c653bf2f4c9d9e5481265280c924e75cceedffed2727413019a6",
+                "virial.npy": "9442dc65710ca4a04bf1714fac5b0a948da162d8ad9fecc1a96a6d293cbabbd7"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 768128,
+                "energy.npy": 8128,
+                "force.npy": 768128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "adbc86de4ca3c9baf5b5288ec6094bcc185dcfb311e2dbdb952d4eb6264908d6",
+              "frames": 1000,
+              "natoms": 32
+            },
+            "beta-Li3PS4": {
+              "composition": "beta-Li3PS4",
+              "formula": "Li24P8S32",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/beta-Li3PS4/3000K/deepmd/Li24P8S32/",
+              "sha256": {
+                "box.npy": "ad5972a7e73ab9ab92671ec0d73522f7b92c0c2fbc095dc6b026309538827a4c",
+                "coord.npy": "036b5a8e68ef39ab84ab805fda83c4e5456951356812e0b674593c5408b98d28",
+                "energy.npy": "2de615f31536d9d2d6038fd1c3ec651b6a5970b8d370875d07aff24a98d80120",
+                "force.npy": "f9068e48c3e92089ad8dcce45666ff7d67970e205ed73b6ea5df18ed2da679e6",
+                "virial.npy": "45f18ccdee7b8f552142cfd3279ac56b354c329ae902c88f9866320815ad6d31"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 1536128,
+                "energy.npy": 8128,
+                "force.npy": 1536128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "0c2d80cd5b0a8a3536408b14785e7cd008da29187d185e9e9dd5908f76939aa4",
+              "frames": 1000,
+              "natoms": 64
+            },
+            "g67": {
+              "composition": "g67",
+              "formula": "Li82P40S138",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/g67/3000K/deepmd/Li82P40S138/",
+              "sha256": {
+                "box.npy": "c7720fa8bf0dae83304a5ced85b6ac1b005060b9e63a82fde40dcd04918028da",
+                "coord.npy": "fe15fac3ca31bf6bfc1d0281d25bb16fb4b41a12d7fad581c8f9d76b9be247b3",
+                "energy.npy": "b0ceb1f0b12e29f3648af52e9e254499e9d46716bf0efcb1c49acac7e29fe491",
+                "force.npy": "33078c5b34dfdc16407355a0c55ac64b78da042199b90a0bb65eb7729a4eff50",
+                "virial.npy": "f6a0574179b86107ac97ef2c940ab4193cc0cb52d3e0ca89b4a0bdf3808b601c"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 6240128,
+                "energy.npy": 8128,
+                "force.npy": 6240128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "61de0296d68fdf59031c3487e4043bfe55f32be337a27f852aa44d1a2fa6dcbb",
+              "frames": 1000,
+              "natoms": 260
+            },
+            "g70": {
+              "composition": "g70",
+              "formula": "Li82P38S133",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/g70/3000K/deepmd/Li82P38S133/",
+              "sha256": {
+                "box.npy": "2999ac690d15f9835a28b56ccf6b5ebcc85ee5889b62ddd6ac01ca6f13ba0caa",
+                "coord.npy": "7f1da91796debade8d48d637eefd4abb432c199fef85e684f3ca98c3b5cb5a28",
+                "energy.npy": "a3febf552e1ffb412353adf9b107539ebdfb34775866dceb2daa67bacbc9c394",
+                "force.npy": "c9faf61f9d0402dec2325da6158221297b50078bc05ed701275c8b706f861670",
+                "virial.npy": "3a232143823723374d2d75d6e9949c7158c8d238279e3574ee2e82f0374f53f8"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 6072128,
+                "energy.npy": 8128,
+                "force.npy": 6072128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "0437003cfa47f67c6206d836edf964fb5b8f6f752d8d842a21789b43a5a3f3ea",
+              "frames": 1000,
+              "natoms": 253
+            },
+            "g75": {
+              "composition": "g75",
+              "formula": "Li91P35S129",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/g75/3000K/deepmd/Li91P35S129/",
+              "sha256": {
+                "box.npy": "71a9e5f15e2c3403956c14749a0e13ff7252caa2bec98187b89f361102cd6a4d",
+                "coord.npy": "0354fc07e4a2faae0130dd8b398c81ab60e6275addb001f365441c4ab4799cd7",
+                "energy.npy": "e7083b0a74010018e9e94b002d2f80922b9ee728d90dcfeed1ac7a0757b2dac5",
+                "force.npy": "66bfa7342d55bf38dc089d47ffd404b5873a7b94eda252e8dcb84e503169a94f",
+                "virial.npy": "0b901ca8d5d718efdd728e004f944edd609307a6bef612e90f3614b912088a1f"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 6120128,
+                "energy.npy": 8128,
+                "force.npy": 6120128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "8b5b00380b68c4370dcee565b9bff3d6cebbdfc225587e01b68ef277d07a3eb7",
+              "frames": 1000,
+              "natoms": 255
+            },
+            "g80": {
+              "composition": "g80",
+              "formula": "Li92P34S128",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/g80/3000K/deepmd/Li92P34S128/",
+              "sha256": {
+                "box.npy": "2ffea51380ebef98b46dea6a6d2a06f4655c67080802b6740f89f890014265d7",
+                "coord.npy": "77026bfa77715271710e85a635eeb6ca86d081727cc53d48016af6b6160474a2",
+                "energy.npy": "95ac1cf4508fcac3e274dc2ea02fa315d6c2b835eb88f51f3ac73c3ad592e4e9",
+                "force.npy": "056f51671c534d5b126a69b60a1f6baecc6e3984c61b6f88032e3dcfaf3f1442",
+                "virial.npy": "5604cb8909b366461b3d5e073f4ff8492a28d4719f67ba6a01cbeebfbb4d1020"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 6096128,
+                "energy.npy": 8128,
+                "force.npy": 6096128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "90218d350036cb25ad9063495706a2427fa771329d8ba35ffc1f9815cc3a96a6",
+              "frames": 1000,
+              "natoms": 254
+            },
+            "gamma-Li3PS4": {
+              "composition": "gamma-Li3PS4",
+              "formula": "Li48P16S64",
+              "temperature_K": 3000,
+              "path_prefix": "Datasets/All_LiPS20/gamma-Li3PS4/3000K/deepmd/Li48P16S64/",
+              "sha256": {
+                "box.npy": "1734e131016c92f8db99224c110480930e5da1df02a57b8f520c61373e0e856b",
+                "coord.npy": "e17c2af33af5b8728714b664f3b076e7b628457cd72d3190feffc9832a0aaa37",
+                "energy.npy": "fb48a684bd06cfe515bddc1b4b314b6a3c8c7411b2424945bab46794982e54fe",
+                "force.npy": "8c7c51a46321fb5306d676a957ca846d0c87679fb02a749240b8359712d78373",
+                "virial.npy": "b661ec549e931730b5578ad41a3dbb4c684f76116c26184a278e8ec549517718"
+              },
+              "bytes": {
+                "box.npy": 72128,
+                "coord.npy": 3072128,
+                "energy.npy": 8128,
+                "force.npy": 3072128,
+                "virial.npy": 72128
+              },
+              "type_map": [
+                "Li",
+                "P",
+                "S"
+              ],
+              "type_map_sha256": "43b60753bd41d047bbe7b4a3ce3b55f4329e856c62253e88c89f1a2ef801e0f3",
+              "type_sha256": "034fa208776654122815522d9262291f14c6a7808844bdb9de67511e89d8f7ad",
+              "frames": 1000,
+              "natoms": 128
+            }
+          },
+          "records": 20000,
+          "file_count": 140
+        }
+      },
+      "selection": {
+        "seed": 20261119,
+        "tiers": {
+          "core": {
+            "lips20_3000k": {
+              "rule": "evenly_spaced_per_composition",
+              "count": 4
+            }
+          },
+          "standard": {
+            "lips20_3000k": {
+              "rule": "evenly_spaced_per_composition",
+              "count": 16
+            }
+          },
+          "research": {
+            "lips20_3000k": {
+              "rule": "evenly_spaced_per_composition",
+              "count": 40
+            }
+          }
+        }
+      },
+      "data_overlap": {
+        "status": "possible-overlap",
+        "note": "LiPS20 predates the foundation-model corpora and shares Materials Project-derived crystal structures; treat crystal rows as possible-overlap and glass/liquid rows as more external. The status is recorded per record; it does not change the metric definitions."
+      }
+    },
+    "omat24": {
+      "id": "omat24",
+      "title": "Meta Open Materials 2024 (OMat24) validation split, pinned 256-structure subset",
+      "short_name": "OMat24",
+      "year": 2024,
+      "authors": [
+        "Meta FAIR"
+      ],
+      "citation": "L. Barroso-Luque et al., Open Materials 2024 (OMat24) Inorganic Materials Dataset and Models, arXiv:2410.12771 (2024); dataset: https://huggingface.co/datasets/facebook/OMAT24",
+      "doi": null,
+      "reference_level": "PBE(+U) (OMat24)",
+      "comparison_mode": "reference_matched",
+      "comparison_note": "The production checkpoints were trained on OMat24, so its validation split is the only reference-matched absolute-energy comparison in this suite. The 256-structure subset is already pinned and committed by the existing harness (validation/science/data/omat24_subset.extxyz); T9 reuses it instead of re-downloading anything.",
+      "license": {
+        "paper": {
+          "id": "CC-BY-4.0",
+          "url": "https://huggingface.co/datasets/facebook/OMAT24"
+        },
+        "data": {
+          "id": "CC-BY-4.0",
+          "redistributable": true,
+          "evidence": "dataset card licence field"
+        },
+        "policy": "the pinned 256-structure subset is committed by the existing harness with provenance in validation/science/data_manifest.json"
+      },
+      "provenance": {
+        "data_manifest": "validation/science/data_manifest.json",
+        "subset_path": "validation/science/data/omat24_subset.extxyz",
+        "subset_sha256": "d6a2ce93ff39995415427e1fb9bf3c45a13061a90125591214ef9b411c1958b2",
+        "selection_seed": 20260911,
+        "selection_script": "validation/science/scripts/omat_subset.py"
+      },
+      "dft": {
+        "software": "VASP (OMat24 production settings)",
+        "functional": "PBE(+U)",
+        "note": "see the OMat24 dataset card for the full settings; the harness never mixes these energies with other reference levels"
+      },
+      "units": {
+        "energy": "eV, total per cell",
+        "forces": "eV/Angstrom",
+        "stress": null,
+        "note": "the official validation LMDB carries no stress labels"
+      },
+      "splits": {
+        "val256": {
+          "description": "the existing pinned 256-structure stratified validation subset (4 strata x 64)",
+          "kind": "committed_extxyz",
+          "path": "validation/science/data/omat24_subset.extxyz",
+          "sha256": "d6a2ce93ff39995415427e1fb9bf3c45a13061a90125591214ef9b411c1958b2",
+          "records": 256,
+          "labels": {
+            "energy": true,
+            "forces": true,
+            "stress": false
+          },
+          "capabilities": [
+            "energy_per_atom",
+            "forces"
+          ]
+        }
+      },
+      "selection": {
+        "seed": 20260911,
+        "tiers": {
+          "core": {
+            "val256": {
+              "rule": "first_n",
+              "count": 32
+            }
+          },
+          "standard": {
+            "val256": {
+              "rule": "all"
+            }
+          },
+          "research": {
+            "val256": {
+              "rule": "all"
+            }
+          }
+        }
+      },
+      "data_overlap": {
+        "status": "in-distribution",
+        "note": "drawn only from the official validation split of the corrected 2024-12-20 files, so none of these structures are training data (see data_manifest.json)"
+      }
+    },
+    "jarvis": {
+      "id": "jarvis",
+      "title": "JARVIS-DFT 3D dataset (jdft_3d)",
+      "short_name": "JARVIS-DFT",
+      "year": 2026,
+      "authors": [
+        "Kamal Choudhary",
+        "Kevin F. Garrity",
+        "Andrew C. E. Reid",
+        "Brian DeCost",
+        "et al. (NIST JARVIS)"
+      ],
+      "citation": "K. Choudhary et al., The joint automated repository for various integrated simulations (JARVIS) for data-driven materials design, npj Comput. Mater. 6, 173 (2020), doi:10.1038/s41524-020-00440-1; JARVIS-DFT 3D dataset v11, doi:10.6084/m9.figshare.6815699",
+      "doi": "10.6084/m9.figshare.6815699",
+      "reference_level": "OptB88vdW (VASP)",
+      "comparison_mode": "cross_method",
+      "comparison_note": "OptB88vdW total energies are not comparable with PBE(+U) foundation-model energies. JARVIS is therefore used for (a) relative energies between polymorphs of one formula (group-mean removed) and (b) structure/volume checks after relaxation, never for absolute energy errors and never for forces (the dataset carries none).",
+      "license": {
+        "paper": {
+          "id": "CC-BY-4.0",
+          "url": "https://creativecommons.org/licenses/by/4.0/"
+        },
+        "data": {
+          "id": "CC-BY-4.0",
+          "redistributable": true,
+          "evidence": "figshare article 6815699 licence field: CC BY 4.0"
+        },
+        "policy": "downloadable archive; imported subsets live in the local cache (the 254 MB JSON is never committed)"
+      },
+      "provenance": {
+        "figshare_article": 6815699,
+        "doi": "10.6084/m9.figshare.6815699.v11",
+        "file": {
+          "id": 64391379,
+          "name": "jdft_3d-9-24-2025.json.zip",
+          "download_url": "https://ndownloader.figshare.com/files/64391379",
+          "bytes": 48447610,
+          "sha256": "f9e0a3309f0000d5de1ec9e49c93963109ea45e63f451103f8f6595d2eabf7f5",
+          "supplied_md5": "c3179161ef0d029cf1fa70da463aac6e"
+        },
+        "inner_file": {
+          "name": "jdft_3d-9-24-2025.json",
+          "bytes": 254061560
+        },
+        "retrieved_utc": "2026-11-19"
+      },
+      "dft": {
+        "software": "VASP",
+        "functional": "OptB88vdW (optB88 exchange + vdW-DF1 correlation)",
+        "per_entry_settings": "each record carries its own encut (650/1000/1100 eV in the published data) and k-point density; the importer copies encut_eV, func and jid into every imported structure so heterogeneous settings are never averaged silently",
+        "labels_in_dataset": [
+          "optb88vdw_total_energy (eV/atom)",
+          "formation_energy_peratom (eV/atom)",
+          "optb88vdw_bandgap (eV)",
+          "ehull",
+          "elastic_tensor (for a subset)"
+        ]
+      },
+      "units": {
+        "energy": "eV/atom as published in optb88vdw_total_energy",
+        "forces": null,
+        "stress": null,
+        "cell": "Angstrom (lattice_mat, row vectors)",
+        "positions": "Angstrom Cartesian (atoms.cartesian=true in these records)"
+      },
+      "splits": {
+        "polymorphs": {
+          "description": "deterministic selection of formula groups with several polymorphs (2-24 atoms) from the 93902-entry JARVIS-DFT 3D database; relative energies inside each formula group are compared, absolute energies are never",
+          "kind": "jarvis_json_zip",
+          "records": 93902,
+          "labels": {
+            "energy_per_atom": true,
+            "forces": false,
+            "stress": false
+          },
+          "capabilities": [
+            "relative_energy",
+            "rank_agreement",
+            "relaxation_lattice"
+          ],
+          "group_key": "formula"
+        }
+      },
+      "selection": {
+        "seed": 20261119,
+        "filters": {
+          "natoms_min": 2,
+          "natoms_max": 24,
+          "min_polymorphs": 3,
+          "require_finite_energy": true
+        },
+        "tiers": {
+          "core": {
+            "polymorphs": {
+              "rule": "seeded_formula_groups",
+              "groups": 8,
+              "per_group": 3
+            }
+          },
+          "standard": {
+            "polymorphs": {
+              "rule": "seeded_formula_groups",
+              "groups": 40,
+              "per_group": 3
+            }
+          },
+          "research": {
+            "polymorphs": {
+              "rule": "seeded_formula_groups",
+              "groups": 160,
+              "per_group": 4
+            }
+          }
+        }
+      },
+      "data_overlap": {
+        "status": "unknown",
+        "note": "JARVIS-DFT structures are derived in part from Materials Project; overlap with foundation-model training corpora cannot be excluded, and because only relative energies and geometries are used the residual risk is recorded rather than hidden"
+      },
+      "paper_doi": "10.1038/s41524-020-00440-1"
+    },
+    "ms25": {
+      "id": "ms25",
+      "title": "MS25: Materials Science-Focused Benchmark Data Set for Machine Learning Interatomic Potentials",
+      "short_name": "MS25",
+      "year": 2025,
+      "authors": [
+        "Tristan Maxson",
+        "Ademola Soyemi",
+        "Xinglong Zhang",
+        "Benjamin Wei Jie Chen",
+        "Tibor Szilvasi"
+      ],
+      "citation": "T. Maxson et al., J. Chem. Inf. Model. (2025), doi:10.1021/acs.jcim.5c01262; data: doi:10.18126/6w8c-by76 (Materials Data Facility)",
+      "doi": "10.1021/acs.jcim.5c01262",
+      "reference_level": "as documented per MS25 subset (MgO surfaces, liquid water, zeolites, Pt surface reaction, HEAs, disordered Zr-O)",
+      "comparison_mode": "unknown",
+      "comparison_note": "The MS25 DFT settings are documented per subset in the paper (closed access at retrieval time), so the per-subset functional/software must be recorded by the user manifest before any comparison; the importer refuses to run without that metadata.",
+      "license": {
+        "paper": {
+          "id": "ACS-STM-ASF",
+          "url": "https://doi.org/10.15223/policy-029",
+          "evidence": "Crossref licence metadata for doi:10.1021/acs.jcim.5c01262 (stm-asf policies, not an open licence)"
+        },
+        "data": {
+          "id": "unverified",
+          "redistributable": false,
+          "evidence": "doi:10.18126/6w8c-by76 resolves to a Materials Data Facility landing page with no rights statement in the DataCite metadata (rightsList empty) and download requires the MDF/Globus client"
+        },
+        "policy": "local import only; no automatic download and no redistribution"
+      },
+      "provenance": {
+        "data_doi": "10.18126/6w8c-by76",
+        "landing_page": "https://materialsdatafacility.org/detail/74d6b3d9-c33c-47c4-9c9a-c14ca773d3c8-1.0",
+        "access": "blocked: the MDF landing page is a client-side application and the data requires Globus/MDF authentication, which this harness does not automate",
+        "retrieved_utc": "2026-11-19"
+      },
+      "dft": {
+        "software": "not verified (paper closed access at retrieval time)",
+        "functional": "not verified",
+        "note": "must be supplied in the local import manifest; the harness records it verbatim and refuses an unlabelled comparison"
+      },
+      "units": {
+        "energy": "eV (per structure, as supplied)",
+        "forces": "eV/Angstrom",
+        "stress": "eV/Angstrom^3 (ASE Voigt), only when the supplied file has a verified stress label"
+      },
+      "splits": {},
+      "selection": {
+        "seed": 20261119,
+        "tiers": {
+          "core": {},
+          "standard": {},
+          "research": {}
+        }
+      },
+      "data_overlap": {
+        "status": "unknown",
+        "note": "not evaluated because the data could not be acquired"
+      },
+      "local_import": {
+        "importer": "local_extxyz",
+        "required_manifest_fields": [
+          "dataset",
+          "subset",
+          "license",
+          "reference_level",
+          "dft",
+          "files[].sha256"
+        ],
+        "note": "see validation/science/literature/README.md section 'MS25 and other user-supplied references'"
+      }
+    }
+  }
+}
