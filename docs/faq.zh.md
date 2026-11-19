@@ -191,27 +191,31 @@ MD 可以通过指定相同的输出目录来恢复 — mliport 会从最后保�
 
 ### 哪些后端支持 NPT？
 
-NPT 使用 ASE 的 `IsotropicMTKNPT` 积分器，因此支持所有基于 ASE 的后端：**MACE、
-DPA、GRACE 和 UMA**。NEP 的 `gpumd` 运行时不支持 NPT（它使用 GPUMD 原生积分器，
-不包含此系综）。NEP 加 `--nep-runtime ase` 支持 NPT。
+NPT 使用 ASE 的 `IsotropicMTKNPT` 积分器，仅支持 **UMA、MACE、GRACE 和 DPA**
+后端。NEP **不支持** NPT — 无论是 GPUMD 运行时还是 Calorine/ASE 运行时 —
+因为引擎会拒绝 `{uma, mace, grace, dpa}` 之外的所有模型类型执行 NPT。
 
 ### NPT 需要哪些参数？
 
 至少需要：
 
 ```bash
---ensemble NPT --temperature 300 --pressure-gpa 0.0 \
---npt-tdamp 50 --npt-pdamp 500
+mliport md structure.vasp --model model.pt --model-type mace --task bulk \
+  --ensemble NPT --temp 300 --pressure-gpa 0.0 \
+  --npt-tdamp 100 --npt-pdamp 1000
 ```
 
+- `--temp`：目标温度，单位 K
 - `--pressure-gpa`：目标压力，单位 GPa（0 = 常压，正值 = 压缩）
-- `--npt-tdamp`：热浴阻尼时间，单位 fs（通常 25–100 fs）
-- `--npt-pdamp`：压浴阻尼时间，单位 fs（通常 250–1000 fs，比 tdamp 长）
+- `--npt-tdamp`：MTK 热浴阻尼时间，单位 fs（默认 100）
+- `--npt-pdamp`：MTK 压浴阻尼时间，单位 fs（默认 1000）
 
 ### NPT 轨迹的晶胞会变化吗？
 
-是的。晶胞的形状和体积在每一步都会变化。轨迹文件（`XDATCAR`）记录每帧的晶胞。对 NPT
-轨迹使用假设固定晶胞的分析工具（如标准 RDF 分 bin）时要小心。
+是的。晶胞的**体积**在每一步都会变化（`IsotropicMTKNPT` 积分器对晶胞做各向同性缩放 —
+晶胞形状的六个自由度不能独立变化）。NPT 的主要轨迹输出是 ASE `.traj` 文件，记录每帧的
+晶胞；NPT 运行**不会**生成标准的固定头部 `XDATCAR`。对 NPT 轨迹不应直接使用假设
+固定晶胞的分析工具。
 
 ---
 
@@ -225,29 +229,41 @@ mliport 的分析流水线会检查轨迹是否足够长，以产生可靠的统
 
 ### 怎么分析 MD 轨迹？
 
+语法为 `mliport analyze <运行目录或轨迹文件> <任务> [选项]`。
+数据源（运行目录或轨迹文件）写在任务名**之前**：
+
 ```bash
-# 均方位移和示踪扩散系数
-mliport analyze msd runs/md/XDATCAR --timestep 2.0
+# 验证轨迹元数据和任务可分析性
+mliport analyze runs/md validate
 
-# 径向分布函数
-mliport analyze rdf runs/md/XDATCAR --pairs Li-S --nbins 200
+# 热力学诊断
+mliport analyze runs/md thermo
 
-# 速度自相关函数和振动谱
-mliport analyze vacf runs/md/XDATCAR --timestep 2.0
+# 均方位移 — 必须指定 --mobile
+mliport analyze runs/md msd --mobile Li
 
-# 离子电导率和输运性质
-mliport analyze transport runs/md/XDATCAR --timestep 2.0 --temperature 600
+# 径向分布函数 — 必须指定 --center 和 --neighbor
+mliport analyze runs/md rdf --center Li --neighbor S --bins 200
 
-# 从多个温度拟合 Arrhenius
-mliport analyze arrhenius results_300K results_400K results_500K
+# 速度自相关（需要轨迹中包含真实速度数据）
+mliport analyze runs/md vacf
+
+# 示踪扩散系数和 NE 电导率 — 三个标志都必须提供
+mliport analyze runs/md transport --mobile Li --charge 1 --fit-start-ps 5.0
+
+# 从温度/扩散系数数组拟合 Arrhenius
+mliport analyze runs/md arrhenius \
+  --temperature 600 --temperature 700 --temperature 800 \
+  --diffusivity 1.2e-10 --diffusivity 3.4e-10 --diffusivity 7.8e-10
 ```
 
-完整的分析列表见[分析](analysis/index.md)。
+全部 11 个分析任务见[分析](analysis/index.md)。
 
 ### 可以分析其他程序的轨迹吗？
 
-mliport 读取 VASP 格式的 `XDATCAR` 文件。如果你的轨迹是其他格式，先转成 XDATCAR
-（例如用 ASE 的 `write` 函数）。
+mliport 可以分析自己的运行目录（包含溯源元数据）以及外部的 XDATCAR 和 ASE `.traj`
+文件。对于外部轨迹，可能需要指定 `--positions-convention`（wrapped/unwrapped）和
+`--frame-interval-fs`（当轨迹缺少时间元数据时）。
 
 ---
 
@@ -287,9 +303,9 @@ mliport 读取 VASP 格式的 `XDATCAR` 文件。如果你的轨迹是其他格�
 NEP 有两种运行时：
 
 - **`ase`** — 通过 Calorine Python 包用 ASE 接口运行 NEP。CPU 上用 `CPUNEP`，
-  CUDA 上用 `GPUNEP`。支持 mliport 的所有功能，包括 NPT。
+  CUDA 上用 `GPUNEP`。支持 mliport 的大部分功能，但**不支持 NPT**。
 - **`gpumd`** — 直接启动原生 GPUMD 可执行文件。仅限 GPU，大规模 MD 性能最高，
-  但不支持 NPT，功能集也有所不同。
+  不支持 NPT，功能集也有所不同。
 
 使用 NEP 时必须指定 `--nep-runtime`。mliport 从不猜测该用哪个运行时。
 

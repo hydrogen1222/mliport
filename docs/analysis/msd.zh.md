@@ -74,7 +74,7 @@ $$
 | 选项 | 默认值 | 说明 |
 |---|---|---|
 | `--axes` | `xyz` | 空间维度：`x`、`y`、`z` 或组合如 `xy`、`xyz` |
-| `--drift-reference` | `nonmobile` | 漂移扣除的参考系：`none`、`nonmobile`、`all`、`indices` |
+| `--drift-reference` | `none` | 漂移扣除的参考系：`none`、`nonmobile`、`all`、`indices` |
 | `--drift-mode` | `mass_weighted_com` | 漂移计算方式：`none`、`arithmetic_mean`、`mass_weighted_com` |
 | `--method` | `fft` | MSD 算法：`fft`（快速傅里叶，O(N log N)）或 `direct`（O(N²)） |
 

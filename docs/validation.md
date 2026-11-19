@@ -8,7 +8,7 @@ The reports are generated from the campaign records:
 
 - [BETA_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md): the full campaign, in English
 - [BETA_VALIDATION_CN.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION_CN.md): the same in Chinese
-- [README_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/README_VALIDATION.md): a one-page summary
+- [README_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/README_VALIDATION.md): a one-page summary
 
 and the machine-readable evidence behind them:
 

@@ -7,7 +7,7 @@
 
 - [BETA_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION.md)：完整验证报告，英文
 - [BETA_VALIDATION_CN.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/BETA_VALIDATION_CN.md)：同一份报告的中文版
-- [README_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/README_VALIDATION.md)：一页的摘要
+- [README_VALIDATION.md](https://github.com/hydrogen1222/mliport/blob/main/validation/science/reports/README_VALIDATION.md)：一页的摘要
 
 报告依据的原始记录：
 

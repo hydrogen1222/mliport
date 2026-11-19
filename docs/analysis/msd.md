@@ -85,7 +85,7 @@ reliably extract a diffusion coefficient.
 | Option | Default | Description |
 |---|---|---|
 | `--axes` | `xyz` | Spatial dimensions: `x`, `y`, `z`, or combinations like `xy`, `xyz` |
-| `--drift-reference` | `nonmobile` | Framework for drift removal: `none`, `nonmobile`, `all`, `indices` |
+| `--drift-reference` | `none` | Framework for drift removal: `none`, `nonmobile`, `all`, `indices` |
 | `--drift-mode` | `mass_weighted_com` | Drift calculation: `none`, `arithmetic_mean`, `mass_weighted_com` |
 | `--method` | `fft` | MSD algorithm: `fft` (fast Fourier, O(N log N)) or `direct` (O(N²)) |
 
@@ -137,9 +137,10 @@ the result as `not_diffusive`.
 
 ### Drift removal
 
-Framework drift — the slow net displacement of the crystal lattice — must be
-subtracted before computing MSD of the mobile species. The default
-(`--drift-reference nonmobile --drift-mode mass_weighted_com`) removes the
+Framework drift — the slow net displacement of the crystal lattice — should be
+subtracted before computing MSD of the mobile species. The default is
+`--drift-reference none` (no drift correction). For solid electrolytes, use
+`--drift-reference nonmobile --drift-mode mass_weighted_com` to remove the
 center-of-mass motion of all non-mobile atoms. Always report which drift
 policy you used.
 

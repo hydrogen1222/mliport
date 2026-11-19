@@ -82,7 +82,7 @@ $$
 | `--dimensions` | `xyz` | 参与计算的笛卡尔方向（`xyz` 的子集） |
 | `--lag-step-ps` | — | 滞后时间网格间距（稀疏化协方差矩阵） |
 | `--lag-stop-ps` | — | 最大滞后时间（和 `--lag-step-ps` 要么都写，要么都不写） |
-| `--drift-reference` | `nonmobile` | 骨架漂移校正 |
+| `--drift-reference` | `none` | 骨架漂移校正：`none`、`nonmobile`、`all`、`indices` |
 | `--drift-mode` | `arithmetic_mean` | 漂移计算方法 |
 
 ### 集体电导率
