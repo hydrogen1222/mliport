@@ -216,6 +216,16 @@ def inspect_target_venv(
         deleted or installed, and nothing is imported from the venv.
     """
     path = Path(venv)
+    # A symlink may point at a different checkout, shared environment, or
+    # even a missing target. Never re-resolve/install through that link.
+    # Path.exists() alone also mistakes dangling symlinks for absent paths.
+    if path.is_symlink():
+        return VenvState(
+            path=path,
+            verdict=Verdict.INCOMPATIBLE,
+            reason="symlink_venv",
+            detail=f"{path} is a symbolic link, not a managed venv directory",
+        )
     if not path.exists():
         return VenvState(path=path, verdict=Verdict.ABSENT)
     if not path.is_dir():
