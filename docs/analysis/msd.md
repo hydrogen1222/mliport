@@ -169,6 +169,20 @@ Results are written to `<run>/analysis/msd/<analysis-id>/`:
 | `msd.png`, `msd.svg` | MSD plot |
 | `alpha.png`, `alpha.svg` | Local exponent plot with consistency band |
 
+### Refitting and timings
+
+Everything except the diagnostic fit (trajectory load, drift preparation, the
+MSD estimator and the local exponent) is cached under
+`<run>/analysis/_msd_core/`. Changing only `--fit-start-ps` or `--fit-stop-ps`
+therefore skips the trajectory read and the FFT; the result's `core_cache.hit`
+says whether that happened. The cache key contains the trajectory SHA-256 and
+the sidecar hashes, the position convention and frame interval, the mobile
+selection, the drift settings and the local-exponent options, so changing any
+of them (or the trajectory itself) recomputes the core. `--force` ignores it.
+`results.json` also records `timings`: wall-clock seconds per phase, where a
+phase with a non-empty `includes` list contains those phases (do not add them).
+Hashing the source trajectory is repeated on every call by design.
+
 ## Short trajectories
 
 A 5-step trajectory is accepted — the analysis runs and reports an explicit

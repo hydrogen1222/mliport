@@ -49,6 +49,18 @@ run.log
 `forces_applied_eV_A`（施加约束之后的力），以及构型应力和总应力。任何 ASE 轨迹都可以用
 `mliport convert-xdatcar` 转成标准的 XDATCAR。
 
+**原始力的存储方式。** 默认把原始（未投影）力写成 `atoms.info["forces_raw_eV_A"]`，ASE 会把它存成 JSON 文本，所以在大体系里它占的空间约是同一数组二进制的 2.6 倍（6500 个原子：每帧约 415 kB 对 156 kB）。`--raw-forces-storage binary`（INCAR 中 `RAW_FORCES_STORAGE = binary`）改为在同一帧里写入一个精确的 float64 字段 `mliport_raw_forces_v1`（形状 `(natoms, 3)`，单位 eV/Å）。轨迹约小 35%，数值逐位一致。普通 `ase.io.read` 仍能读出结构、动量和约束后的力，但读不到原始力；原始力请用 mliport 读取：
+
+```python
+from mliport.trajectory_forces import read_raw_forces, read_frames_with_raw_forces
+
+raw = read_raw_forces("raw/trajectory.traj", -1)          # 最后一帧，(natoms, 3)
+frames = read_frames_with_raw_forces("raw/trajectory.traj", ":")
+frames[0].info["forces_raw_eV_A"]                         # 两种模式下都会还原
+```
+
+这两个函数也能读以前用默认 JSON 模式写的轨迹。存储模式是显式的，并记录在运行记录的 `raw_forces_storage` 里；往已有轨迹追加不同模式的帧会被拒绝。`mliport md` 开跑前会打印轨迹大小的粗略估计。
+
 **NPT 运行**会改变晶胞，标准 XDATCAR 无法表示，所以不写 `vasp/XDATCAR`（原因会记入日志）。`raw/trajectory.traj` 保留每一帧的晶胞和动量，`raw/md.csv` 增加体积和总压强（含动能项），清单里把该轨迹标为变胞、不可用于输运分析。详见 [MD](workflows/md.md)。
 
 **XDATCAR 的 PBC 限制：** 标准 VASP XDATCAR 不保存 ASE 的 `pbc` 掩码。

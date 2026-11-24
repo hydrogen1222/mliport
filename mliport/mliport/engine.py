@@ -508,6 +508,7 @@ class CalculationEngine:
                 seed=opts.get("seed"),
                 velocity_policy=opts.get("velocity_policy", "auto"),
                 com_policy=option("md", "com_policy"),
+                raw_forces_storage=option("md", "raw_forces_storage"),
                 pre_relax_mode=opts.get("pre_relax_mode", "none"),
                 fmax_abort=opts.get(
                     "fmax_abort", BUILTIN_DEFAULTS["safety"]["fmax_abort"]

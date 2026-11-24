@@ -699,6 +699,7 @@ def _validate_resolved(resolved: ResolvedConfig, schema: Schema) -> None:
             "pre_relax_mode",
             "velocity_policy",
             "com_policy",
+            "raw_forces_storage",
             "bussi_tau",
             "nhc_tdamp",
             "nhc_tchain",
