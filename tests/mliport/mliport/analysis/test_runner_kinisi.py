@@ -145,7 +145,7 @@ def test_analysis_runner_msd_defaults_to_production(tmp_path) -> None:
     assert len(outcome["results"]["lag_time_ps"]) == 4
     output = run / "analysis" / "msd" / outcome["analysis_id"]
     request = json.loads((output / "request.json").read_text(encoding="utf-8"))
-    assert request["task_output_revision"] == 7
+    assert request["task_output_revision"] == 8
     assert (output / "msd.csv").is_file()
     assert (output / "msd.png").is_file()
     assert (output / "msd.svg").is_file()

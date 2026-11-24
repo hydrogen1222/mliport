@@ -55,6 +55,29 @@ run.log
 configurational against total stress. An ASE trajectory from any run can be turned
 into a standard XDATCAR with `mliport convert-xdatcar`.
 
+**Raw-force storage.** By default the raw (unprojected) forces are written as
+`atoms.info["forces_raw_eV_A"]`, which ASE stores as JSON text, so on large cells
+they take about 2.6 times the space of the same array in binary (6500 atoms:
+about 415 kB against 156 kB per frame). `--raw-forces-storage binary` (INCAR
+`RAW_FORCES_STORAGE = binary`) instead writes them as one exact float64 field,
+`mliport_raw_forces_v1` (shape `(natoms, 3)`, eV/Å), inside the same frame. The
+trajectory is about 35% smaller and the values are bit-identical. Plain
+`ase.io.read` still returns the structure, momenta and the constraint-applied
+forces, but not the raw forces; read those with mliport:
+
+```python
+from mliport.trajectory_forces import read_raw_forces, read_frames_with_raw_forces
+
+raw = read_raw_forces("raw/trajectory.traj", -1)          # last frame, (natoms, 3)
+frames = read_frames_with_raw_forces("raw/trajectory.traj", ":")
+frames[0].info["forces_raw_eV_A"]                         # restored for both modes
+```
+
+Both functions also read older trajectories written in the default JSON mode.
+The mode is explicit and recorded in `raw_forces_storage` of the run provenance;
+appending frames with a different mode to an existing trajectory is refused.
+`mliport md` prints an approximate trajectory size before the run starts.
+
 **NPT runs** change the cell, which a standard XDATCAR cannot represent, so
 `vasp/XDATCAR` is not written (the reason is logged). `raw/trajectory.traj`
 keeps the cell and momenta of every frame, `raw/md.csv` adds the volume and the

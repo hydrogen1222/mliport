@@ -12,6 +12,7 @@ import shutil
 import traceback
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -27,6 +28,8 @@ from mliport.analysis.dataset import (
     no_trajectory_message,
 )
 from mliport.analysis.schema import AnalysisRequest
+from mliport.analysis.msd_cache import MsdCoreCache, msd_core_key
+from mliport.analysis.timing import PhaseTimings, phase, recording
 from mliport.analysis.validation import InvalidTrajectoryError, UnsupportedAnalysisError
 
 if TYPE_CHECKING:
@@ -34,9 +37,9 @@ if TYPE_CHECKING:
 
 
 # Analysis output revisions are part of the request/cache identity. Bump the
-# changed scientific tasks while deliberately leaving the native MSD revision
-# untouched.
-_TASK_OUTPUT_REVISIONS = {"msd": 7, "transport": 6, "electrolyte": 3}
+# changed scientific tasks. msd 8: ``framework_drift_A`` is null when no drift
+# was computed and results carry the no-drift-correction warning (#131).
+_TASK_OUTPUT_REVISIONS = {"msd": 8, "transport": 6, "electrolyte": 3}
 _TASK_SCIENTIFIC_REVISIONS = {"transport": 5, "electrolyte": 3}
 
 
@@ -588,11 +591,41 @@ def _write_transport_summary(path: Path, result: dict[str, Any]) -> None:
 
 def _load_dataset(request: AnalysisRequest) -> TrajectoryDataset:
     parameters = request.parameters
-    return TrajectoryDataset.load(
-        request.source,
-        positions_convention=parameters.pop("positions_convention", None),
-        frame_interval_fs=parameters.pop("frame_interval_fs", None),
-    )
+    with phase("dataset_load"):
+        return TrajectoryDataset.load(
+            request.source,
+            positions_convention=parameters.pop("positions_convention", None),
+            frame_interval_fs=parameters.pop("frame_interval_fs", None),
+        )
+
+
+#: Fingerprint of the source of the analysis currently running (set by
+#: ``run_analysis``) so a task can key caches without hashing the file twice.
+_ACTIVE_FINGERPRINT: ContextVar[dict[str, Any] | None] = ContextVar(
+    "mliport_active_source_fingerprint", default=None
+)
+
+#: Options that only select the diagnostic fit; everything else defines the
+#: fit-independent MSD core and therefore the core cache key.
+_MSD_FIT_ONLY_PARAMETERS = frozenset({"fit_start_ps", "fit_stop_ps"})
+
+
+def _msd_core_cache(request: AnalysisRequest) -> MsdCoreCache | None:
+    fingerprint = _ACTIVE_FINGERPRINT.get()
+    if fingerprint is None:
+        return None
+    identity = {
+        "source_fingerprint": fingerprint,
+        "parameters": {
+            key: value
+            for key, value in request.parameters.items()
+            if key not in _MSD_FIT_ONLY_PARAMETERS
+        },
+        "backend_versions": _versions(),
+        "task_output_revision": _TASK_OUTPUT_REVISIONS["msd"],
+    }
+    key = msd_core_key(_jsonable(identity, array_limit=100_000))
+    return MsdCoreCache(_output_root(request.source_path) / "_msd_core", key)
 
 
 def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str]]:
@@ -632,7 +665,12 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
         )
         return result, artifacts
 
-    dataset = _load_dataset(request_copy)
+    if task == "msd":
+        # The MSD core may come from the cache, in which case the trajectory is
+        # never read; ``source_options`` carry the loader settings instead.
+        dataset = None
+    else:
+        dataset = _load_dataset(request_copy)
     if task == "validate":
         from mliport.analysis.validation import validate_trajectory
 
@@ -688,14 +726,29 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
         artifacts.extend(("rmsd.csv", "rmsf.csv"))
         return result, artifacts
     if task == "msd":
-        from mliport.analysis.msd import calculate_msd
+        from mliport.analysis.msd import calculate_msd_cached
         from mliport.analysis.plots import plot_msd, plot_msd_alpha
 
         plot_options = {
             "log_x": bool(parameters.pop("alpha_log_x", False)),
             "focus_band": parameters.pop("alpha_focus_band", None) or None,
         }
-        result = calculate_msd(dataset, **parameters)
+        source_options = {
+            key: parameters.pop(key)
+            for key in ("positions_convention", "frame_interval_fs")
+            if parameters.get(key) is not None
+        }
+        parameters.pop("positions_convention", None)
+        parameters.pop("frame_interval_fs", None)
+        load_request = AnalysisRequest(
+            task, request.source, dict(source_options), request.force
+        )
+        result = calculate_msd_cached(
+            lambda: _load_dataset(load_request),
+            cache=_msd_core_cache(request),
+            refresh=bool(request.force),
+            **parameters,
+        )
         columns = {
             "lag_time_ps": result["lag_time_ps"],
             "time_origin_counts": result["time_origin_counts"],
@@ -1010,13 +1063,31 @@ def _dispatch(request: AnalysisRequest, output_dir: Path) -> tuple[Any, list[str
 def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
     """Run one analysis job and persist its complete reproducibility record.
 
+    Phase wall-clock timings (source fingerprint, trajectory load,
+    displacement preparation, estimator, ...) are recorded under
+    ``results["timings"]`` for ``msd`` and ``transport``.
+    """
+
+    timings = PhaseTimings()
+    try:
+        with recording(timings):
+            return _run_analysis(request, timings)
+    finally:
+        _ACTIVE_FINGERPRINT.set(None)
+
+
+def _run_analysis(request: AnalysisRequest, timings: PhaseTimings) -> dict[str, Any]:
+    """Implementation of :func:`run_analysis` (see there).
+
     Cache identity is content-based (trajectory SHA-256 plus every sidecar the
     loader consumes) and every attempt is published as an immutable record;
     a failed attempt replaces the published result with a failure document so
     an older success can never be returned as the current answer (review R06).
     """
 
-    fingerprint = source_fingerprint(request.source_path)
+    with phase("source_fingerprint"):
+        fingerprint = source_fingerprint(request.source_path)
+    _ACTIVE_FINGERPRINT.set(fingerprint)
     canonical_request = {
         "schema": "mliport.analysis-request/2",
         "task": request.task,
@@ -1103,7 +1174,10 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
     _update_index(root, analysis_id, record)
 
     try:
-        result, artifacts = _dispatch(request, output_dir)
+        with phase("analysis_task"):
+            result, artifacts = _dispatch(request, output_dir)
+        if request.task in {"msd", "transport"} and isinstance(result, dict):
+            result["timings"] = timings.to_dict()
         if request.task == "transport":
             provenance["transport"] = {
                 "fit_start_ps": result["tracer_diffusion"]["fit_start_ps"],

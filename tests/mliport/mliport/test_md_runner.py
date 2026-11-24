@@ -646,6 +646,7 @@ def test_nve_provenance_has_null_thermostat_and_no_coupling_parameters(tmp_path)
         "velocity_policy",
         "com_policy",
         "com_policy_effective",
+        "raw_forces_storage",
         "constraints",
         "degrees_of_freedom",
         "pre_relax",

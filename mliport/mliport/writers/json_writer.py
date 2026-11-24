@@ -263,6 +263,7 @@ class JsonWriter:
                 "velocity_policy": results.get("velocity_policy"),
                 "com_policy": provenance.get("com_policy"),
                 "com_policy_effective": provenance.get("com_policy_effective"),
+                "raw_forces_storage": provenance.get("raw_forces_storage"),
                 "constraints": provenance.get("constraints"),
                 "degrees_of_freedom": provenance.get("degrees_of_freedom"),
                 "trajectory_path": results.get("trajectory_path"),

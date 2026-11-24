@@ -882,6 +882,19 @@ _SPECS: list[OptionSpec] = [
         description="Explicit center-of-mass policy for MD.",
     ),
     OptionSpec(
+        "raw_forces_storage",
+        str,
+        frozenset({"md"}),
+        aliases={"RAW_FORCES_STORAGE"},
+        choices=("json", "binary"),
+        default="json",
+        description=(
+            "How raw (unprojected) MD forces are stored in raw/trajectory.traj: "
+            "'json' (info field, default) or 'binary' (exact float64 ULM field, "
+            "about 35% smaller; read with mliport.trajectory_forces)."
+        ),
+    ),
+    OptionSpec(
         "seed",
         int,
         frozenset({"md", "general", "confsearch"}),
@@ -1403,6 +1416,7 @@ _TEMPLATE_GROUPS: dict[str, tuple[str, ...]] = {
         "npt_ploop",
         "save_interval",
         "com_policy",
+        "raw_forces_storage",
         "velocity_policy",
         "pre_relax",
         "pre_relax_steps",
@@ -1529,6 +1543,7 @@ _TEMPLATE_KEYS: dict[str, tuple[str, ...] | None] = {
     "npt_ploop": ("md",),
     "save_interval": ("md",),
     "com_policy": ("md",),
+    "raw_forces_storage": ("md",),
     "neb_initial": ("neb",),
     "neb_final": ("neb",),
     "n_intermediate_images": ("neb",),

@@ -95,6 +95,7 @@ mliport md structure.vasp --model model.pt --model-type mace --task bulk \
 | `--bussi-tau` | 1000 | Bussi/CSVR coupling time in fs |
 | `--nhc-tdamp` | 100 | NHC thermostat damping time in fs |
 | `--save-interval` | 10 | Save every *n*-th step |
+| `--raw-forces-storage` | `json` | `json` or `binary`: how the raw (unprojected) forces are stored in `raw/trajectory.traj` (see [Output files](outputs.md#molecular-dynamics)) |
 | `--equilibration-steps` | 0 | Steps before production begins |
 | `--pre-relax` | auto | Quick position relaxation before MD |
 

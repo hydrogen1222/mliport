@@ -88,6 +88,7 @@ BUILTIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "nhc_tloop": 1,
         "save_interval": 10,
         "com_policy": "auto",
+        "raw_forces_storage": "json",
         # ``pre_relax`` has NO built-in default here: its default is
         # ensemble-aware (off for NVE, on for NVT) and is applied by the
         # engine (CalculationEngine._create_runner). Putting a blanket

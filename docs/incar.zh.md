@@ -309,6 +309,7 @@ NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 | `PRE_RELAX_MODE` | str | `none` | `none`, `positions`, `cell` | Pre-relaxation mode (plan section 13.2; Phase 3). | - | - |
 | `VELOCITY_POLICY` | str | `auto` | `auto`, `initialize`, `preserve` | Velocity initialisation policy (plan section 13.5; Phase 3). | - | - |
 | `COM_POLICY` | str | `auto` | `auto`, `none`, `initialize_only`, `constraint` | Explicit center-of-mass policy for MD. | - | - |
+| `RAW_FORCES_STORAGE` | str | `json` | `json`, `binary` | How raw (unprojected) MD forces are stored in raw/trajectory.traj: 'json' (info field, default) or 'binary' (exact float64 ULM field, about 35% smaller; read with mliport.trajectory_forces). | - | - |
 | `SEED` | int | - | `0..` | Random seed for reproducible MD. | - | `DEFAULT_SEED` |
 
 **输出控制**

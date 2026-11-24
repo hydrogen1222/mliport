@@ -765,6 +765,16 @@ Examples:
         help="Interval for saving trajectory frames (default: 10).",
     )
     md_parser.add_argument(
+        "--raw-forces-storage",
+        choices=["json", "binary"],
+        default=None,
+        help=(
+            "Store raw (unprojected) forces in trajectory.traj as 'json' "
+            "(info field, default) or 'binary' (exact float64 ULM field, ~35%% "
+            "smaller; read with mliport.trajectory_forces)."
+        ),
+    )
+    md_parser.add_argument(
         "--pre-relax",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -2159,6 +2169,7 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
             "seed",
             "velocity_policy",
             "com_policy",
+            "raw_forces_storage",
             "fmax_abort",
         ):
             value = getattr(args, key, None)

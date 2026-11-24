@@ -7,13 +7,20 @@
   now carries a warning saying that no framework-drift correction was applied,
   and `framework_drift_A` is `null` instead of an all-zero array when no drift
   was computed, so "not computed" can no longer be read as "no drift".
-- **Native MSD memory (#133, part).** `fft_windowed_msd_components` accumulates
-  the estimator over atom blocks (same time-origin weighting, float64), bounding
-  the FFT intermediates by a block instead of the whole trajectory.
-- **MD log (#132, part).** `mliport md` prints an approximate
-  `raw/trajectory.traj` size before the run. The trajectory format itself is
-  unchanged.
-
+- **Raw-force storage (#132).** New explicit option `raw_forces_storage`
+  (`--raw-forces-storage`, INCAR `RAW_FORCES_STORAGE`, default `json`). `binary`
+  writes the raw forces as an exact float64 ULM field (`mliport_raw_forces_v1`)
+  in the same `.traj` frame, about 35% smaller at 6500 atoms; plain ASE still reads
+  structure and constraint-applied forces. `mliport.trajectory_forces` reads both
+  storage modes; appending with a different mode is refused. `mliport md` prints
+  an approximate trajectory size before the run.
+- **Analysis performance (#133).** Native MSD accumulates the FFT over atom
+  blocks; the fit-independent MSD core is cached (`analysis/_msd_core/`, keyed by
+  source content, drift and estimator options) so refits skip load and FFT;
+  transport unwraps once, prepares mobile atoms only, and validates/drift-corrects
+  in frame blocks; `results.json` gains `timings` per phase. Results are
+  unchanged (bit-identical on the synthetic regression set). The `msd` task output
+  revision is now 8 (#131), so older cached MSD results are recomputed.
 - **Literature benchmark suite (tier `t9`).** `validation/science/scripts/benchmark.py`
   imports published DFT references (LiPS-25, LiPS20, OMat24, JARVIS-DFT, and
   local MS25 manifests) through a hash-pinned registry, evaluates a model

@@ -171,3 +171,13 @@ def test_calc_type_choices_match_engine(schema: Schema) -> None:
     spec = schema.resolve("calc_type")
     assert spec is not None
     assert set(spec.choices) == {"sp", "opt", "md", "neb", "batch", "confsearch"}
+
+
+def test_raw_forces_storage_option_is_typed_and_defaults_to_json(
+    schema: Schema,
+) -> None:
+    option = schema.resolve("RAW_FORCES_STORAGE")
+    assert option is not None
+    assert option.coerce("BINARY") == "binary"
+    assert option.default == "json"
+    assert option.choices == ("json", "binary")
