@@ -123,9 +123,11 @@ mliport 会标记为 `not_diffusive`。
 
 ### 漂移扣除
 
-框架漂移 — 晶格的缓慢整体位移 — 必须在计算可移动物种的 MSD 前扣除。默认设置
-（`--drift-reference nonmobile --drift-mode mass_weighted_com`）扣除所有不可移动
-原子的质心运动。务必报告所用的漂移策略。
+框架漂移 — 晶格的缓慢整体位移 — 应在计算可移动物种的 MSD 前扣除。默认值是
+`--drift-reference none`（不做漂移扣除）。对固态电解质，请显式使用
+`--drift-reference nonmobile --drift-mode mass_weighted_com` 扣除所有不可移动
+原子的质心运动。务必报告所用的漂移策略。使用 `none` 时，结果会带一条警告，且
+`framework_drift_A` 为 `null`（未计算），而不是全零数组。
 
 ### 示例
 
