@@ -229,6 +229,40 @@ def test_nonmobile_drift_correction_removes_rigid_translation() -> None:
     np.testing.assert_allclose(corrected["framework_drift_A"][:, 0], np.arange(8) * 0.2)
 
 
+def test_uncorrected_msd_does_not_report_zero_framework_drift() -> None:
+    positions = np.asarray(
+        [[[1 + 0.2 * frame, 1, 1], [4 + 0.2 * frame, 4, 4]] for frame in range(8)]
+    )
+    dataset = TrajectoryDataset.from_frames(
+        [
+            Atoms("LiS", positions=frame, cell=[20, 20, 20], pbc=True)
+            for frame in positions
+        ],
+        times_fs=np.arange(len(positions), dtype=float),
+        positions_convention="unwrapped",
+    )
+    raw = calculate_msd(dataset, mobile_species="Li", drift_reference="none")
+    corrected = calculate_msd(dataset, mobile_species="Li", drift_reference="nonmobile")
+    # "not computed" must be distinguishable from "computed, found no drift".
+    assert raw["framework_drift_A"] is None
+    assert any("--drift-reference nonmobile" in w for w in raw["warnings"])
+    assert corrected["framework_drift_A"] is not None
+    assert not any("No framework-drift correction" in w for w in corrected["warnings"])
+
+
+@pytest.mark.parametrize("block_atoms", [1, 2, 3, 7, 1000])
+def test_fft_msd_atom_blocking_matches_direct_and_unblocked(block_atoms: int) -> None:
+    rng = np.random.default_rng(7)
+    walk = np.cumsum(rng.normal(size=(40, 7, 3)), axis=0)
+    direct = direct_windowed_msd_components(walk)
+    unblocked = fft_windowed_msd_components(walk, block_atoms=walk.shape[1])
+    blocked = fft_windowed_msd_components(walk, block_atoms=block_atoms)
+    np.testing.assert_allclose(blocked, direct, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(blocked, unblocked, rtol=1e-12, atol=1e-12)
+    with pytest.raises(ValueError):
+        fft_windowed_msd_components(walk, block_atoms=0)
+
+
 def test_density_map_normalizations_survive_periodic_smoothing() -> None:
     frames = [
         Atoms(

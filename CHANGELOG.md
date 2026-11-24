@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`analyze msd` drift visibility (#131).** The default stays
+  `--drift-reference none` (code and docs agree on current main), but the result
+  now carries a warning saying that no framework-drift correction was applied,
+  and `framework_drift_A` is `null` instead of an all-zero array when no drift
+  was computed, so "not computed" can no longer be read as "no drift".
+- **Native MSD memory (#133, part).** `fft_windowed_msd_components` accumulates
+  the estimator over atom blocks (same time-origin weighting, float64), bounding
+  the FFT intermediates by a block instead of the whole trajectory.
+- **MD log (#132, part).** `mliport md` prints an approximate
+  `raw/trajectory.traj` size before the run. The trajectory format itself is
+  unchanged.
+
 - **Literature benchmark suite (tier `t9`).** `validation/science/scripts/benchmark.py`
   imports published DFT references (LiPS-25, LiPS20, OMat24, JARVIS-DFT, and
   local MS25 manifests) through a hash-pinned registry, evaluates a model

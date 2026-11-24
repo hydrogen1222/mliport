@@ -141,7 +141,9 @@ def displacement_trajectory(
         "continuous_positions_A": continuous,
         "raw_mobile_displacements_A": raw_mobile_displacements,
         "mobile_displacements_A": corrected,
-        "framework_drift_A": drift,
+        # ``None`` (not zeros) when no framework drift was computed, so the
+        # artifact cannot be misread as "measured, and there was no drift".
+        "framework_drift_A": drift if len(reference) else None,
         "mobile_indices": mobile,
         # ``mode`` keeps its historical meaning (the reference selection)
         # for downstream consumers; the centre definition is ``drift_mode``.
@@ -174,29 +176,52 @@ def direct_windowed_msd_components(displacements_A: np.ndarray) -> np.ndarray:
     return result
 
 
-def fft_windowed_msd_components(displacements_A: np.ndarray) -> np.ndarray:
-    """FFT-accelerated windowed MSD exactly matching the direct estimator."""
+#: Working-memory target for one atom block of the FFT estimator.
+_FFT_BLOCK_TARGET_BYTES = 512 * 1024**2
+
+
+def fft_windowed_msd_components(
+    displacements_A: np.ndarray, *, block_atoms: int | None = None
+) -> np.ndarray:
+    """FFT-accelerated windowed MSD matching the direct estimator.
+
+    The estimator is a mean over atoms of independent per-atom windowed
+    squared displacements, so atoms are processed in blocks and only the
+    per-lag atom sums are accumulated. This keeps the same time-origin
+    weighting and float64 precision while bounding the transform and
+    autocorrelation intermediates by ``block_atoms`` instead of the whole
+    trajectory. ``block_atoms=None`` chooses a block from a fixed memory target.
+    """
 
     positions = np.asarray(displacements_A, dtype=float)
     if positions.ndim != 3 or positions.shape[-1] != 3:
         raise ValueError("displacements_A must have shape (frames, atoms, 3)")
-    n_frames = len(positions)
-    transform = np.fft.rfft(positions, n=2 * n_frames, axis=0)
-    autocorrelation = np.fft.irfft(
-        transform * np.conjugate(transform), n=2 * n_frames, axis=0
-    )[:n_frames]
-    squared = positions**2
-    prefix = np.concatenate(
-        (np.zeros((1, positions.shape[1], 3)), np.cumsum(squared, axis=0)),
-        axis=0,
-    )
-    result = np.empty((n_frames, 3), dtype=float)
-    for lag in range(n_frames):
-        origins = n_frames - lag
-        later_sum = prefix[n_frames] - prefix[lag]
-        earlier_sum = prefix[n_frames - lag]
-        squared_displacement_sum = later_sum + earlier_sum - 2.0 * autocorrelation[lag]
-        result[lag] = np.mean(squared_displacement_sum / origins, axis=0)
+    n_frames, n_atoms = positions.shape[0], positions.shape[1]
+    if block_atoms is None:
+        # complex rfft + product + irfft + squares/prefix, 3 axes, float64.
+        per_atom_bytes = max(1, n_frames) * 3 * 8 * 12
+        block_atoms = max(1, _FFT_BLOCK_TARGET_BYTES // per_atom_bytes)
+    block_atoms = int(block_atoms)
+    if block_atoms < 1:
+        raise ValueError("block_atoms must be a positive integer")
+    origins = (n_frames - np.arange(n_frames, dtype=float))[:, None, None]
+    total = np.zeros((n_frames, 3), dtype=float)
+    for lo in range(0, n_atoms, block_atoms):
+        block = positions[:, lo : lo + block_atoms]
+        transform = np.fft.rfft(block, n=2 * n_frames, axis=0)
+        autocorrelation = np.fft.irfft(
+            transform * np.conjugate(transform), n=2 * n_frames, axis=0
+        )[:n_frames]
+        del transform
+        prefix = np.concatenate(
+            (np.zeros((1, block.shape[1], 3)), np.cumsum(block**2, axis=0)),
+            axis=0,
+        )
+        later_sum = prefix[n_frames][None] - prefix[:n_frames]
+        earlier_sum = prefix[n_frames:0:-1]
+        squared_displacement_sum = later_sum + earlier_sum - 2.0 * autocorrelation
+        total += np.sum(squared_displacement_sum / origins, axis=1)
+    result = total / n_atoms
     result[0] = 0.0
     # Roundoff can create values around -1e-14 at lag zero/very short lags.
     tolerance = np.finfo(float).eps * max(1.0, float(np.max(np.abs(result)))) * 100
@@ -776,6 +801,20 @@ def diagnostic_linear_diffusion_fit(
     }
 
 
+def _no_framework_drift_notice(drift_correction: dict[str, Any]) -> str | None:
+    """Make the uncorrected default visible instead of silent."""
+
+    if str(drift_correction.get("mode")).lower() != "none":
+        return None
+    return (
+        "No framework-drift correction was applied (--drift-reference none, "
+        "the default); framework_drift_A is not computed. For solid "
+        "electrolytes pass --drift-reference nonmobile --drift-mode "
+        "mass_weighted_com, since framework recoil against the mobile-ion "
+        "flux is not captured by the whole-system COM check."
+    )
+
+
 def calculate_msd(
     dataset: TrajectoryDataset,
     *,
@@ -894,5 +933,10 @@ def calculate_msd(
         "framework_drift_A": prepared["framework_drift_A"],
         "unwrap_diagnostics": prepared["unwrap_diagnostics"],
         "com_drift_diagnostics": prepared["com_drift_diagnostics"],
-        "warnings": _non_empty([prepared["com_drift_diagnostics"]["warning"]]),
+        "warnings": _non_empty(
+            [
+                prepared["com_drift_diagnostics"]["warning"],
+                _no_framework_drift_notice(prepared["drift_correction"]),
+            ]
+        ),
     }
