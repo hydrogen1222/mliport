@@ -696,6 +696,20 @@ class MDRunner(BaseRunner):
             )
         return observables
 
+    # Approximate bytes per atom per saved frame in ``raw/trajectory.traj``:
+    # positions, momenta and constraint-applied forces are stored as float64
+    # binary (3 x 24 B); ``info["forces_raw_eV_A"]`` is serialised by ASE as
+    # JSON text (~62 B per atom, measured). Order-of-magnitude estimate only.
+    _TRAJ_BYTES_PER_ATOM_FRAME = 3 * 24 + 62
+
+    def _trajectory_size_estimate_line(self, natoms: int) -> str:
+        frames = int(self.total_steps) // max(int(self.save_interval), 1) + 1
+        size = frames * int(natoms) * self._TRAJ_BYTES_PER_ATOM_FRAME
+        return (
+            f"Trajectory size:  ~{size / 1024**3:.2f} GiB "
+            f"({frames} frames x {natoms} atoms; approximate, raw/trajectory.traj)"
+        )
+
     def _force_views(
         self,
         atoms: Atoms,
@@ -1383,6 +1397,7 @@ class MDRunner(BaseRunner):
         self.log(f"Production:       {self.steps} steps")
         self.log(f"Total MD steps:   {self.total_steps}")
         self.log(f"Save interval:    {self.save_interval} steps (trajectory frames)")
+        self.log(self._trajectory_size_estimate_line(len(contract_atoms)))
         self.log(f"COM policy:       {self.com_policy}")
         log_step_unit = "step" if self.LOG_INTERVAL_STEPS == 1 else "steps"
         self.log(

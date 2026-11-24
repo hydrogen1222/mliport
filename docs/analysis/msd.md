@@ -142,7 +142,8 @@ subtracted before computing MSD of the mobile species. The default is
 `--drift-reference none` (no drift correction). For solid electrolytes, use
 `--drift-reference nonmobile --drift-mode mass_weighted_com` to remove the
 center-of-mass motion of all non-mobile atoms. Always report which drift
-policy you used.
+policy you used. With `none`, the result carries a warning and
+`framework_drift_A` is `null` (not computed), not an array of zeros.
 
 ### Example
 
