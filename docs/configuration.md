@@ -181,6 +181,7 @@ backend, through `torch-dftd`:
 | `D3` / `--d3` | off | add DFT-D3 to the model |
 | `D3_XC` / `--d3-xc` | `pbe` | reference functional of the model's training data; selects the D3 parameters |
 | `D3_DAMPING` / `--d3-damping` | `bj` | damping function: `zero`, `bj`, `zerom` or `bjm` |
+| `D3_CUTOFF` / `--d3-cutoff` | torch-dftd default (95 bohr, about 50.3 Å) | pair cutoff in Å |
 
 ```bash
 uv pip install --python .venv-mace/bin/python torch-dftd
@@ -192,8 +193,16 @@ that reference with `--d3-xc`; mliport cannot read it from a MACE, DPA or GRACE
 checkpoint. For UMA the reference of each task is known: D3 is accepted for
 `omat` (PBE) and `oc20` (RPBE) only, and refused for `omol`, `omc`, `odac` and
 `oc25`, whose references already contain dispersion or are not verified to be
-dispersion-free. `D3_XC` or `D3_DAMPING` without `D3` is an error rather than a
-setting that silently does nothing. NEB does not accept D3 yet. In the TUI, the
+dispersion-free. `D3_XC`, `D3_DAMPING` or `D3_CUTOFF` without `D3` is an error
+rather than a setting that silently does nothing.
+
+`D3_CUTOFF` matters for slabs with a small in-plane cell. torch-dftd sums over
+every periodic image within the cutoff, so a 9 Å wide slab at 50 Å cuts through
+hundreds of images and D3 can take most of the time of an MD step. A smaller
+cutoff is faster and changes the energy slightly, because the tail beyond it is
+dropped. Compare the quantity you care about (for example an adsorption energy)
+at the default and at the smaller cutoff before using it for a search; the value
+actually used is written to the `dispersion` record as `cutoff_A`. NEB does not accept D3 yet. In the TUI, the
 DFT-D3 switch on the configuration screen sets the same three options (the NEB
 form does not show it).
 

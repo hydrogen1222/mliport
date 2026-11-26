@@ -41,6 +41,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
 | `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
 | `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `D3_CUTOFF` | float | - | `1e-12..` | DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, about 50.3 A). Smaller is faster but changes energies slightly. | - | - |
 | `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
@@ -111,6 +112,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
 | `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
 | `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `D3_CUTOFF` | float | - | `1e-12..` | DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, about 50.3 A). Smaller is faster but changes energies slightly. | - | - |
 | `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
@@ -183,6 +185,7 @@ MLIP 的总能量，只有在同一个模型身份下才能相互比较。
 | `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
 | `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
 | `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `D3_CUTOFF` | float | - | `1e-12..` | DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, about 50.3 A). Smaller is faster but changes energies slightly. | - | - |
 | `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
@@ -266,6 +269,7 @@ NPT 的键只在 `ENSEMBLE = NPT` 时生效。
 | `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
 | `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
 | `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `D3_CUTOFF` | float | - | `1e-12..` | DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, about 50.3 A). Smaller is faster but changes energies slightly. | - | - |
 | `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
@@ -364,6 +368,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
 | `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
 | `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `D3_CUTOFF` | float | - | `1e-12..` | DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, about 50.3 A). Smaller is faster but changes energies slightly. | - | - |
 | `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
@@ -468,6 +473,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
 | `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
 | `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `D3_CUTOFF` | float | - | `1e-12..` | DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, about 50.3 A). Smaller is faster but changes energies slightly. | - | - |
 | `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |
@@ -594,6 +600,7 @@ nudged elastic band。会让必需记录悄悄消失的输出开关，NEB 会直
 | `D3` | bool | - | - | Add Grimme DFT-D3 dispersion (torch-dftd) on top of the model. Only for models trained on dispersion-free reference data. | - | - |
 | `D3_XC` | str | - | - | Reference functional of the model's training data, selecting the D3 parameters (default: pbe). | - | - |
 | `D3_DAMPING` | str | - | `zero`, `bj`, `zerom`, `bjm` | DFT-D3 damping function (default: bj, i.e. D3(BJ)). | - | - |
+| `D3_CUTOFF` | float | - | `1e-12..` | DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, about 50.3 A). Smaller is faster but changes energies slightly. | - | - |
 | `DPA_RUNTIME` | str | - | `current`, `legacy` | DPA runtime environment: 'current' (pinned DPA-4-capable deepmd-kit) or 'legacy' (.venv-dpa-legacy, deepmd-kit 3.0.0b3, for DPA-2 checkpoints such as DPA-SSE). No automatic fallback. | - | - |
 | `NEP_RUNTIME` | str | - | `ase`, `gpumd` | NEP execution runtime: 'ase' (Calorine CPUNEP/GPUNEP calculator) or 'gpumd' (native gpumd process). Required for MODEL_TYPE=nep; mliport never infers it or falls back between the two. | - | - |
 | `NEP_GPUMD_COMMAND` | str | - | - | Path to the gpumd executable for NEP_RUNTIME=gpumd (and for the GPUNEP ASE adapter). Launched as an argv list, never through a shell; its real path, version and SHA256 are recorded. | - | - |

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **confsearch deduplication ignores hydrogen in `G`.** The geometric-identity
+  rule compared every adsorbate atom, but the torsion of a CH3/CH2 group is
+  almost flat, so the same basin found twice had H atoms at different angles and
+  was not merged (a V100 campaign on CH3OH@LGPS: 99 quenches gave 93 "unique"
+  minima, no `G` hit). `G` now compares the non-H adsorbate atoms; an
+  all-hydrogen adsorbate still compares all atoms. `D` (fingerprint) and the
+  energy window are unchanged. `CS_SCIENTIFIC_REVISION` is 2, so a checkpoint
+  from a revision-1 search is refused on resume. A finished run keeps its
+  `minima/all_minima.extxyz`, so it can be re-deduplicated without new MD.
+- **`D3_CUTOFF` / `--d3-cutoff` (Å).** Optional pair cutoff for the DFT-D3 term;
+  unset keeps torch-dftd's 95 bohr (about 50.3 Å) and the results of earlier
+  runs. The coordination-number cutoff follows when it would exceed the pair
+  cutoff, and `dispersion.cutoff_A` / `cutoff_is_default` record what was used.
+  Available in INCAR, the CLI, the Python factory and the queue; the TUI has no
+  field for it.
+
 - **`analyze msd` drift visibility (#131).** The default stays
   `--drift-reference none` (code and docs agree on current main), but the result
   now carries a warning saying that no framework-drift correction was applied,

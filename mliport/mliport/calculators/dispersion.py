@@ -22,6 +22,7 @@ Correctness guards (fail closed):
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 from mliport.backend_selection import DISPERSION_OPTION_KEYS as D3_OPTION_KEYS
@@ -32,6 +33,10 @@ if TYPE_CHECKING:
 
 #: Damping functions implemented by torch-dftd.
 D3_DAMPINGS: tuple[str, ...] = ("zero", "bj", "zerom", "bjm")
+#: torch-dftd's default pair cutoff, 95 bohr, in Angstrom.
+TORCH_DFTD_DEFAULT_CUTOFF_A = 95.0 * 0.529177210903
+#: torch-dftd's default coordination-number cutoff, 40 bohr, in Angstrom.
+TORCH_DFTD_DEFAULT_CNTHR_A = 40.0 * 0.529177210903
 #: Defaults: PBE reference with Becke-Johnson damping, D3(BJ).
 DEFAULT_D3_XC = "pbe"
 DEFAULT_D3_DAMPING = "bj"
@@ -57,8 +62,12 @@ def normalize_d3_options(
     d3: Any = False,
     d3_xc: Any = None,
     d3_damping: Any = None,
-) -> dict[str, str] | None:
-    """Validate the D3 request and return ``{"xc", "damping"}`` or ``None``.
+    d3_cutoff: Any = None,
+) -> dict[str, Any] | None:
+    """Validate the D3 request and return the effective settings or ``None``.
+
+    The settings are ``{"xc", "damping"}`` plus ``"cutoff"`` (Angstrom) only
+    when ``d3_cutoff`` was given; otherwise torch-dftd's own default applies.
 
     Args:
         model_type: Canonical backend name (``uma`` for the fairchem alias).
@@ -66,6 +75,8 @@ def normalize_d3_options(
         d3: Whether the correction is requested.
         d3_xc: Reference functional of the model's training data.
         d3_damping: D3 damping function.
+        d3_cutoff: D3 pair cutoff in Angstrom, or ``None`` for the torch-dftd
+            default (95 bohr, about 50.3 A).
 
     Returns:
         The effective settings when D3 is enabled, else ``None``.
@@ -81,7 +92,11 @@ def normalize_d3_options(
     if not d3:
         given = [
             name
-            for name, value in (("d3_xc", d3_xc), ("d3_damping", d3_damping))
+            for name, value in (
+                ("d3_xc", d3_xc),
+                ("d3_damping", d3_damping),
+                ("d3_cutoff", d3_cutoff),
+            )
             if value is not None
         ]
         if given:
@@ -131,7 +146,19 @@ def normalize_d3_options(
                 f"d3_xc={xc!r} would use D3 parameters of another functional. "
                 f"Use d3_xc={reference!r}."
             )
-    return {"xc": xc, "damping": damping}
+    settings: dict[str, Any] = {"xc": xc, "damping": damping}
+    if d3_cutoff is not None:
+        try:
+            cutoff = float(d3_cutoff)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid d3_cutoff {d3_cutoff!r}: not a number") from exc
+        if not math.isfinite(cutoff) or cutoff <= 0.0:
+            raise ValueError(
+                f"Invalid d3_cutoff {d3_cutoff!r}: it must be a positive "
+                "distance in Angstrom."
+            )
+        settings["cutoff"] = cutoff
+    return settings
 
 
 def d3_device(device: str, *, process_isolated: bool) -> str:
@@ -158,6 +185,7 @@ class D3CorrectedCalculator(BaseMLIPCalculator):
         device: str,
         xc: str = DEFAULT_D3_XC,
         damping: str = DEFAULT_D3_DAMPING,
+        cutoff: float | None = None,
     ):
         """
         Args:
@@ -165,6 +193,9 @@ class D3CorrectedCalculator(BaseMLIPCalculator):
             device: Torch device for the D3 term (see :func:`d3_device`).
             xc: Reference functional whose D3 parameters are used.
             damping: Damping function (``zero``, ``bj``, ``zerom``, ``bjm``).
+            cutoff: Pair cutoff in Angstrom; ``None`` keeps torch-dftd's
+                default (95 bohr).  The coordination-number cutoff is lowered
+                to the pair cutoff when that is smaller than its own default.
         """
         if damping not in D3_DAMPINGS:
             raise ValueError(
@@ -175,6 +206,7 @@ class D3CorrectedCalculator(BaseMLIPCalculator):
         self._device = device
         self._xc = xc
         self._damping = damping
+        self._cutoff = None if cutoff is None else float(cutoff)
         self._calculator: Calculator | None = None
         self._d3_version: str | None = None
 
@@ -199,11 +231,16 @@ class D3CorrectedCalculator(BaseMLIPCalculator):
             self._d3_version = None
         # float64: the correction is small next to the model energy and must
         # not add single-precision noise to forces near convergence.
+        extra: dict[str, float] = {}
+        if self._cutoff is not None:
+            extra["cutoff"] = self._cutoff
+            extra["cnthr"] = min(TORCH_DFTD_DEFAULT_CNTHR_A, self._cutoff)
         return TorchDFTD3Calculator(
             device=self._device,
             xc=self._xc,
             damping=self._damping,
             dtype=torch.float64,
+            **extra,
         )
 
     def get_calculator(self) -> Calculator:
@@ -236,6 +273,10 @@ class D3CorrectedCalculator(BaseMLIPCalculator):
             "method": "DFT-D3",
             "xc": self._xc,
             "damping": self._damping,
+            "cutoff_A": (
+                TORCH_DFTD_DEFAULT_CUTOFF_A if self._cutoff is None else self._cutoff
+            ),
+            "cutoff_is_default": self._cutoff is None,
             "implementation": "torch-dftd",
             "version": self._d3_version,
             "device": self._device,
@@ -255,6 +296,7 @@ __all__ = [
     "D3_OPTION_KEYS",
     "DEFAULT_D3_DAMPING",
     "DEFAULT_D3_XC",
+    "TORCH_DFTD_DEFAULT_CUTOFF_A",
     "UMA_D3_REFERENCE_XC",
     "D3CorrectedCalculator",
     "d3_device",

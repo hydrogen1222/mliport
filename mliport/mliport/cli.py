@@ -396,6 +396,18 @@ Examples:
             choices=["zero", "bj", "zerom", "bjm"],
             help="DFT-D3 damping function (default: bj).",
         )
+        p.add_argument(
+            "--d3-cutoff",
+            dest="d3_cutoff",
+            type=float,
+            default=None,
+            metavar="ANGSTROM",
+            help=(
+                "DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, "
+                "about 50.3 A). A smaller value is faster and changes energies "
+                "slightly; the value is recorded in the run provenance."
+            ),
+        )
         if trajectory_output_flags:
             p.add_argument(
                 "--write-outcar",
@@ -2107,6 +2119,7 @@ def _build_cli_opts(args: argparse.Namespace, calc_type: str) -> dict:
         "d3",
         "d3_xc",
         "d3_damping",
+        "d3_cutoff",
         "write_outcar",
         "write_xdatcar",
         "write_trajectory",

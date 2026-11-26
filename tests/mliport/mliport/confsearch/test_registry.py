@@ -201,6 +201,53 @@ def test_geometric_identity_rejects_a_large_movement():
     assert first is not second
 
 
+def test_geometric_identity_ignores_hydrogen_rotation():
+    """An H that sits at another torsion angle is still the same basin.
+
+    The flat torsion of a CH3/CH2 group leaves its H atoms at arbitrary angles
+    when a quench stops at ``fmax`` (V100 CH3OH campaign: 99 quenches gave 93
+    "unique" minima because G compared the H atoms too).
+    """
+    slab, molecule, _options, registry = _registry(fixed=np.array([0, 1]))
+    heavy, hydrogen = (int(i) for i in registry.adsorbate)
+    atoms = combine(slab, molecule, shift=(0.5, 0.5, 2.5))
+    assert atoms.numbers[heavy] != 1 and atoms.numbers[hydrogen] == 1
+    turned = atoms.copy()
+    turned.positions[hydrogen] += [0.0, 0.9, 0.0]  # far beyond cs_dedup_geom_tol
+    first = registry.register(_record(registry, atoms, energy=-10.0))
+    second = registry.register(_record(registry, turned, energy=-10.0005))
+    assert first is second
+    assert first.hit_count == 2
+
+
+def test_geometric_identity_still_sees_heavy_atom_movement():
+    slab, molecule, _options, registry = _registry(fixed=np.array([0, 1]))
+    heavy, _hydrogen = (int(i) for i in registry.adsorbate)
+    atoms = combine(slab, molecule, shift=(0.5, 0.5, 2.5))
+    moved = atoms.copy()
+    moved.positions[heavy] += [0.5, 0.0, 0.0]  # > cs_dedup_geom_tol
+    first = _record(registry, atoms, energy=-10.0)
+    second = _record(registry, moved, energy=-10.0)
+    assert registry.geometric_match(first, second) is False
+
+
+def test_geometric_identity_of_an_all_hydrogen_adsorbate_compares_the_hydrogens():
+    slab, molecule, options, _registry_unused = _registry(fixed=np.array([0, 1]))
+    atoms = combine(slab, molecule, shift=(0.5, 0.5, 2.5))
+    hydrogen = int(np.flatnonzero(atoms.numbers == 1)[-1])
+    registry = MinimumRegistry(
+        options=options,
+        adsorbate=np.array([hydrogen]),
+        fixed=np.array([0, 1]),
+    )
+    moved = atoms.copy()
+    moved.positions[hydrogen] += [0.5, 0.0, 0.0]
+    first = _record(registry, atoms, energy=-10.0)
+    second = _record(registry, moved, energy=-10.0)
+    assert registry.geometric_match(first, second) is False
+    assert registry.geometric_match(first, _record(registry, atoms, energy=-10.0))
+
+
 def test_registration_order_is_deterministic():
     slab, molecule, _options, registry = _registry()
     atoms = combine(slab, molecule, shift=(0.5, 0.5, 2.5))

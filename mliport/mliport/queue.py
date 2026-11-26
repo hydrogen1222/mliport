@@ -96,6 +96,7 @@ _OPT_FLAGS: dict[str, tuple[str, ...]] = {
     "d3": ("--d3", "--no-d3"),
     "d3_xc": ("--d3-xc",),
     "d3_damping": ("--d3-damping",),
+    "d3_cutoff": ("--d3-cutoff",),
     "write_outcar": ("--write-outcar", "--no-write-outcar"),
     "write_xdatcar": ("--write-xdatcar", "--no-write-xdatcar"),
     "write_trajectory": ("--write-trajectory", "--no-write-trajectory"),

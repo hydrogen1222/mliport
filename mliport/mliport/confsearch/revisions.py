@@ -13,7 +13,7 @@ from __future__ import annotations
 CS_SPEC_REVISION = 2
 
 #: Bumped whenever a scientific rule or default changes.
-CS_SCIENTIFIC_REVISION = 1
+CS_SCIENTIFIC_REVISION = 2
 
 #: Bumped whenever the checkpoint JSON layout changes.
 CS_CHECKPOINT_SCHEMA_REVISION = 2

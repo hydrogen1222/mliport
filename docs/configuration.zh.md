@@ -163,6 +163,7 @@ MLIP 模型本身不含色散校正。用 PBE 数据训练的模型（MACE 的 `
 | `D3` / `--d3` | 关闭 | 在模型之上叠加 DFT-D3 |
 | `D3_XC` / `--d3-xc` | `pbe` | 模型训练数据的参考泛函，决定 D3 参数 |
 | `D3_DAMPING` / `--d3-damping` | `bj` | 阻尼函数：`zero`、`bj`、`zerom` 或 `bjm` |
+| `D3_CUTOFF` / `--d3-cutoff` | torch-dftd 默认值（95 bohr，约 50.3 Å） | 原子对截断半径，单位 Å |
 
 ```bash
 uv pip install --python .venv-mace/bin/python torch-dftd
@@ -172,8 +173,13 @@ mliport opt slab.vasp --model model.model --model-type mace --task bulk --d3
 只有训练数据不含色散的模型才能加 D3，并且要用 `--d3-xc` 写明训练数据的泛函，因为 mliport
 没法从 MACE、DPA、GRACE 的模型文件里读出这个信息。UMA 各 task 的参考泛函是已知的：只有
 `omat`（PBE）和 `oc20`（RPBE）可以加 D3；`omol`、`omc`、`odac`、`oc25` 的参考已经含色散或
-无法确认不含，加 D3 会报错。只写了 `D3_XC` 或 `D3_DAMPING` 却没开 `D3`，也会报错，避免记录
-一个实际没生效的设置。NEB 暂不支持 D3。TUI 配置页里的 DFT-D3 开关对应同样的三个选项（NEB
+无法确认不含，加 D3 会报错。只写了 `D3_XC`、`D3_DAMPING` 或 `D3_CUTOFF` 却没开 `D3`，也会报错，
+避免记录一个实际没生效的设置。
+
+面内晶胞很小的 slab 要留意 `D3_CUTOFF`。torch-dftd 对截断半径内的所有周期像求和，9 Å 宽的
+slab 在 50 Å 截断下要算几百个周期像，D3 会占掉 MD 每一步的大部分时间。截断半径取小一些会快
+很多，但被截掉的尾部会让能量略有变化。用于搜索之前，先在默认值和较小的截断下各算一次你关心的
+量（比如吸附能）并比较；实际用到的值会写进 `dispersion` 记录的 `cutoff_A`。NEB 暂不支持 D3。TUI 配置页里的 DFT-D3 开关对应同样的三个选项（NEB
 的配置页不显示这个开关）。
 
 是否加了 D3 会记录下来：JSON 结果的模型信息里有 `dispersion` 字段，OUTCAR 文件头里有一行
