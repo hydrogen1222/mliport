@@ -14,6 +14,7 @@ from mliport.analysis.drift import (
     system_com_drift_diagnostics,
 )
 from mliport.analysis.structure import cell_heights_A
+from mliport.analysis.timing import phase
 from mliport.analysis.units import (
     diffusion_A2_fs_to_m2_s,
     diffusion_m2_s_to_cm2_s,
@@ -21,10 +22,11 @@ from mliport.analysis.units import (
 from mliport.analysis.validation import require_analysis
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from typing import Any
 
     from mliport.analysis.dataset import TrajectoryDataset
+    from mliport.analysis.msd_cache import MsdCoreCache
 
 _VALID_AXES = {"x", "y", "z", "xy", "xz", "yz", "xyz"}
 _AXIS_COLUMNS = {"x": 0, "y": 1, "z": 2}
@@ -42,6 +44,44 @@ def _normalize_axes(axes: str | Iterable[str]) -> tuple[str, ...]:
     return values
 
 
+#: Working-memory target (bytes) for one frame block of a blocked reduction.
+_BLOCK_TARGET_BYTES = 256 * 1024**2
+
+
+def _frames_per_block(natoms: int) -> int:
+    return max(1, _BLOCK_TARGET_BYTES // max(1, int(natoms) * 3 * 8 * 4))
+
+
+def _blocked_step_maxima(
+    positions: np.ndarray, inverse_cell: np.ndarray
+) -> tuple[float, float]:
+    """Largest Cartesian step norm and fractional step component.
+
+    Equivalent to reducing over ``np.diff(positions, axis=0)`` but never holds
+    more than one frame block of steps in memory (a maximum is order
+    independent, so the blocking does not change the value).
+    """
+
+    n_frames = len(positions)
+    if n_frames < 2:
+        return 0.0, 0.0
+    block = _frames_per_block(positions.shape[1])
+    maximum_cartesian = 0.0
+    maximum_fractional = 0.0
+    for lo in range(0, n_frames - 1, block):
+        hi = min(lo + block, n_frames - 1)
+        steps = positions[lo + 1 : hi + 1] - positions[lo:hi]
+        if steps.size == 0:
+            continue
+        maximum_cartesian = max(
+            maximum_cartesian, float(np.max(np.linalg.norm(steps, axis=-1)))
+        )
+        maximum_fractional = max(
+            maximum_fractional, float(np.max(np.abs(steps @ inverse_cell)))
+        )
+    return maximum_cartesian, maximum_fractional
+
+
 def unwrap_positions(dataset: TrajectoryDataset) -> tuple[np.ndarray, dict[str, Any]]:
     """Return continuous Cartesian positions and an ambiguity diagnostic."""
 
@@ -49,8 +89,8 @@ def unwrap_positions(dataset: TrajectoryDataset) -> tuple[np.ndarray, dict[str, 
     cell = dataset.cells[0]
     inverse = np.linalg.inv(cell)
     minimum_height = float(np.min(cell_heights_A(cell)))
-    raw_steps = np.diff(dataset.positions, axis=0)
     if dataset.positions_convention == "wrapped":
+        raw_steps = np.diff(dataset.positions, axis=0)
         flat_steps = raw_steps.reshape(-1, 3)
         mic_steps, _ = find_mic(flat_steps, cell, pbc=dataset.pbc)
         cartesian_steps = np.asarray(mic_steps, dtype=float).reshape(raw_steps.shape)
@@ -61,18 +101,28 @@ def unwrap_positions(dataset: TrajectoryDataset) -> tuple[np.ndarray, dict[str, 
         reconstruction = "consecutive ASE general minimum-image"
         exact_images_available = False
     elif dataset.positions_convention == "unwrapped":
-        cartesian_steps = raw_steps
-        step_fractional = cartesian_steps @ inverse
-        continuous = dataset.positions.copy()
+        # Exact unwrapped coordinates are already continuous: return a
+        # read-only view instead of a trajectory-sized copy (an accidental
+        # in-place write raises instead of corrupting the dataset), and take
+        # the step maxima block by block instead of materialising every step.
+        continuous = dataset.positions.view()
+        continuous.flags.writeable = False
         reconstruction = "source unwrapped Cartesian coordinates"
         exact_images_available = True
     else:  # protected by validation, retained for a precise direct-call error
         raise ValueError("Position convention must be wrapped or unwrapped")
-    cartesian_norms = np.linalg.norm(cartesian_steps, axis=-1)
-    maximum_cartesian = float(np.max(cartesian_norms)) if cartesian_norms.size else 0.0
-    maximum_fractional = (
-        float(np.max(np.abs(step_fractional))) if step_fractional.size else 0.0
-    )
+    if exact_images_available:
+        maximum_cartesian, maximum_fractional = _blocked_step_maxima(
+            dataset.positions, inverse
+        )
+    else:
+        cartesian_norms = np.linalg.norm(cartesian_steps, axis=-1)
+        maximum_cartesian = (
+            float(np.max(cartesian_norms)) if cartesian_norms.size else 0.0
+        )
+        maximum_fractional = (
+            float(np.max(np.abs(step_fractional))) if step_fractional.size else 0.0
+        )
     ratio = maximum_cartesian / (0.5 * minimum_height)
     if exact_images_available:
         level = "not_applicable_exact_unwrapped_source"
@@ -130,7 +180,12 @@ def displacement_trajectory(
         drift_mode=drift_mode,
     )
     raw_mobile_displacements = continuous[:, mobile] - continuous[0, mobile]
-    corrected = raw_mobile_displacements - drift[:, None, :]
+    if len(reference) == 0:
+        # No drift to remove: ``x - 0.0`` is ``x`` exactly, so share the array
+        # instead of allocating a second trajectory-sized copy.
+        corrected = raw_mobile_displacements
+    else:
+        corrected = raw_mobile_displacements - drift[:, None, :]
     semantics = drift_semantics(
         drift_mode=drift_mode,
         drift_reference=drift_reference,
@@ -673,6 +728,7 @@ def diagnostic_linear_diffusion_fit(
     alpha_min_origins: int = ALPHA_MIN_ORIGINS_DEFAULT,
     alpha_consistency_band: float = ALPHA_CONSISTENCY_BAND_DEFAULT,
     max_lag_ps: float | None = None,
+    alpha_estimate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Explicit-range OLS diagnostic; not a publication uncertainty model.
 
@@ -710,15 +766,18 @@ def diagnostic_linear_diffusion_fit(
     alpha = _log_log_alpha(lag_ps, msd_A2)
     finite_alpha = alpha[mask & np.isfinite(alpha)]
 
-    estimate = alpha_local_analysis(
-        lag_ps,
-        msd_A2,
-        time_origin_counts=time_origin_counts,
-        window_decades=alpha_window_decades,
-        min_points=alpha_min_points,
-        min_origins=alpha_min_origins,
-        consistency_band=alpha_consistency_band,
-    )
+    if alpha_estimate is None:
+        estimate = alpha_local_analysis(
+            lag_ps,
+            msd_A2,
+            time_origin_counts=time_origin_counts,
+            window_decades=alpha_window_decades,
+            min_points=alpha_min_points,
+            min_origins=alpha_min_origins,
+            consistency_band=alpha_consistency_band,
+        )
+    else:
+        estimate = alpha_estimate
     summary = _alpha_regime_summary(estimate)
     regimes = np.asarray(estimate["regime_status"], dtype=object)[mask]
     n_fit = int(np.count_nonzero(mask))
@@ -815,6 +874,190 @@ def _no_framework_drift_notice(drift_correction: dict[str, Any]) -> str | None:
     )
 
 
+def _check_fit_window(fit_start_ps: float | None, fit_stop_ps: float | None) -> None:
+    if (fit_start_ps is None) != (fit_stop_ps is None):
+        raise ValueError(
+            "Both fit_start_ps and fit_stop_ps are required for a diagnostic fit"
+        )
+
+
+def compute_msd_core(
+    dataset: TrajectoryDataset,
+    *,
+    mobile_species: str | None = None,
+    mobile_indices: Iterable[int] | None = None,
+    axes: str | Iterable[str] = "xyz",
+    drift_reference: str = "none",
+    drift_indices: Iterable[int] | None = None,
+    drift_mode: str = "mass_weighted_com",
+    method: str = "fft",
+    include_equilibration: bool = False,
+    start: int | None = None,
+    stop: int | None = None,
+    alpha_window_decades: float = ALPHA_WINDOW_DECADES_DEFAULT,
+    alpha_min_points: int = ALPHA_MIN_POINTS_DEFAULT,
+    alpha_min_origins: int = ALPHA_MIN_ORIGINS_DEFAULT,
+    alpha_consistency_band: float = ALPHA_CONSISTENCY_BAND_DEFAULT,
+    alpha_max_lag_ps: float | None = None,
+) -> dict[str, Any]:
+    """The expensive, fit-independent part of an MSD analysis.
+
+    Everything here depends only on the trajectory, the mobile selection, the
+    drift policy, the estimator method and the local-exponent options -- not on
+    the diagnostic fit window -- so it can be cached and reused when only
+    ``fit_start_ps``/``fit_stop_ps`` change.
+    """
+
+    selected_axes = _normalize_axes(axes)
+    view = dataset.analysis_view(
+        include_equilibration=include_equilibration, start=start, stop=stop
+    )
+    mobile = view.select(mobile_species, indices=mobile_indices)
+    with phase("displacement_preparation"):
+        prepared = displacement_trajectory(
+            view,
+            mobile_indices=mobile,
+            drift_reference=drift_reference,
+            drift_indices=drift_indices,
+            drift_mode=drift_mode,
+        )
+    # Only the corrected displacements feed the estimator; release the other
+    # trajectory-sized arrays before the transforms allocate theirs.
+    prepared.pop("raw_mobile_displacements_A", None)
+    prepared.pop("continuous_positions_A", None)
+    displacements = prepared.pop("mobile_displacements_A")
+    with phase("msd_estimator"):
+        if method == "fft":
+            components = fft_windowed_msd_components(displacements)
+        elif method == "direct":
+            components = direct_windowed_msd_components(displacements)
+        else:
+            raise ValueError("MSD method must be fft or direct")
+    del displacements
+    lag_ps = np.arange(view.nframes, dtype=float) * view.frame_interval_fs / 1000.0
+    values = {axis: _axis_msd(components, axis) for axis in selected_axes}
+    time_origin_counts = view.nframes - np.arange(view.nframes)
+    with phase("alpha_local_exponent"):
+        alpha = {axis: _log_log_alpha(lag_ps, values[axis]) for axis in selected_axes}
+        alpha_estimates = {
+            axis: alpha_local_analysis(
+                lag_ps,
+                values[axis],
+                time_origin_counts=time_origin_counts,
+                window_decades=alpha_window_decades,
+                min_points=alpha_min_points,
+                min_origins=alpha_min_origins,
+                consistency_band=alpha_consistency_band,
+                max_lag_ps=alpha_max_lag_ps,
+            )
+            for axis in selected_axes
+        }
+    alpha_diagnostics = {
+        axis: _alpha_regime_summary(alpha_estimates[axis]) for axis in selected_axes
+    }
+    return {
+        "lag_time_ps": lag_ps,
+        "time_origin_counts": time_origin_counts,
+        "components": components,
+        "log_log_alpha_by_axes": alpha,
+        "alpha_estimates_by_axes": alpha_estimates,
+        "alpha_diagnostics_by_axes": alpha_diagnostics,
+        "method": f"{method}_windowed_msd",
+        "mobile_species": mobile_species,
+        "mobile_indices": mobile,
+        "selected_axes": selected_axes,
+        "analysis_phase": "all" if include_equilibration else "production",
+        "drift_correction": prepared["drift_correction"],
+        "drift_semantics": prepared["drift_semantics"],
+        "framework_drift_A": prepared["framework_drift_A"],
+        "unwrap_diagnostics": prepared["unwrap_diagnostics"],
+        "com_drift_diagnostics": prepared["com_drift_diagnostics"],
+    }
+
+
+def finalize_msd(
+    core: dict[str, Any],
+    *,
+    fit_start_ps: float | None = None,
+    fit_stop_ps: float | None = None,
+    alpha_window_decades: float = ALPHA_WINDOW_DECADES_DEFAULT,
+    alpha_min_points: int = ALPHA_MIN_POINTS_DEFAULT,
+    alpha_min_origins: int = ALPHA_MIN_ORIGINS_DEFAULT,
+    alpha_consistency_band: float = ALPHA_CONSISTENCY_BAND_DEFAULT,
+    alpha_max_lag_ps: float | None = None,
+) -> dict[str, Any]:
+    """Apply the (cheap) diagnostic fit to a computed or cached MSD core."""
+
+    _check_fit_window(fit_start_ps, fit_stop_ps)
+    selected_axes = tuple(core["selected_axes"])
+    components = core["components"]
+    lag_ps = core["lag_time_ps"]
+    time_origin_counts = core["time_origin_counts"]
+    values = {axis: _axis_msd(components, axis) for axis in selected_axes}
+    alpha_estimates = core["alpha_estimates_by_axes"]
+    if fit_start_ps is None:
+        fit_window = None
+        fits: dict[str, dict[str, Any]] = {}
+    else:
+        fit_window = {"start": float(fit_start_ps), "stop": float(fit_stop_ps)}
+        with phase("diagnostic_fit"):
+            fits = {
+                axis: diagnostic_linear_diffusion_fit(
+                    lag_ps,
+                    values[axis],
+                    axes=axis,
+                    fit_start_ps=fit_start_ps,
+                    fit_stop_ps=fit_stop_ps,
+                    time_origin_counts=time_origin_counts,
+                    alpha_window_decades=alpha_window_decades,
+                    alpha_min_points=alpha_min_points,
+                    alpha_min_origins=alpha_min_origins,
+                    alpha_consistency_band=alpha_consistency_band,
+                    max_lag_ps=alpha_max_lag_ps,
+                    # The fit's own local-exponent call uses the same options
+                    # and the same MSD, so it is reused instead of recomputed
+                    # -- except when ``alpha_max_lag_ps`` is set: the fit's
+                    # internal call has never applied that limit, and reuse
+                    # would change its result.
+                    alpha_estimate=(
+                        alpha_estimates[axis] if alpha_max_lag_ps is None else None
+                    ),
+                )
+                for axis in selected_axes
+            }
+    return {
+        "lag_time_ps": lag_ps,
+        "time_origin_counts": time_origin_counts,
+        "time_origin_counts_are_not_independent_samples": True,
+        "msd_x_A2": components[:, 0],
+        "msd_y_A2": components[:, 1],
+        "msd_z_A2": components[:, 2],
+        "msd_by_axes_A2": values,
+        "log_log_alpha_by_axes": core["log_log_alpha_by_axes"],
+        "alpha_estimates_by_axes": alpha_estimates,
+        "alpha_diagnostics_by_axes": core["alpha_diagnostics_by_axes"],
+        "alpha_estimator_version": ALPHA_ESTIMATOR_VERSION,
+        "fit_window_ps": fit_window,
+        "diagnostic_linear_diffusion_fits": fits,
+        "method": core["method"],
+        "mobile_species": core["mobile_species"],
+        "mobile_indices": core["mobile_indices"],
+        "selected_axes": selected_axes,
+        "analysis_phase": core["analysis_phase"],
+        "drift_correction": core["drift_correction"],
+        "drift_semantics": core["drift_semantics"],
+        "framework_drift_A": core["framework_drift_A"],
+        "unwrap_diagnostics": core["unwrap_diagnostics"],
+        "com_drift_diagnostics": core["com_drift_diagnostics"],
+        "warnings": _non_empty(
+            [
+                core["com_drift_diagnostics"]["warning"],
+                _no_framework_drift_notice(core["drift_correction"]),
+            ]
+        ),
+    }
+
+
 def calculate_msd(
     dataset: TrajectoryDataset,
     *,
@@ -846,97 +1089,83 @@ def calculate_msd(
     therefore of the cache fingerprint.
     """
 
-    selected_axes = _normalize_axes(axes)
-    if (fit_start_ps is None) != (fit_stop_ps is None):
-        raise ValueError(
-            "Both fit_start_ps and fit_stop_ps are required for a diagnostic fit"
-        )
-    view = dataset.analysis_view(
-        include_equilibration=include_equilibration, start=start, stop=stop
-    )
-    mobile = view.select(mobile_species, indices=mobile_indices)
-    prepared = displacement_trajectory(
-        view,
-        mobile_indices=mobile,
+    _check_fit_window(fit_start_ps, fit_stop_ps)
+    core = compute_msd_core(
+        dataset,
+        mobile_species=mobile_species,
+        mobile_indices=mobile_indices,
+        axes=axes,
         drift_reference=drift_reference,
         drift_indices=drift_indices,
         drift_mode=drift_mode,
+        method=method,
+        include_equilibration=include_equilibration,
+        start=start,
+        stop=stop,
+        alpha_window_decades=alpha_window_decades,
+        alpha_min_points=alpha_min_points,
+        alpha_min_origins=alpha_min_origins,
+        alpha_consistency_band=alpha_consistency_band,
+        alpha_max_lag_ps=alpha_max_lag_ps,
     )
-    if method == "fft":
-        components = fft_windowed_msd_components(prepared["mobile_displacements_A"])
-    elif method == "direct":
-        components = direct_windowed_msd_components(prepared["mobile_displacements_A"])
-    else:
-        raise ValueError("MSD method must be fft or direct")
-    lag_ps = np.arange(view.nframes, dtype=float) * view.frame_interval_fs / 1000.0
-    values = {axis: _axis_msd(components, axis) for axis in selected_axes}
-    time_origin_counts = view.nframes - np.arange(view.nframes)
-    alpha = {axis: _log_log_alpha(lag_ps, values[axis]) for axis in selected_axes}
-    alpha_estimates = {
-        axis: alpha_local_analysis(
-            lag_ps,
-            values[axis],
-            time_origin_counts=time_origin_counts,
-            window_decades=alpha_window_decades,
-            min_points=alpha_min_points,
-            min_origins=alpha_min_origins,
-            consistency_band=alpha_consistency_band,
-            max_lag_ps=alpha_max_lag_ps,
+    return finalize_msd(
+        core,
+        fit_start_ps=fit_start_ps,
+        fit_stop_ps=fit_stop_ps,
+        alpha_window_decades=alpha_window_decades,
+        alpha_min_points=alpha_min_points,
+        alpha_min_origins=alpha_min_origins,
+        alpha_consistency_band=alpha_consistency_band,
+        alpha_max_lag_ps=alpha_max_lag_ps,
+    )
+
+
+def calculate_msd_cached(
+    load_dataset: Callable[[], TrajectoryDataset],
+    *,
+    cache: MsdCoreCache | None,
+    refresh: bool = False,
+    fit_start_ps: float | None = None,
+    fit_stop_ps: float | None = None,
+    **core_options: Any,
+) -> dict[str, Any]:
+    """``calculate_msd`` that reuses a cached fit-independent core.
+
+    ``core_options`` are exactly the :func:`compute_msd_core` options (their
+    values define the cache key the caller built); only the fit window may
+    differ between a cached and a fresh call. The trajectory is loaded lazily,
+    so a cache hit does not read it at all. ``refresh=True`` ignores any cached
+    entry and rewrites it.
+    """
+
+    _check_fit_window(fit_start_ps, fit_stop_ps)
+    core = None
+    if cache is not None and not refresh:
+        with phase("msd_core_cache_lookup"):
+            core = cache.load()
+    hit = core is not None
+    if core is None:
+        core = compute_msd_core(load_dataset(), **core_options)
+        if cache is not None:
+            with phase("msd_core_cache_store"):
+                cache.store(core)
+    alpha_options = {
+        name: core_options[name]
+        for name in (
+            "alpha_window_decades",
+            "alpha_min_points",
+            "alpha_min_origins",
+            "alpha_consistency_band",
+            "alpha_max_lag_ps",
         )
-        for axis in selected_axes
+        if name in core_options
     }
-    alpha_diagnostics = {
-        axis: _alpha_regime_summary(alpha_estimates[axis]) for axis in selected_axes
+    result = finalize_msd(
+        core, fit_start_ps=fit_start_ps, fit_stop_ps=fit_stop_ps, **alpha_options
+    )
+    result["core_cache"] = {
+        "enabled": cache is not None,
+        "hit": hit,
+        "key": None if cache is None else cache.key,
     }
-    if fit_start_ps is None:
-        fit_window = None
-        fits: dict[str, dict[str, Any]] = {}
-    else:
-        fit_window = {"start": float(fit_start_ps), "stop": float(fit_stop_ps)}
-        fits = {
-            axis: diagnostic_linear_diffusion_fit(
-                lag_ps,
-                values[axis],
-                axes=axis,
-                fit_start_ps=fit_start_ps,
-                fit_stop_ps=fit_stop_ps,
-                time_origin_counts=time_origin_counts,
-                alpha_window_decades=alpha_window_decades,
-                alpha_min_points=alpha_min_points,
-                alpha_min_origins=alpha_min_origins,
-                alpha_consistency_band=alpha_consistency_band,
-                max_lag_ps=alpha_max_lag_ps,
-            )
-            for axis in selected_axes
-        }
-    return {
-        "lag_time_ps": lag_ps,
-        "time_origin_counts": time_origin_counts,
-        "time_origin_counts_are_not_independent_samples": True,
-        "msd_x_A2": components[:, 0],
-        "msd_y_A2": components[:, 1],
-        "msd_z_A2": components[:, 2],
-        "msd_by_axes_A2": values,
-        "log_log_alpha_by_axes": alpha,
-        "alpha_estimates_by_axes": alpha_estimates,
-        "alpha_diagnostics_by_axes": alpha_diagnostics,
-        "alpha_estimator_version": ALPHA_ESTIMATOR_VERSION,
-        "fit_window_ps": fit_window,
-        "diagnostic_linear_diffusion_fits": fits,
-        "method": f"{method}_windowed_msd",
-        "mobile_species": mobile_species,
-        "mobile_indices": mobile,
-        "selected_axes": selected_axes,
-        "analysis_phase": "all" if include_equilibration else "production",
-        "drift_correction": prepared["drift_correction"],
-        "drift_semantics": prepared["drift_semantics"],
-        "framework_drift_A": prepared["framework_drift_A"],
-        "unwrap_diagnostics": prepared["unwrap_diagnostics"],
-        "com_drift_diagnostics": prepared["com_drift_diagnostics"],
-        "warnings": _non_empty(
-            [
-                prepared["com_drift_diagnostics"]["warning"],
-                _no_framework_drift_notice(prepared["drift_correction"]),
-            ]
-        ),
-    }
+    return result

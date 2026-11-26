@@ -89,6 +89,7 @@ mliport md structure.vasp --model model.pt --model-type mace --task bulk \
 | `--bussi-tau` | 1000 | Bussi/CSVR 耦合时间，fs |
 | `--nhc-tdamp` | 100 | NHC 恒温器阻尼时间，fs |
 | `--save-interval` | 10 | 每 *n* 步保存一次 |
+| `--raw-forces-storage` | `json` | `json` 或 `binary`：原始（未投影）力在 `raw/trajectory.traj` 中的存储方式（见[输出文件](outputs.md)） |
 | `--equilibration-steps` | 0 | 生产阶段前的平衡步数 |
 | `--pre-relax` | 自动 | MD 前快速弛豫位置 |
 

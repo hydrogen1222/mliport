@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
     from mliport.analysis.dataset import TrajectoryDataset
 
+#: Working-memory target (bytes) for one frame block of the drift reduction.
+_BLOCK_TARGET_BYTES = 256 * 1024**2
+
 DRIFT_MODES = ("none", "arithmetic_mean", "mass_weighted_com")
 DRIFT_REFERENCES = ("none", "nonmobile", "all", "indices")
 
@@ -84,11 +87,20 @@ def drift_displacement(
     positions = np.asarray(continuous_positions_A, dtype=float)
     if mode == "none" or len(reference) == 0:
         return np.zeros((positions.shape[0], 3), dtype=float)
-    displacement = positions[:, reference] - positions[0, reference]
-    if mode == "arithmetic_mean":
-        return np.mean(displacement, axis=1)
+    # Each frame's drift depends only on that frame, so frames are processed in
+    # blocks: the (frames, reference atoms, 3) displacement array is never
+    # materialised for the whole trajectory.
+    origin = positions[0, reference]
     weights = np.asarray(masses, dtype=float)[reference]
-    return np.average(displacement, axis=1, weights=weights)
+    block = max(1, _BLOCK_TARGET_BYTES // max(1, len(reference) * 3 * 8 * 3))
+    drift = np.empty((positions.shape[0], 3), dtype=float)
+    for lo in range(0, positions.shape[0], block):
+        displacement = positions[lo : lo + block][:, reference] - origin
+        if mode == "arithmetic_mean":
+            drift[lo : lo + block] = np.mean(displacement, axis=1)
+        else:
+            drift[lo : lo + block] = np.average(displacement, axis=1, weights=weights)
+    return drift
 
 
 def drift_semantics(

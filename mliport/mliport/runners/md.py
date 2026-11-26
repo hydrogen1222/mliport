@@ -59,6 +59,7 @@ from mliport.runners.safety import (
     validate_atomic_state as _validate_atomic_state_shared,
     validate_safe_point,
 )
+from mliport.trajectory_forces import validate_raw_forces_storage
 from mliport.writers.contcar import ContcarWriter
 from mliport.writers.json_writer import JsonWriter
 from mliport.writers.outcar import MDOutcarWriter
@@ -162,6 +163,7 @@ class MDRunner(BaseRunner):
         seed: int | None = None,
         velocity_policy: str = "auto",
         com_policy: str = "auto",
+        raw_forces_storage: str = "json",
         pre_relax_mode: str = "none",
         # Explosion-guard threshold for finite (but unsafe) forces.
         fmax_abort: float = BUILTIN_DEFAULTS["safety"]["fmax_abort"],
@@ -415,6 +417,7 @@ class MDRunner(BaseRunner):
         self.rng = np.random.default_rng(seed_value)
         self.velocity_policy = velocity_policy_value
         self.com_policy = com_policy_value
+        self.raw_forces_storage = validate_raw_forces_storage(raw_forces_storage)
         self.com_policy_effective: str | None = None
         self.constraint_types: tuple[str, ...] = ()
         self.md_degrees_of_freedom: int | None = None
@@ -698,16 +701,24 @@ class MDRunner(BaseRunner):
 
     # Approximate bytes per atom per saved frame in ``raw/trajectory.traj``:
     # positions, momenta and constraint-applied forces are stored as float64
-    # binary (3 x 24 B); ``info["forces_raw_eV_A"]`` is serialised by ASE as
-    # JSON text (~62 B per atom, measured). Order-of-magnitude estimate only.
+    # binary (3 x 24 B); the raw forces are another 24 B in binary mode or
+    # ``info["forces_raw_eV_A"]`` JSON text (~62 B per atom, measured) by
+    # default. Order-of-magnitude estimate only.
     _TRAJ_BYTES_PER_ATOM_FRAME = 3 * 24 + 62
+    _TRAJ_BYTES_PER_ATOM_FRAME_BINARY = 4 * 24
 
     def _trajectory_size_estimate_line(self, natoms: int) -> str:
         frames = int(self.total_steps) // max(int(self.save_interval), 1) + 1
-        size = frames * int(natoms) * self._TRAJ_BYTES_PER_ATOM_FRAME
+        per_atom = (
+            self._TRAJ_BYTES_PER_ATOM_FRAME_BINARY
+            if self.raw_forces_storage == "binary"
+            else self._TRAJ_BYTES_PER_ATOM_FRAME
+        )
+        size = frames * int(natoms) * per_atom
         return (
             f"Trajectory size:  ~{size / 1024**3:.2f} GiB "
-            f"({frames} frames x {natoms} atoms; approximate, raw/trajectory.traj)"
+            f"({frames} frames x {natoms} atoms, raw forces: "
+            f"{self.raw_forces_storage}; approximate, raw/trajectory.traj)"
         )
 
     def _force_views(
@@ -847,8 +858,15 @@ class MDRunner(BaseRunner):
                 "forces_applied_eV_A": "ASE constraint-applied forces",
                 "trajectory_frame_forces": (
                     "frame calculator 'forces' are constraint-applied; "
-                    "info['forces_raw_eV_A'] holds the unprojected forces"
+                    + (
+                        "ULM field 'mliport_raw_forces_v1' (float64, exact) holds "
+                        "the unprojected forces; read with "
+                        "mliport.trajectory_forces.read_raw_forces"
+                        if self.raw_forces_storage == "binary"
+                        else "info['forces_raw_eV_A'] holds the unprojected forces"
+                    )
                 ),
+                "raw_forces_storage": self.raw_forces_storage,
                 "fmax_abort": "evaluated from forces_raw_eV_A",
                 "configurational_stress": "ASE calculator stress; kinetic term excluded",
                 "total_stress": "configurational stress plus ASE ideal-gas kinetic term",
@@ -1108,6 +1126,7 @@ class MDRunner(BaseRunner):
             "velocity_policy": self.velocity_policy,
             "com_policy": self.com_policy,
             "com_policy_effective": self.com_policy_effective,
+            "raw_forces_storage": self.raw_forces_storage,
             "constraints": list(self.constraint_types),
             "degrees_of_freedom": self.md_degrees_of_freedom,
             "pre_relax": {
@@ -1495,6 +1514,7 @@ class MDRunner(BaseRunner):
             xdatcar_writer=xdatcar_writer,
             xdatcar_path=xdatcar_path,
             outcar_writer=md_outcar_writer,
+            raw_forces_storage=self.raw_forces_storage,
         )
         # Run MD
         self.log("\nStarting MD simulation...")
@@ -1583,7 +1603,8 @@ class MDRunner(BaseRunner):
                 # The constraint-applied forces are stored once, as the frame
                 # calculator's "forces" below; duplicating them in info only
                 # inflated long trajectories. Raw forces are kept here.
-                snapshot.info["forces_raw_eV_A"] = forces_raw.tolist()
+                if self.raw_forces_storage == "json":
+                    snapshot.info["forces_raw_eV_A"] = forces_raw.tolist()
                 snapshot.info["forces_alias"] = "constraint-applied"
                 single_point_results: dict[str, Any] = {
                     "energy": float(pe),
@@ -1604,6 +1625,11 @@ class MDRunner(BaseRunner):
                         outcar_forces=(
                             np.array(forces_applied, dtype=float, copy=True)
                             if self.write_forces
+                            else None
+                        ),
+                        raw_forces=(
+                            np.array(forces_raw, dtype=float, copy=True)
+                            if self.raw_forces_storage == "binary"
                             else None
                         ),
                     )

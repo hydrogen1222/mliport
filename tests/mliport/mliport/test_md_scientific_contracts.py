@@ -692,3 +692,27 @@ def test_supported_constrained_thermostats_have_short_finite_sanity(
         assert all(
             frame.positions[0] == pytest.approx(frozen_position) for frame in trajectory
         )
+
+
+def test_binary_raw_forces_storage_end_to_end(tmp_path) -> None:
+    from mliport.trajectory_forces import (
+        detect_raw_forces_storage,
+        read_frames_with_raw_forces,
+    )
+
+    atoms = _atoms(3)
+    atoms.set_constraint(FixAtoms(indices=[0]))
+    wrapper = _Wrapper(_FixedAtomForceCalculator(force=2.0))
+    runner = _runner(
+        wrapper, tmp_path, steps=3, write_json=True, raw_forces_storage="binary"
+    )
+    results = runner.run(atoms)
+
+    assert detect_raw_forces_storage(results["trajectory_path"]) == "binary"
+    frames = read_frames_with_raw_forces(results["trajectory_path"])
+    assert frames[-1].info["forces_raw_eV_A"][0] == pytest.approx([2.0, 0.0, 0.0])
+    assert frames[-1].calc.results["forces"][0] == pytest.approx(np.zeros(3))
+    with Trajectory(results["trajectory_path"]) as trajectory:
+        assert "forces_raw_eV_A" not in list(trajectory)[-1].info
+    payload = json.loads((tmp_path / "raw" / "mliport_results.json").read_text())
+    assert payload["calculation"]["md"]["raw_forces_storage"] == "binary"

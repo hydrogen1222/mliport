@@ -10,6 +10,7 @@ from ase import Atoms
 from ase.geometry import find_mic
 
 from mliport.analysis.msd import unwrap_positions
+from mliport.analysis.timing import phase
 from mliport.analysis.units import (
     BOLTZMANN_J_K,
     ELEMENTARY_CHARGE_C,
@@ -412,6 +413,7 @@ def _kinisi_frames_and_indices(
     drift_reference: str,
     drift_indices: Iterable[int] | None,
     drift_mode: str = "arithmetic_mean",
+    unwrapped: tuple[np.ndarray, dict[str, Any]] | None = None,
 ) -> _KinisiFrames:
     """Build mobile-only frames with explicit unweighted drift correction.
 
@@ -423,6 +425,10 @@ def _kinisi_frames_and_indices(
     kinisi so its automatic complement is empty.  The exact continuous
     positions are returned alongside the wrapped frames so the analyzer
     adapter can inject them directly.
+
+    ``unwrapped`` is the ``(continuous_positions, diagnostics)`` pair the caller
+    already computed for this same dataset; it is reused instead of unwrapping
+    the trajectory a second time.
     """
     corrected, reference = _production_positions_with_drift(
         dataset,
@@ -430,10 +436,12 @@ def _kinisi_frames_and_indices(
         drift_reference=drift_reference,
         drift_indices=drift_indices,
         drift_mode=drift_mode,
+        unwrapped=unwrapped,
+        mobile_only=True,
     )
     frames: list[Atoms] = []
     symbols = [dataset.symbols[index] for index in mobile]
-    for positions, cell in zip(corrected[:, mobile], dataset.cells, strict=True):
+    for positions, cell in zip(corrected, dataset.cells, strict=True):
         atoms = Atoms(
             symbols=symbols,
             positions=positions,
@@ -447,7 +455,7 @@ def _kinisi_frames_and_indices(
         frames=frames,
         local_mobile=local_mobile,
         reference=reference,
-        continuous_positions_A=np.asarray(corrected[:, mobile], dtype=float),
+        continuous_positions_A=np.asarray(corrected, dtype=float),
     )
 
 
@@ -558,6 +566,8 @@ def _production_positions_with_drift(
     drift_reference: str,
     drift_indices: Iterable[int] | None,
     drift_mode: str = "arithmetic_mean",
+    unwrapped: tuple[np.ndarray, dict[str, Any]] | None = None,
+    mobile_only: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return production positions after one explicit framework correction.
 
@@ -567,6 +577,11 @@ def _production_positions_with_drift(
     still contains every atom; this lets mechanism analysis construct a
     provenance-preserving GEMDAT trajectory without applying a second
     correction.
+
+    ``unwrapped`` reuses an already computed ``unwrap_positions(dataset)``
+    result for the same dataset. With ``mobile_only=True`` only the mobile
+    atoms' corrected positions are returned (identical values, without
+    allocating the framework atoms' copy).
     """
     if drift_mode not in DRIFT_MODES:
         raise ValueError(f"drift_mode must be one of {DRIFT_MODES}")
@@ -576,7 +591,11 @@ def _production_positions_with_drift(
         drift_reference=drift_reference,
         drift_indices=drift_indices,
     )
-    continuous, unwrap_diagnostics = unwrap_positions(dataset)
+    if unwrapped is None:
+        with phase("unwrap_and_step_diagnostics"):
+            continuous, unwrap_diagnostics = unwrap_positions(dataset)
+    else:
+        continuous, unwrap_diagnostics = unwrapped
     source_class = displacement_input_class(dataset, unwrap_diagnostics)
     if source_class == DISPLACEMENT_INSUFFICIENT:
         raise InsufficientTrajectoryInformationError(
@@ -593,13 +612,18 @@ def _production_positions_with_drift(
         masses=dataset.masses,
         drift_mode=drift_mode,
     )
-    corrected = continuous - drift[:, None, :]
+    if mobile_only:
+        corrected = continuous[:, mobile] - drift[:, None, :]
+    else:
+        corrected = continuous - drift[:, None, :]
     if source_class == DISPLACEMENT_RECONSTRUCTABLE_WRAPPED:
         # Only the wrapped/reconstructed path needs the alias/MIC safety check.
         # An exact unwrapped source may legitimately cross more than half a
         # cell between saved frames; the adapter compares its consumed
         # displacement against the stored exact displacement instead.
-        corrected_steps = np.diff(corrected[:, mobile], axis=0)
+        corrected_steps = np.diff(
+            corrected if mobile_only else corrected[:, mobile], axis=0
+        )
         if corrected_steps.size:
             mic_steps, _ = find_mic(
                 corrected_steps.reshape(-1, 3),
@@ -700,28 +724,30 @@ def _build_kinisi_analyzer(
         calculate_mstd = None
 
     if ASEParser is not None:
-        parser = _exact_displacement_parser(
-            sc=sc,
-            ASEParser=ASEParser,
-            frames=frames,
-            continuous_positions_A=continuous_positions_A,
-            local_mobile=local_mobile,
-            time_step_fs=time_step_fs,
-            step_skip=step_skip,
-            dt_values_fs=dt_values_fs,
-            dimensions=dimensions,
-        )
+        with phase("kinisi_exact_displacement_parse"):
+            parser = _exact_displacement_parser(
+                sc=sc,
+                ASEParser=ASEParser,
+                frames=frames,
+                continuous_positions_A=continuous_positions_A,
+                local_mobile=local_mobile,
+                time_step_fs=time_step_fs,
+                step_skip=step_skip,
+                dt_values_fs=dt_values_fs,
+                dimensions=dimensions,
+            )
         analyzer = analyzer_cls(parser)
         # kinisi's analyzer methods read ``self.dg``; every real analyzer class
         # needs the displacement DataGroup just as its ``from_ase`` would set
         # it (MSD for diffusion, mean-squared *total* displacement with or
         # without the ionic charge for conductivity/jump analysis).
-        if dg_kind == "msd":
-            analyzer._dg = calculate_msd(parser, progress=False)
-        else:
-            analyzer._dg = calculate_mstd(
-                parser, system_particles, ionic_charge, progress=False
-            )
+        with phase("kinisi_lag_statistics"):
+            if dg_kind == "msd":
+                analyzer._dg = calculate_msd(parser, progress=False)
+            else:
+                analyzer._dg = calculate_mstd(
+                    parser, system_particles, ionic_charge, progress=False
+                )
         audit = dict(parser._mliport_exact_displacement_audit)
         audit["exact_displacement_adapter"] = True
         audit["publication_grade"] = True
@@ -747,6 +773,10 @@ def _build_kinisi_analyzer(
         "publication_grade": False,
         "fallback_reason": "exact adapter unavailable; diagnostic mode only",
     }
+
+
+#: Working-memory target (bytes) for one frame block of the validation pass.
+_VALIDATION_BLOCK_BYTES = 256 * 1024**2
 
 
 def _validate_kinisi_periodic_reconstruction(
@@ -775,15 +805,30 @@ def _validate_kinisi_periodic_reconstruction(
                 "Transport requires at least two saved frames to reconstruct "
                 "displacements."
             )
-        exact_steps = np.diff(positions, axis=0)
         cell = np.asarray(dataset.cells[0], dtype=float)
         pbc = np.asarray(dataset.pbc, dtype=bool)
-        flat = np.asarray(exact_steps, dtype=float).reshape(-1, 3)
-        mic_flat, _ = find_mic(flat, cell, pbc=pbc)
-        mic_steps = mic_flat.reshape(exact_steps.shape)
-        differences = np.linalg.norm(exact_steps - mic_steps, axis=-1)
-        max_difference = float(np.max(differences)) if differences.size else 0.0
-        n_crossing = int(np.count_nonzero(differences > _KINISI_RECONSTRUCTION_ATOL_A))
+        # Frame-blocked: the maximum and the crossing count are reductions over
+        # independent saved intervals, so blocking gives the same numbers
+        # without holding every step, its MIC image and the differences at once.
+        n_intervals = positions.shape[0] - 1
+        block = max(
+            1, _VALIDATION_BLOCK_BYTES // max(1, positions.shape[1] * 3 * 8 * 4)
+        )
+        max_difference = 0.0
+        n_crossing = 0
+        for lo in range(0, n_intervals, block):
+            hi = min(lo + block, n_intervals)
+            steps = np.asarray(
+                positions[lo + 1 : hi + 1] - positions[lo:hi], dtype=float
+            )
+            mic_flat, _ = find_mic(steps.reshape(-1, 3), cell, pbc=pbc)
+            differences = np.linalg.norm(steps - mic_flat.reshape(steps.shape), axis=-1)
+            if differences.size:
+                max_difference = max(max_difference, float(np.max(differences)))
+                n_crossing += int(
+                    np.count_nonzero(differences > _KINISI_RECONSTRUCTION_ATOL_A)
+                )
+        exact_steps_shape_0 = n_intervals
         # Exact unwrapped input is consumed directly by the exact adapter; a
         # step larger than half a cell is physical, not an error.  The
         # adapter still proves consumed == stored before the fit (section 7.3).
@@ -796,7 +841,7 @@ def _validate_kinisi_periodic_reconstruction(
             "exact_unwrapped_preserved_directly": True,
             "exact_unwrapped_reconstruction_equivalent": bool(n_crossing == 0),
             "exact_unwrapped_intervals_beyond_mic": n_crossing,
-            "checked_saved_intervals": int(exact_steps.shape[0]),
+            "checked_saved_intervals": int(exact_steps_shape_0),
             "maximum_exact_vs_mic_difference_A": max_difference,
         }
     if convention != "wrapped":
@@ -981,7 +1026,8 @@ def kinisi_transport(
         lag_stop_ps=lag_stop_ps,
         covariance_memory_limit_bytes=parser_limit_bytes,
     )
-    continuous_view, unwrap_diagnostics = unwrap_positions(view)
+    with phase("unwrap_and_step_diagnostics"):
+        continuous_view, unwrap_diagnostics = unwrap_positions(view)
     input_class = displacement_input_class(view, unwrap_diagnostics)
     if input_class == DISPLACEMENT_INSUFFICIENT:
         raise InsufficientTrajectoryInformationError(
@@ -991,9 +1037,10 @@ def kinisi_transport(
             "image history cannot be uniquely reconstructed. Save frames more "
             "frequently or provide exact unwrapped positions/image counters."
         )
-    position_semantics = _validate_kinisi_periodic_reconstruction(
-        view, unwrap_diagnostics
-    )
+    with phase("periodic_reconstruction_validation"):
+        position_semantics = _validate_kinisi_periodic_reconstruction(
+            view, unwrap_diagnostics
+        )
     temperature, temperature_source = _production_temperature(view, temperature_K)
     if ionic_charge_e is None:
         raise ValueError(
@@ -1026,13 +1073,15 @@ def kinisi_transport(
         raise OptionalDependencyError(
             "The installed kinisi adapter does not provide JumpDiffusionAnalyzer"
         )
-    kinisi_frames = _kinisi_frames_and_indices(
-        view,
-        mobile=mobile,
-        drift_reference=drift_reference,
-        drift_indices=drift_indices,
-        drift_mode=drift_mode,
-    )
+    with phase("mobile_input_preparation"):
+        kinisi_frames = _kinisi_frames_and_indices(
+            view,
+            mobile=mobile,
+            drift_reference=drift_reference,
+            drift_indices=drift_indices,
+            drift_mode=drift_mode,
+            unwrapped=(continuous_view, unwrap_diagnostics),
+        )
     frames = kinisi_frames.frames
     local_mobile = kinisi_frames.local_mobile
     reference = kinisi_frames.reference
@@ -1070,26 +1119,27 @@ def kinisi_transport(
     indices_variable = sc.array(
         dims=["particle"], values=local_mobile, unit="dimensionless"
     )
-    analyzer, displacement_audit = _build_kinisi_analyzer(
-        sc=sc,
-        analyzer_cls=DiffusionAnalyzer,
-        frames=frames,
-        continuous_positions_A=kinisi_frames.continuous_positions_A,
-        local_mobile=local_mobile,
-        time_step_fs=kinisi_time_step_fs,
-        step_skip=kinisi_step_skip,
-        dt_values_fs=(
-            None if lag_grid["mode"] != "custom" else lag_grid["lag_times_fs"]
-        ),
-        dimensions=dimensions,
-        from_ase_kwargs={
-            **common,
-            "specie_indices": indices_variable,
-        },
-        allow_exact_adapter=True,
-        production=not allow_reconstructed_fallback,
-        dg_kind="msd",
-    )
+    with phase("kinisi_analyzer_construction"):
+        analyzer, displacement_audit = _build_kinisi_analyzer(
+            sc=sc,
+            analyzer_cls=DiffusionAnalyzer,
+            frames=frames,
+            continuous_positions_A=kinisi_frames.continuous_positions_A,
+            local_mobile=local_mobile,
+            time_step_fs=kinisi_time_step_fs,
+            step_skip=kinisi_step_skip,
+            dt_values_fs=(
+                None if lag_grid["mode"] != "custom" else lag_grid["lag_times_fs"]
+            ),
+            dimensions=dimensions,
+            from_ase_kwargs={
+                **common,
+                "specie_indices": indices_variable,
+            },
+            allow_exact_adapter=True,
+            production=not allow_reconstructed_fallback,
+            dg_kind="msd",
+        )
     position_semantics.update(displacement_audit)
     start_dt = sc.scalar(fit_start_ps * 1000.0, unit="fs")
     mcmc = {
@@ -1100,7 +1150,8 @@ def kinisi_transport(
         "progress": False,
         "random_state": np.random.RandomState(random_seed),
     }
-    analyzer.diffusion(start_dt, **mcmc)
+    with phase("kinisi_posterior_sampling"):
+        analyzer.diffusion(start_dt, **mcmc)
     diffusion_m2_s = _sample_summary(analyzer.D, target_unit="m^2/s")
     diffusion_cm2_s = _sample_summary(analyzer.D, target_unit="cm^2/s")
     d_samples_m2_s = np.asarray(

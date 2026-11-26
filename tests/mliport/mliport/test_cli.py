@@ -1364,3 +1364,14 @@ def test_isolation_backends_reexec_in_a_fresh_process(monkeypatch, capsys):
             SimpleNamespace(model_type="grace", device="cpu")
         )
     assert captured["env"]["CUDA_VISIBLE_DEVICES"] == ""
+
+
+def test_md_accepts_raw_forces_storage_flag() -> None:
+    from mliport.cli import create_parser
+
+    parser = create_parser()
+    args = parser.parse_args(["md", "x.vasp", "--raw-forces-storage", "binary"])
+    assert args.raw_forces_storage == "binary"
+    assert parser.parse_args(["md", "x.vasp"]).raw_forces_storage is None
+    with pytest.raises(SystemExit):
+        parser.parse_args(["md", "x.vasp", "--raw-forces-storage", "float32"])

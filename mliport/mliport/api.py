@@ -451,6 +451,7 @@ def run_md(
     strict_config: bool | None = None,
     overwrite: bool = False,
     com_policy: str | None = None,
+    raw_forces_storage: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Run molecular dynamics simulation.
@@ -498,6 +499,8 @@ def run_md(
         strict_config: Override strict-config behaviour.
         overwrite: Allow replacing existing calculation outputs.
         com_policy: Center-of-mass policy (auto, none, initialize_only, constraint).
+        raw_forces_storage: "json" (default) or "binary" (exact float64, smaller
+            .traj; read with ``mliport.trajectory_forces``).
         **kwargs: Additional options forwarded to the resolver.
 
     Returns:
@@ -535,6 +538,7 @@ def run_md(
         ("nhc_tloop", nhc_tloop),
         ("save_interval", save_interval),
         ("com_policy", com_policy),
+        ("raw_forces_storage", raw_forces_storage),
         ("pre_relax", pre_relax),
     ):
         if value is not None:

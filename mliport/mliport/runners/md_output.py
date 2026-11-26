@@ -20,6 +20,11 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import numpy as np
 from ase.io.trajectory import TrajectoryWriter as AseTrajectoryWriter
 
+from mliport.trajectory_forces import (
+    RAW_FORCES_STORAGE_DEFAULT,
+    open_trajectory_writer,
+    validate_raw_forces_storage,
+)
 from mliport.writers.outcar import MDOutcarWriter
 from mliport.writers.xdatcar import XdatcarWriter
 
@@ -89,6 +94,8 @@ class MDFrameSnapshot:
     atoms: Atoms
     summary: dict[str, Any]
     outcar_forces: np.ndarray | None
+    #: Unprojected forces; only used when ``raw_forces_storage="binary"``.
+    raw_forces: np.ndarray | None = None
 
 
 @dataclass
@@ -131,7 +138,9 @@ class AsyncMDOutputWriter:
         xdatcar_writer: XdatcarWriter | None,
         xdatcar_path: Path,
         outcar_writer: MDOutcarWriter | None,
+        raw_forces_storage: str = RAW_FORCES_STORAGE_DEFAULT,
     ) -> None:
+        self.raw_forces_storage = validate_raw_forces_storage(raw_forces_storage)
         self.trajectory_path = trajectory_path
         self.csv_path = csv_path
         self.write_trajectory = write_trajectory
@@ -206,7 +215,14 @@ class AsyncMDOutputWriter:
 
             if self.write_trajectory:
                 self.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-                traj_writer = AseTrajectoryWriter(self.trajectory_path, mode="w")
+                if self.raw_forces_storage == "binary":
+                    traj_writer = open_trajectory_writer(
+                        self.trajectory_path,
+                        mode="w",
+                        raw_forces_storage="binary",
+                    )
+                else:
+                    traj_writer = AseTrajectoryWriter(self.trajectory_path, mode="w")
             if self.outcar_writer is not None:
                 self.outcar_writer.open_stream()
 
@@ -218,7 +234,10 @@ class AsyncMDOutputWriter:
 
                 # The raw binary trajectory and scalar CSV are authoritative.
                 if traj_writer is not None:
-                    traj_writer.write(item.atoms)
+                    if self.raw_forces_storage == "binary":
+                        traj_writer.write(item.atoms, raw_forces=item.raw_forces)
+                    else:
+                        traj_writer.write(item.atoms)
                 csv_writer.writerow(_csv_row(item.summary))
                 self.stats.record(item.summary)
 
