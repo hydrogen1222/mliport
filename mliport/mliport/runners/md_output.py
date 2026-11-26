@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
-
 from ase.io.trajectory import TrajectoryWriter as AseTrajectoryWriter
 
 from mliport.trajectory_forces import (

@@ -43,7 +43,6 @@ from ase.optimize import FIRE
 from mliport.config.defaults import BUILTIN_DEFAULTS
 from mliport.protocols import CancellationRequested
 from mliport.runners.base import BaseRunner
-from mliport.trajectory_forces import validate_raw_forces_storage
 from mliport.runners.md_output import (
     AsyncMDOutputWriter,
     MDFrameSnapshot,
@@ -60,6 +59,7 @@ from mliport.runners.safety import (
     validate_atomic_state as _validate_atomic_state_shared,
     validate_safe_point,
 )
+from mliport.trajectory_forces import validate_raw_forces_storage
 from mliport.writers.contcar import ContcarWriter
 from mliport.writers.json_writer import JsonWriter
 from mliport.writers.outcar import MDOutcarWriter

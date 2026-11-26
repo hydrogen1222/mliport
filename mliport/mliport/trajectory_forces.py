@@ -25,8 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from ase.io import ulm
-from ase.io.trajectory import Trajectory
-from ase.io.trajectory import TrajectoryWriter as AseTrajectoryWriter
+from ase.io.trajectory import Trajectory, TrajectoryWriter as AseTrajectoryWriter
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -148,10 +147,16 @@ def _frame_raw_forces(frame: Any) -> np.ndarray | None:
 
 
 def read_frames_with_raw_forces(
-    path: str | Path, index: int | slice | str = slice(None)
+    path: str | Path, index: int | slice | str | None = None
 ) -> list[Atoms]:
-    """Read frames with ``info["forces_raw_eV_A"]`` restored for either storage."""
+    """Read frames with ``info["forces_raw_eV_A"]`` restored for either storage.
 
+    ``index`` is a frame number, a slice, an ASE-style slice string such as
+    ``"::10"``, or ``None`` for every frame.
+    """
+
+    if index is None:
+        index = slice(None)
     with Trajectory(str(path), "r") as trajectory:
         total = len(trajectory)
     if isinstance(index, str):

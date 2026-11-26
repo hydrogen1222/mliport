@@ -811,12 +811,16 @@ def _validate_kinisi_periodic_reconstruction(
         # independent saved intervals, so blocking gives the same numbers
         # without holding every step, its MIC image and the differences at once.
         n_intervals = positions.shape[0] - 1
-        block = max(1, _VALIDATION_BLOCK_BYTES // max(1, positions.shape[1] * 3 * 8 * 4))
+        block = max(
+            1, _VALIDATION_BLOCK_BYTES // max(1, positions.shape[1] * 3 * 8 * 4)
+        )
         max_difference = 0.0
         n_crossing = 0
         for lo in range(0, n_intervals, block):
             hi = min(lo + block, n_intervals)
-            steps = np.asarray(positions[lo + 1 : hi + 1] - positions[lo:hi], dtype=float)
+            steps = np.asarray(
+                positions[lo + 1 : hi + 1] - positions[lo:hi], dtype=float
+            )
             mic_flat, _ = find_mic(steps.reshape(-1, 3), cell, pbc=pbc)
             differences = np.linalg.norm(steps - mic_flat.reshape(steps.shape), axis=-1)
             if differences.size:

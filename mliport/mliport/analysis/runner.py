@@ -27,8 +27,8 @@ from mliport.analysis.dataset import (
     discover_trajectory_file,
     no_trajectory_message,
 )
-from mliport.analysis.schema import AnalysisRequest
 from mliport.analysis.msd_cache import MsdCoreCache, msd_core_key
+from mliport.analysis.schema import AnalysisRequest
 from mliport.analysis.timing import PhaseTimings, phase, recording
 from mliport.analysis.validation import InvalidTrajectoryError, UnsupportedAnalysisError
 

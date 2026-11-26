@@ -15,7 +15,7 @@ import mliport.analysis.msd as msd_module
 import mliport.analysis.runner as runner_module
 import mliport.analysis.transport as transport_module
 from mliport.analysis import TrajectoryDataset
-from mliport.analysis.msd import calculate_msd, unwrap_positions
+from mliport.analysis.msd import unwrap_positions
 from mliport.analysis.msd_cache import MsdCoreCache, msd_core_key
 from mliport.analysis.runner import run_analysis
 from mliport.analysis.schema import AnalysisRequest
@@ -34,7 +34,9 @@ def _write_run(path, *, scale: float = 1.0) -> None:
     drift = np.cumsum(rng.normal(size=(N_FRAMES, 1, 3)) * 0.05, axis=0)
     with Trajectory(raw / "trajectory.traj", "w") as writer:
         for index in range(N_FRAMES):
-            positions = np.vstack([li + walk[index] + drift[index], sulfur + drift[index]])
+            positions = np.vstack(
+                [li + walk[index] + drift[index], sulfur + drift[index]]
+            )
             atoms = Atoms("Li3S2", positions=positions, cell=[30] * 3, pbc=True)
             atoms.info["mliport_step"] = index * 2
             atoms.info["mliport_time_fs"] = float(index * 2)
@@ -43,11 +45,21 @@ def _write_run(path, *, scale: float = 1.0) -> None:
     with (raw / "md.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(
-            ["step", "time_fs", "phase", "temperature_K", "potential_energy_eV",
-             "kinetic_energy_eV", "total_energy_eV", "volume_A3"]
+            [
+                "step",
+                "time_fs",
+                "phase",
+                "temperature_K",
+                "potential_energy_eV",
+                "kinetic_energy_eV",
+                "total_energy_eV",
+                "volume_A3",
+            ]
         )
         for index in range(N_FRAMES):
-            writer.writerow([index * 2, index * 2, "production", 600, -2, 0.1, -1.9, 27000])
+            writer.writerow(
+                [index * 2, index * 2, "production", 600, -2, 0.1, -1.9, 27000]
+            )
     (path / "artifacts.json").write_text(
         json.dumps(
             {
@@ -80,7 +92,7 @@ def _msd(run, **parameters):
     return run_analysis(AnalysisRequest("msd", str(run), parameters=base))
 
 
-@pytest.fixture
+@pytest.fixture()
 def load_counter(monkeypatch):
     calls = {"n": 0}
     original = TrajectoryDataset.load.__func__
@@ -229,7 +241,9 @@ def test_force_recomputes_and_corrupt_entry_is_a_miss(tmp_path, load_counter) ->
 def test_core_cache_roundtrip_preserves_values_and_types(tmp_path) -> None:
     rng = np.random.default_rng(1)
     frames = [
-        Atoms("Li2S", positions=rng.random((3, 3)) * 5 + i * 0.1, cell=[20] * 3, pbc=True)
+        Atoms(
+            "Li2S", positions=rng.random((3, 3)) * 5 + i * 0.1, cell=[20] * 3, pbc=True
+        )
         for i in range(30)
     ]
     dataset = TrajectoryDataset.from_frames(
@@ -272,7 +286,9 @@ def test_blocked_reductions_match_the_unblocked_formulas(monkeypatch) -> None:
     rng = np.random.default_rng(3)
     positions = np.cumsum(rng.normal(size=(37, 9, 3)) * 0.4, axis=0)
     cell = np.diag([6.0, 7.0, 8.0])
-    frames = [Atoms("Li5S4", positions=p % [6, 7, 8], cell=cell, pbc=True) for p in positions]
+    frames = [
+        Atoms("Li5S4", positions=p % [6, 7, 8], cell=cell, pbc=True) for p in positions
+    ]
     for convention, source in (("unwrapped", positions), ("wrapped", None)):
         if convention == "unwrapped":
             frames = [Atoms("Li5S4", positions=p, cell=cell, pbc=True) for p in source]
@@ -328,7 +344,12 @@ def test_transport_unwraps_once_and_blocked_validation_matches(monkeypatch) -> N
     sulfur = np.array([[5.0, 5, 5], [2, 8, 3], [8, 8, 8]])
     walk = np.cumsum(rng.normal(size=(n_frames, 4, 3)) * 0.4, axis=0)
     frames = [
-        Atoms("Li4S3", positions=np.vstack([li + walk[i], sulfur]), cell=[10] * 3, pbc=True)
+        Atoms(
+            "Li4S3",
+            positions=np.vstack([li + walk[i], sulfur]),
+            cell=[10] * 3,
+            pbc=True,
+        )
         for i in range(n_frames)
     ]
     dataset = TrajectoryDataset.from_frames(
