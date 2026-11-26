@@ -409,6 +409,17 @@ _SPECS: list[OptionSpec] = [
         choices=("zero", "bj", "zerom", "bjm"),
         description="DFT-D3 damping function (default: bj, i.e. D3(BJ)).",
     ),
+    OptionSpec(
+        "d3_cutoff",
+        float,
+        frozenset({"calculator"}),
+        aliases={"D3_CUTOFF"},
+        minimum=1.0e-12,
+        description=(
+            "DFT-D3 pair cutoff in Angstrom (default: torch-dftd's 95 bohr, "
+            "about 50.3 A). Smaller is faster but changes energies slightly."
+        ),
+    ),
     # --- NEP dual-runtime calculator options (PR #61 section C) ---
     # ``nep_runtime`` is scoped to ``calculator.nep`` so the resolver rejects it
     # for every other engine instead of recording a switch that never executes.
@@ -1375,6 +1386,7 @@ _TEMPLATE_GROUPS: dict[str, tuple[str, ...]] = {
         "d3",
         "d3_xc",
         "d3_damping",
+        "d3_cutoff",
         "gpu_memory_growth",
         "gpu_memory_limit_mb",
         "neighbor_cache",

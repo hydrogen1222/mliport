@@ -6,8 +6,13 @@ Matching rule (section 9.3 revision 4): a new minimum ``m`` joins unique minimum
     |E_m - E_u| <= cs_dedup_energy_tol   AND   ( G(m, u) OR D(m, u) <= cs_dedup_fp_tol )
 
 where ``G`` is the *direct geometric identity*: with a non-empty fixed set F and
-a fixed atom order, the largest minimum-image displacement over the adsorbate
-atoms is at most ``cs_dedup_geom_tol``.  ``G`` absorbs quench noise in flat
+a fixed atom order, the largest minimum-image displacement over the **non-H**
+adsorbate atoms is at most ``cs_dedup_geom_tol``.  Hydrogen is left out because
+the torsion of a methyl or methylene group is nearly flat: a quench that stops
+at ``fmax`` leaves its H atoms at an arbitrary rotation, and the three H of a
+CH3 are interchangeable, so including them made ``G`` reject the same basin
+found twice (a V100 campaign on CH3OH@LGPS: 99 quenches, 93 "unique" minima,
+no ``G`` hit).  ``G`` absorbs quench noise in flat
 basins; ``D`` is only needed for what ``G`` cannot see (symmetry-equivalent
 sites and permutation-equivalent conformers).  If F is empty, ``G`` is disabled
 for the whole search and recorded in the run warnings.
@@ -386,13 +391,19 @@ class MinimumRegistry:
     def geometric_match(self, first: MinimumRecord, second: MinimumRecord) -> bool:
         """``G``: direct geometric identity under a fixed slab and atom order.
 
-        Disabled (always False) when the fixed set F is empty: without anchors a
+        Compares the non-H adsorbate atoms only (see the module docstring); an
+        adsorbate made only of hydrogen compares all of its atoms.  Disabled
+        (always False) when the fixed set F is empty: without anchors a
         whole-minimum rigid translation would look like the same structure.
         """
         if not self.geometric_identity_enabled:
             return False
-        left = np.asarray(first.atoms.get_positions(), dtype=float)[self.adsorbate]
-        right = np.asarray(second.atoms.get_positions(), dtype=float)[self.adsorbate]
+        compared = self.adsorbate
+        heavy = compared[np.asarray(first.atoms.numbers)[compared] != 1]
+        if heavy.size:
+            compared = heavy
+        left = np.asarray(first.atoms.get_positions(), dtype=float)[compared]
+        right = np.asarray(second.atoms.get_positions(), dtype=float)[compared]
         deltas = left - right
         folded = mic_vectors(np.asarray(first.atoms.cell, dtype=float), deltas)
         maximum = float(np.max(np.linalg.norm(folded, axis=1))) if deltas.size else 0.0

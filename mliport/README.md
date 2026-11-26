@@ -64,6 +64,10 @@ number was produced.
 | Know what each output file contains | [Output files](https://github.com/hydrogen1222/mliport/blob/main/docs/outputs.md) |
 | Fix an error | [Troubleshooting](https://github.com/hydrogen1222/mliport/blob/main/docs/troubleshooting.md) |
 | Cite mliport and the models | [Citations](https://github.com/hydrogen1222/mliport/blob/main/docs/citations.md) |
+| All CLI flags and subcommands | [CLI reference](https://github.com/hydrogen1222/mliport/blob/main/docs/cli.md) |
+| Navigate the terminal UI | [TUI reference](https://github.com/hydrogen1222/mliport/blob/main/docs/tui.md) |
+| End-to-end LGPS workflow | [Tutorial: LGPS workflow](https://github.com/hydrogen1222/mliport/blob/main/docs/tutorials/lgps-workflow.md) |
+| Reproduce published conductivity | [Tutorial: literature benchmark](https://github.com/hydrogen1222/mliport/blob/main/docs/tutorials/literature-benchmark.md) |
 
 ## Install
 

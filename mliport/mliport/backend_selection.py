@@ -28,7 +28,9 @@ SUPPORTED_TYPES: frozenset[str] = frozenset(set(SUPPORTED_BACKENDS) | UMA_ALIASE
 
 #: DFT-D3 dispersion options. The correction is added on top of the model by
 #: the calculator factory, so every backend consumes them.
-DISPERSION_OPTION_KEYS: frozenset[str] = frozenset({"d3", "d3_xc", "d3_damping"})
+DISPERSION_OPTION_KEYS: frozenset[str] = frozenset(
+    {"d3", "d3_xc", "d3_damping", "d3_cutoff"}
+)
 
 #: Calculator (backend) options each runtime consumes. This is the single
 #: table shared by the resolver, the calculator factory, the engine and the

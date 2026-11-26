@@ -132,8 +132,12 @@ Two minima are considered the same when their energies differ by at most
 `CS_DEDUP_ENERGY_TOL` **and** either:
 
 - **G (geometric identity):** with fixed atoms anchoring the slab, every
-  adsorbate atom is within `CS_DEDUP_GEOM_TOL` of the corresponding atom in
-  the other minimum (absorbs quench noise in flat basins).
+  non-hydrogen adsorbate atom is within `CS_DEDUP_GEOM_TOL` of the
+  corresponding atom in the other minimum (absorbs quench noise in flat
+  basins). Hydrogen is left out because the torsion of a CH3 or CH2 group is
+  almost flat, so a quench that stops at the force threshold leaves its H atoms
+  at an arbitrary angle. An adsorbate made only of hydrogen compares all of its
+  atoms.
 - **D (fingerprint distance):** the focused Oganov–Valle fingerprint distance
   is at most `CS_DEDUP_FP_TOL` (catches symmetry-equivalent sites and
   permutation-equivalent conformers like rotated methyl groups).

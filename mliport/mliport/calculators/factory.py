@@ -133,7 +133,7 @@ class CalculatorFactory:
                 ``head``; DPA accepts ``head`` for multi-task branches; GRACE
                 accepts ``cpu_threads`` for TensorFlow intra-op parallelism and
                 GPU memory-growth / hard-limit controls. Every engine accepts
-                ``d3`` (with optional ``d3_xc``/``d3_damping``) to add a
+                ``d3`` (with optional ``d3_xc``/``d3_damping``/``d3_cutoff``) to add a
                 DFT-D3 dispersion correction on top of the model.
 
         Returns:
@@ -165,6 +165,7 @@ class CalculatorFactory:
             d3=kwargs.get("d3", False),
             d3_xc=kwargs.get("d3_xc"),
             d3_damping=kwargs.get("d3_damping"),
+            d3_cutoff=kwargs.get("d3_cutoff"),
         )
 
         if m_type in UMA_ALIASES:
@@ -262,4 +263,5 @@ class CalculatorFactory:
             ),
             xc=d3_settings["xc"],
             damping=d3_settings["damping"],
+            cutoff=d3_settings.get("cutoff"),
         )

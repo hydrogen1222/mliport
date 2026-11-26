@@ -364,3 +364,111 @@ def test_neb_refuses_d3():
     )
     with pytest.raises(NEBPreparationError, match="not supported for NEB"):
         _run_neb_workflow_locked(object(), resolved, output_dir="unused")
+
+
+# ---------------------------------------------------------------------------
+# d3_cutoff: a smaller pair cutoff reaches torch-dftd and the provenance
+# ---------------------------------------------------------------------------
+
+
+def test_default_cutoff_is_left_to_torch_dftd(fake_torch_dftd):
+    wrapper = D3CorrectedCalculator(_FakeBackend(), device="cpu")
+    wrapper.get_calculator()
+
+    assert "cutoff" not in fake_torch_dftd[0].init_kwargs
+    assert "cnthr" not in fake_torch_dftd[0].init_kwargs
+    info = wrapper.dispersion_info()
+    assert info["cutoff_is_default"] is True
+    assert info["cutoff_A"] == pytest.approx(95.0 * 0.529177210903)
+
+
+def test_cutoff_reaches_torch_dftd_and_lowers_cnthr(fake_torch_dftd):
+    wrapper = D3CorrectedCalculator(_FakeBackend(), device="cpu", cutoff=15.0)
+    wrapper.get_calculator()
+
+    kwargs = fake_torch_dftd[0].init_kwargs
+    assert kwargs["cutoff"] == 15.0
+    # 40 bohr (21.2 A) is larger than the cutoff: torch-dftd would warn and
+    # clamp, so the wrapper passes the clamped value itself.
+    assert kwargs["cnthr"] == 15.0
+    info = wrapper.dispersion_info()
+    assert info["cutoff_A"] == 15.0
+    assert info["cutoff_is_default"] is False
+
+
+def test_cutoff_above_cnthr_keeps_the_default_cnthr(fake_torch_dftd):
+    wrapper = D3CorrectedCalculator(_FakeBackend(), device="cpu", cutoff=30.0)
+    wrapper.get_calculator()
+
+    assert fake_torch_dftd[0].init_kwargs["cnthr"] == pytest.approx(
+        40.0 * 0.529177210903
+    )
+
+
+def test_normalize_returns_cutoff_only_when_given():
+    assert "cutoff" not in normalize_d3_options("mace", "bulk", d3=True)
+    assert (
+        normalize_d3_options("mace", "bulk", d3=True, d3_cutoff="25")["cutoff"] == 25.0
+    )
+
+
+@pytest.mark.parametrize("bad", [0, -5.0, float("nan"), float("inf"), "far"])
+def test_invalid_cutoff_is_rejected(bad):
+    with pytest.raises(ValueError, match="d3_cutoff"):
+        normalize_d3_options("mace", "bulk", d3=True, d3_cutoff=bad)
+
+
+def test_cutoff_without_d3_is_rejected():
+    with pytest.raises(ValueError, match="d3_cutoff"):
+        normalize_d3_options("mace", "bulk", d3=False, d3_cutoff=20.0)
+
+
+def test_factory_forwards_the_cutoff(tmp_path, fake_torch_dftd):
+    model = tmp_path / "m.model"
+    model.write_text("x")
+    corrected = CalculatorFactory.create(
+        "mace", model, task="bulk", strict=True, d3=True, d3_cutoff=20.0
+    )
+    assert isinstance(corrected, D3CorrectedCalculator)
+    assert corrected.dispersion_info()["cutoff_A"] == 20.0
+
+
+def test_cutoff_option_flows_through_incar_cli_resolver_and_queue():
+    assert (
+        get_schema().validate_dict(
+            {"D3": ".TRUE.", "D3_CUTOFF": "20.0"}, strict=True, context="INCAR"
+        )
+        == []
+    )
+    assert get_schema().validate_dict({"D3_CUTOFF": "-1"}, strict=True, context="INCAR")
+
+    args = create_parser().parse_args(
+        [
+            "opt",
+            "slab.xyz",
+            "--model",
+            "m.model",
+            "--model-type",
+            "mace",
+            "--d3",
+            "--d3-cutoff",
+            "20",
+        ]
+    )
+    opts = _build_cli_opts(args, "opt")
+    assert opts["d3_cutoff"] == 20.0
+
+    resolved = resolve_config(
+        calc_type="opt",
+        cli={"model_type": "mace", "model_path": "./m.model", **opts},
+    )
+    assert resolved.calculator_options["d3_cutoff"] == 20.0
+
+    cmd = build_mliport_command(
+        "opt",
+        "/s/slab.xyz",
+        "/m/m.model",
+        model_type="mace",
+        options={"d3": True, "d3_cutoff": 20.0},
+    )
+    assert float(cmd[cmd.index("--d3-cutoff") + 1]) == 20.0
